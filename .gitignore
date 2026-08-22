@@ -3,8 +3,6 @@
 services/gxp-api/.venv/
 services/*/.venv/
 
-# --- Vendored/external framework (managed separately, not our IP) ---
-/apps/frappe/
 
 # --- Node ---
 frontend/node_modules/
@@ -38,3 +36,4 @@ config/*.pid
 
 # --- Claude Code local runtime state ---
 /.claude/
+config.bat
