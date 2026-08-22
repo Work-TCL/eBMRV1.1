@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(./**)",
+      "Edit(./services/**)",
+      "Edit(./apps/**)",
+      "Edit(./packages/**)",
+      "Edit(./contracts/**)",
+      "Edit(./edge/**)",
+      "Edit(./connectors/**)",
+      "Edit(./infrastructure/**)",
+      "Edit(./validation/**)",
+      "Edit(./tests/**)",
+      "Edit(./tooling/**)",
+      "Edit(./docs/generated/18_SPEC_GAPS.md)",
+      "Bash(npm run *)",
+      "Bash(pnpm *)",
+      "Bash(pytest *)",
+      "Bash(docker compose *)"
+    ],
+    "deny": [
+      "Edit(./specs/**)",
+      "Edit(./CLAUDE.md)",
+      "Edit(./.claude/rules/**)",
+      "Bash(rm -rf *)",
+      "Bash(psql * -c DELETE*)",
+      "Bash(psql * -c DROP*)"
+    ]
+  },
+  "env": {
+    "EBMR_PROJECT_MODE": "construction",
+    "EBMR_SPEC_BASELINE": "Documents 01-115"
+  }
+}

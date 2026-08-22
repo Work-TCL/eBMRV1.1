@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* eBMR-ui design system — ported verbatim from /home/hepin/mydata/eBMR/eBMR-ui.
+   This is the styling source of truth for every component in src/components/ui
+   and src/components/layout. Tailwind stays available for the scaffold but is
+   not used by any design-system component. */
+@import "../styles/ebmr-fonts.css";
+@import "../styles/ebmr-tokens.css";
+@import "../styles/ebmr-components.css";
+
+/* New components built on top of the ported system (no source pattern to match for these). */
+@import "../styles/datatable.css";

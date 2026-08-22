@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Work · DDCP · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="home"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">DDCP · My Work</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">My Work</div>
+      <a href="inbox.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="home"></span> Task inbox</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="role-badge" data-role-badge style="display:none"><span class="k">Signed in as</span><span class="v" data-role-badge-text></span></div>
+      <a href="../role-select.html" class="sidebar-link"><span class="icon" data-icon="refresh"></span> Switch role</a>
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> Drug-Device Combination Product</span></span>
+      <span class="context-item"><span class="k">Active context</span><span class="v">Acme Combination Products · Site 3 · Line C</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">M. Ortiz — Filling/Assembly Operator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">DDCP</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">My Work</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">My Work</h1>
+        <p class="page-subtitle">UX-SCR-002 · Tasks you may potentially perform in Drug-Device Combination Product — opening or acting still triggers server authorization</p>
+      </div></div>
+      <div class="card card-pad mb-4" data-role-prompt>
+        <p class="fs-4 font-bold mb-1">You haven't chosen who you are yet</p>
+        <p class="fs-3 text-secondary mb-4">My Work looks different for every person, because every person is allowed to do different things. Pick a persona to see it the way they see it.</p>
+        <a class="btn btn-primary" href="../role-select.html"><span class="icon" data-icon="user-check"></span> Choose a role</a>
+      </div>      <div data-role-only="admin">
+        <div class="banner mb-4" data-tone="info"><span class="icon" data-icon="info"></span>
+          <div><p class="font-semibold">L. Park — Configuration/Access Administrator</p>
+          <p class="fs-3 mt-1">Configures the organisation: sites, users, roles, products, materials, equipment. Does not perform, verify or release production steps — those actions stay locked in this sidebar, on purpose.</p></div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="card card-pad">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> DDCP</span><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Awaiting sign-in</span></div>
+            <p class="fs-4 font-bold">2 users invited, not yet signed in</p>
+            <p class="fs-3 text-muted mt-1">N. Shah and one other — invited this week</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">Waiting on their first sign-in</p>
+            <a class="btn btn-secondary btn-sm mt-3" href="../../setup/users.html">Open</a>
+          </div>
+
+          <div class="card card-pad">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> DDCP</span><span class="state" data-state="conflict"><span class="icon" data-icon="alert-triangle"></span> In progress</span></div>
+            <p class="fs-4 font-bold">Setup checklist — 3 of 7 done</p>
+            <p class="fs-3 text-muted mt-1">Company, users and roles are configured</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">Products, materials, BOM and equipment remain</p>
+            <a class="btn btn-secondary btn-sm mt-3" href="../../setup/checklist.html">Open</a>
+          </div>
+
+        </div>
+      </div>
+      <div data-role-only="author">
+        <div class="banner mb-4" data-tone="info"><span class="icon" data-icon="info"></span>
+          <div><p class="font-semibold">S. Bloom &amp; T. Alvarez — Recipe Authoring Team</p>
+          <p class="fs-3 mt-1">Writes the Integrated Master — admission, constituent compatibility, per-unit bill of materials, process steps and specifications. Cannot approve their own recipe or issue a batch against it — Quality signs the approval, Planner signs the order.</p></div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="card card-pad">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> DDCP</span><span class="state" data-state="conflict"><span class="icon" data-icon="alert-triangle"></span> 5 of 6 complete</span></div>
+            <p class="fs-4 font-bold">Admission RD-088 — 1 fact missing</p>
+            <p class="fs-3 text-muted mt-1">Applicable exclusions not yet recorded</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">Blocks everything downstream until accepted</p>
+            <a class="btn btn-secondary btn-sm mt-3" href="../combination/admission.html">Open</a>
+          </div>
+
+          <div class="card card-pad">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> DDCP</span><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Under review</span></div>
+            <p class="fs-4 font-bold">EPIREL-03 v1.5 draft — torque spec incomplete</p>
+            <p class="fs-3 text-muted mt-1">Unit of measure not set on the torque specification</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">Will block recipe approval until fixed</p>
+            <a class="btn btn-secondary btn-sm mt-3" href="../combination/integrated-master.html">Open</a>
+          </div>
+
+        </div>
+      </div>
+      <div data-role-only="planner">
+        <div class="banner mb-4" data-tone="info"><span class="icon" data-icon="info"></span>
+          <div><p class="font-semibold">M. Chen — Planner</p>
+          <p class="fs-3 mt-1">Creates and issues final assembly orders against an approved Integrated Master. Does not author, approve, fill, test, label or release — those need a different signed-in person, which the system enforces, not just recommends.</p></div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="card card-pad">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> DDCP</span><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Ready to issue</span></div>
+            <p class="fs-4 font-bold">EPIREL-03 v1.4 is effective</p>
+            <p class="fs-3 text-muted mt-1">Approved and ready to issue against</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">This is the only version selectable in step 1 of Create a final assembly</p>
+            <a class="btn btn-secondary btn-sm mt-3" href="../combination/new-batch.html">Open</a>
+          </div>
+
+          <div class="card card-pad">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> DDCP</span><span class="state" data-state="missing"><span class="icon" data-icon="help-circle"></span> None open</span></div>
+            <p class="fs-4 font-bold">No open assembly orders on Line C</p>
+            <p class="fs-3 text-muted mt-1">EpiRelease Auto-Injector 0.3mg</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">Create the next one when materials are ready</p>
+            <a class="btn btn-secondary btn-sm mt-3" href="../combination/new-batch.html">Open</a>
+          </div>
+
+        </div>
+      </div>
+      <div data-role-only="operator">
+      <div class="tabs mb-4" data-tab-group="mw" role="tablist">
+        <button class="tab-btn" data-tab="ready" aria-selected="true" role="tab">Ready <span class="fs-1">(2)</span></button>
+        <button class="tab-btn" data-tab="waiting" aria-selected="false" role="tab">Waiting <span class="fs-1">(1)</span></button>
+        <button class="tab-btn" data-tab="blocked" aria-selected="false" role="tab">Blocked <span class="fs-1">(1)</span></button>
+        <button class="tab-btn" data-tab="returned" aria-selected="false" role="tab">Returned <span class="fs-1">(1)</span></button>
+        <button class="tab-btn" data-tab="done" aria-selected="false" role="tab">Completed recently</button>
+      </div>
+      <div class="tab-panel" data-tab-panel="ready" data-tab-group-target="mw" data-active>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="card card-pad">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> DDCP</span><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Ready</span></div>
+            <p class="fs-4 font-bold">Final assembly FA-33210</p>
+            <p class="fs-3 text-muted mt-1">EpiRelease Auto-Injector 0.3mg · Site 3, Line C</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">Due 14:30 EDT</p>
+          </div>
+          <div class="card card-pad" style="border-left:3px solid var(--status-serious-solid)">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> DDCP</span><span class="state" data-state="conflict"><span class="icon" data-icon="alert-triangle"></span> Exceptions open</span></div>
+            <p class="fs-4 font-bold">Cross-constituent issue XC-0091</p>
+            <p class="fs-3 text-muted mt-1">Device-side assembly torque below spec on 40 units</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">Sorted first — exceptions are never buried</p>
+          </div>
+        </div>
+      </div>
+      <div class="tab-panel" data-tab-panel="waiting" data-tab-group-target="mw">
+        <div class="card card-pad"><p class="fs-4 font-semibold">Impact Assessment — FA-33210</p>
+        <p class="fs-3 text-muted mt-1">Waiting on J. Kwan (Cross-constituent Investigation) to record a impact assessment for XC-0091. No restricted evidence is shown here beyond that dependency.</p></div>
+      </div>
+      <div class="tab-panel" data-tab-panel="blocked" data-tab-group-target="mw">
+        <div class="card card-pad"><p class="fs-4 font-semibold">EpiRelease Auto-Injector 0.3mg — next operation</p>
+        <p class="fs-3 text-muted mt-1">Blocked: qualification expired 02 Aug 2026. Route to training renewal is shown, not a dead link.</p></div>
+      </div>
+      <div class="tab-panel" data-tab-panel="returned" data-tab-group-target="mw">
+        <div class="card card-pad" style="border-left:3px solid var(--status-warning-solid)">
+        <p class="fs-2 text-muted mb-1">Acting under delegated authority</p>
+        <p class="fs-4 font-semibold">Returned finding — EPIREL-03 v1.5 draft</p>
+        <p class="fs-3 text-muted mt-1">Delegated from S. Bloom, expires 08 Aug 2026. The signature remains the delegate's own identity, never the delegator's.</p></div>
+      </div>
+      <div class="tab-panel" data-tab-panel="done" data-tab-group-target="mw">
+        <div class="empty-state"><span class="icon" data-icon="check-circle"></span>
+        <p class="fs-3">4 items completed today — visible in Record explorer, not duplicated here.</p></div>
+      </div>
+      </div>
+      <div data-role-only="quality">
+        <div class="banner mb-4" data-tone="info"><span class="icon" data-icon="info"></span>
+          <div><p class="font-semibold">P. Nair — Final Release Authority</p>
+          <p class="fs-3 mt-1">Approves the recipe before any batch exists, investigates cross-constituent issues, and holds sole authority to release the final product. Cannot have performed the step under their own review — the system will not let the same identity sign both roles.</p></div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="card card-pad">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> DDCP</span><span class="state" data-state="conflict"><span class="icon" data-icon="alert-triangle"></span> Approval pending</span></div>
+            <p class="fs-4 font-bold">EPIREL-03 v1.5 — awaiting your approval</p>
+            <p class="fs-3 text-muted mt-1">Torque spec unit still needs correcting first</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">Recipe cannot become effective until you sign</p>
+            <a class="btn btn-secondary btn-sm mt-3" href="../combination/recipe-approval.html">Open</a>
+          </div>
+
+          <div class="card card-pad">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> DDCP</span><span class="state" data-state="conflict"><span class="icon" data-icon="alert-triangle"></span> Exceptions open</span></div>
+            <p class="fs-4 font-bold">Cross-constituent issue XC-0091</p>
+            <p class="fs-3 text-muted mt-1">Device-side assembly torque below spec on 40 units</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">Awaiting your impact assessment</p>
+            <a class="btn btn-secondary btn-sm mt-3" href="../combination/cross-constituent.html">Open</a>
+          </div>
+
+          <div class="card card-pad">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> DDCP</span><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Ready for review</span></div>
+            <p class="fs-4 font-bold">Final assembly FA-33210</p>
+            <p class="fs-3 text-muted mt-1">EpiRelease Auto-Injector 0.3mg · Site 3, Line C</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">Awaiting your release decision</p>
+            <a class="btn btn-secondary btn-sm mt-3" href="../combination/release.html">Open</a>
+          </div>
+
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

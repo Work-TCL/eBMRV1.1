@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Release ceremony · MD · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="cross-medical"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">MD · Device Quality</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Device Quality</div>
+      <a href="nonconformance.html" class="sidebar-link"><span class="icon" data-icon="alert-triangle"></span> Nonconformance</a>
+      <a href="review.html" class="sidebar-link"><span class="icon" data-icon="clipboard"></span> Quality review</a>
+      <a href="release.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="badge-check"></span> Release ceremony</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> Medical Device</span></span>
+      <span class="context-item"><span class="k">Unit serial</span><span class="v">SN-88213</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Review complete</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">P. Nair — Release Authority</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">MD</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Release / Rejection Ceremony</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Release / Rejection Ceremony</h1>
+        <p class="page-subtitle">UX-SCR-027 · After commit: immutable decision, signer, meaning, server time, scope and event ID</p>
+      </div></div>
+      <div class="card card-pad" style="max-width:680px">
+        <div class="grid grid-cols-2 gap-4 mb-4">
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Scope</p><p class="fs-4 font-semibold mt-1">SN-88213 · 1 unit</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Package version / digest</p><p class="fs-4 font-semibold mt-1 tabular">v1 · sha256:7ab2…41f0</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Unresolved blockers</p><p class="fs-4 font-semibold mt-1" style="color:var(--status-good-text)">0</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Statement</p><p class="fs-4 font-semibold mt-1">Quality Agreement §4.2</p></div>
+        </div>
+        <div class="field"><label class="label">Decision meaning</label><input class="input" value="Device Quality release — 21 CFR 820.198" disabled></div>
+        <div class="field"><label class="label">Rationale <span class="req">*</span></label><textarea class="input" rows="2" placeholder="Required for either decision"></textarea></div>
+        <div class="flex gap-3 mt-2">
+          <button class="btn btn-success btn-lg" style="flex:1" data-modal-open="rel-modal"><span class="icon" data-icon="check-circle"></span> Release unit</button>
+          <button class="btn btn-danger btn-lg" style="flex:1"><span class="icon" data-icon="x"></span> Reject</button>
+        </div>
+        <p class="hint mt-2">Release and Reject are visually distinct and neither is preselected. Fresh authentication is required before either commits.</p>
+      </div>
+
+      <div class="card card-pad mt-4" style="max-width:680px">
+        <p class="fs-2 font-semibold text-muted mb-2" style="text-transform:uppercase">After commit — example</p>
+        <div class="sig-block" data-sig="signed">
+          <div class="sig-role">Release decision</div>
+          <div class="sig-manifest"><span class="icon" data-icon="badge-check"></span> Released — P. Nair — 05 Aug 2026, 17:30 EDT</div>
+          <div class="sig-hint">Event EVT-90412 · Scope SN-88213, 1 unit · Downstream integration delivery is tracked separately — it cannot create a second decision.</div>
+        </div>
+      </div>
+
+<div class="modal-backdrop" id="rel-modal" data-dismissible="false">
+  <div class="modal">
+    <div class="modal-header"><div><div class="modal-title">Confirm release</div>
+    <p class="fs-3 text-muted mt-1">Fresh authentication required. This dialog cannot be dismissed by a stray tap.</p></div></div>
+    <div class="modal-body">
+      <p class="fs-3 mb-3">SN-88213 · 1 unit · Package v1</p>
+      <div class="field"><label class="label">Password <span class="req">*</span></label><input type="password" class="input" placeholder="Re-authenticate"></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-secondary" data-modal-close>Cancel</button>
+    <button class="btn btn-success"><span class="icon" data-icon="badge-check"></span> Commit release</button></div>
+  </div>
+</div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# WP-06 — Acceptance Checklist
+
+- [ ] Document 38: all 30 requirements implemented and traced
+- [ ] Document 39: all 28 requirements implemented and traced
+- [ ] Document 40: all 28 requirements implemented and traced
+- [ ] Document 41: all 26 requirements implemented and traced
+- [ ] Document 42: all 30 requirements implemented and traced
+- [ ] Document 43: all 30 requirements implemented and traced
+- [ ] Document 44: all 25 requirements implemented and traced
+- [ ] Document 45: all 30 requirements implemented and traced
+- [ ] Document 46: all 25 requirements implemented and traced
+- [ ] Document 47: all 32 requirements implemented and traced
+- [ ] Contracts committed before implementation and compatibility registry updated
+- [ ] All entities have migrations with rollback and catalogue entries
+- [ ] Signature points implemented from the Document 106 policy set (no hardcoded requirements)
+- [ ] Authorization, qualification and SoD enforced server-side with negative tests
+- [ ] Audit event and outbox row committed with every regulated state change
+- [ ] Guardrail checks pass (no bypass path)
+- [ ] All tests in `09_TEST_PLAN.md` executed with real recorded results
+- [ ] Validation impact recorded; higher-risk evidence retained
+- [ ] No unresolved blocking SPEC_GAP in scope
+- [ ] Every test case in `test-cases/WP-06/` executed and recorded (no NOT_STARTED)
+- [ ] All P1 test cases PASS; every FAIL has a defect reference and disposition
+- [ ] Evidence captured for every case in `validation/evidence/`
+- [ ] `traceability/TRACEABILITY_MASTER.csv` updated (build_stage, verification_state, evidence)
+- [ ] `status/build-status.json` updated and `tooling/status/rollup.py` re-run
+- [ ] Completion report delivered per CLAUDE.md §6

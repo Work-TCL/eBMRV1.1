@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Work Areas · Drug-Device Combination Product · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+<style>
+  .area-link{display:block;text-decoration:none;color:inherit}
+  .area-link .card{transition:border-color .12s,transform .12s}
+  .area-link:hover .card{border-color:var(--brand-300);transform:translateY(-2px)}
+  .area-icon{width:40px;height:40px;border-radius:var(--radius-md);flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;background:var(--brand-50);color:var(--brand-700)}
+</style>
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<header class="topbar" style="padding-left:var(--space-5)">
+  <div class="sidebar-mark"><span class="icon" data-icon="layers"></span></div>
+  <span class="fs-5 font-bold">NZ-eBMR</span>
+  <span class="profile-marker" data-profile="ddcp" style="margin-left:var(--space-2)">
+    <span class="icon" data-icon="layers"></span> Drug-Device Combination Product</span>
+  <div class="ml-auto flex items-center gap-3">
+    <span class="fs-2 text-muted">M. Ortiz — Filling/Assembly Operator</span>
+    <a href="../001-sign-in.html" class="btn btn-secondary btn-sm"><span class="icon" data-icon="log-out"></span> Sign out</a>
+  </div>
+</header>
+<main id="main" class="content" style="max-width:920px">
+  <div class="page-head"><div>
+    <h1 class="page-title">Choose a work area</h1>
+    <p class="page-subtitle">Acme Combination Products · Site 3 · Line C — EpiRelease Auto-Injector 0.3mg. Each work area opens with only its own screens in the sidebar.</p>
+  </div></div>
+  <div class="flex flex-col gap-3">
+    <a class="area-link" href="my-work/inbox.html">
+      <div class="card card-pad flex items-center gap-4">
+        <span class="area-icon"><span class="icon" data-icon="home"></span></span>
+        <span style="flex:1">
+          <span class="fs-5 font-bold" style="display:block">My Work</span>
+          <span class="fs-3 text-muted" style="display:block">Tasks assigned to you: ready, waiting, blocked, returned.</span>
+        </span>
+        <span class="fs-2 text-muted" style="white-space:nowrap">1 screens</span>
+        <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+      </div>
+    </a>
+    <a class="area-link" href="combination/new-batch.html">
+      <div class="card card-pad flex items-center gap-4">
+        <span class="area-icon"><span class="icon" data-icon="layers"></span></span>
+        <span style="flex:1">
+          <span class="fs-5 font-bold" style="display:block">Combination Product</span>
+          <span class="fs-3 text-muted" style="display:block">Admission and Part 4 route, compatibility, integrated master, filling, testing, labeling, cross-constituent issues and final release.</span>
+        </span>
+        <span class="fs-2 text-muted" style="white-space:nowrap">11 screens</span>
+        <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+      </div>
+    </a>
+    <a class="area-link" href="records/explorer.html">
+      <div class="card card-pad flex items-center gap-4">
+        <span class="area-icon"><span class="icon" data-icon="file-text"></span></span>
+        <span style="flex:1">
+          <span class="fs-5 font-bold" style="display:block">Records</span>
+          <span class="fs-3 text-muted" style="display:block">Record explorer and genealogy, audit timeline, inspection export.</span>
+        </span>
+        <span class="fs-2 text-muted" style="white-space:nowrap">3 screens</span>
+        <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+      </div>
+    </a>
+    <a class="area-link" href="admin/authority.html">
+      <div class="card card-pad flex items-center gap-4">
+        <span class="area-icon"><span class="icon" data-icon="shield-check"></span></span>
+        <span style="flex:1">
+          <span class="fs-5 font-bold" style="display:block">Administration</span>
+          <span class="fs-3 text-muted" style="display:block">Authority and training, interfaces and migration, support access, post-release amendments.</span>
+        </span>
+        <span class="fs-2 text-muted" style="white-space:nowrap">4 screens</span>
+        <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+      </div>
+    </a>
+  </div>
+
+  <p class="fs-2 font-semibold text-muted mt-6 mb-3" style="text-transform:uppercase;letter-spacing:.05em">Shared across every profile</p>
+  <a class="area-link" href="../setup/checklist.html">
+    <div class="card card-pad flex items-center gap-4">
+      <span class="area-icon" style="background:var(--surface-sunken);color:var(--ink-secondary)"><span class="icon" data-icon="list-checks"></span></span>
+      <span style="flex:1">
+        <span class="fs-5 font-bold" style="display:block">Setup &amp; masters</span>
+        <span class="fs-3 text-muted" style="display:block">Company and sites, users, roles, products, materials, bills of materials, equipment. One organisation — these are the same records every profile draws on.</span>
+      </span>
+      <span class="fs-2 text-muted" style="white-space:nowrap">8 screens</span>
+      <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+    </div>
+  </a>
+
+  <p class="fs-2 text-muted mt-6">Design preview only — no DocType, command, state or permission exists behind these screens. Choosing a work area is navigation, not an authority grant.</p>
+</main>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bill of materials · Setup · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="building"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">Organisation setup</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> Sign-in / profiles</a>
+      <div class="sidebar-section">Setup</div>
+      <a href="checklist.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Setup checklist</a>
+      <a href="company.html" class="sidebar-link"><span class="icon" data-icon="building"></span> Company &amp; sites</a>
+      <a href="users.html" class="sidebar-link"><span class="icon" data-icon="users"></span> Users</a>
+      <a href="roles.html" class="sidebar-link"><span class="icon" data-icon="shield-check"></span> Roles &amp; permissions</a>
+      <a href="products.html" class="sidebar-link"><span class="icon" data-icon="package"></span> Products</a>
+      <a href="materials.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Materials &amp; items</a>
+      <a href="bom.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="list-checks"></span> Bill of materials</a>
+      <a href="equipment.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Equipment &amp; rooms</a>
+      <div class="sidebar-section">Then</div>
+      <!-- <a href="../md/menu.html" class="sidebar-link"><span class="icon" data-icon="cross-medical"></span> Medical Device</a>
+      <a href="../ph/menu.html" class="sidebar-link"><span class="icon" data-icon="droplet"></span> Pharmaceutical</a> -->
+      <a href="../ddcp/menu.html" class="sidebar-link"><span class="icon" data-icon="layers"></span> Combination Product</a>
+    </nav>
+    <div class="sidebar-foot"><a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a></div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="k">Organisation</span><span class="v">Acme Life Sciences Group</span></span>
+      <span class="context-item"><span class="k">Scope</span><span class="v">Tenant-wide setup — applies to all profiles</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">L. Park — Configuration Administrator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 09:00 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="checklist.html">Setup</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Bill of Materials</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Bill of Materials</h1>
+        <p class="page-subtitle">Step 6 of 7 · Which materials, in what quantity, with what tolerance, go into one batch of a product.</p>
+      </div></div>
+      <div class="card mb-4">
+        <div class="card-header">
+          <div><div class="card-title">BOM — Paracetamol 500mg Tablets (PARA-500)</div>
+          <div class="card-subtitle">Batch size 250,000 tablets · version 3.2 · effective 15 Jul 2026</div></div>
+          <div class="flex items-center gap-2">
+            <button class="btn btn-secondary btn-sm" data-add-row="bom"><span class="icon" data-icon="plus"></span> Add line</button>
+            <button class="btn btn-primary btn-sm" data-demo-save="bomlist" data-demo-message="BOM version saved — demo only, nothing stored."><span class="icon" data-icon="check"></span> Save BOM</button>
+          </div>
+        </div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table" data-rows="bom">
+            <thead><tr><th>Material</th><th>Quantity per batch</th><th>Unit</th><th>Tolerance %</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="font-semibold">Paracetamol IP (API)</span><div class="fs-1 text-muted">MAT-1001</div></td>
+                <td><input class="cell-input tabular" value="50.000" data-sum-src></td>
+                <td>kg</td>
+                <td><input class="cell-input tabular" value="±2.0"></td>
+                <td class="text-right"><button class="btn btn-ghost btn-sm" data-remove-row><span class="icon" data-icon="x"></span></button></td>
+              </tr>
+              <tr>
+                <td><span class="font-semibold">Microcrystalline cellulose</span><div class="fs-1 text-muted">MAT-1002</div></td>
+                <td><input class="cell-input tabular" value="120.000" data-sum-src></td>
+                <td>kg</td>
+                <td><input class="cell-input tabular" value="±1.5"></td>
+                <td class="text-right"><button class="btn btn-ghost btn-sm" data-remove-row><span class="icon" data-icon="x"></span></button></td>
+              </tr>
+              <tr>
+                <td><span class="font-semibold">Magnesium stearate</span><div class="fs-1 text-muted">MAT-1003</div></td>
+                <td><input class="cell-input tabular" value="1.800" data-sum-src></td>
+                <td>kg</td>
+                <td><input class="cell-input tabular" value="±5.0"></td>
+                <td class="text-right"><button class="btn btn-ghost btn-sm" data-remove-row><span class="icon" data-icon="x"></span></button></td>
+              </tr>
+              <tr>
+                <td><span class="font-semibold">Opadry coating (blue)</span><div class="fs-1 text-muted">MAT-1004</div></td>
+                <td><input class="cell-input tabular" value="6.400" data-sum-src></td>
+                <td>kg</td>
+                <td><input class="cell-input tabular" value="±3.0"></td>
+                <td class="text-right"><button class="btn btn-ghost btn-sm" data-remove-row><span class="icon" data-icon="x"></span></button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-pad flex items-center justify-between" style="border-top:1px solid var(--border-hairline)">
+          <p class="fs-3 text-muted"><span data-count-for="bom">4</span> material lines</p>
+          <p class="fs-4 font-semibold">Total charged weight: <span class="tabular" data-sum-for="bom">178.200</span> kg</p>
+        </div>
+      </div>
+
+      <div class="card card-pad mb-4">
+        <p class="fs-4 font-semibold mb-2">What the tolerance column does</p>
+        <p class="fs-3 text-secondary">Tolerance is what makes dispensing enforceable. Magnesium stearate above is 1.800 kg ±5.0% — so the operator must land between 1.710 and 1.890 kg. Weigh 1.895 kg and the system refuses to accept it and opens an exception; there is no "close enough" path. Set tolerances too wide and the control is meaningless; too narrow and production stops constantly.</p>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header">
+          <div class="flex items-center gap-3" style="flex:1">
+            <div class="card-title">All BOM versions</div>
+            <span class="fs-2 text-muted"><span data-list-count="bomlist">4</span> records</span>
+          </div>
+          <div class="flex items-center gap-2"></div>
+        </div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table" data-list="bomlist">
+            <thead><tr><th>Product</th><th>BOM version</th><th>Batch size</th><th>Lines</th><th>Effective</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">Paracetamol 500mg Tablets</span><div class="fs-1 text-muted">PARA-500</div></td><td><span class="tabular">v3.2</span></td><td><span class="tabular">250,000 tablets</span></td><td><span class="tabular">4</span></td><td><span class="tabular">15 Jul 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Effective</span></td></tr>
+              <tr><td><span class="font-semibold">Paracetamol 500mg Tablets</span><div class="fs-1 text-muted">PARA-500</div></td><td><span class="tabular">v3.1</span></td><td><span class="tabular">250,000 tablets</span></td><td><span class="tabular">4</span></td><td><span class="tabular">Superseded</span></td><td><span class="state" data-state="na"><span class="icon" data-icon="slash-circle"></span> Obsolete</span></td></tr>
+              <tr><td><span class="font-semibold">Infusion Set IS-200</span><div class="fs-1 text-muted">IS-200</div></td><td><span class="tabular">Rev C</span></td><td><span class="tabular">1 unit</span></td><td><span class="tabular">4</span></td><td><span class="tabular">01 Jun 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Effective</span></td></tr>
+              <tr><td><span class="font-semibold">EpiRelease Auto-Injector</span><div class="fs-1 text-muted">EPIREL-03</div></td><td><span class="tabular">v1.4</span></td><td><span class="tabular">4,000 units</span></td><td><span class="tabular">4</span></td><td><span class="tabular">22 Jul 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Effective</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="empty-state" data-filter-empty="bomlist" style="display:none">
+          <span class="icon" data-icon="search"></span><p class="fs-3">No records match your search.</p>
+        </div>
+<div class="card-pad" style="padding-top:0"><p class="fs-2 text-muted">A BOM is versioned like everything else. Changing a quantity creates a new version — it never edits the one that past batches were made against.</p></div>      </div>
+
+<template data-row-template="bom">
+  <tr>
+    <td><select class="cell-input"><option>Select material…</option><option>MAT-1001 · Paracetamol IP (API)</option><option>MAT-1002 · Microcrystalline cellulose</option><option>MAT-1003 · Magnesium stearate</option><option>MAT-1004 · Opadry coating (blue)</option><option>MAT-1005 · Croscarmellose sodium</option></select></td>
+    <td><input class="cell-input tabular" placeholder="0.000" data-sum-src></td>
+    <td>kg</td>
+    <td><input class="cell-input tabular" placeholder="±0.0"></td>
+    <td class="text-right"><button class="btn btn-ghost btn-sm" data-remove-row><span class="icon" data-icon="x"></span></button></td>
+  </tr>
+</template>
+<template data-list-row="bomlist"><td><span class="font-semibold">New BOM version</span></td><td class="tabular">v3.3</td><td class="tabular">250,000 tablets</td><td class="tabular">—</td><td class="tabular">Draft</td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Draft</span></td></template>
+    </main>
+  </div>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

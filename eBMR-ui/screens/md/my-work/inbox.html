@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Work · MD · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="home"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">MD · My Work</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">My Work</div>
+      <a href="inbox.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="home"></span> Task inbox</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> Medical Device</span></span>
+      <span class="context-item"><span class="k">Active context</span><span class="v">Acme MedTech · Site 2 · Line B</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">K. Verma — Production Operator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">MD</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">My Work</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">My Work</h1>
+        <p class="page-subtitle">UX-SCR-002 · Tasks you may potentially perform in Medical Device — opening or acting still triggers server authorization</p>
+      </div></div>
+      <div class="tabs mb-4" data-tab-group="mw" role="tablist">
+        <button class="tab-btn" data-tab="ready" aria-selected="true" role="tab">Ready <span class="fs-1">(2)</span></button>
+        <button class="tab-btn" data-tab="waiting" aria-selected="false" role="tab">Waiting <span class="fs-1">(1)</span></button>
+        <button class="tab-btn" data-tab="blocked" aria-selected="false" role="tab">Blocked <span class="fs-1">(1)</span></button>
+        <button class="tab-btn" data-tab="returned" aria-selected="false" role="tab">Returned <span class="fs-1">(1)</span></button>
+        <button class="tab-btn" data-tab="done" aria-selected="false" role="tab">Completed recently</button>
+      </div>
+      <div class="tab-panel" data-tab-panel="ready" data-tab-group-target="mw" data-active>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="card card-pad">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> MD</span><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Ready</span></div>
+            <p class="fs-4 font-bold">Unit serial SN-88213</p>
+            <p class="fs-3 text-muted mt-1">Infusion Set IS-200 · Site 2, Line B</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">Due 14:30 EDT</p>
+          </div>
+          <div class="card card-pad" style="border-left:3px solid var(--status-serious-solid)">
+            <div class="flex items-center justify-between mb-2"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> MD</span><span class="state" data-state="conflict"><span class="icon" data-icon="alert-triangle"></span> Exceptions open</span></div>
+            <p class="fs-4 font-bold">Nonconformance NC-2231</p>
+            <p class="fs-3 text-muted mt-1">Leak decay pressure drop 3.2 kPa against a limit of ≤ 2.0 kPa</p>
+            <div class="divider" style="margin:var(--space-3) 0"></div>
+            <p class="fs-2 text-muted">Sorted first — exceptions are never buried</p>
+          </div>
+        </div>
+      </div>
+      <div class="tab-panel" data-tab-panel="waiting" data-tab-group-target="mw">
+        <div class="card card-pad"><p class="fs-4 font-semibold">Disposition — SN-88213</p>
+        <p class="fs-3 text-muted mt-1">Waiting on R. Oduya (Device Quality) to record a disposition for NC-2231. No restricted evidence is shown here beyond that dependency.</p></div>
+      </div>
+      <div class="tab-panel" data-tab-panel="blocked" data-tab-group-target="mw">
+        <div class="card card-pad"><p class="fs-4 font-semibold">Infusion Set IS-200 — next operation</p>
+        <p class="fs-3 text-muted mt-1">Blocked: qualification expired 02 Aug 2026. Route to training renewal is shown, not a dead link.</p></div>
+      </div>
+      <div class="tab-panel" data-tab-panel="returned" data-tab-group-target="mw">
+        <div class="card card-pad" style="border-left:3px solid var(--status-warning-solid)">
+        <p class="fs-2 text-muted mb-1">Acting under delegated authority</p>
+        <p class="fs-4 font-semibold">Returned finding — IS-200 Rev D draft</p>
+        <p class="fs-3 text-muted mt-1">Delegated from S. Rao, expires 08 Aug 2026. The signature remains the delegate's own identity, never the delegator's.</p></div>
+      </div>
+      <div class="tab-panel" data-tab-panel="done" data-tab-group-target="mw">
+        <div class="empty-state"><span class="icon" data-icon="check-circle"></span>
+        <p class="fs-3">4 items completed today — visible in Record explorer, not duplicated here.</p></div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

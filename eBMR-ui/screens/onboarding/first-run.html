@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Before setup · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="layers"></span></div>
+      <div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div>
+      <div class="fs-1" style="color:var(--ink-muted)">Combination Product — empty</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="welcome.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> Back to welcome</a>
+      <div class="sidebar-section">Work</div>
+      <a href="#" class="sidebar-link" aria-current="page"><span class="icon" data-icon="inbox"></span> My work</a>
+      <a href="#" class="sidebar-link" data-disabled><span class="icon" data-icon="play"></span> Assembly execution</a>
+      <a href="#" class="sidebar-link" data-disabled><span class="icon" data-icon="scan"></span> Filling &amp; assembly</a>
+      <a href="#" class="sidebar-link" data-disabled><span class="icon" data-icon="gauge"></span> Integrated testing</a>
+      <div class="sidebar-section">Quality</div>
+      <a href="#" class="sidebar-link" data-disabled><span class="icon" data-icon="alert-triangle"></span> Cross-constituent issues</a>
+      <a href="#" class="sidebar-link" data-disabled><span class="icon" data-icon="badge-check"></span> Final release</a>
+      <div class="sidebar-section">Setup</div>
+      <a href="../setup/checklist.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Setup checklist</a>
+    </nav>
+    <div class="sidebar-foot"><a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a></div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="k">Organisation</span><span class="v">Acme Life Sciences Group</span></span>
+      <span class="context-item"><span class="k">Profile</span><span class="v">Combination Product</span></span>
+      <span class="context-item"><span class="k">Site</span><span class="v">Not yet defined</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="uncommitted"><span class="dot"></span> Nothing configured</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 08:42 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="welcome.html">Onboarding</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">The app before setup</span></div>
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">My Work</h1>
+        <p class="page-subtitle">This is honestly what the application looks like on day one. Every screen tells you what is missing and where to fix it, rather than showing an empty grid with no explanation.</p>
+      </div></div>
+
+      <div class="banner mb-4" data-tone="info">
+        <span class="icon" data-icon="info"></span>
+        <div><p class="font-semibold">Setup is incomplete — production is locked</p>
+        <p class="fs-3 mt-1">Work cannot be created until a site, a product, a bill of materials and calibrated equipment exist. The greyed-out items in the sidebar unlock as you complete setup.</p></div>
+        <a class="btn btn-primary btn-sm" href="../setup/checklist.html">Open setup checklist</a>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><div class="card-title">Assigned to you</div></div>
+        <div class="empty-state">
+          <span class="icon" data-icon="inbox"></span>
+          <p class="fs-4 font-semibold" style="color:var(--ink-primary)">No work assigned yet</p>
+          <p class="fs-3 text-muted" style="max-width:52ch;margin:6px auto 0">Work appears here when a supervisor issues an assembly order to you. Nothing can be issued until products and integrated masters exist.</p>
+          <a class="btn btn-primary btn-sm mt-3" href="../setup/products.html"><span class="icon" data-icon="plus"></span> Define your first product</a>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div class="card">
+          <div class="card-header"><div class="card-title">Assemblies in progress</div></div>
+        <div class="empty-state">
+          <span class="icon" data-icon="play"></span>
+          <p class="fs-4 font-semibold" style="color:var(--ink-primary)">No assembly orders</p>
+          <p class="fs-3 text-muted" style="max-width:52ch;margin:6px auto 0">The first order can be issued once setup steps 1 to 7 are complete.</p>
+          
+        </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Awaiting your signature</div></div>
+        <div class="empty-state">
+          <span class="icon" data-icon="pen-line"></span>
+          <p class="fs-4 font-semibold" style="color:var(--ink-primary)">Nothing to sign</p>
+          <p class="fs-3 text-muted" style="max-width:52ch;margin:6px auto 0">Signature requests reach you only for steps your role is authorised to approve.</p>
+          
+        </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><div class="card-title">Why the sidebar items are greyed out</div></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Locked area</th><th>Needs</th><th>Unlocks after</th></tr></thead>
+            <tbody>
+              <tr><td>Filling &amp; assembly</td><td>Materials and a bill of materials</td><td>Setup steps 5 and 6</td></tr>
+              <tr><td>Assembly execution</td><td>A product, an integrated master and released equipment</td><td>Setup steps 4, 6 and 7</td></tr>
+              <tr><td>Integrated testing</td><td>Specifications defined on the integrated master</td><td>Setup step 6</td></tr>
+              <tr><td>Cross-constituent issues</td><td>At least one assembly in execution</td><td>First assembly issued</td></tr>
+              <tr><td>Final release</td><td>A completed assembly and a Final Release Authority</td><td>First assembly completed</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-pad" style="border-top:1px solid var(--border-hairline)">
+          <p class="fs-2 text-muted">This is deliberate. A half-configured system that lets an operator start a batch is more dangerous than one that refuses — the record would be missing the controls that make it defensible.</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <a class="btn btn-primary" href="../setup/checklist.html"><span class="icon" data-icon="arrow-right"></span> Complete setup</a>
+        <a class="btn btn-secondary" href="new-user.html">See a new person's first sign-in</a>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

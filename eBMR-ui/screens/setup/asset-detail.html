@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Asset record — FS-8 · Setup · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="building"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">Organisation setup</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> Sign-in / profiles</a>
+      <div class="sidebar-section">Setup</div>
+      <a href="checklist.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Setup checklist</a>
+      <a href="company.html" class="sidebar-link"><span class="icon" data-icon="building"></span> Company &amp; sites</a>
+      <a href="users.html" class="sidebar-link"><span class="icon" data-icon="users"></span> Users</a>
+      <a href="roles.html" class="sidebar-link"><span class="icon" data-icon="shield-check"></span> Roles &amp; permissions</a>
+      <a href="products.html" class="sidebar-link"><span class="icon" data-icon="package"></span> Products</a>
+      <a href="materials.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Materials &amp; items</a>
+      <a href="bom.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Bill of materials</a>
+      <a href="equipment.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="gauge"></span> Equipment &amp; rooms</a>
+      <div class="sidebar-section">Then</div>
+      <!-- <a href="../md/menu.html" class="sidebar-link"><span class="icon" data-icon="cross-medical"></span> Medical Device</a>
+      <a href="../ph/menu.html" class="sidebar-link"><span class="icon" data-icon="droplet"></span> Pharmaceutical</a> -->
+      <a href="../ddcp/menu.html" class="sidebar-link"><span class="icon" data-icon="layers"></span> Combination Product</a>
+    </nav>
+    <div class="sidebar-foot"><a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a></div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="k">Organisation</span><span class="v">Acme Life Sciences Group</span></span>
+      <span class="context-item"><span class="k">Scope</span><span class="v">Tenant-wide setup — applies to all profiles</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">L. Park — Configuration Administrator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 09:00 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="checklist.html">Setup</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Asset Record — Fill Station FS-8</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Asset Record — Fill Station FS-8</h1>
+        <p class="page-subtitle">One worked example of what a full asset record holds, drilled down from the equipment register.</p>
+      </div></div>
+      <div class="card card-pad mb-4">
+        <div class="grid grid-cols-4 gap-4">
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Asset ID</p><p class="fs-4 font-semibold mt-1">FS-8</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Category</p><p class="fs-4 font-semibold mt-1">Filling — fill / dose pump</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">GxP critical</p><p class="fs-4 font-semibold mt-1">Yes — direct product contact</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Status</p><p class="fs-4 font-semibold mt-1"><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> In service</span></p></div>
+
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Location</p><p class="fs-4 font-semibold mt-1">Site 3 · Acme Combination Products · Line C</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Manufacturer / model</p><p class="fs-4 font-semibold mt-1">Bosch Packaging FST-2200</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Commissioned</p><p class="fs-4 font-semibold mt-1">14 Mar 2024</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Calibration frequency</p><p class="fs-4 font-semibold mt-1">Quarterly</p></div>
+
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><div><div class="card-title">Calibration history &amp; schedule</div>
+          <div class="card-subtitle">Quarterly — next due date matches the equipment register exactly</div></div></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Date</th><th>Result</th><th>Certificate</th><th>Performed by</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td class="tabular">22 Jan 2026</td><td>Passed</td><td class="tabular">CAL-FS8-0122</td><td>Metrology Services Inc.</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Passed</span></td></tr>
+              <tr><td class="tabular">22 Apr 2026</td><td>Passed</td><td class="tabular">CAL-FS8-0422</td><td>Metrology Services Inc.</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Passed</span></td></tr>
+              <tr><td class="tabular">22 Jul 2026</td><td>Passed</td><td class="tabular">CAL-FS8-0722</td><td>Metrology Services Inc.</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Passed</span></td></tr>
+              <tr><td class="tabular">22 Oct 2026</td><td>Scheduled — next due</td><td class="tabular">—</td><td>Metrology Services Inc.</td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Due</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-pad" style="border-top:1px solid var(--border-hairline)">
+          <p class="fs-2 text-muted">This is the record "Create a final assembly" step 4 actually reads when it clears or blocks FS-8. Nothing about readiness is guessed — it is this table, checked live.</p>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><div class="card-title">Preventive maintenance</div></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Date</th><th>Work performed</th><th>Performed by</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td class="tabular">10 Feb 2026</td><td>Preventive — seal replacement</td><td>R. Kade, Engineering</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Complete</span></td></tr>
+              <tr><td class="tabular">15 May 2026</td><td>Preventive — nozzle inspection</td><td>R. Kade, Engineering</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Complete</span></td></tr>
+              <tr><td class="tabular">15 Aug 2026</td><td>Preventive — scheduled, due in 10 days</td><td>R. Kade, Engineering</td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Scheduled</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><div><div class="card-title">Qualification — IQ / OQ / PQ</div>
+          <div class="card-subtitle">Established once, at commissioning; re-qualification is triggered by a major change, not by a schedule</div></div></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Qualification</th><th>Completed</th><th>Document</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td>Installation Qualification (IQ)</td><td class="tabular">10 Mar 2024</td><td class="tabular">IQ-FS8-01</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Passed</span></td></tr>
+              <tr><td>Operational Qualification (OQ)</td><td class="tabular">12 Mar 2024</td><td class="tabular">OQ-FS8-01</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Passed</span></td></tr>
+              <tr><td>Performance Qualification (PQ)</td><td class="tabular">20 Mar 2024</td><td class="tabular">PQ-FS8-01</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Passed</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><div><div class="card-title">Used in these final assemblies</div>
+          <div class="card-subtitle">Genealogy — every DDCP order this specific machine has touched, most recent first</div></div></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Final assembly</th><th>Product</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td class="tabular font-semibold">FA-33210</td><td>EpiRelease Auto-Injector 0.3mg</td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Active</span></td></tr>
+              <tr><td class="tabular font-semibold">FA-33188</td><td>EpiRelease Auto-Injector 0.3mg</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Released</span></td></tr>
+              <tr><td class="tabular font-semibold">FA-33140</td><td>EpiRelease Auto-Injector 0.3mg</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Released</span></td></tr>
+              <tr><td class="tabular font-semibold">FA-33002</td><td>EpiRelease Auto-Injector 0.3mg</td><td><span class="state" data-state="failed"><span class="icon" data-icon="x"></span> Rejected</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-pad" style="border-top:1px solid var(--border-hairline)">
+          <p class="fs-2 text-muted">This is why eBMR calls this an asset register, not an equipment list. If FS-8 failed calibration tomorrow, this table is how you'd find every batch that might be affected — in seconds, not a records search that takes days.</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <a href="equipment.html" class="btn btn-secondary btn-sm"><span class="icon" data-icon="arrow-left"></span> Back to equipment register</a>
+        <a href="../ddcp/combination/filling.html" class="btn btn-secondary btn-sm"><span class="icon" data-icon="scan"></span> See FS-8 in use on Filling &amp; assembly</a>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

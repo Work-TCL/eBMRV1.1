@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Company & sites · Setup · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="building"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">Organisation setup</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> Sign-in / profiles</a>
+      <div class="sidebar-section">Setup</div>
+      <a href="checklist.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Setup checklist</a>
+      <a href="company.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="building"></span> Company &amp; sites</a>
+      <a href="users.html" class="sidebar-link"><span class="icon" data-icon="users"></span> Users</a>
+      <a href="roles.html" class="sidebar-link"><span class="icon" data-icon="shield-check"></span> Roles &amp; permissions</a>
+      <a href="products.html" class="sidebar-link"><span class="icon" data-icon="package"></span> Products</a>
+      <a href="materials.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Materials &amp; items</a>
+      <a href="bom.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Bill of materials</a>
+      <a href="equipment.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Equipment &amp; rooms</a>
+      <div class="sidebar-section">Then</div>
+      <!-- <a href="../md/menu.html" class="sidebar-link"><span class="icon" data-icon="cross-medical"></span> Medical Device</a>
+      <a href="../ph/menu.html" class="sidebar-link"><span class="icon" data-icon="droplet"></span> Pharmaceutical</a> -->
+      <a href="../ddcp/menu.html" class="sidebar-link"><span class="icon" data-icon="layers"></span> Combination Product</a>
+    </nav>
+    <div class="sidebar-foot"><a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a></div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="k">Organisation</span><span class="v">Acme Life Sciences Group</span></span>
+      <span class="context-item"><span class="k">Scope</span><span class="v">Tenant-wide setup — applies to all profiles</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">L. Park — Configuration Administrator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 09:00 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="checklist.html">Setup</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Company &amp; Sites</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Company &amp; Sites</h1>
+        <p class="page-subtitle">Step 1 of 7 · The legal entity that manufactures, and every physical place where work happens.</p>
+      </div></div>
+      <div class="card mb-4">
+        <div class="card-header"><div class="card-title">Legal entity</div>
+        <span class="fs-2 text-muted">Appears on every released record and export</span></div>
+        <div class="card-pad grid grid-cols-3 gap-4">
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Registered name</p><p class="fs-4 font-semibold mt-1">Acme Life Sciences Group Pvt. Ltd.</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Registration / FEI</p><p class="fs-4 font-semibold mt-1 tabular">3012857441</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Time zone</p><p class="fs-4 font-semibold mt-1">Asia/Kolkata (records stored UTC)</p></div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header">
+          <div class="flex items-center gap-3" style="flex:1">
+            <div class="card-title">Sites, areas and lines</div>
+            <span class="fs-2 text-muted"><span data-list-count="sites">4</span> records</span>
+          </div>
+          <div class="flex items-center gap-2"><div class="rel" style="max-width:260px;flex:1"><span class="icon" data-icon="search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ink-muted)"></span><input class="input" style="padding-left:32px" placeholder="Search…" data-filter-for="sites"></div><button class="btn btn-primary btn-sm" data-modal-open="add-site"><span class="icon" data-icon="plus"></span> Add site</button></div>
+        </div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table" data-list="sites">
+            <thead><tr><th>Site</th><th>Type</th><th>Profile</th><th>Areas / lines</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">Site 1 — Ahmedabad</span><div class="fs-1 text-muted">Oral solid dose</div></td><td>Manufacturing</td><td>Pharmaceutical</td><td>Line A · Booth D-101</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">Site 2 — Pune</span><div class="fs-1 text-muted">Device assembly</div></td><td>Manufacturing</td><td>Medical Device</td><td>Line B · WS-04</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">Site 3 — Bengaluru</span><div class="fs-1 text-muted">Combination assembly</div></td><td>Manufacturing</td><td>Combination Product</td><td>Line C · FS-8</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">Warehouse W-1</span><div class="fs-1 text-muted">Central store</div></td><td>Storage</td><td>All</td><td>—</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="empty-state" data-filter-empty="sites" style="display:none">
+          <span class="icon" data-icon="search"></span><p class="fs-3">No records match your search.</p>
+        </div>
+<div class="card-pad" style="padding-top:0"><p class="fs-2 text-muted">A site's profile decides which vocabulary its records use. A device site never shows drug terminology, and vice versa.</p></div>      </div>
+
+      <div class="card card-pad">
+        <p class="fs-4 font-semibold mb-2">What a "site" means here</p>
+        <p class="fs-3 text-secondary">A site is a licensed manufacturing location. Inside it are <strong>areas</strong> (a dispensing booth, a clean room) and <strong>lines</strong> (a packaging line, an assembly bench). Every executed step records exactly which site, area and line it happened on — an inspector will ask.</p>
+      </div>
+
+
+<div class="modal-backdrop" id="add-site">
+  <div class="modal modal-lg" data-demo-form>
+    <div class="modal-header">
+      <div><div class="modal-title">Add site</div><p class="fs-3 text-muted mt-1">A new manufacturing or storage location.</p></div>
+      <button data-modal-close class="btn-icon btn-ghost"><span class="icon" data-icon="x"></span></button>
+    </div>
+    <div class="modal-body">
+        <div class="field"><label class="label">Site name <span class="req">*</span></label>
+          <input class="input" data-field="site" data-required placeholder="e.g. Site 4 — Hyderabad" value="">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Site type <span class="req">*</span></label>
+          <select class="select" data-field="type" data-required><option>Manufacturing</option><option>Storage</option><option>Laboratory</option><option>Packaging only</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Profile <span class="req">*</span></label>
+          <select class="select" data-field="profile" data-required><option>Pharmaceutical</option><option>Medical Device</option><option>Combination Product</option><option>All</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Areas / lines</label>
+          <input class="input" data-field="areas" placeholder="e.g. Line D · Booth D-201" value="">
+<p class="hint">Comma-separated. You can add more later.</p>
+        </div>        <div class="field"><label class="label">Address</label>
+          <textarea class="input" rows="2" data-field="addr" placeholder="Street, city, country"></textarea>
+
+        </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary" data-demo-save="sites" data-demo-message="Site added — demo only, nothing stored.">
+        <span class="icon" data-icon="check"></span> Add site</button>
+    </div>
+  </div>
+</div>
+
+<template data-list-row="sites"><td><span class="font-semibold">{{site}}</span></td><td>{{type}}</td><td>{{profile}}</td><td>{{areas}}</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></template>
+    </main>
+  </div>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

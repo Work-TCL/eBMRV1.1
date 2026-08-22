@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Execution issuance · PH · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="database"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">PH · Masters</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Masters</div>
+      <a href="admission.html" class="sidebar-link"><span class="icon" data-icon="file-text"></span> Admission boundary</a>
+      <a href="catalogue.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Master catalogue</a>
+      <a href="editor.html" class="sidebar-link"><span class="icon" data-icon="pen"></span> Master editor</a>
+      <a href="validation.html" class="sidebar-link"><span class="icon" data-icon="check-circle"></span> Validation & comparison</a>
+      <a href="approval.html" class="sidebar-link"><span class="icon" data-icon="badge-check"></span> Approval & effectivity</a>
+      <a href="issuance.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="file-plus-2"></span> Execution issuance</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="ph" style="padding:2px 8px"><span class="icon" data-icon="droplet"></span> Pharmaceutical</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="uncommitted"><span class="dot"></span> Preflight — not yet issued</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">M. Chen — Planner/Batch Issuer</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">PH</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Execution Request &amp; Issuance</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Execution Request &amp; Issuance</h1>
+        <p class="page-subtitle">UX-SCR-008 · Issuance creates an immutable governing record — it is not product release</p>
+      </div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Batch identity</div></div>
+        <div class="card-pad grid grid-cols-2 gap-4">
+          <div class="field mb-0"><label class="label">Batch <span class="req">*</span></label><input class="input tabular" value="B-2026-0142"><p class="hint">Uniqueness verified against the full record set, not just recent history.</p></div>
+          <div class="field mb-0"><label class="label">Planned quantity</label><input class="input tabular" value="248,120 tablets"></div>
+        </div>
+      </div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Selected effective master</div></div>
+        <div class="card-pad"><p class="fs-3">Exactly one deterministic master applies — no selection dropdown is shown.</p><div class="flex items-center gap-3 mt-2" style="padding:var(--space-3);background:var(--surface-sunken);border-radius:var(--radius-md)"><span class="icon" data-icon="file-text" style="color:var(--brand-600)"></span><div><p class="fs-3 font-semibold">MBR-PARA-500 v3.2</p><p class="fs-2 text-muted">Governing at Site 1 for all sizes — this is why it was selected.</p></div></div></div>
+      </div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Preflight findings</div><span class="fs-2 text-muted">Snapshot: 42 steps, 4 materials, 6 signature points</span></div>
+        <div class="card-pad"><div class="flex flex-wrap gap-3"><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Admission &amp; capability — current</span> <span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Configuration version — current</span> <span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> External lab readiness — stale, 40 min old</span></div></div>
+      </div>
+      <div class="card card-pad"><button class="btn btn-primary btn-lg"><span class="icon" data-icon="badge-check"></span> Issue snapshot</button><p class="hint mt-2">After commit: snapshot ID and root-digest fingerprint, transition event and state appear here. On failure, no partial "Issued" state is ever shown.</p></div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

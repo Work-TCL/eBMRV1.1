@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en" data-density="shopfloor">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guided execution · MD · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-shopfloor.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="gauge"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">MD · Production</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Production</div>
+      <a href="new-batch.html" class="sidebar-link"><span class="icon" data-icon="file-plus-2"></span> Create a batch</a>
+      <a href="control-board.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Control board</a>
+      <a href="readiness.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Readiness checklist</a>
+      <a href="execution.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="cross-medical"></span> Guided execution</a>
+      <a href="material-scan.html" class="sidebar-link"><span class="icon" data-icon="scan"></span> Material scan/issue</a>
+      <a href="equipment.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Equipment/line clearance</a>
+      <a href="verification.html" class="sidebar-link"><span class="icon" data-icon="user"></span> Independent verification</a>
+      <a href="inspection.html" class="sidebar-link"><span class="icon" data-icon="search"></span> Inspection/sampling result</a>
+      <a href="timer-yield.html" class="sidebar-link"><span class="icon" data-icon="clock"></span> Timer/yield/reconciliation</a>
+      <a href="pause.html" class="sidebar-link"><span class="icon" data-icon="alert-circle"></span> Pause/interruption</a>
+      <a href="hold.html" class="sidebar-link"><span class="icon" data-icon="flag"></span> Hold/issue</a>
+      <a href="packaging.html" class="sidebar-link"><span class="icon" data-icon="package"></span> Packaging/label control</a>
+      <a href="lab.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Lab dependency panel</a>
+      <a href="correction.html" class="sidebar-link"><span class="icon" data-icon="pen"></span> Correction/late-entry</a>
+      <a href="completion.html" class="sidebar-link"><span class="icon" data-icon="clipboard"></span> Completion review</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> Medical Device</span></span>
+      <span class="context-item"><span class="k">Site / line</span><span class="v">Site 2 · Line B</span></span>
+      <span class="context-item"><span class="k">Product</span><span class="v">Infusion Set IS-200</span></span>
+      <span class="context-item"><span class="k">Unit serial</span><span class="v">SN-88213</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">K. Verma — Production Operator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">MD</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Final functional test</span></div>
+      <div class="ml-auto"><button class="btn btn-danger btn-sm"><span class="icon" data-icon="flag"></span> Stop / Raise Issue</button></div>
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Final functional test</h1>
+        <p class="page-subtitle">UX-SCR-011 · Unit serial SN-88213 · Infusion Set IS-200 · governing Rev C snapshot</p>
+      </div></div>
+      <div class="progress-track mb-6"><div class="progress-fill" style="width:45%"></div></div>
+      <div class="grid" style="grid-template-columns:300px 1fr;gap:24px">
+        <div class="card" style="align-self:start">
+          <div class="card-header"><div class="card-title">Steps</div></div>
+        <div class="card-pad"><div class="stepper">
+          <div class="step-item" data-step-state="completed"><div class="step-marker"><span class="icon" data-icon="check"></span></div><div><div class="step-title">OP-010 Component admission</div><div class="step-meta">Accepted — UDI scan verified</div></div></div>
+          <div class="step-item" data-step-state="completed"><div class="step-marker"><span class="icon" data-icon="check"></span></div><div><div class="step-title">OP-020 Assembly</div><div class="step-meta">Accepted — independently verified</div></div></div>
+          <div class="step-item" data-step-state="blocked"><div class="step-marker"><span class="icon" data-icon="lock"></span></div><div><div class="step-title">OP-030 Final functional test</div><div class="step-meta">Failed — NC-2231 opened</div></div></div>
+          <div class="step-item" data-step-state="available"><div class="step-marker">4</div><div><div class="step-title">OP-040 Disposition</div><div class="step-meta">Blocked — awaiting Device Quality</div></div></div>
+          <div class="step-item" data-step-state="available"><div class="step-marker">5</div><div><div class="step-title">OP-050 Record completion</div><div class="step-meta">Not applicable until step 4 clears</div></div></div>
+        </div></div>
+        </div>
+        <div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">OP-030 — Final functional test</div><span class="fs-2 text-muted">Governing instruction IS-200-WI-07 · EQ-7710</span></div>
+        <div class="card-pad grid grid-cols-2 gap-4">
+          <div class="field mb-0"><label class="label">Unit serial (scanned)</label>
+            <div class="scan-field"><span class="icon" data-icon="scan"></span>
+            <input class="input tabular" value="SN-88213" disabled><span class="scan-tag">Scan</span></div></div>
+          <div class="field mb-0"><label class="label">Leak decay pressure drop <span class="req">*</span></label>
+            <div class="input-measure"><input class="input tabular is-error" value="3.2"><span class="unit">kPa</span></div>
+            <p class="error-text"><span class="icon" data-icon="alert-circle"></span> Outside limit. Value retained, not represented as saved.</p></div>
+        </div>
+        <button class="btn btn-secondary btn-sm" disabled>Accept anyway</button>
+        <p class="btn-reason"><span class="icon" data-icon="lock"></span> Not offered. A failed result changes the journey to containment; it is never an option to override at the point of entry.</p>
+
+      </div>
+      <div class="card card-pad mb-4"><div class="flex items-start gap-3" style="padding:var(--space-3);background:var(--status-critical-bg);border-radius:var(--radius-md)">
+        <span class="icon" data-icon="alert-triangle" style="color:var(--status-critical-text);flex-shrink:0;margin-top:2px"></span>
+        <p class="fs-3" style="color:var(--status-critical-text)"><strong>NC-2231</strong> opened automatically from this failed result. Affected scope: Unit serial SN-88213 only. Later steps cannot proceed until Device Quality records a disposition.</p></div></div>
+      <div class="flex items-center justify-between mt-4"><button class="btn btn-secondary"><span class="icon" data-icon="arrow-left"></span> Pause</button><div class="text-right"><button class="btn btn-primary" disabled>Continue <span class="icon" data-icon="arrow-right"></span></button><p class="btn-reason" style="margin-left:auto">Blocked by NC-2231 — Device Quality disposition required.</p></div></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

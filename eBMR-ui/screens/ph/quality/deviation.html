@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deviation/investigation · PH · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="droplet"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">PH · Pharmaceutical Quality</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Pharmaceutical Quality</div>
+      <a href="deviation.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="alert-triangle"></span> Deviation/investigation</a>
+      <a href="review.html" class="sidebar-link"><span class="icon" data-icon="clipboard"></span> Quality review</a>
+      <a href="release.html" class="sidebar-link"><span class="icon" data-icon="badge-check"></span> Release ceremony</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="ph" style="padding:2px 8px"><span class="icon" data-icon="droplet"></span> Pharmaceutical</span></span>
+      <span class="context-item"><span class="k">Record</span><span class="v">DEV-0517</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">D. Iyer — Drug Investigation Owner</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">PH</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Drug Deviation / Investigation</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Drug Deviation / Investigation</h1>
+        <p class="page-subtitle">UX-SCR-021 · Drug profile only — Deviation / Discrepancy / OOS / Investigation; there is no Rework in v1</p>
+      </div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Scope</div></div>
+        <div class="card-pad grid grid-cols-3 gap-4">
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Batch</p><p class="fs-4 font-semibold mt-1">B-2026-0142</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Type</p><p class="fs-4 font-semibold mt-1">OOS — Friability</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Related batches checked</p><p class="fs-4 font-semibold mt-1">2 — none affected</p></div>
+        </div>
+      </div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Chronology</div></div>
+        <div class="card-pad"><div class="stepper">
+          <div class="step-item" data-step-state="completed"><div class="step-marker"><span class="icon" data-icon="check"></span></div><div><div class="step-title"> OOS result recorded</div><div class="step-meta">K. Verma, 11:44 EDT</div></div></div>
+          <div class="step-item" data-step-state="completed"><div class="step-marker"><span class="icon" data-icon="check"></span></div><div><div class="step-title"> Immediate containment — batch held</div><div class="step-meta">A. Desai, 11:46 EDT</div></div></div>
+          <div class="step-item" data-step-state="current"><div class="step-marker">3</div><div><div class="step-title"> Root cause assessment</div><div class="step-meta">In progress — D. Iyer</div></div></div>
+          <div class="step-item" data-step-state="available"><div class="step-marker">4</div><div><div class="step-title"> QU disposition &amp; release impact</div><div class="step-meta">Not started</div></div></div>
+        </div></div>
+      </div>
+      <div class="card card-pad">
+        <div class="field"><label class="label">Proposed conclusion <span class="req">*</span></label>
+        <textarea class="input" rows="3" placeholder="Root cause, evidence and proposed action"></textarea></div>
+        <button class="btn btn-secondary" disabled><span class="icon" data-icon="badge-check"></span> Propose conclusion for QU approval</button>
+        <p class="btn-reason"><span class="icon" data-icon="lock"></span> D. Iyer builds the chronology and proposes a conclusion but cannot Quality-approve their own required conclusion — a different Quality Unit reviewer signs the disposition.</p>
+      </div>
+      <div class="card card-pad"><p class="fs-3 text-muted">There is no Rework or Reprocess action anywhere on this screen — pharmaceutical reprocessing is excluded in v1.</p></div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

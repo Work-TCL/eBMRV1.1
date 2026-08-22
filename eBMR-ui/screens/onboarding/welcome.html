@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Welcome · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div style="min-height:100vh;background:var(--surface-page)">
+  <div class="context-bar">
+    <span class="context-item"><span class="k">Organisation</span><span class="v">Acme Life Sciences Group</span></span>
+    <span class="context-item"><span class="k">Status</span><span class="v">New workspace — not yet configured</span></span>
+    <span class="context-item"><span class="k">Signed in</span><span class="v">L. Park — Configuration Administrator</span></span>
+    <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 08:40 EDT</span>
+  </div>
+  <main id="main" style="max-width:900px;margin:0 auto;padding:var(--space-8) var(--space-6)">
+
+    <div class="flex items-center gap-3 mb-6">
+      <div class="sidebar-mark" style="width:38px;height:38px"><span class="icon" data-icon="list-checks"></span></div>
+      <div>
+        <div class="fs-6 font-bold">Welcome to NZ-eBMR</div>
+        <div class="fs-3 text-muted">Electronic batch manufacturing records</div>
+      </div>
+    </div>
+
+    <div class="card card-pad mb-5">
+      <h1 class="fs-6 font-bold mb-2">Your workspace is empty — and that is correct.</h1>
+      <p class="fs-4 text-secondary" style="max-width:64ch">NZ-eBMR does not ship with sample products, made-up materials or placeholder users. A regulated record can only be trusted if every value in it was deliberately entered by a named person. So on day one there is nothing here, and the first job is to describe your operation to the system.</p>
+      <p class="fs-3 text-muted mt-3">This takes an administrator roughly half a day for one site. You do it once.</p>
+    </div>
+
+    <div class="grid grid-cols-3 gap-4 mb-6">
+      <div class="card card-pad">
+        <span class="icon mb-2" data-icon="file-text" style="color:var(--brand-600)"></span>
+        <p class="fs-4 font-semibold mb-1">It replaces the paper batch record</p>
+        <p class="fs-3 text-muted">The same document, the same steps, the same signatures — but it refuses to let the wrong thing be written down.</p>
+      </div>
+      <div class="card card-pad">
+        <span class="icon mb-2" data-icon="lock" style="color:var(--brand-600)"></span>
+        <p class="fs-4 font-semibold mb-1">Nothing can be quietly changed</p>
+        <p class="fs-3 text-muted">Every entry is attributed, time-stamped and permanent. A correction is a new entry with a reason, never an erasure.</p>
+      </div>
+      <div class="card card-pad">
+        <span class="icon mb-2" data-icon="shield-check" style="color:var(--brand-600)"></span>
+        <p class="fs-4 font-semibold mb-1">It stops work that must not proceed</p>
+        <p class="fs-3 text-muted">Expired material, an uncalibrated balance, an untrained operator — the system blocks the step and says exactly why.</p>
+      </div>
+    </div>
+
+    <div class="card mb-5">
+      <div class="card-header">
+        <div><div class="card-title">Before anyone can run a batch, seven things must exist</div>
+        <div class="card-subtitle">In this order — each step depends on the one above it</div></div>
+        <span class="fs-2 text-muted">0 of 7 done</span>
+      </div>
+      <div style="border-top:1px solid var(--border-hairline)">
+        <a class="setup-step" href="../setup/company.html" data-step-state="todo">
+          <span class="num">1</span>
+          <span class="setup-step-body">
+            <span class="setup-step-title"><span class="icon" data-icon="building"></span> Company &amp; sites</span>
+            <span class="setup-step-meta">Where you manufacture</span>
+          </span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+        <a class="setup-step" href="../setup/users.html" data-step-state="todo">
+          <span class="num">2</span>
+          <span class="setup-step-body">
+            <span class="setup-step-title"><span class="icon" data-icon="users"></span> Users</span>
+            <span class="setup-step-meta">Who can sign in</span>
+          </span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+        <a class="setup-step" href="../setup/roles.html" data-step-state="todo">
+          <span class="num">3</span>
+          <span class="setup-step-body">
+            <span class="setup-step-title"><span class="icon" data-icon="shield-check"></span> Roles &amp; permissions</span>
+            <span class="setup-step-meta">What each person may do</span>
+          </span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+        <a class="setup-step" href="../setup/products.html" data-step-state="todo">
+          <span class="num">4</span>
+          <span class="setup-step-body">
+            <span class="setup-step-title"><span class="icon" data-icon="package"></span> Products</span>
+            <span class="setup-step-meta">What you make</span>
+          </span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+        <a class="setup-step" href="../setup/materials.html" data-step-state="todo">
+          <span class="num">5</span>
+          <span class="setup-step-body">
+            <span class="setup-step-title"><span class="icon" data-icon="database"></span> Materials</span>
+            <span class="setup-step-meta">What goes into it</span>
+          </span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+        <a class="setup-step" href="../setup/bom.html" data-step-state="todo">
+          <span class="num">6</span>
+          <span class="setup-step-body">
+            <span class="setup-step-title"><span class="icon" data-icon="list-checks"></span> Bill of materials</span>
+            <span class="setup-step-meta">How much of each</span>
+          </span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+        <a class="setup-step" href="../setup/equipment.html" data-step-state="todo">
+          <span class="num">7</span>
+          <span class="setup-step-body">
+            <span class="setup-step-title"><span class="icon" data-icon="gauge"></span> Equipment &amp; rooms</span>
+            <span class="setup-step-meta">What you make it with</span>
+          </span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+      </div>
+      <div class="card-pad" style="border-top:1px solid var(--border-hairline)">
+        <p class="fs-2 text-muted">Why the order matters: you cannot assign a user to a site that does not exist, cannot write a bill of materials before the materials exist, and cannot start a batch before there is equipment to make it on. The system enforces this — later steps stay locked until their prerequisites are in place.</p>
+      </div>
+    </div>
+
+    <div class="card card-pad mb-5">
+      <p class="fs-4 font-semibold mb-2">One decision to make first: which profiles you run</p>
+      <p class="fs-3 text-secondary mb-3">A profile is the regulatory world a product lives in. It decides what a batch is called, what a problem is called, who may release it, and which records the system demands. Profiles never blend — a product belongs to exactly one.</p>
+      <div class="grid grid-cols-3 gap-3">
+        <div class="card card-pad" style="border-color:var(--profile-md)">
+          <span class="profile-marker" data-profile="md"><span class="icon" data-icon="cross-medical"></span> Medical Device</span>
+          <p class="fs-3 text-muted mt-2">21 CFR 820 / ISO 13485. Device History Records, serialised units, nonconformances.</p>
+        </div>
+        <div class="card card-pad" style="border-color:var(--profile-ph)">
+          <span class="profile-marker" data-profile="ph"><span class="icon" data-icon="droplet"></span> Pharmaceutical</span>
+          <p class="fs-3 text-muted mt-2">21 CFR 210/211. Batch records, yield reconciliation, deviations, Quality Unit release.</p>
+        </div>
+        <div class="card card-pad" style="border-color:var(--profile-ddcp)">
+          <span class="profile-marker" data-profile="ddcp"><span class="icon" data-icon="layers"></span> Combination Product</span>
+          <p class="fs-3 text-muted mt-2">21 CFR Part 4. Both rule-sets at once, plus final assembly and a single release authority.</p>
+        </div>
+      </div>
+      <p class="hint mt-3">You can run all three in one organisation, as Acme does — each site works in its own profile.</p>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <a class="btn btn-primary btn-lg" href="../setup/checklist.html"><span class="icon" data-icon="arrow-right"></span> Start setup</a>
+      <a class="btn btn-secondary btn-lg" href="first-run.html">See what the app looks like before setup</a>
+    </div>
+    <p class="hint mt-4">Already configured? <a href="../001-sign-in.html">Go to sign-in</a>.</p>
+
+  </main>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create a build order · MD · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="gauge"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">MD · Production</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Production</div>
+      <a href="new-batch.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="file-plus-2"></span> Create a batch</a>
+      <a href="control-board.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Control board</a>
+      <a href="readiness.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Readiness checklist</a>
+      <a href="execution.html" class="sidebar-link"><span class="icon" data-icon="cross-medical"></span> Guided execution</a>
+      <a href="material-scan.html" class="sidebar-link"><span class="icon" data-icon="scan"></span> Material scan/issue</a>
+      <a href="equipment.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Equipment/line clearance</a>
+      <a href="verification.html" class="sidebar-link"><span class="icon" data-icon="user"></span> Independent verification</a>
+      <a href="inspection.html" class="sidebar-link"><span class="icon" data-icon="search"></span> Inspection/sampling result</a>
+      <a href="timer-yield.html" class="sidebar-link"><span class="icon" data-icon="clock"></span> Timer/yield/reconciliation</a>
+      <a href="pause.html" class="sidebar-link"><span class="icon" data-icon="alert-circle"></span> Pause/interruption</a>
+      <a href="hold.html" class="sidebar-link"><span class="icon" data-icon="flag"></span> Hold/issue</a>
+      <a href="packaging.html" class="sidebar-link"><span class="icon" data-icon="package"></span> Packaging/label control</a>
+      <a href="lab.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Lab dependency panel</a>
+      <a href="correction.html" class="sidebar-link"><span class="icon" data-icon="pen"></span> Correction/late-entry</a>
+      <a href="completion.html" class="sidebar-link"><span class="icon" data-icon="clipboard"></span> Completion review</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> Medical Device</span></span>
+      <span class="context-item"><span class="k">Creating</span><span class="v">BO-2026-0311 — draft</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="uncommitted"><span class="dot"></span> Not yet issued</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">M. Chen — Planner</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">MD</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Create a build order</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Create a build order</h1>
+        <p class="page-subtitle">From an approved Device Master Record to a live, executable record. Five steps — the fourth one is where the system refuses, on purpose.</p>
+      </div></div>
+      <div class="card card-pad mb-4" data-wizard="newbatch">
+        <ul class="wizard-progress">
+          <li data-step-label="1"><span class="n">1</span> What to make</li>
+          <li data-step-label="2"><span class="n">2</span> Order details</li>
+          <li data-step-label="3"><span class="n">3</span> Materials &amp; lots</li>
+          <li data-step-label="4"><span class="n">4</span> Readiness</li>
+          <li data-step-label="5"><span class="n">5</span> Review &amp; issue</li>
+        </ul>
+      <div data-wizard-step="1" data-active>
+        <h2 class="fs-5 font-bold mb-1">What are we making?</h2>
+        <p class="fs-3 text-muted mb-4">Pick the product and the approved Device Master Record revision it will be built to.</p>
+        <div class="card mb-4">
+          <div class="card-header"><div class="card-title">Choose the approved Device Master Record</div>
+            <span class="fs-2 text-muted">Only an effective revision may be issued</span></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th></th><th>Product</th><th>Revision</th><th>Effective from</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><label class="checkbox-row"><input type="radio" name="master" checked></label></td><td><span class="font-semibold">Infusion Set IS-200</span><div class="fs-1 text-muted">IS-200</div></td><td><span class="tabular">Rev C</span></td><td><span class="tabular">01 Jun 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Effective</span></td></tr>
+              <tr><td><span class="fs-2 text-muted">Cannot be used</span></td><td><span class="font-semibold">Infusion Set IS-200</span><div class="fs-1 text-muted">IS-200</div></td><td><span class="tabular">Rev D</span></td><td><span class="tabular">—</span></td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Under review</span></td></tr>
+              <tr><td><label class="checkbox-row"><input type="radio" name="master"></label></td><td><span class="font-semibold">Infusion Set IS-140</span><div class="fs-1 text-muted">IS-140</div></td><td><span class="tabular">Rev G</span></td><td><span class="tabular">12 Feb 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Effective</span></td></tr>
+              <tr><td><span class="fs-2 text-muted">Cannot be used</span></td><td><span class="font-semibold">Infusion Set IS-090</span><div class="fs-1 text-muted">IS-090</div></td><td><span class="tabular">Rev C</span></td><td><span class="tabular">Superseded</span></td><td><span class="state" data-state="na"><span class="icon" data-icon="slash-circle"></span> Obsolete</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        </div>
+        <div class="banner mb-4" data-tone="info">
+          <span class="icon" data-icon="info"></span>
+          <div><p class="font-semibold">Why the draft revision is not selectable</p>
+          <p class="fs-3 mt-1">Rev D exists and is under review, but it has not been approved. Issuing work against an unapproved master is one of the most common findings in an inspection — so the system does not offer it, rather than warning about it afterwards.</p></div>
+        </div>
+        <div class="card card-pad">
+          <p class="fs-4 font-semibold mb-2">What issuing actually does</p>
+          <p class="fs-3 text-secondary">A device build order draws its content from the released Device Master Record. Every unit built under it gets its own Device History Record, and the DHR must show that the unit was built to that exact revision.</p>
+        </div>
+        <div class="flex items-center justify-between gap-2 mt-5"><span></span><button class="btn btn-primary" data-wizard-next><span class="icon" data-icon="arrow-right"></span> Continue</button></div>
+      </div>
+      <div data-wizard-step="2">
+        <h2 class="fs-5 font-bold mb-1">Build order details</h2>
+        <p class="fs-3 text-muted mb-4">How much, when, where, and who is responsible.</p>
+        <div class="card card-pad mb-4">
+          <div class="grid grid-cols-2 gap-4">
+        <div class="field"><label class="label">Build order number</label>
+          <input class="input" value="BO-2026-0311" disabled>
+<p class="hint">Assigned by the system in sequence. It cannot be typed, reused or skipped — a gap in the sequence is a question you would have to answer in an audit.</p>
+        </div>
+        <div class="field"><label class="label">Product</label>
+          <input class="input" value="Infusion Set IS-200 · Rev C" disabled>
+
+        </div>
+        <div class="field"><label class="label">Units to build <span class="req">*</span></label>
+          <input class="input" data-field="qty" data-required value="500">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p><p class="hint">In units. Must match a size the master was validated for.</p>
+        </div>
+        <div class="field"><label class="label">Planned start <span class="req">*</span></label>
+          <input class="input" data-field="start" data-required value="06 Aug 2026, 06:00">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>
+        <div class="field"><label class="label">Site and line <span class="req">*</span></label>
+          <select class="select" data-field="line" data-required><option>Site 2 — Line B</option><option>Site 2 — Line D (not qualified for this product)</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>
+        <div class="field"><label class="label">Responsible supervisor <span class="req">*</span></label>
+          <select class="select" data-field="sup" data-required><option>A. Desai — Production Supervisor</option><option>M. Chen — Planner</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>
+          </div>
+        </div>
+        <div class="banner mb-4" data-tone="warn">
+          <span class="icon" data-icon="alert-triangle"></span>
+          <div><p class="font-semibold">Line D is offered but will fail readiness</p>
+          <p class="fs-3 mt-1">It appears in the list because it physically exists. If you select it, step 4 will refuse the order and name the missing qualification. The system does not hide options — it explains refusals.</p></div>
+        </div>
+      <div class="card card-pad mb-4"><div class="flex items-start gap-3" style="padding:var(--space-3);background:var(--surface-sunken);border-radius:var(--radius-md)">
+        <span class="icon" data-icon="info" style="color:var(--ink-muted);flex-shrink:0;margin-top:2px"></span>
+        <p class="fs-3" style="color:var(--ink-muted)">This order will produce: <span class='font-semibold'>Serial range SN-88500 … SN-88999</span>. Each one gets its own Device History Record, permanently linked to this order and to the Device Master Record revision chosen in step 1.</p></div></div>
+        <div class="flex items-center justify-between gap-2 mt-5"><button class="btn btn-secondary" data-wizard-back><span class="icon" data-icon="arrow-left"></span> Back</button><button class="btn btn-primary" data-wizard-next><span class="icon" data-icon="arrow-right"></span> Continue</button></div>
+      </div>
+      <div data-wizard-step="3">
+        <h2 class="fs-5 font-bold mb-1">Materials and lots</h2>
+        <p class="fs-3 text-muted mb-4">Which physical lots this order will consume.</p>
+        <div class="card mb-4">
+          <div class="card-header"><div class="card-title">Allocate a lot to every line</div>
+            <span class="fs-2 text-muted">From the bill of materials</span></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Material</th><th>Lot</th><th>Required</th><th>Lot status</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">Housing shell</span><div class="fs-1 text-muted">COMP-4471</div></td><td><select class="cell-input"><option>LOT-C990</option><option>Choose a different lot…</option></select></td><td><span class="tabular">1</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Approved</span></td></tr>
+              <tr><td><span class="font-semibold">Luer connector</span><div class="fs-1 text-muted">COMP-4488</div></td><td><select class="cell-input"><option>LOT-D114</option><option>Choose a different lot…</option></select></td><td><span class="tabular">1</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Approved</span></td></tr>
+              <tr><td><span class="font-semibold">Tubing 2.1m</span><div class="fs-1 text-muted">COMP-4502</div></td><td><select class="cell-input"><option>LOT-T773</option><option>Choose a different lot…</option></select></td><td><span class="tabular">1</span></td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Retest due in 6 days</span></td></tr>
+              <tr><td><span class="font-semibold">Roller clamp</span><div class="fs-1 text-muted">COMP-4519</div></td><td><select class="cell-input"><option>No lot allocated</option><option>Allocate at execution</option></select></td><td><span class="tabular">1</span></td><td><span class="state" data-state="missing"><span class="icon" data-icon="help-circle"></span> Not yet issued</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        </div>
+        <div class="banner mb-4" data-tone="info">
+          <span class="icon" data-icon="info"></span>
+          <div><p class="font-semibold">This is where genealogy is created</p>
+          <p class="fs-3 mt-1">The link between this build order and these specific lots is written now and never changes. If a supplier recalls one lot two years from now, this link is how you find every affected unit in seconds instead of weeks.</p></div>
+        </div>
+        <div class="card card-pad">
+          <p class="fs-4 font-semibold mb-2">What the system checks on each lot, before it will accept it</p>
+          <ul class="fs-3 text-secondary" style="padding-left:18px;display:flex;flex-direction:column;gap:5px">
+            <li><span class="font-semibold">Approved status</span> — a quarantined or rejected lot cannot be allocated at all.</li>
+            <li><span class="font-semibold">Expiry and retest date</span> — must remain valid through the planned end of the run, not just today.</li>
+            <li><span class="font-semibold">Quantity on hand</span> — enough must physically exist, or the order is short before it starts.</li>
+            <li><span class="font-semibold">Correct material</span> — the lot must belong to the material the bill of materials names.</li>
+          </ul>
+        </div>
+        <div class="flex items-center justify-between gap-2 mt-5"><button class="btn btn-secondary" data-wizard-back><span class="icon" data-icon="arrow-left"></span> Back</button><button class="btn btn-primary" data-wizard-next><span class="icon" data-icon="arrow-right"></span> Continue</button></div>
+      </div>
+      <div data-wizard-step="4">
+        <h2 class="fs-5 font-bold mb-1">Readiness check</h2>
+        <p class="fs-3 text-muted mb-4">Is everything actually fit to start? This is where the system says no.</p>
+        <div class="card mb-4">
+          <div class="card-header"><div class="card-title">Readiness — equipment, room and people</div>
+            <span class="fs-2 text-muted">Checked now, and again when execution starts</span></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Resource</th><th>Calibration / clearance</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">EQ-7710</span><div class="fs-1 text-muted">Leak tester</div></td><td>Overdue since 28 Jul 2026</td><td><span class="state" data-state="failed"><span class="icon" data-icon="x"></span> Calibration overdue</span></td></tr>
+              <tr><td><span class="font-semibold">TF-11</span><div class="fs-1 text-muted">Test fixture</div></td><td>Current — expires 04 Oct 2026</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Cleared</span></td></tr>
+              <tr><td><span class="font-semibold">ASM-2</span><div class="fs-1 text-muted">Assembly bench</div></td><td>Not applicable</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Cleared</span></td></tr>
+              <tr><td><span class="font-semibold">Line B</span><div class="fs-1 text-muted">Line</div></td><td>—</td><td><span class="state" data-state="conflict"><span class="icon" data-icon="alert-triangle"></span> Clearance required</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        </div>
+
+        <div class="banner mb-4" data-tone="critical">
+          <span class="icon" data-icon="alert-triangle"></span>
+          <div>
+            <p class="font-semibold">This build order cannot be issued — EQ-7710: Calibration overdue since 28 Jul 2026</p>
+            <p class="fs-3 mt-1">There is no override, no "proceed anyway" and no supervisor password that skips this. The blocker has to be genuinely resolved, and the resolution has to be recorded by whoever is authorised to do it.</p>
+          </div>
+        </div>
+
+        <div class="card card-pad mb-4">
+          <p class="fs-4 font-semibold mb-2">Resolving it</p>
+          <p class="fs-3 text-secondary mb-3">Metrology recalibrated EQ-7710 at 08:40 and released the certificate. Rechecking reads the current calibration record — it does not take anyone's word for it.</p>
+          <div class="flex items-center gap-3">
+            <button class="btn btn-secondary" data-gate-release="readiness"
+                    data-state-set="#blocker-state|state:accepted|text:Cleared|icon:check-circle"
+                    data-disable-self>
+              <span class="icon" data-icon="refresh"></span> Recheck readiness</button>
+            <span id="blocker-state" class="state" data-state="failed">
+              <span class="icon" data-icon="x"></span> Calibration overdue since 28 Jul 2026</span>
+          </div>
+        </div>
+
+        <div class="card card-pad">
+          <p class="fs-4 font-semibold mb-2">Everything on this list is checked twice</p>
+          <p class="fs-3 text-secondary">Once here, when the build order is issued, and again at the moment an operator opens each step. A balance that goes out of calibration overnight stops the work in the morning, even though this screen passed yesterday.</p>
+        </div>
+        <div class="flex items-center justify-between gap-2 mt-5"><button class="btn btn-secondary" data-wizard-back><span class="icon" data-icon="arrow-left"></span> Back</button><button class="btn btn-primary" data-wizard-next><span class="icon" data-icon="arrow-right"></span> Continue</button></div>
+      </div>
+      <div data-wizard-step="5">
+        <h2 class="fs-5 font-bold mb-1">Review and issue</h2>
+        <p class="fs-3 text-muted mb-4">Nothing is created until this is signed.</p>
+        <div class="card mb-4">
+          <div class="card-header"><div class="card-title">Review before issuing</div></div>
+          <div class="card-pad" style="border-top:1px solid var(--border-hairline)">
+            <div class="fact-grid"><div class="fact"><span class="fact-k">Product</span><span class="fact-v">Infusion Set IS-200 · IS-200</span></div><div class="fact"><span class="fact-k">Device Master Record</span><span class="fact-v">Rev C — effective, approved</span></div><div class="fact"><span class="fact-k">Build order number</span><span class="fact-v">BO-2026-0311</span></div><div class="fact"><span class="fact-k">Units to build</span><span class="fact-v">500 units</span></div><div class="fact"><span class="fact-k">Site and line</span><span class="fact-v">Site 2 — Line B</span></div><div class="fact"><span class="fact-k">Supervisor</span><span class="fact-v">A. Desai — Production Supervisor</span></div><div class="fact"><span class="fact-k">Materials allocated</span><span class="fact-v">4 lines</span></div><div class="fact"><span class="fact-k">Readiness</span><span class="fact-v">All checks cleared</span></div><div class="fact"><span class="fact-k">Produces</span><span class="fact-v">Serial range SN-88500 … SN-88999</span></div></div>
+          </div>
+        </div>
+
+        <div class="card card-pad mb-4" data-demo-form>
+          <p class="fs-4 font-semibold mb-1">Electronic signature</p>
+          <p class="fs-3 text-muted mb-4">Signing here means: I have reviewed this build order and authorise it for execution. Your name, the time and this meaning are recorded permanently.</p>
+          <div class="grid grid-cols-2 gap-4">
+        <div class="field"><label class="label">Signed by</label>
+          <input class="input" value="M. Chen — Planner" disabled>
+
+        </div>
+        <div class="field"><label class="label">Meaning of signature <span class="req">*</span></label>
+          <select class="select" data-field="meaning" data-required><option>Issue for execution — 21 CFR 820.40 document control</option><option>Reviewed only — do not issue</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>
+        <div class="field"><label class="label">Signing PIN <span class="req">*</span></label>
+          <input class="input" data-field="pin" data-required value="" style="max-width:200px">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p><p class="hint">Your PIN, not your password.</p>
+        </div>
+        <div class="field"><label class="label">Comment</label>
+          <input class="input" data-field="comment" value="">
+<p class="hint">Optional. Anything you record here is part of the permanent record.</p>
+        </div>
+          </div>
+          <div class="flex items-center gap-3 mt-4">
+            <button class="btn btn-primary btn-lg" data-gated-by="readiness"
+                    data-demo-save="issued"
+                    data-demo-message="Build order BO-2026-0311 issued — demo only, nothing stored.">
+              <span class="icon" data-icon="badge-check"></span> Sign and issue build order</button>
+            <p class="btn-reason" data-gate-reason="readiness">
+              <span class="icon" data-icon="lock"></span> Readiness has not cleared — return to step 4.</p>
+          </div>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-header"><div class="card-title">Issued build orders</div>
+            <span class="fs-2 text-muted"><span data-list-count="issued">0</span> this shift</span></div>
+          <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+            <table class="data-table" data-list="issued">
+              <thead><tr><th>Build order</th><th>Product</th><th>Quantity</th><th>Issued by</th><th>Status</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="card-pad" style="border-top:1px solid var(--border-hairline)">
+            <p class="fs-2 text-muted">Once issued, the build order appears on the control board and in the operator's task inbox. From that moment it is a live regulated record — it can be executed, paused, held or cancelled, but never deleted.</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <a class="btn btn-secondary" href="../my-work/inbox.html"><span class="icon" data-icon="inbox"></span> See it in the task inbox</a>
+          <a class="btn btn-secondary" href="execution.html"><span class="icon" data-icon="play"></span> Open guided execution</a>
+        </div>
+
+<template data-list-row="issued">
+  <td class="tabular font-semibold">BO-2026-0311</td>
+  <td>Infusion Set IS-200</td>
+  <td class="tabular">500 units</td>
+  <td>M. Chen</td>
+  <td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Issued — ready to execute</span></td>
+</template>
+        <div class="flex items-center justify-between gap-2 mt-5"><button class="btn btn-secondary" data-wizard-back><span class="icon" data-icon="arrow-left"></span> Back</button></div>
+      </div>
+      </div>
+
+      <div class="card card-pad">
+        <p class="fs-4 font-semibold mb-2">The five steps, and why they are in this order</p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Step</th><th>Question it answers</th><th>What would go wrong without it</th></tr></thead>
+            <tbody>
+              <tr><td class="font-semibold">1 · What to make</td><td>Which approved master governs this work?</td><td>Work executed against a draft or superseded master — the record is indefensible.</td></tr>
+              <tr><td class="font-semibold">2 · Order details</td><td>How much, where and under whose responsibility?</td><td>No named accountable person; quantities the process was never validated for.</td></tr>
+              <tr><td class="font-semibold">3 · Materials &amp; lots</td><td>Which physical material goes in?</td><td>No genealogy — a recall becomes a guess across every batch you ever made.</td></tr>
+              <tr><td class="font-semibold">4 · Readiness</td><td>Is it safe and legal to start?</td><td>Production on uncalibrated equipment or an uncleared line. Everything made is suspect.</td></tr>
+              <tr><td class="font-semibold">5 · Review &amp; issue</td><td>Who authorised this?</td><td>An unsigned record. In an inspection, unsigned means it did not happen.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

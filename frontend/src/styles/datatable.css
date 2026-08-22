@@ -1,0 +1,123 @@
+/* DataTable: new component, not part of the ported eBMR-ui source (which has no server-side table
+   pattern to match) — built from the same token vocabulary as everything in ebmr-components.css. */
+
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.table-toolbar .search-field {
+  position: relative;
+  flex: 1;
+  max-width: 320px;
+}
+
+.table-toolbar .search-field .icon {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-muted);
+  pointer-events: none;
+}
+
+.table-toolbar .search-field input {
+  padding-left: 34px;
+}
+
+.table-toolbar .table-count {
+  margin-left: auto;
+  font-size: var(--fs-3);
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.data-table th.sortable {
+  padding: 0;
+}
+
+.data-table th.sortable button {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+
+.data-table th.sortable button:hover {
+  color: var(--ink-primary);
+}
+
+.data-table th.sortable button:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+.data-table th.sortable .sort-icon {
+  width: 12px;
+  height: 12px;
+  opacity: 0.35;
+  flex-shrink: 0;
+}
+
+.data-table th.sortable[data-active="true"] .sort-icon {
+  opacity: 1;
+  color: var(--brand-500);
+}
+
+.data-table th.sortable[data-dir="asc"] .sort-icon {
+  transform: rotate(180deg);
+}
+
+.data-table tbody tr[data-clickable="true"] {
+  cursor: pointer;
+}
+
+.table-loading-row td {
+  padding: var(--space-6) !important;
+  text-align: center;
+  color: var(--ink-muted);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-hairline);
+  font-size: var(--fs-3);
+  color: var(--ink-secondary);
+}
+
+.pager .pager-size {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pager .pager-size select {
+  width: auto;
+  padding: 4px var(--space-2);
+  font-size: var(--fs-3);
+}
+
+.pager .pager-spacer {
+  margin-left: auto;
+}
+
+.pager .pager-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}

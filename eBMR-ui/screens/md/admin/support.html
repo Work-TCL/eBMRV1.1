@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privileged support · MD · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="shield-check"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">MD · Administration</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Administration</div>
+      <a href="authority.html" class="sidebar-link"><span class="icon" data-icon="shield-check"></span> Authority & training</a>
+      <a href="interfaces.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Interfaces & migration</a>
+      <a href="support.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="user"></span> Privileged support</a>
+      <a href="amendment.html" class="sidebar-link"><span class="icon" data-icon="pen"></span> Post-release amendment</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> Medical Device</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">L. Park — Configuration/Access Administrator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">MD</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Privileged Support Access</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Privileged Support Access</h1>
+        <p class="page-subtitle">UX-SCR-033 · Support users never see customer "Sign as" or regulated decision controls</p>
+      </div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Active session</div><span class="fs-2 text-muted">Live</span></div>
+        <div class="card-pad grid grid-cols-3 gap-4">
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Ticket</p><p class="fs-4 font-semibold mt-1">SUPPORT-4471</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Purpose</p><p class="fs-4 font-semibold mt-1">Diagnose stale interface sync</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Environment / tenant</p><p class="fs-4 font-semibold mt-1">Production · Acme MedTech</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Fields / actions granted</p><p class="fs-4 font-semibold mt-1">Read: interface logs only</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Start / end</p><p class="fs-4 font-semibold mt-1">17:40 → 18:40 EDT (approved window)</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Approver</p><p class="fs-4 font-semibold mt-1">L. Park</p></div>
+        </div>
+        <div class="card-pad" style="padding-top:0"><button class="btn btn-danger"><span class="icon" data-icon="x"></span> Terminate access now</button><p class="hint mt-2">The customer can terminate immediately. Every action in this session links to this record — the vendor sees no "Sign as" or regulated decision control anywhere.</p></div>
+      </div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Session activity</div></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Time</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td><span class="tabular">17:41:02</span></td><td>Viewed interface log</td></tr>
+              <tr><td><span class="tabular">17:52:18</span></td><td>Viewed sync error detail</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

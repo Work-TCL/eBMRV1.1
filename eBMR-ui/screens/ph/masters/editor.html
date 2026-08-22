@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Master editor · PH · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="database"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">PH · Masters</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Masters</div>
+      <a href="admission.html" class="sidebar-link"><span class="icon" data-icon="file-text"></span> Admission boundary</a>
+      <a href="catalogue.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Master catalogue</a>
+      <a href="editor.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="pen"></span> Master editor</a>
+      <a href="validation.html" class="sidebar-link"><span class="icon" data-icon="check-circle"></span> Validation & comparison</a>
+      <a href="approval.html" class="sidebar-link"><span class="icon" data-icon="badge-check"></span> Approval & effectivity</a>
+      <a href="issuance.html" class="sidebar-link"><span class="icon" data-icon="file-plus-2"></span> Execution issuance</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="ph" style="padding:2px 8px"><span class="icon" data-icon="droplet"></span> Pharmaceutical</span></span>
+      <span class="context-item"><span class="k">Master</span><span class="v">PARA-500 v3.3 draft</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="uncommitted"><span class="dot"></span> Draft saved 09:41 EDT</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">S. Rao — Master Author</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">PH</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Structured Master Editor</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Structured Master Editor</h1>
+        <p class="page-subtitle">UX-SCR-005 · PARA-500 v3.3 draft — scope, operations, instruction, requirements, limits, verification</p>
+      </div></div>
+      <div class="grid" style="grid-template-columns:300px 1fr;gap:24px">
+        <div class="card" style="align-self:start">
+          <div class="card-header"><div class="card-title">Operations</div></div>
+        <div class="card-pad"><div class="stepper">
+          <div class="step-item" data-step-state="completed"><div class="step-marker"><span class="icon" data-icon="check"></span></div><div><div class="step-title">OP-010 Dispensing</div><div class="step-meta">Accepted — independently checked</div></div></div>
+          <div class="step-item" data-step-state="current"><div class="step-marker">2</div><div><div class="step-title">OP-020 Granulation</div><div class="step-meta">In progress</div></div></div>
+          <div class="step-item" data-step-state="available"><div class="step-marker">3</div><div><div class="step-title">OP-030 Compression</div><div class="step-meta">Not started</div></div></div>
+          <div class="step-item" data-step-state="available"><div class="step-marker">4</div><div><div class="step-title">OP-040 Coating</div><div class="step-meta">Not started</div></div></div>
+          <div class="step-item" data-step-state="available"><div class="step-marker">5</div><div><div class="step-title">OP-050 Packaging</div><div class="step-meta">Not started</div></div></div>
+        </div></div>
+        </div>
+        <div class="card">
+          <div class="tabs px-2" data-tab-group="me" role="tablist">
+            <button class="tab-btn" data-tab="instr" aria-selected="true" role="tab">Instruction</button>
+            <button class="tab-btn" data-tab="reqs" aria-selected="false" role="tab">Requirements</button>
+            <button class="tab-btn" data-tab="limits" aria-selected="false" role="tab">Limits</button>
+            <button class="tab-btn" data-tab="verify" aria-selected="false" role="tab">Verification</button>
+          </div>
+          <div class="card-pad tab-panel" data-tab-panel="instr" data-tab-group-target="me" data-active>
+            <div class="field"><label class="label">Instruction text <span class="req">*</span></label>
+            <textarea class="input" rows="4">Granule moisture (LOD) is recorded at this operation for Paracetamol 500mg Tablets using the qualified equipment listed under Requirements. Record the value contemporaneously; do not transcribe from a note.</textarea></div>
+            <div class="field"><label class="label">Controlled references</label>
+            <div class="flex items-center gap-2" style="padding:8px 0"><span class="icon" data-icon="file-text" style="color:var(--ink-muted)"></span>
+            <span class="fs-3 font-semibold">PARA-500-WI-07</span><span class="fs-2 text-muted">v6 · Effective</span></div></div>
+          </div>
+          <div class="card-pad tab-panel" data-tab-panel="reqs" data-tab-group-target="me">
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Requirement</th><th>Class</th><th>Spec</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">RMG-3</span></td><td>Rapid mixer granulator</td><td>Cleared</td></tr>
+              <tr><td><span class="font-semibold">SC-4402</span></td><td>Balance</td><td>Cleared</td></tr>
+              <tr><td><span class="font-semibold">CP-7</span></td><td>Compression press</td><td>Cleared</td></tr>
+            </tbody>
+          </table>
+        </div>
+          </div>
+          <div class="card-pad tab-panel" data-tab-panel="limits" data-tab-group-target="me">
+            <div class="field"><label class="label">Granule moisture (LOD) limit</label>
+            <div class="input-measure"><input class="input tabular" value="1.5–2.5 %" disabled><span class="unit">%</span></div>
+            <p class="hint">Applicable limit renders beside the field during entry, never in a tooltip.</p></div>
+          </div>
+          <div class="card-pad tab-panel" data-tab-panel="verify" data-tab-group-target="me">
+            <label class="checkbox-row mb-2"><input type="checkbox" checked><span class="fs-3">Requires independent verification, separate identity from performer</span></label>
+            <label class="checkbox-row"><input type="checkbox" checked><span class="fs-3">Requires e-signature meaning "Performed by"</span></label>
+          </div>
+        </div>
+      </div>
+      <div class="card mt-4 card-pad">
+        <p class="fs-3 font-semibold mb-2">Validation panel</p>
+        <div class="flex flex-wrap gap-3"><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> 0 Blocking</span> <span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> 1 Warning</span> <span class="state" data-state="missing"><span class="icon" data-icon="help-circle"></span> 2 Information</span></div>
+        <p class="fs-2 text-muted mt-2">Only Blocking findings prevent submission. Auto-save persists a server-acknowledged draft token only — it never submits or approves.</p>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

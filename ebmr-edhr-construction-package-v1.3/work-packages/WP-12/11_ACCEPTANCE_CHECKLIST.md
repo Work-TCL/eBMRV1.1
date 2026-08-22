@@ -1,0 +1,32 @@
+# WP-12 — Acceptance Checklist
+
+- [ ] Document 79: all 28 requirements implemented and traced
+- [ ] Document 80: all 22 requirements implemented and traced
+- [ ] Document 81: all 23 requirements implemented and traced
+- [ ] Document 82: all 24 requirements implemented and traced
+- [ ] Document 83: all 21 requirements implemented and traced
+- [ ] Document 84: all 18 requirements implemented and traced
+- [ ] Document 86: all 20 requirements implemented and traced
+- [ ] Document 88: all 26 requirements implemented and traced
+- [ ] Document 89: all 24 requirements implemented and traced
+- [ ] Document 90: all 24 requirements implemented and traced
+- [ ] Document 91: all 22 requirements implemented and traced
+- [ ] Document 92: all 24 requirements implemented and traced
+- [ ] Document 93: all 24 requirements implemented and traced
+- [ ] Document 94: all 22 requirements implemented and traced
+- [ ] Document 96: all 28 requirements implemented and traced
+- [ ] Contracts committed before implementation and compatibility registry updated
+- [ ] All entities have migrations with rollback and catalogue entries
+- [ ] Signature points implemented from the Document 106 policy set (no hardcoded requirements)
+- [ ] Authorization, qualification and SoD enforced server-side with negative tests
+- [ ] Audit event and outbox row committed with every regulated state change
+- [ ] Guardrail checks pass (no bypass path)
+- [ ] All tests in `09_TEST_PLAN.md` executed with real recorded results
+- [ ] Validation impact recorded; higher-risk evidence retained
+- [ ] No unresolved blocking SPEC_GAP in scope
+- [ ] Every test case in `test-cases/WP-12/` executed and recorded (no NOT_STARTED)
+- [ ] All P1 test cases PASS; every FAIL has a defect reference and disposition
+- [ ] Evidence captured for every case in `validation/evidence/`
+- [ ] `traceability/TRACEABILITY_MASTER.csv` updated (build_stage, verification_state, evidence)
+- [ ] `status/build-status.json` updated and `tooling/status/rollup.py` re-run
+- [ ] Completion report delivered per CLAUDE.md §6

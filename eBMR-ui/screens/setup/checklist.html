@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Setup checklist · Setup · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="building"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">Organisation setup</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> Sign-in / profiles</a>
+      <div class="sidebar-section">Setup</div>
+      <a href="checklist.html" class="sidebar-link " aria-current="page"><span class="icon" data-icon="list-checks"></span> Setup checklist</a>
+      <a href="company.html" class="sidebar-link"><span class="icon" data-icon="building"></span> Company &amp; sites</a>
+      <a href="users.html" class="sidebar-link"><span class="icon" data-icon="users"></span> Users</a>
+      <a href="roles.html" class="sidebar-link"><span class="icon" data-icon="shield-check"></span> Roles &amp; permissions</a>
+      <a href="products.html" class="sidebar-link"><span class="icon" data-icon="package"></span> Products</a>
+      <a href="materials.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Materials &amp; items</a>
+      <a href="bom.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Bill of materials</a>
+      <a href="equipment.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Equipment &amp; rooms</a>
+      <div class="sidebar-section">Then</div>
+      <!-- <a href="../md/menu.html" class="sidebar-link"><span class="icon" data-icon="cross-medical"></span> Medical Device</a>
+      <a href="../ph/menu.html" class="sidebar-link"><span class="icon" data-icon="droplet"></span> Pharmaceutical</a> -->
+      <a href="../ddcp/menu.html" class="sidebar-link"><span class="icon" data-icon="layers"></span> Combination Product</a>
+    </nav>
+    <div class="sidebar-foot"><a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a></div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="k">Organisation</span><span class="v">Acme Life Sciences Group</span></span>
+      <span class="context-item"><span class="k">Scope</span><span class="v">Tenant-wide setup — applies to all profiles</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">L. Park — Configuration Administrator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 09:00 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="checklist.html">Setup</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Get your organisation ready</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Get your organisation ready</h1>
+        <p class="page-subtitle">Work through these seven steps once. Everything downstream — recipes, batches, execution, release — is built on the data you enter here.</p>
+      </div></div>
+      <div class="card card-pad mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <p class="fs-4 font-semibold">Progress</p>
+          <p class="fs-3 text-muted"><strong>3</strong> of 7 complete</p>
+        </div>
+        <div class="progress-track"><div class="progress-fill" style="width:43%"></div></div>
+        <p class="hint mt-3">You can use the system before finishing all seven — but a batch cannot be issued until products, materials, BOM and equipment exist, because the recipe has nothing to point at.</p>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><div class="card-title">Seven setup steps</div></div>
+        <a class="setup-step" href="company.html" data-setup-step="company" data-step-state="done">
+          <span class="num"><span class="icon" data-icon="check"></span></span>
+          <span class="setup-step-body"><span class="setup-step-title">Company &amp; sites</span><span class="setup-step-meta">Legal entity, sites, areas and lines</span></span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+        <a class="setup-step" href="users.html" data-setup-step="users" data-step-state="done">
+          <span class="num"><span class="icon" data-icon="check"></span></span>
+          <span class="setup-step-body"><span class="setup-step-title">Users</span><span class="setup-step-meta">Invite the people who will use the system</span></span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+        <a class="setup-step" href="roles.html" data-setup-step="roles" data-step-state="done">
+          <span class="num"><span class="icon" data-icon="check"></span></span>
+          <span class="setup-step-body"><span class="setup-step-title">Roles &amp; permissions</span><span class="setup-step-meta">Decide what each role may do</span></span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+        <a class="setup-step" href="products.html" data-setup-step="products" data-step-state="current">
+          <span class="num">4</span>
+          <span class="setup-step-body"><span class="setup-step-title">Products</span><span class="setup-step-meta">What you manufacture</span></span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+        <a class="setup-step" href="materials.html" data-setup-step="materials" data-step-state="todo">
+          <span class="num">5</span>
+          <span class="setup-step-body"><span class="setup-step-title">Materials &amp; items</span><span class="setup-step-meta">Raw materials, components, packaging</span></span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+        <a class="setup-step" href="bom.html" data-setup-step="bom" data-step-state="todo">
+          <span class="num">6</span>
+          <span class="setup-step-body"><span class="setup-step-title">Bill of materials</span><span class="setup-step-meta">Which materials go into each product</span></span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+        <a class="setup-step" href="equipment.html" data-setup-step="equipment" data-step-state="todo">
+          <span class="num">7</span>
+          <span class="setup-step-body"><span class="setup-step-title">Equipment &amp; rooms</span><span class="setup-step-meta">Machines, instruments and their calibration</span></span>
+          <span class="icon" data-icon="chevron-right" style="color:var(--ink-muted)"></span>
+        </a>
+      </div>
+
+      <div class="card card-pad">
+        <p class="fs-4 font-semibold mb-2">Why this order?</p>
+        <p class="fs-3 text-secondary">Each step depends on the one before it. Users need sites to belong to. A BOM needs products and materials to exist before it can link them. A recipe needs a BOM and equipment before it can reference them. Doing it out of order means going back and filling gaps later.</p>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

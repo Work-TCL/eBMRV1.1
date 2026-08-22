@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Style Guide · NZ-eBMR Design System</title>
+<link rel="stylesheet" href="assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+
+<header class="topbar" style="padding-left:var(--space-5)">
+  <a href="dev-catalogue.html" class="btn btn-ghost btn-icon"><span class="icon" data-icon="arrow-left"></span></a>
+  <div class="flex items-center gap-3">
+    <div class="sidebar-mark"><span class="icon" data-icon="list-checks"></span></div>
+    <span class="font-bold fs-5">NZ-eBMR Style Guide</span>
+  </div>
+  <span class="state" data-state="stale" style="margin-left:12px"><span class="icon" data-icon="clock"></span> Frozen, DB-13.1 v1.0 — not yet accessibility-evaluated</span>
+</header>
+
+<main id="main" class="content" style="max-width:1120px">
+
+  <section class="mb-6">
+    <h1 class="page-title">EBMR-DB-13.1 — Physical Design System</h1>
+    <p class="page-subtitle">Token layer, 16 component groups and the eight-state vocabulary, re-expressed against tokens per the frozen specification. This page exists so that no template invents a component DB-13.1 does not define — if it is not here, it is a change request, not a local style.</p>
+  </section>
+
+  <!-- Profile markers -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">Profile markers</h2>
+    <p class="fs-3 text-muted mb-3">Full profile word plus its own icon, always — colour is supplemental (DB131-AC-005).</p>
+    <div class="card card-pad flex flex-wrap gap-3">
+      <span class="profile-marker" data-profile="md"><span class="icon" data-icon="cross-medical"></span> Medical Device</span>
+      <span class="profile-marker" data-profile="ph"><span class="icon" data-icon="droplet"></span> Pharmaceutical</span>
+      <span class="profile-marker" data-profile="ddcp"><span class="icon" data-icon="layers"></span> Drug-Device Combination Product</span>
+    </div>
+  </section>
+
+  <!-- Eight states -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">The eight states — a closed set</h2>
+    <p class="fs-3 text-muted mb-3">Every <code>.state</code> chip renders <code>data-state</code>, an icon and a text label — never colour alone (DB131-AC-004, NT-003). Blocked and Failed share the critical tone because both stop work; word and icon carry the difference, both take an inset rule.</p>
+    <div class="card card-pad flex flex-wrap gap-3">
+      <span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Accepted</span>
+      <span class="state" data-state="blocked"><span class="icon" data-icon="lock"></span> Blocked</span>
+      <span class="state" data-state="failed"><span class="icon" data-icon="x"></span> Failed</span>
+      <span class="state" data-state="conflict"><span class="icon" data-icon="alert-triangle"></span> Conflict</span>
+      <span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Stale</span>
+      <span class="state" data-state="missing"><span class="icon" data-icon="help-circle"></span> Missing</span>
+      <span class="state" data-state="unknown"><span class="icon" data-icon="help-circle"></span> Unknown</span>
+      <span class="state" data-state="na"><span class="icon" data-icon="slash-circle"></span> Not applicable</span>
+    </div>
+    <div class="card card-pad mt-3">
+      <p class="fs-3 font-semibold mb-2">Commit indicator — DB-13.1 §6.3</p>
+      <div class="flex flex-wrap gap-4">
+        <span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span>
+        <span class="commit-indicator" data-commit="uncommitted"><span class="dot"></span> Uncommitted</span>
+        <span class="commit-indicator" data-commit="offline"><span class="dot"></span> Offline</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Colour roles -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">Colour roles</h2>
+    <div class="grid grid-cols-4 gap-3">
+      <div><div style="height:56px;border-radius:var(--radius-md);background:var(--brand-500)"></div><p class="fs-2 mt-2 font-semibold">Brand 500 (locked)</p></div>
+      <div><div style="height:56px;border-radius:var(--radius-md);background:var(--brand-700)"></div><p class="fs-2 mt-2 font-semibold">Brand 700 — on-tint text</p></div>
+      <div><div style="height:56px;border-radius:var(--radius-md);background:var(--status-good-solid)"></div><p class="fs-2 mt-2 font-semibold">Good</p></div>
+      <div><div style="height:56px;border-radius:var(--radius-md);background:var(--status-warning-solid)"></div><p class="fs-2 mt-2 font-semibold">Warning</p></div>
+      <div><div style="height:56px;border-radius:var(--radius-md);background:var(--status-serious-solid)"></div><p class="fs-2 mt-2 font-semibold">Serious</p></div>
+      <div><div style="height:56px;border-radius:var(--radius-md);background:var(--status-critical-solid)"></div><p class="fs-2 mt-2 font-semibold">Critical</p></div>
+      <div><div style="height:56px;border-radius:var(--radius-md);background:var(--surface-sunken);border:1px solid var(--border-hairline)"></div><p class="fs-2 mt-2 font-semibold">Surface sunken</p></div>
+      <div><div style="height:56px;border-radius:var(--radius-md);background:var(--ink-primary)"></div><p class="fs-2 mt-2 font-semibold">Ink primary</p></div>
+    </div>
+  </section>
+
+  <!-- Type scale -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">Type scale — eight steps, no intermediates</h2>
+    <div class="card card-pad">
+      <p style="font-size:var(--fs-1)">fs-1 · 11px micro — provenance stamp, Aug 5 2026 14:02:11 UTC</p>
+      <p style="font-size:var(--fs-2);margin-top:8px">fs-2 · 12px xs — table header / meta text</p>
+      <p style="font-size:var(--fs-3);margin-top:8px">fs-3 · 13px sm — dense table body, hints</p>
+      <p style="font-size:var(--fs-4);margin-top:8px">fs-4 · 14px base — body copy and inputs</p>
+      <p style="font-size:var(--fs-5);margin-top:8px">fs-5 · 15px md — emphasised body, card titles</p>
+      <p style="font-size:var(--fs-6);margin-top:8px;font-weight:700">fs-6 · 16px lg — section titles</p>
+      <p style="font-size:var(--fs-7);margin-top:8px;font-weight:700">fs-7 · 20px xl — page titles</p>
+      <p style="font-size:var(--fs-8);margin-top:8px;font-weight:700" class="tabular">fs-8 · 26px value — 599.6 mg</p>
+    </div>
+  </section>
+
+  <!-- Buttons -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">Actions — five tones, three sizes</h2>
+    <div class="card card-pad flex flex-wrap gap-3 items-center">
+      <button class="btn btn-primary"><span class="icon" data-icon="check"></span> Primary</button>
+      <button class="btn btn-secondary"><span class="icon" data-icon="history"></span> Secondary</button>
+      <button class="btn btn-ghost">Ghost</button>
+      <button class="btn btn-success"><span class="icon" data-icon="badge-check"></span> Success</button>
+      <button class="btn btn-danger"><span class="icon" data-icon="flag"></span> Danger</button>
+      <button class="btn btn-primary btn-sm">Small</button>
+      <button class="btn btn-primary btn-lg">Large</button>
+      <button class="btn-icon btn-secondary"><span class="icon" data-icon="menu"></span></button>
+    </div>
+    <div class="card card-pad mt-3">
+      <button class="btn btn-primary" disabled>Release final combination product</button>
+      <p class="btn-reason"><span class="icon" data-icon="lock"></span> Unavailable — 2 cross-constituent exceptions are unresolved. Every disabled control states why (DB131-AC-006).</p>
+    </div>
+  </section>
+
+  <!-- Forms -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">Forms &amp; regulated input</h2>
+    <div class="card card-pad grid grid-cols-2 gap-4">
+      <div class="field">
+        <label class="label">Lot identity <span class="req">*</span></label>
+        <input class="input tabular" value="LOT-P7741">
+        <p class="hint">Typed entry — visually and audit-distinct from scan source.</p>
+      </div>
+      <div class="field">
+        <label class="label">Scanned material</label>
+        <div class="scan-field"><span class="icon" data-icon="scan"></span><input class="input tabular" value="MAT-1003 / LOT-A2291"><span class="scan-tag">Scan</span></div>
+      </div>
+      <div class="field">
+        <div class="input-measure">
+          <input class="input tabular" value="61.2">
+          <span class="unit">°C</span>
+        </div>
+        <p class="spec-range"><span class="icon" data-icon="info"></span> Applicable limit: 45–55 °C — visible while typed, never on hover.</p>
+      </div>
+      <div class="field">
+        <input class="input is-error tabular" value="61.2">
+        <p class="error-text"><span class="icon" data-icon="alert-circle"></span> Outside limit. Value is retained, not represented as saved. Journey routes to containment.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tiles -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">KPI tiles</h2>
+    <div class="grid grid-cols-3 gap-4">
+      <div class="kpi-tile"><div class="kpi-label"><span class="icon" data-icon="list-checks"></span> Steps accepted</div><div class="kpi-value tabular">14 / 18</div><div class="kpi-delta">4 remaining, 1 blocked</div></div>
+      <div class="kpi-tile"><div class="kpi-label"><span class="icon" data-icon="alert-triangle"></span> Open exceptions</div><div class="kpi-value tabular">2</div><div class="kpi-delta">1 critical, 1 serious</div></div>
+      <div class="kpi-tile"><div class="kpi-label"><span class="icon" data-icon="clock"></span> Snapshot age</div><div class="kpi-value tabular">6 min</div><div class="kpi-delta">Governing — current</div></div>
+    </div>
+  </section>
+
+  <!-- Table -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">Table</h2>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Parameter</th><th>Limit</th><th>Result</th><th>State</th></tr></thead>
+        <tbody>
+          <tr><td class="font-semibold">Hardness</td><td class="tabular">6–10 kp</td><td class="tabular">7.9 kp</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Accepted</span></td></tr>
+          <tr><td class="font-semibold">Friability</td><td class="tabular">≤ 1.0% loss</td><td class="tabular">1.34% loss</td><td><span class="state" data-state="failed"><span class="icon" data-icon="x"></span> Failed</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Stepper -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">Stepper</h2>
+    <div class="card card-pad" style="max-width:420px">
+      <div class="stepper">
+        <div class="step-item" data-step-state="completed"><div class="step-marker"><span class="icon" data-icon="check"></span></div><div><div class="step-title">1. Admission</div><div class="step-meta">Accepted</div></div></div>
+        <div class="step-item" data-step-state="current"><div class="step-marker">2</div><div><div class="step-title">2. Compatibility review</div><div class="step-meta">In progress</div></div></div>
+        <div class="step-item" data-step-state="blocked"><div class="step-marker"><span class="icon" data-icon="lock"></span></div><div><div class="step-title">3. Filling &amp; assembly</div><div class="step-meta">Blocked — prior step incomplete</div></div></div>
+        <div class="step-item" data-step-state="available"><div class="step-marker">4</div><div><div class="step-title">4. Integrated testing</div><div class="step-meta">Not started</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Signature -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">Signature block</h2>
+    <div class="grid grid-cols-2 gap-4">
+      <div class="sig-block" data-sig="signed">
+        <div class="sig-role">Performed by</div>
+        <div class="sig-manifest"><span class="icon" data-icon="badge-check"></span> K. Verma — Production Operator — 05 Aug 2026, 11:44 EDT</div>
+        <div class="sig-hint">Event EVT-88231 · Snapshot v3.2 · Server time</div>
+      </div>
+      <div class="sig-block" data-sig="blocked">
+        <div class="sig-role">Reviewed by</div>
+        <div class="sig-manifest"><span class="icon" data-icon="lock"></span> Unavailable</div>
+        <div class="sig-hint">Requires an independent reviewer identity — cannot be satisfied by the performer.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tabs -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">Tabs</h2>
+    <div class="card">
+      <div class="tabs px-2" data-tab-group="sg" role="tablist">
+        <button class="tab-btn" data-tab="one" aria-selected="true" role="tab">Evidence</button>
+        <button class="tab-btn" data-tab="two" aria-selected="false" role="tab">Genealogy</button>
+        <button class="tab-btn" data-tab="three" aria-selected="false" role="tab">Timeline</button>
+      </div>
+      <div class="card-pad tab-panel" data-tab-panel="one" data-tab-group-target="sg" data-active>Evidence panel content.</div>
+      <div class="card-pad tab-panel" data-tab-panel="two" data-tab-group-target="sg">Genealogy panel content.</div>
+      <div class="card-pad tab-panel" data-tab-panel="three" data-tab-group-target="sg">Timeline panel content.</div>
+    </div>
+  </section>
+
+  <!-- Modal trigger -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">Modal — irreversible actions are non-dismissible</h2>
+    <div class="card card-pad">
+      <button class="btn btn-primary" data-modal-open="sg-modal"><span class="icon" data-icon="badge-check"></span> Open signature ceremony</button>
+    </div>
+  </section>
+
+  <!-- Context bar sample -->
+  <section class="mb-6">
+    <h2 class="fs-6 font-bold mb-3">Persistent context bar</h2>
+    <p class="fs-3 text-muted mb-3">Mandatory on every regulated page before any regulated input is accepted (DB131-AC-002).</p>
+    <div class="context-bar" style="border-radius:var(--radius-md)">
+      <span class="context-item"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> Medical Device</span></span>
+      <span class="context-item"><span class="k">Site</span><span class="v">Site 1 — Line B</span></span>
+      <span class="context-item"><span class="k">Snapshot</span><span class="context-governing"><span class="icon" data-icon="check-circle"></span> Governing v3.2</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026 14:02 EDT</span>
+    </div>
+  </section>
+
+  <!-- Icon set -->
+  <section class="mb-8">
+    <h2 class="fs-6 font-bold mb-3">Icon set — self-contained, no runtime fetch</h2>
+    <div class="card card-pad" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:16px;text-align:center">
+      <div><span class="icon" data-icon="menu" style="width:22px;height:22px"></span><p class="fs-1 mt-1">menu</p></div>
+      <div><span class="icon" data-icon="bell" style="width:22px;height:22px"></span><p class="fs-1 mt-1">bell</p></div>
+      <div><span class="icon" data-icon="search" style="width:22px;height:22px"></span><p class="fs-1 mt-1">search</p></div>
+      <div><span class="icon" data-icon="scan" style="width:22px;height:22px"></span><p class="fs-1 mt-1">scan</p></div>
+      <div><span class="icon" data-icon="printer" style="width:22px;height:22px"></span><p class="fs-1 mt-1">printer</p></div>
+      <div><span class="icon" data-icon="users" style="width:22px;height:22px"></span><p class="fs-1 mt-1">users</p></div>
+      <div><span class="icon" data-icon="user" style="width:22px;height:22px"></span><p class="fs-1 mt-1">user</p></div>
+      <div><span class="icon" data-icon="shield-check" style="width:22px;height:22px"></span><p class="fs-1 mt-1">shield-check</p></div>
+      <div><span class="icon" data-icon="history" style="width:22px;height:22px"></span><p class="fs-1 mt-1">history</p></div>
+      <div><span class="icon" data-icon="building" style="width:22px;height:22px"></span><p class="fs-1 mt-1">building</p></div>
+      <div><span class="icon" data-icon="calendar" style="width:22px;height:22px"></span><p class="fs-1 mt-1">calendar</p></div>
+      <div><span class="icon" data-icon="database" style="width:22px;height:22px"></span><p class="fs-1 mt-1">database</p></div>
+      <div><span class="icon" data-icon="clipboard" style="width:22px;height:22px"></span><p class="fs-1 mt-1">clipboard</p></div>
+      <div><span class="icon" data-icon="package" style="width:22px;height:22px"></span><p class="fs-1 mt-1">package</p></div>
+      <div><span class="icon" data-icon="layers" style="width:22px;height:22px"></span><p class="fs-1 mt-1">layers</p></div>
+      <div><span class="icon" data-icon="droplet" style="width:22px;height:22px"></span><p class="fs-1 mt-1">droplet</p></div>
+      <div><span class="icon" data-icon="cross-medical" style="width:22px;height:22px"></span><p class="fs-1 mt-1">cross-medical</p></div>
+      <div><span class="icon" data-icon="gauge" style="width:22px;height:22px"></span><p class="fs-1 mt-1">gauge</p></div>
+      <div><span class="icon" data-icon="lock" style="width:22px;height:22px"></span><p class="fs-1 mt-1">lock</p></div>
+      <div><span class="icon" data-icon="lock-open" style="width:22px;height:22px"></span><p class="fs-1 mt-1">lock-open</p></div>
+      <div><span class="icon" data-icon="pen" style="width:22px;height:22px"></span><p class="fs-1 mt-1">pen</p></div>
+      <div><span class="icon" data-icon="badge-check" style="width:22px;height:22px"></span><p class="fs-1 mt-1">badge-check</p></div>
+      <div><span class="icon" data-icon="file-text" style="width:22px;height:22px"></span><p class="fs-1 mt-1">file-text</p></div>
+      <div><span class="icon" data-icon="flag" style="width:22px;height:22px"></span><p class="fs-1 mt-1">flag</p></div>
+      <div><span class="icon" data-icon="log-out" style="width:22px;height:22px"></span><p class="fs-1 mt-1">log-out</p></div>
+      <div><span class="icon" data-icon="home" style="width:22px;height:22px"></span><p class="fs-1 mt-1">home</p></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Signature ceremony modal — non-dismissible per UX-P-002 -->
+<div class="modal-backdrop" id="sg-modal" data-dismissible="false">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="modal-title">Apply signature</div><p class="fs-3 text-muted mt-1">Fresh authentication required. This dialog cannot be dismissed by a stray tap (UX-P-002).</p></div>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label class="label">Meaning</label><input class="input" value="Performed by" disabled></div>
+      <div class="field"><label class="label">Password <span class="req">*</span></label><input type="password" class="input" placeholder="Re-authenticate"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary"><span class="icon" data-icon="badge-check"></span> Sign</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/ebmr-ui.js"></script>
+</body>
+</html>

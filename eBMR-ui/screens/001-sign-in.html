@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UX-SCR-001 · Sign-in, Session &amp; Context Landing · NZ-eBMR</title>
+<link rel="stylesheet" href="../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../assets/css/ebmr-components.css">
+<style>
+  .context-choice{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:var(--radius-md);border:1.5px solid var(--border-hairline);background:var(--surface-card);text-decoration:none;color:inherit;transition:border-color .15s,box-shadow .15s,transform .1s}
+  .context-choice:hover{box-shadow:var(--shadow-sm);transform:translateY(-1px)}
+  .context-choice[data-profile="md"]:hover{border-color:var(--profile-md)}
+  .context-choice[data-profile="ph"]:hover{border-color:var(--profile-ph)}
+  .context-choice[data-profile="ddcp"]:hover{border-color:var(--profile-ddcp)}
+  .context-choice-icon{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;flex-shrink:0}
+  .context-choice-icon[data-profile="md"]{background:#eaf1fb;color:var(--profile-md)}
+  .context-choice-icon[data-profile="ph"]{background:#f1ecfa;color:var(--profile-ph)}
+  .context-choice-icon[data-profile="ddcp"]{background:#e6f4f2;color:var(--profile-ddcp)}
+  .context-choice-icon .icon{width:20px;height:20px}
+  .context-choice-body{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+  .context-choice-title{font-size:var(--fs-4);font-weight:var(--fw-bold);color:var(--ink-primary)}
+  .context-choice-meta{font-size:var(--fs-2);color:var(--ink-muted)}
+  .context-choice-arrow{color:var(--ink-muted);flex-shrink:0}
+</style>
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:var(--space-6);background:var(--surface-page)">
+<div id="main" style="max-width:560px;width:100%">
+  <div class="flex items-center gap-3 mb-6">
+    <div class="sidebar-mark"><span class="icon" data-icon="list-checks"></span></div>
+    <span class="fs-6 font-bold">NZ-eBMR</span>
+    <span class="fs-2 text-muted">UX-SCR-001 · Sign-in, session and context landing</span>
+  </div>
+
+  <div class="card card-pad" data-tab-group="signin-flow">
+    <div class="tab-panel" data-tab-panel="credentials" data-tab-group-target="signin-flow" data-active>
+      <h1 class="fs-6 font-bold mb-1">Sign in</h1>
+      <p class="fs-3 text-muted mb-4">Unique identity required by Part 11 — no shared logins.</p>
+      <div class="field"><label class="label">Organization</label><input class="input" value="Acme Life Sciences Group" disabled></div>
+      <div class="field"><label class="label">Email <span class="req">*</span></label><input class="input" placeholder="you@company.com"></div>
+      <div class="field"><label class="label">Password <span class="req">*</span></label><input type="password" class="input" placeholder="••••••••"></div>
+      <button class="btn btn-primary btn-block btn-lg" data-tab="context"><span class="icon" data-icon="lock"></span> Continue</button>
+      <p class="hint mt-3">Multi-factor verification follows on a separate step. Session policy (expiry, idle lock) is configured per organization.</p>
+    </div>
+
+    <div class="tab-panel" data-tab-panel="context" data-tab-group-target="signin-flow">
+      <h2 class="fs-5 font-bold mb-1">Select your working context</h2>
+      <p class="fs-3 text-muted mb-4">K. Verma holds authority in the contexts listed below. Choosing a context is not a role grant by itself — the server independently authorizes every action inside it.</p>
+      <div class="flex flex-col gap-3">
+        <!-- Medical Device and Pharmaceutical are hidden for this client demo —
+             only the Drug-Device Combination profile is being shown. The screens
+             still exist under screens/md/ and screens/ph/; uncomment to restore. -->
+        <!--
+        <a class="context-choice" data-profile="md" href="md/menu.html">
+          <span class="context-choice-icon" data-profile="md"><span class="icon" data-icon="cross-medical"></span></span>
+          <span class="context-choice-body">
+            <span class="context-choice-title">Medical Device</span>
+            <span class="context-choice-meta">Site 2 — Line B · Production Operator</span>
+          </span>
+          <span class="icon context-choice-arrow" data-icon="chevron-right"></span>
+        </a>
+        <a class="context-choice" data-profile="ph" href="ph/menu.html">
+          <span class="context-choice-icon" data-profile="ph"><span class="icon" data-icon="droplet"></span></span>
+          <span class="context-choice-body">
+            <span class="context-choice-title">Pharmaceutical</span>
+            <span class="context-choice-meta">Site 1 — Dispensing Booth D-101 · Material/Dispensing Operator</span>
+          </span>
+          <span class="icon context-choice-arrow" data-icon="chevron-right"></span>
+        </a>
+        -->
+        <a class="context-choice" data-profile="ddcp" href="ddcp/role-select.html">
+          <span class="context-choice-icon" data-profile="ddcp"><span class="icon" data-icon="layers"></span></span>
+          <span class="context-choice-body">
+            <span class="context-choice-title">Drug-Device Combination</span>
+            <span class="context-choice-meta">Site 3 — Line C · Combination Product Reviewer</span>
+          </span>
+          <span class="icon context-choice-arrow" data-icon="chevron-right"></span>
+        </a>
+      </div>
+      <p class="hint mt-4">Delegated authority, if any, is shown per context after selection — never silently applied.</p>
+
+      <div style="border-top:1px solid var(--border-hairline);margin-top:var(--space-5);padding-top:var(--space-5)">
+        <p class="fs-2 font-semibold text-muted mb-3" style="text-transform:uppercase;letter-spacing:.05em">Administration and onboarding</p>
+        <div class="flex flex-col gap-3">
+          <a class="context-choice" href="setup/checklist.html">
+            <span class="context-choice-icon" style="background:var(--surface-sunken);color:var(--ink-secondary)"><span class="icon" data-icon="list-checks"></span></span>
+            <span class="context-choice-body">
+              <span class="context-choice-title">Setup &amp; masters</span>
+              <span class="context-choice-meta">Company, users, roles, products, materials, BOM, equipment — organisation-wide</span>
+            </span>
+            <span class="icon context-choice-arrow" data-icon="chevron-right"></span>
+          </a>
+          <a class="context-choice" href="onboarding/welcome.html">
+            <span class="context-choice-icon" style="background:var(--surface-sunken);color:var(--ink-secondary)"><span class="icon" data-icon="building"></span></span>
+            <span class="context-choice-body">
+              <span class="context-choice-title">Day one — a brand-new organisation</span>
+              <span class="context-choice-meta">What the system looks like before anything is configured</span>
+            </span>
+            <span class="icon context-choice-arrow" data-icon="chevron-right"></span>
+          </a>
+          <a class="context-choice" href="onboarding/new-user.html">
+            <span class="context-choice-icon" style="background:var(--surface-sunken);color:var(--ink-secondary)"><span class="icon" data-icon="user-check"></span></span>
+            <span class="context-choice-body">
+              <span class="context-choice-title">A new person's first sign-in</span>
+              <span class="context-choice-meta">Password, signing PIN, training check, first assignment</span>
+            </span>
+            <span class="icon context-choice-arrow" data-icon="chevron-right"></span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<script src="../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

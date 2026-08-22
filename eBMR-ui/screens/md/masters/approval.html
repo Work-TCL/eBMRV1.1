@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Approval & effectivity · MD · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="database"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">MD · Masters</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Masters</div>
+      <a href="admission.html" class="sidebar-link"><span class="icon" data-icon="file-text"></span> Admission boundary</a>
+      <a href="catalogue.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Master catalogue</a>
+      <a href="editor.html" class="sidebar-link"><span class="icon" data-icon="pen"></span> Master editor</a>
+      <a href="validation.html" class="sidebar-link"><span class="icon" data-icon="check-circle"></span> Validation & comparison</a>
+      <a href="approval.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="badge-check"></span> Approval & effectivity</a>
+      <a href="issuance.html" class="sidebar-link"><span class="icon" data-icon="file-plus-2"></span> Execution issuance</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> Medical Device</span></span>
+      <span class="context-item"><span class="k">Master</span><span class="v">IS-200 Rev D</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">P. Nair — Quality Master Approver</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">MD</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Approval, Effectivity &amp; Impact</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Approval, Effectivity &amp; Impact</h1>
+        <p class="page-subtitle">UX-SCR-007 · Ambiguity blocks the primary action. Backdating is not offered in normal operation.</p>
+      </div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Effectivity scope</div></div>
+        <div class="card-pad grid grid-cols-3 gap-4">
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Product / site / line</p><p class="fs-4 font-semibold mt-1">IS-200 · Site 2 · Line B</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Batch size scope</p><p class="fs-4 font-semibold mt-1">All sizes</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Proposed cutover</p><p class="fs-4 font-semibold mt-1">08 Aug 2026, 00:00 EDT</p></div>
+        </div>
+      </div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Replacing / affected planned work</div></div>
+        <div class="card-pad"><p class="fs-3 mb-2">Replaces: <strong>Rev C</strong> (governing since the date shown in the catalogue)</p><div class="flex items-start gap-3" style="padding:var(--space-3);background:var(--status-warning-bg);border-radius:var(--radius-md)"><span class="icon" data-icon="alert-triangle" style="color:var(--status-warning-text);flex-shrink:0;margin-top:2px"></span><p class="fs-3" style="color:var(--status-warning-text)">2 planned executions on Line B start before the cutover under Rev C. Cutover timing creates a scope conflict — resolve before approval.</p></div></div>
+      </div>
+      <div class="card card-pad"><div class="flex gap-3"><button class="btn btn-danger"><span class="icon" data-icon="x"></span> Reject</button><button class="btn btn-success" disabled><span class="icon" data-icon="check-circle"></span> Approve &amp; schedule effectivity</button></div><p class="btn-reason"><span class="icon" data-icon="lock"></span> Unavailable — cutover conflicts with 2 planned executions. Ambiguity blocks the primary action.</p></div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

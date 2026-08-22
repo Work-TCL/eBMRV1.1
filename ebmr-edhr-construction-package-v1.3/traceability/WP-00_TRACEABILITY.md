@@ -1,0 +1,287 @@
+# WP-00 — Traceability Matrix
+
+**Scope:** Monorepo skeleton, contract tooling, CI gates, architecture guardrails, migration/test/release standards.  
+**Requirements:** 278  |  **Test cases:** 618
+
+| Requirement | Module | Risk | Signature | Test cases | Build stage | Verified | Validated |
+|---|---|---|---|---|---|---|---|
+| CODE-FR-001 — Language baselines | SPEC-ENG-001 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-002 — TypeScript strictness | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-003 — Python typing | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-004 — Naming | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-005 — Module size | SPEC-ENG-001 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-006 — Function contract | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-007 — Pure domain logic | SPEC-ENG-001 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-008 — Decimal arithmetic | SPEC-ENG-001 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-009 — UOM | SPEC-ENG-001 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-010 — Time | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-011 — Identifiers | SPEC-ENG-001 | H | no | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-012 — Errors | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-013 — No swallowed errors | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-014 — Logging | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-015 — Comments | SPEC-ENG-001 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-016 — Requirement tags | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-017 — No core edits | SPEC-ENG-001 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-018 — Frappe controller boundary | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-019 — ORM boundaries | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-020 — SQL parameters | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-021 — Transaction scope | SPEC-ENG-001 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-022 — Idempotency | SPEC-ENG-001 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-023 — Concurrency | SPEC-ENG-001 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-024 — Events | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-025 — Security defaults | SPEC-ENG-001 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-026 — Feature flags | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-027 — Configuration | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-028 — Dependency injection | SPEC-ENG-001 | H | no | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-029 — No arbitrary execution | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-030 — Generated code | SPEC-ENG-001 | H | yes | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-031 — Formatting/lint | SPEC-ENG-001 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-032 — Dead code | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-033 — Public API docs | SPEC-ENG-001 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-034 — Repository test co-location | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-035 — Sensitive comparison | SPEC-ENG-001 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CODE-FR-036 — File handling | SPEC-ENG-001 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-001 — Document ingestion | SPEC-ENG-002 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-002 — No invention | SPEC-ENG-002 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-003 — Requirement plan | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-004 — Architecture invariants | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-005 — No framework core edits | SPEC-ENG-002 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-006 — No direct GxP writes | SPEC-ENG-002 | H | no | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-007 — No audit/history mutation | SPEC-ENG-002 | H | no | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-008 — No signature bypass | SPEC-ENG-002 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-009 — No authorization shortcut | SPEC-ENG-002 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-010 — Data owner check | SPEC-ENG-002 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-011 — Transaction design | SPEC-ENG-002 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-012 — External side effects | SPEC-ENG-002 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-013 — API-first boundaries | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-014 — Event contracts | SPEC-ENG-002 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-015 — Migration requirement | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-016 — Tests before completion | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-017 — Negative tests | SPEC-ENG-002 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-018 — Validation linkage | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-019 — License check | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-020 — No unapproved dependency | SPEC-ENG-002 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-021 — Security check | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-022 — AI-generated SQL | SPEC-ENG-002 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-023 — Feature scope | SPEC-ENG-002 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-024 — Controlled refactor | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-025 — No destructive cleanup | SPEC-ENG-002 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-026 — No fake implementation | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-027 — No secret access | SPEC-ENG-002 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-028 — No production data use | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-029 — Diff discipline | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-030 — Stop conditions | SPEC-ENG-002 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-031 — Review escalation | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-032 — Prompt injection resistance | SPEC-ENG-002 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-033 — Tool scope | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-034 — No hidden network | SPEC-ENG-002 | H | no | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-035 — Evidence honesty | SPEC-ENG-002 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| AGT-FR-036 — Final completion checklist | SPEC-ENG-002 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-001 — Repository model | SPEC-ENG-003 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-002 — Main branch | SPEC-ENG-003 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-003 — No direct push | SPEC-ENG-003 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-004 — Feature branches | SPEC-ENG-003 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-005 — PR required | SPEC-ENG-003 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-006 — PR metadata | SPEC-ENG-003 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-007 — CODEOWNERS | SPEC-ENG-003 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-008 — Required approvals | SPEC-ENG-003 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-009 — Status checks | SPEC-ENG-003 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-010 — Conversation resolution | SPEC-ENG-003 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-011 — Signed commits/tags | SPEC-ENG-003 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-012 — Commit content | SPEC-ENG-003 | H | yes | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-013 — History rewrite | SPEC-ENG-003 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-014 — Release tags | SPEC-ENG-003 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-015 — Versioning | SPEC-ENG-003 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-016 — Hotfix | SPEC-ENG-003 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-017 — Security fix | SPEC-ENG-003 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-018 — Rollback branch | SPEC-ENG-003 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-019 — Generated files | SPEC-ENG-003 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-020 — Large files | SPEC-ENG-003 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-021 — Submodules | SPEC-ENG-003 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-022 — Secrets | SPEC-ENG-003 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-023 — Branch retention | SPEC-ENG-003 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-024 — Forks | SPEC-ENG-003 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-025 — Access review | SPEC-ENG-003 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-026 — Bot accounts | SPEC-ENG-003 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-027 — PR provenance | SPEC-ENG-003 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-028 — Release evidence | SPEC-ENG-003 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-029 — Archive | SPEC-ENG-003 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| GIT-FR-030 — No orphan code | SPEC-ENG-003 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-001 — Migration ownership | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-002 — Version order | SPEC-ENG-004 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-003 — Forward-first strategy | SPEC-ENG-004 | H | yes | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-004 — Expand-contract | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-005 — No destructive history loss | SPEC-ENG-004 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-006 — Backup precondition | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-007 — Representative test | SPEC-ENG-004 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-008 — Idempotency | SPEC-ENG-004 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-009 — Transactional DDL | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-010 — Lock analysis | SPEC-ENG-004 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-011 — Online index | SPEC-ENG-004 | H | no | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-012 — Backfill | SPEC-ENG-004 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-013 — Backfill audit | SPEC-ENG-004 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-014 — Checksums/reconciliation | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-015 — Constraints | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-016 — Default changes | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-017 — Enum/state evolution | SPEC-ENG-004 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-018 — App compatibility | SPEC-ENG-004 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-019 — MariaDB/Frappe migrations | SPEC-ENG-004 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-020 — PostgreSQL migrations | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-021 — Object metadata | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-022 — Event schema coordination | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-023 — Temporal compatibility | SPEC-ENG-004 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-024 — Migration dry run | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-025 — Failure recovery | SPEC-ENG-004 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-026 — No manual prod SQL | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-027 — Reconciliation gate | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-028 — Migration evidence | SPEC-ENG-004 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-029 — Retention-aware contract | SPEC-ENG-004 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-030 — Customer upgrade path | SPEC-ENG-004 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-031 — Downgrade semantics | SPEC-ENG-004 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| MIG-FR-032 — Validation impact | SPEC-ENG-004 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-001 — Contract-first | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-002 — Operation IDs | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-003 — Event names | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-004 — Typed schemas | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-005 — Strict input | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-006 — Error envelope | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-007 — HTTP semantics | SPEC-ENG-005 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-008 — Idempotency | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-009 — Optimistic concurrency | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-010 — Correlation | SPEC-ENG-005 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-011 — Tenant/site scope | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-012 — Pagination | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-013 — Filtering | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-014 — Time | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-015 — Decimal | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-016 — UOM | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-017 — Enums | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-018 — PII/secrets | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-019 — Evidence refs | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-020 — Compatibility | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-021 — Deprecation | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-022 — Consumer inventory | SPEC-ENG-005 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-023 — Consumer contract tests | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-024 — Generated clients | SPEC-ENG-005 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-025 — Webhook contracts | SPEC-ENG-005 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-026 — Async delivery | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-027 — Event envelope | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-028 — No hidden side effects | SPEC-ENG-005 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-029 — Timeout/retry guidance | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-030 — Long operations | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-031 — Contract ownership | SPEC-ENG-005 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-032 — Requirement trace | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-033 — Security scopes | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-034 — Rate/resource limits | SPEC-ENG-005 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-035 — Examples | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CTR-FR-036 — No undocumented endpoint | SPEC-ENG-005 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-001 — Test pyramid/portfolio | SPEC-ENG-006 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-002 — Unit tests | SPEC-ENG-006 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-003 — Property tests | SPEC-ENG-006 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-004 — Rule vectors | SPEC-ENG-006 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-005 — Repository tests | SPEC-ENG-006 | H | yes | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-006 — API tests | SPEC-ENG-006 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-007 — Contract tests | SPEC-ENG-006 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-008 — Event tests | SPEC-ENG-006 | H | yes | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-009 — Integration tests | SPEC-ENG-006 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-010 — Workflow replay tests | SPEC-ENG-006 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-011 — Frappe tests | SPEC-ENG-006 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-012 — UI component tests | SPEC-ENG-006 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-013 — End-to-end tests | SPEC-ENG-006 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-014 — Authorization tests | SPEC-ENG-006 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-015 — Signature tests | SPEC-ENG-006 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-016 — Audit/Vault tests | SPEC-ENG-006 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-017 — Concurrency tests | SPEC-ENG-006 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-018 — Failure injection | SPEC-ENG-006 | H | no | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-019 — Recovery tests | SPEC-ENG-006 | H | yes | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-020 — Security tests | SPEC-ENG-006 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-021 — Performance tests | SPEC-ENG-006 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-022 — Migration tests | SPEC-ENG-006 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-023 — Backup/restore tests | SPEC-ENG-006 | H | yes | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-024 — Mutation testing | SPEC-ENG-006 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-025 — Coverage metrics | SPEC-ENG-006 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-026 — Critical requirement coverage | SPEC-ENG-006 | H | yes | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-027 — No flaky tolerance | SPEC-ENG-006 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-028 — Test determinism | SPEC-ENG-006 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-029 — Synthetic data | SPEC-ENG-006 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-030 — Test isolation | SPEC-ENG-006 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-031 — Evidence output | SPEC-ENG-006 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-032 — Failure retention | SPEC-ENG-006 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-033 — Test ownership | SPEC-ENG-006 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-034 — Test review | SPEC-ENG-006 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-035 — Test tagging | SPEC-ENG-006 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| TEST-FR-036 — No mock-only critical proof | SPEC-ENG-006 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-001 — Pipeline as code | SPEC-ENG-007 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-002 — Trusted runners | SPEC-ENG-007 | H | yes | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-003 — Lockfile builds | SPEC-ENG-007 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-004 — Build once | SPEC-ENG-007 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-005 — Source provenance | SPEC-ENG-007 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-006 — Lint/type gate | SPEC-ENG-007 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-007 — Test gate | SPEC-ENG-007 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-008 — Secret scan | SPEC-ENG-007 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-009 — SAST | SPEC-ENG-007 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-010 — SCA | SPEC-ENG-007 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-011 — IaC scan | SPEC-ENG-007 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-012 — Container scan | SPEC-ENG-007 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-013 — SBOM | SPEC-ENG-007 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-014 — Artifact signing | SPEC-ENG-007 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-015 — Contract gate | SPEC-ENG-007 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-016 — Migration gate | SPEC-ENG-007 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-017 — Validation impact gate | SPEC-ENG-007 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-018 — Release candidate | SPEC-ENG-007 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-019 — Release notes | SPEC-ENG-007 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-020 — Approval | SPEC-ENG-007 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-021 — Validated release authorization | SPEC-ENG-007 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-022 — Environment promotion | SPEC-ENG-007 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-023 — Predeploy check | SPEC-ENG-007 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-024 — Deployment strategy | SPEC-ENG-007 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-025 — Smoke checks | SPEC-ENG-007 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-026 — Rollback | SPEC-ENG-007 | H | yes | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-027 — Automatic abort | SPEC-ENG-007 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-028 — Hotfix process | SPEC-ENG-007 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-029 — Release manifest | SPEC-ENG-007 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-030 — Evidence retention | SPEC-ENG-007 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-031 — Deploy identity | SPEC-ENG-007 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-032 — No manual drift | SPEC-ENG-007 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-033 — Feature flags | SPEC-ENG-007 | H | no | 1 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-034 — Artifact verification | SPEC-ENG-007 | H | yes | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-035 — Environment protections | SPEC-ENG-007 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| CICD-FR-036 — Release reproducibility | SPEC-ENG-007 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-001 — Dependency register | SPEC-ENG-008 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-002 — SBOM format | SPEC-ENG-008 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-003 — Artifact linkage | SPEC-ENG-008 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-004 — Package source | SPEC-ENG-008 | H | yes | 7 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-005 — Lock/pin | SPEC-ENG-008 | H | no | 6 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-006 — License detection | SPEC-ENG-008 | H | no | 5 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-007 — License policy | SPEC-ENG-008 | H | yes | 6 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-008 — Copyleft review | SPEC-ENG-008 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-009 — Unknown license | SPEC-ENG-008 | H | no | 5 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-010 — Notice obligations | SPEC-ENG-008 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-011 — Commercial dependency | SPEC-ENG-008 | H | no | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-012 — Vulnerability mapping | SPEC-ENG-008 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-013 — Known exploited status | SPEC-ENG-008 | H | no | 5 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-014 — Vulnerability exception | SPEC-ENG-008 | H | yes | 6 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-015 — EOL status | SPEC-ENG-008 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-016 — Maintainer health | SPEC-ENG-008 | H | yes | 5 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-017 — Dependency necessity | SPEC-ENG-008 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-018 — Critical library approval | SPEC-ENG-008 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-019 — Development dependencies | SPEC-ENG-008 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-020 — Container OS packages | SPEC-ENG-008 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-021 — Frappe/ERPNext license | SPEC-ENG-008 | H | no | 5 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-022 — Generated/vendor code | SPEC-ENG-008 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-023 — AI-generated code | SPEC-ENG-008 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-024 — Model assets | SPEC-ENG-008 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-025 — Dependency update | SPEC-ENG-008 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-026 — Automatic PRs | SPEC-ENG-008 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-027 — Transitive change | SPEC-ENG-008 | H | no | 6 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-028 — Binary provenance | SPEC-ENG-008 | H | yes | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-029 — Vendor SBOM | SPEC-ENG-008 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-030 — Acquisition export | SPEC-ENG-008 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-031 — Removal | SPEC-ENG-008 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-032 — No hidden fetch | SPEC-ENG-008 | H | no | 5 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-033 — License files | SPEC-ENG-008 | H | no | 4 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-034 — SBOM retention | SPEC-ENG-008 | H | yes | 5 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-035 — Customer disclosure | SPEC-ENG-008 | H | no | 2 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+| DEP-FR-036 — No legal automation | SPEC-ENG-008 | H | no | 3 | NOT_STARTED | NOT_VERIFIED | NOT_VALIDATED |
+
+Update the columns as work proceeds; the authoritative record is `traceability/TRACEABILITY_MASTER.csv` and `status/build-status.json`.

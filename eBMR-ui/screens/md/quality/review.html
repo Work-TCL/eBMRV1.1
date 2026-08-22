@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quality review · MD · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="cross-medical"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">MD · Device Quality</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Device Quality</div>
+      <a href="nonconformance.html" class="sidebar-link"><span class="icon" data-icon="alert-triangle"></span> Nonconformance</a>
+      <a href="review.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="clipboard"></span> Quality review</a>
+      <a href="release.html" class="sidebar-link"><span class="icon" data-icon="badge-check"></span> Release ceremony</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> Medical Device</span></span>
+      <span class="context-item"><span class="k">Unit serial</span><span class="v">SN-88213</span></span>
+      <span class="context-item"><span class="k">Package</span><span class="v">v1 · sha256:7ab2…41f0</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">P. Nair — Release Authority</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">MD</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Quality Review Workspace</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Quality Review Workspace</h1>
+        <p class="page-subtitle">UX-SCR-026 · Exception-first — filters never change what counts as reviewed</p>
+      </div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Exception-first queue</div><span class="fs-2 text-muted">Missing, failed, stale, corrected, late, held</span></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Item</th><th>Type</th><th>Owner</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">OP-030 Final functional test</span></td><td>Failed result</td><td>R. Oduya</td><td><span class="state" data-state="failed"><span class="icon" data-icon="x"></span> NC-2231 — disposed: Rework</span></td></tr>
+              <tr><td><span class="font-semibold">UDI capture, component COMP-4471</span></td><td>Late entry</td><td>K. Verma</td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Approved late entry</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="grid grid-cols-4 gap-4 mb-4">
+        <div class="kpi-tile"><div class="kpi-label"><span class="icon" data-icon="list-checks"></span> Steps</div><div class="kpi-value tabular">5/5</div></div>
+        <div class="kpi-tile"><div class="kpi-label"><span class="icon" data-icon="badge-check"></span> Signatures</div><div class="kpi-value tabular">8/8</div></div>
+        <div class="kpi-tile"><div class="kpi-label"><span class="icon" data-icon="database"></span> Genealogy links</div><div class="kpi-value tabular">4/4</div></div>
+        <div class="kpi-tile"><div class="kpi-label"><span class="icon" data-icon="alert-triangle"></span> Open findings</div><div class="kpi-value tabular">0</div></div>
+      </div>
+      <div class="card card-pad"><div class="flex gap-3"><button class="btn btn-secondary"><span class="icon" data-icon="x"></span> Return with findings</button><button class="btn btn-primary"><span class="icon" data-icon="check-circle"></span> Complete review</button></div><p class="hint mt-2">Completing review acknowledges the package is complete with closed/accepted findings — release is a separate ceremony.</p></div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

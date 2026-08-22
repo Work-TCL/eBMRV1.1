@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Choose a role · DDCP · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+<style>
+  .context-choice{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:var(--radius-md);border:1.5px solid var(--border-hairline);background:var(--surface-card);text-decoration:none;color:inherit;transition:border-color .15s,box-shadow .15s,transform .1s}
+  .context-choice:hover{box-shadow:var(--shadow-sm);transform:translateY(-1px);border-color:var(--profile-ddcp)}
+  .context-choice-icon{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;flex-shrink:0;background:#e6f4f2;color:var(--profile-ddcp)}
+  .context-choice-icon .icon{width:20px;height:20px}
+  .context-choice-body{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+  .context-choice-title{font-size:var(--fs-4);font-weight:var(--fw-bold);color:var(--ink-primary)}
+  .context-choice-meta{font-size:var(--fs-2);color:var(--ink-muted)}
+  .context-choice-arrow{color:var(--ink-muted);flex-shrink:0}
+</style>
+</head>
+<body data-role-select-page>
+<a href="#main" class="skip-link">Skip to content</a>
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:var(--space-6);background:var(--surface-page)">
+<div id="main" style="max-width:640px;width:100%">
+  <div class="flex items-center gap-3 mb-6">
+    <div class="sidebar-mark"><span class="icon" data-icon="layers"></span></div>
+    <span class="fs-6 font-bold">NZ-eBMR</span>
+    <span class="fs-2 text-muted">Drug-Device Combination Product</span>
+  </div>
+
+  <div class="card card-pad mb-4">
+    <h1 class="fs-6 font-bold mb-1">Who are you signing in as?</h1>
+    <p class="fs-3 text-muted mb-4">This picks a persona so the interface behaves the way permission-based access control actually works — each person sees their own work and cannot reach another person's controls. It's a demo of the effect, not a real login.</p>
+    <div class="flex flex-col gap-3">
+        <a class="context-choice" data-profile="ddcp" href="my-work/inbox.html"
+           data-role-set="admin" data-role-label="L. Park — Configuration/Access Administrator">
+          <span class="context-choice-icon" data-profile="ddcp"><span class="icon" data-icon="shield-check"></span></span>
+          <span class="context-choice-body">
+            <span class="context-choice-title">L. Park <span class="fs-2 text-muted font-medium">— Configuration/Access Administrator</span></span>
+            <span class="context-choice-meta">✓ Configure the organisation — sites, users, roles, products, materials, equipment.</span>
+            <span class="context-choice-meta" style="color:var(--status-critical-text)">✕ Cannot perform, verify or release a production step.</span>
+          </span>
+          <span class="icon context-choice-arrow" data-icon="chevron-right"></span>
+        </a>
+        <a class="context-choice" data-profile="ddcp" href="my-work/inbox.html"
+           data-role-set="author" data-role-label="S. Bloom / T. Alvarez — Recipe Authoring Team">
+          <span class="context-choice-icon" data-profile="ddcp"><span class="icon" data-icon="pen"></span></span>
+          <span class="context-choice-body">
+            <span class="context-choice-title">S. Bloom / T. Alvarez <span class="fs-2 text-muted font-medium">— Recipe Authoring Team</span></span>
+            <span class="context-choice-meta">✓ Author the Integrated Master — admission, compatibility, per-unit BOM, process steps.</span>
+            <span class="context-choice-meta" style="color:var(--status-critical-text)">✕ Cannot approve their own recipe or issue a batch against it.</span>
+          </span>
+          <span class="icon context-choice-arrow" data-icon="chevron-right"></span>
+        </a>
+        <a class="context-choice" data-profile="ddcp" href="my-work/inbox.html"
+           data-role-set="planner" data-role-label="M. Chen — Planner">
+          <span class="context-choice-icon" data-profile="ddcp"><span class="icon" data-icon="file-plus-2"></span></span>
+          <span class="context-choice-body">
+            <span class="context-choice-title">M. Chen <span class="fs-2 text-muted font-medium">— Planner</span></span>
+            <span class="context-choice-meta">✓ Create and issue final assembly orders against an approved Integrated Master.</span>
+            <span class="context-choice-meta" style="color:var(--status-critical-text)">✕ Cannot fill, test, label or release what they issued.</span>
+          </span>
+          <span class="icon context-choice-arrow" data-icon="chevron-right"></span>
+        </a>
+        <a class="context-choice" data-profile="ddcp" href="my-work/inbox.html"
+           data-role-set="operator" data-role-label="M. Ortiz — Filling/Assembly Operator">
+          <span class="context-choice-icon" data-profile="ddcp"><span class="icon" data-icon="scan"></span></span>
+          <span class="context-choice-body">
+            <span class="context-choice-title">M. Ortiz <span class="fs-2 text-muted font-medium">— Filling/Assembly Operator</span></span>
+            <span class="context-choice-meta">✓ Perform filling, assembly, testing and labeling on the shop floor.</span>
+            <span class="context-choice-meta" style="color:var(--status-critical-text)">✕ Cannot issue their own order or release their own work.</span>
+          </span>
+          <span class="icon context-choice-arrow" data-icon="chevron-right"></span>
+        </a>
+        <a class="context-choice" data-profile="ddcp" href="my-work/inbox.html"
+           data-role-set="quality" data-role-label="P. Nair — Final Release Authority">
+          <span class="context-choice-icon" data-profile="ddcp"><span class="icon" data-icon="badge-check"></span></span>
+          <span class="context-choice-body">
+            <span class="context-choice-title">P. Nair <span class="fs-2 text-muted font-medium">— Final Release Authority</span></span>
+            <span class="context-choice-meta">✓ Approve the recipe, investigate cross-constituent issues, release the final product.</span>
+            <span class="context-choice-meta" style="color:var(--status-critical-text)">✕ Cannot have performed the step under their own review.</span>
+          </span>
+          <span class="icon context-choice-arrow" data-icon="chevron-right"></span>
+        </a>
+    </div>
+  </div>
+
+  <div class="card card-pad mb-4">
+    <p class="fs-4 font-semibold mb-2">Why five different people, not one</p>
+    <p class="fs-3 text-secondary">The recipe is written by one team, approved by another, issued as an order by a third, executed by a fourth, and released by whoever approved it in the first place — but never by whoever performed it. The same person cannot create an order and also release it, or author a recipe and also approve it, or perform a step and also verify it. That's the two-person rule, and it only means something if the system actually enforces who is signed in. Pick a role above and try to open a screen it shouldn't reach; the sidebar will grey it out and say why. Full detail: <a href="../setup/roles.html" style="color:var(--brand-600);font-weight:var(--fw-semibold)">Roles &amp; permissions</a>.</p>
+  </div>
+
+  <div class="flex items-center justify-between">
+    <a href="../001-sign-in.html" class="btn btn-secondary btn-sm"><span class="icon" data-icon="arrow-left"></span> Back to sign-in</a>
+    <a href="menu.html" class="btn btn-secondary btn-sm">See everything unlocked (no role)</a>
+  </div>
+</div>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

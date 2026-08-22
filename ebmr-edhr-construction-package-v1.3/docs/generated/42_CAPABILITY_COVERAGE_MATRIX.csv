@@ -1,0 +1,216 @@
+capability_id,capability_name,source_section,implementing_document,implementing_module,work_package,match_score,coverage_state,action
+C-001,Organization & Legal Entity,"5.1 Organization, facility and production structure",Document 69,SPEC-DATA-001,WP-11,5,PARTIAL,confirm during work-package scope review
+C-002,Manufacturing Site,"5.1 Organization, facility and production structure",Document 09,SPEC-EBMR-000,WP-02,4,PARTIAL,confirm during work-package scope review
+C-003,Building / Area / Room / Line,"5.1 Organization, facility and production structure",Document 40,SPEC-EQP-003,WP-06,6,COVERED,
+C-004,Department / Function,"5.1 Organization, facility and production structure",Document 04,SPEC-GXP-002,WP-01,2,NOT_COVERED,confirm during work-package scope review
+C-005,Shift Management,"5.1 Organization, facility and production structure",Document 11,SPEC-EBMR-002,WP-02,2,NOT_COVERED,confirm during work-package scope review
+C-006,Unique User Identity,"6. IDENTITY, PEOPLE AND QUALIFICATION",Document 07,SPEC-IAM-001,WP-01,6,COVERED,
+C-007,Role Based Access,"6. IDENTITY, PEOPLE AND QUALIFICATION",Document 07,SPEC-IAM-001,WP-01,2,NOT_COVERED,confirm during work-package scope review
+C-008,Segregation of Duties,"6. IDENTITY, PEOPLE AND QUALIFICATION",Document 07,SPEC-IAM-001,WP-01,3,PARTIAL,confirm during work-package scope review
+C-009,Employee Qualification,"6. IDENTITY, PEOPLE AND QUALIFICATION",Document 40,SPEC-EQP-003,WP-06,5,PARTIAL,confirm during work-package scope review
+C-010,Training Status,"6. IDENTITY, PEOPLE AND QUALIFICATION",Document 09,SPEC-EBMR-000,WP-02,2,NOT_COVERED,confirm during work-package scope review
+C-011,Temporary Authorization,"6. IDENTITY, PEOPLE AND QUALIFICATION",Document 07,SPEC-IAM-001,WP-01,5,PARTIAL,confirm during work-package scope review
+C-012,Product Master,"7. PRODUCT, MATERIAL AND SPECIFICATION MASTER",Document 09,SPEC-EBMR-000,WP-02,7,COVERED,
+C-013,Raw Material Master,"7. PRODUCT, MATERIAL AND SPECIFICATION MASTER",Document 09,SPEC-EBMR-000,WP-02,4,PARTIAL,confirm during work-package scope review
+C-014,Specification Master,"7. PRODUCT, MATERIAL AND SPECIFICATION MASTER",Document 10,SPEC-EBMR-001,WP-02,2,NOT_COVERED,confirm during work-package scope review
+C-015,Unit of Measure,"7. PRODUCT, MATERIAL AND SPECIFICATION MASTER",Document 08,SPEC-GXP-006,WP-01,4,PARTIAL,confirm during work-package scope review
+C-016,Supplier / Manufacturer,"7. PRODUCT, MATERIAL AND SPECIFICATION MASTER",Document 18,SPEC-MAT-001,WP-04,2,NOT_COVERED,confirm during work-package scope review
+C-017,Material Quality Status,"7. PRODUCT, MATERIAL AND SPECIFICATION MASTER",Document 19,SPEC-MAT-002A,WP-04,6,COVERED,
+C-018,Expiry / Retest,"7. PRODUCT, MATERIAL AND SPECIFICATION MASTER",Document 15,SPEC-EBMR-006,WP-03,3,PARTIAL,confirm during work-package scope review
+MAT-001,Supplier Master,7A.2 Required procurement and material sub-functionalities,Document 18,SPEC-MAT-001,WP-04,4,PARTIAL,confirm during work-package scope review
+MAT-002,Supplier Qualification,7A.2 Required procurement and material sub-functionalities,Document 18,SPEC-MAT-001,WP-04,11,COVERED,
+MAT-003,Approved Supplier List,7A.2 Required procurement and material sub-functionalities,Document 52,SPEC-ERP-005,WP-07,6,COVERED,
+MAT-004,Purchase Requisition,7A.2 Required procurement and material sub-functionalities,Document 10,SPEC-EBMR-001,WP-02,5,PARTIAL,confirm during work-package scope review
+MAT-005,RFQ / Supplier Quote,7A.2 Required procurement and material sub-functionalities,Document 49,SPEC-ERP-002,WP-07,4,PARTIAL,confirm during work-package scope review
+MAT-006,Purchase Order,7A.2 Required procurement and material sub-functionalities,Document 18,SPEC-MAT-001,WP-04,7,COVERED,
+MAT-007,Material Receipt / GRN,7A.2 Required procurement and material sub-functionalities,Document 19,SPEC-MAT-002A,WP-04,7,COVERED,
+MAT-008,COA Management,7A.2 Required procurement and material sub-functionalities,Document 10,SPEC-EBMR-001,WP-02,4,PARTIAL,confirm during work-package scope review
+MAT-009,Quarantine,7A.2 Required procurement and material sub-functionalities,Document 19,SPEC-MAT-002A,WP-04,5,PARTIAL,confirm during work-package scope review
+MAT-010,Sampling,7A.2 Required procurement and material sub-functionalities,Document 19,SPEC-MAT-002A,WP-04,7,COVERED,
+MAT-011,QC Disposition,7A.2 Required procurement and material sub-functionalities,Document 19,SPEC-MAT-002A,WP-04,6,COVERED,
+MAT-012,Warehouse/Location,7A.2 Required procurement and material sub-functionalities,Document 20,SPEC-MAT-002B,WP-04,4,PARTIAL,confirm during work-package scope review
+MAT-013,FEFO / Eligibility,7A.2 Required procurement and material sub-functionalities,Document 20,SPEC-MAT-002B,WP-04,8,COVERED,
+MAT-014,Material Reservation,7A.2 Required procurement and material sub-functionalities,Document 19,SPEC-MAT-002A,WP-04,4,PARTIAL,confirm during work-package scope review
+MAT-015,Material Issue,7A.2 Required procurement and material sub-functionalities,Document 21,SPEC-MAT-002C,WP-04,7,COVERED,
+MAT-016,Material Dispensing,7A.2 Required procurement and material sub-functionalities,Document 21,SPEC-MAT-002C,WP-04,8,COVERED,
+MAT-017,Material Return,7A.2 Required procurement and material sub-functionalities,Document 19,SPEC-MAT-002A,WP-04,5,PARTIAL,confirm during work-package scope review
+MAT-018,Inventory Adjustment,7A.2 Required procurement and material sub-functionalities,Document 03,SPEC-GXP-001,WP-01,3,PARTIAL,confirm during work-package scope review
+MAT-019,Destruction,7A.2 Required procurement and material sub-functionalities,Document 22,SPEC-MAT-002D,WP-04,3,PARTIAL,confirm during work-package scope review
+MAT-020,Reconciliation,7A.2 Required procurement and material sub-functionalities,Document 17,SPEC-EBMR-008,WP-03,3,PARTIAL,confirm during work-package scope review
+MAT-021,Material Genealogy,7A.2 Required procurement and material sub-functionalities,Document 19,SPEC-MAT-002A,WP-04,5,PARTIAL,confirm during work-package scope review
+MAT-022,ERP Synchronization,7A.2 Required procurement and material sub-functionalities,Document 22,SPEC-MAT-002D,WP-04,4,PARTIAL,confirm during work-package scope review
+C-019,Master Manufacturing Record,8. MASTER RECIPE / MANUFACTURING SPECIFICATION,Document 08,SPEC-GXP-006,WP-01,2,NOT_COVERED,confirm during work-package scope review
+C-020,Recipe Version Control,8. MASTER RECIPE / MANUFACTURING SPECIFICATION,Document 10,SPEC-EBMR-001,WP-02,3,PARTIAL,confirm during work-package scope review
+C-021,Effective Dating,8. MASTER RECIPE / MANUFACTURING SPECIFICATION,Document 10,SPEC-EBMR-001,WP-02,3,PARTIAL,confirm during work-package scope review
+C-022,Structured Steps,8. MASTER RECIPE / MANUFACTURING SPECIFICATION,Document 10,SPEC-EBMR-001,WP-02,2,NOT_COVERED,confirm during work-package scope review
+C-023,Step Dependencies,8. MASTER RECIPE / MANUFACTURING SPECIFICATION,Document 10,SPEC-EBMR-001,WP-02,4,PARTIAL,confirm during work-package scope review
+C-024,Parameter Definitions,8. MASTER RECIPE / MANUFACTURING SPECIFICATION,Document 10,SPEC-EBMR-001,WP-02,3,PARTIAL,confirm during work-package scope review
+C-025,Calculation Definitions,8. MASTER RECIPE / MANUFACTURING SPECIFICATION,Document 17,SPEC-EBMR-008,WP-03,7,COVERED,
+C-026,Instruction Versioning,8. MASTER RECIPE / MANUFACTURING SPECIFICATION,Document 10,SPEC-EBMR-001,WP-02,4,PARTIAL,confirm during work-package scope review
+C-027,Batch Creation,9. BATCH / LOT EXECUTION,Document 09,SPEC-EBMR-000,WP-02,4,PARTIAL,confirm during work-package scope review
+C-028,Unique Batch Number,9. BATCH / LOT EXECUTION,Document 06,SPEC-GXP-004,WP-01,3,PARTIAL,confirm during work-package scope review
+C-029,Frozen Batch Snapshot,9. BATCH / LOT EXECUTION,Document 10,SPEC-EBMR-001,WP-02,4,PARTIAL,confirm during work-package scope review
+C-030,Batch Lifecycle,9. BATCH / LOT EXECUTION,Document 11,SPEC-EBMR-002,WP-02,5,PARTIAL,confirm during work-package scope review
+C-031,Step-by-Step Execution,9. BATCH / LOT EXECUTION,Document 11,SPEC-EBMR-002,WP-02,3,PARTIAL,confirm during work-package scope review
+C-032,Sequence Enforcement,9. BATCH / LOT EXECUTION,Document 08,SPEC-GXP-006,WP-01,2,NOT_COVERED,confirm during work-package scope review
+C-033,Pause / Resume,9. BATCH / LOT EXECUTION,Document 11,SPEC-EBMR-002,WP-02,7,COVERED,
+C-034,Parallel Operations,9. BATCH / LOT EXECUTION,Document 10,SPEC-EBMR-001,WP-02,2,NOT_COVERED,confirm during work-package scope review
+C-035,Conditional Operations,9. BATCH / LOT EXECUTION,Document 09,SPEC-EBMR-000,WP-02,3,PARTIAL,confirm during work-package scope review
+C-036,Automatic Exception,9. BATCH / LOT EXECUTION,Document 08,SPEC-GXP-006,WP-01,2,NOT_COVERED,confirm during work-package scope review
+C-037,Production Hold,9. BATCH / LOT EXECUTION,Document 10,SPEC-EBMR-001,WP-02,6,COVERED,
+C-038,Controlled Resume,9. BATCH / LOT EXECUTION,Document 06,SPEC-GXP-004,WP-01,5,PARTIAL,confirm during work-package scope review
+C-039,Material Requirement,10. MATERIAL DISPENSING AND CONSUMPTION,Document 17,SPEC-EBMR-008,WP-03,3,PARTIAL,confirm during work-package scope review
+C-040,Lot Selection,10. MATERIAL DISPENSING AND CONSUMPTION,Document 50,SPEC-ERP-003,WP-07,3,PARTIAL,confirm during work-package scope review
+C-041,Barcode Scanning,10. MATERIAL DISPENSING AND CONSUMPTION,Document 20,SPEC-MAT-002B,WP-04,4,PARTIAL,confirm during work-package scope review
+C-042,Weighing Integration,10. MATERIAL DISPENSING AND CONSUMPTION,Document 21,SPEC-MAT-002C,WP-04,2,NOT_COVERED,confirm during work-package scope review
+C-043,Manual Weight Entry,10. MATERIAL DISPENSING AND CONSUMPTION,Document 21,SPEC-MAT-002C,WP-04,5,PARTIAL,confirm during work-package scope review
+C-044,Potency Adjustment,10. MATERIAL DISPENSING AND CONSUMPTION,Document 08,SPEC-GXP-006,WP-01,4,PARTIAL,confirm during work-package scope review
+C-045,Material Consumption,10. MATERIAL DISPENSING AND CONSUMPTION,Document 10,SPEC-EBMR-001,WP-02,3,PARTIAL,confirm during work-package scope review
+C-046,Return / Excess,10. MATERIAL DISPENSING AND CONSUMPTION,Document 16,SPEC-EBMR-007,WP-03,2,NOT_COVERED,confirm during work-package scope review
+C-047,Material Reconciliation,10. MATERIAL DISPENSING AND CONSUMPTION,Document 17,SPEC-EBMR-008,WP-03,5,PARTIAL,confirm during work-package scope review
+C-048,Equipment Master,11. EQUIPMENT & FACILITY CONTROLS,Document 12,SPEC-EBMR-003,WP-02,3,PARTIAL,confirm during work-package scope review
+C-049,Equipment Status,11. EQUIPMENT & FACILITY CONTROLS,Document 38,SPEC-EQP-001,WP-06,5,PARTIAL,confirm during work-package scope review
+C-050,Calibration Control,11. EQUIPMENT & FACILITY CONTROLS,Document 12,SPEC-EBMR-003,WP-02,2,NOT_COVERED,confirm during work-package scope review
+C-051,Qualification,11. EQUIPMENT & FACILITY CONTROLS,Document 07,SPEC-IAM-001,WP-01,2,NOT_COVERED,confirm during work-package scope review
+C-052,Cleaning Status,11. EQUIPMENT & FACILITY CONTROLS,Document 38,SPEC-EQP-001,WP-06,2,NOT_COVERED,confirm during work-package scope review
+C-053,Line Clearance,11. EQUIPMENT & FACILITY CONTROLS,Document 10,SPEC-EBMR-001,WP-02,5,PARTIAL,confirm during work-package scope review
+C-054,Maintenance,11. EQUIPMENT & FACILITY CONTROLS,Document 38,SPEC-EQP-001,WP-06,3,PARTIAL,confirm during work-package scope review
+C-055,Equipment Usage Log,11. EQUIPMENT & FACILITY CONTROLS,Document 40,SPEC-EQP-003,WP-06,3,PARTIAL,confirm during work-package scope review
+C-056,Electronic Equipment Data,11. EQUIPMENT & FACILITY CONTROLS,Document 10,SPEC-EBMR-001,WP-02,2,NOT_COVERED,confirm during work-package scope review
+ST-001,Classified Area Master,11A.1 Required sub-functionalities,Document 40,SPEC-EQP-003,WP-06,6,COVERED,
+ST-002,Environmental Monitoring Linkage,11A.1 Required sub-functionalities,Document 41,SPEC-EQP-004,WP-06,6,COVERED,
+ST-003,Personnel Gowning Qualification,11A.1 Required sub-functionalities,Document 31,SPEC-QMS-006,WP-05,4,PARTIAL,confirm during work-package scope review
+ST-004,Aseptic Operator Qualification,11A.1 Required sub-functionalities,Document 40,SPEC-EQP-003,WP-06,7,COVERED,
+ST-005,Cleaning & Sanitization,11A.1 Required sub-functionalities,Document 39,SPEC-EQP-002,WP-06,5,PARTIAL,confirm during work-package scope review
+ST-006,Sterilization Status,11A.1 Required sub-functionalities,Document 42,SPEC-EQP-005,WP-06,7,COVERED,
+ST-007,CIP/SIP Linkage,11A.1 Required sub-functionalities,Document 42,SPEC-EQP-005,WP-06,4,PARTIAL,confirm during work-package scope review
+ST-008,Filter Management,11A.1 Required sub-functionalities,Document 42,SPEC-EQP-005,WP-06,6,COVERED,
+ST-009,Sterile Component Readiness,11A.1 Required sub-functionalities,Document 40,SPEC-EQP-003,WP-06,8,COVERED,
+ST-010,Bioburden Linkage,11A.1 Required sub-functionalities,Document 23,SPEC-QC-001,WP-04,6,COVERED,
+ST-011,Sterility Test Linkage,11A.1 Required sub-functionalities,Document 12,SPEC-EBMR-003,WP-02,5,PARTIAL,confirm during work-package scope review
+ST-012,Media Fill Reference,11A.1 Required sub-functionalities,Document 40,SPEC-EQP-003,WP-06,8,COVERED,
+ST-013,Intervention Recording,11A.1 Required sub-functionalities,Document 40,SPEC-EQP-003,WP-06,5,PARTIAL,confirm during work-package scope review
+ST-014,Aseptic Hold Time,11A.1 Required sub-functionalities,Document 40,SPEC-EQP-003,WP-06,4,PARTIAL,confirm during work-package scope review
+ST-015,Bulk Hold Time,11A.1 Required sub-functionalities,Document 10,SPEC-EBMR-001,WP-02,4,PARTIAL,confirm during work-package scope review
+ST-016,Filling Parameters,11A.1 Required sub-functionalities,Document 40,SPEC-EQP-003,WP-06,4,PARTIAL,confirm during work-package scope review
+ST-017,Stoppering/Sealing,11A.1 Required sub-functionalities,Document 04,SPEC-GXP-002,WP-01,3,PARTIAL,confirm during work-package scope review
+ST-018,Container Closure Integrity,11A.1 Required sub-functionalities,Document 40,SPEC-EQP-003,WP-06,6,COVERED,
+ST-019,Environmental Excursion,11A.1 Required sub-functionalities,Document 40,SPEC-EQP-003,WP-06,4,PARTIAL,confirm during work-package scope review
+ST-020,Sterile Batch Impact Assessment,11A.1 Required sub-functionalities,Document 40,SPEC-EQP-003,WP-06,6,COVERED,
+C-057,In-Process Check,12. IN-PROCESS CONTROL AND QUALITY,Document 12,SPEC-EBMR-003,WP-02,3,PARTIAL,confirm during work-package scope review
+C-058,Acceptance Limits,12. IN-PROCESS CONTROL AND QUALITY,Document 17,SPEC-EBMR-008,WP-03,3,PARTIAL,confirm during work-package scope review
+C-059,Sample Identification,12. IN-PROCESS CONTROL AND QUALITY,Document 10,SPEC-EBMR-001,WP-02,4,PARTIAL,confirm during work-package scope review
+C-060,QC Results,12. IN-PROCESS CONTROL AND QUALITY,Document 25,SPEC-QC-003,WP-04,1,NOT_COVERED,confirm during work-package scope review
+C-061,OOS,12. IN-PROCESS CONTROL AND QUALITY,Document 25,SPEC-QC-003,WP-04,4,PARTIAL,confirm during work-package scope review
+C-062,OOT,12. IN-PROCESS CONTROL AND QUALITY,Document 25,SPEC-QC-003,WP-04,2,NOT_COVERED,confirm during work-package scope review
+C-063,Result Supersession,12. IN-PROCESS CONTROL AND QUALITY,Document 89,SPEC-VAL-011,WP-12,4,PARTIAL,confirm during work-package scope review
+C-064,Batch Impact Assessment,12. IN-PROCESS CONTROL AND QUALITY,Document 25,SPEC-QC-003,WP-04,4,PARTIAL,confirm during work-package scope review
+C-065,Theoretical Yield,13. YIELD AND RECONCILIATION,Document 10,SPEC-EBMR-001,WP-02,3,PARTIAL,confirm during work-package scope review
+C-066,Actual Yield,13. YIELD AND RECONCILIATION,Document 17,SPEC-EBMR-008,WP-03,3,PARTIAL,confirm during work-package scope review
+C-067,Yield Percentage,13. YIELD AND RECONCILIATION,Document 17,SPEC-EBMR-008,WP-03,4,PARTIAL,confirm during work-package scope review
+C-068,Yield Limits,13. YIELD AND RECONCILIATION,Document 17,SPEC-EBMR-008,WP-03,4,PARTIAL,confirm during work-package scope review
+C-069,Packaging Reconciliation,13. YIELD AND RECONCILIATION,Document 16,SPEC-EBMR-007,WP-03,4,PARTIAL,confirm during work-package scope review
+QMS-001,Deviation,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 26,SPEC-QMS-001,WP-05,15,COVERED,
+QMS-002,CAPA,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 27,SPEC-QMS-002,WP-05,17,COVERED,
+QMS-003,OOS,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 25,SPEC-QC-003,WP-04,15,COVERED,
+QMS-004,OOT,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 25,SPEC-QC-003,WP-04,9,COVERED,
+QMS-005,Nonconformance,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 28,SPEC-QMS-003,WP-05,8,COVERED,
+QMS-006,Change Control,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 29,SPEC-QMS-004,WP-05,17,COVERED,
+QMS-007,Document Control,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 30,SPEC-QMS-005,WP-05,11,COVERED,
+QMS-008,Training & Qualification,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 31,SPEC-QMS-006,WP-05,8,COVERED,
+QMS-009,Supplier Quality,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 18,SPEC-MAT-001,WP-04,12,COVERED,
+QMS-010,SCAR,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 32,SPEC-QMS-007,WP-05,8,COVERED,
+QMS-011,Risk Management,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 33,SPEC-QMS-008,WP-05,6,COVERED,
+QMS-012,Internal Audit,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 34,SPEC-QMS-009,WP-05,10,COVERED,
+QMS-013,Complaint,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 35,SPEC-QMS-010,WP-05,10,COVERED,
+QMS-014,Recall / Field Action,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 36,SPEC-QMS-011,WP-05,12,COVERED,
+QMS-015,Effectiveness Check,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 27,SPEC-QMS-002,WP-05,6,COVERED,
+QMS-016,Quality Metrics & Trending,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 37,SPEC-QMS-012,WP-05,8,COVERED,
+QMS-017,Quality Event Linking,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 09,SPEC-EBMR-000,WP-02,6,COVERED,
+QMS-018,Quality Event Escalation,19. QMS MODULES COMMON TO THE PLATFORM — V1,Document 25,SPEC-QC-003,WP-04,3,PARTIAL,confirm during work-package scope review
+CP-001,Combination Product Master,20.1 Combination-specific functionality,Document 09,SPEC-EBMR-000,WP-02,3,PARTIAL,confirm during work-package scope review
+CP-002,Constituent Classification,20.1 Combination-specific functionality,Document 35,SPEC-QMS-010,WP-05,4,PARTIAL,confirm during work-package scope review
+CP-003,Drug Constituent Version,20.1 Combination-specific functionality,Document 09,SPEC-EBMR-000,WP-02,6,COVERED,
+CP-004,Device Constituent Version,20.1 Combination-specific functionality,Document 09,SPEC-EBMR-000,WP-02,5,PARTIAL,confirm during work-package scope review
+CP-005,Cross-Constituent Genealogy,20.1 Combination-specific functionality,Document 12,SPEC-EBMR-003,WP-02,4,PARTIAL,confirm during work-package scope review
+CP-006,Combined Manufacturing Route,20.1 Combination-specific functionality,Document 56,SPEC-DDCP-003,WP-08,6,COVERED,
+CP-007,Constituent Facility Tracking,20.1 Combination-specific functionality,Document 36,SPEC-QMS-011,WP-05,2,NOT_COVERED,confirm during work-package scope review
+CP-008,Interface Critical Parameters,20.1 Combination-specific functionality,Document 55,SPEC-DDCP-002,WP-08,5,PARTIAL,confirm during work-package scope review
+CP-009,Device UDI + Drug Batch Link,20.1 Combination-specific functionality,Document 09,SPEC-EBMR-000,WP-02,5,PARTIAL,confirm during work-package scope review
+CP-010,Combination Packaging,20.1 Combination-specific functionality,Document 09,SPEC-EBMR-000,WP-02,3,PARTIAL,confirm during work-package scope review
+CP-011,Combination Labeling,20.1 Combination-specific functionality,Document 06,SPEC-GXP-004,WP-01,3,PARTIAL,confirm during work-package scope review
+CP-012,Unified Deviation,20.1 Combination-specific functionality,Document 55,SPEC-DDCP-002,WP-08,5,PARTIAL,confirm during work-package scope review
+CP-013,Cross-Constituent CAPA,20.1 Combination-specific functionality,Document 06,SPEC-GXP-004,WP-01,3,PARTIAL,confirm during work-package scope review
+CP-014,Unified Release,20.1 Combination-specific functionality,Document 54,SPEC-DDCP-001,WP-08,3,PARTIAL,confirm during work-package scope review
+CP-015,Cross-Functional Approval,20.1 Combination-specific functionality,Document 07,SPEC-IAM-001,WP-01,3,PARTIAL,confirm during work-package scope review
+CP-016,Expiration Determination,20.1 Combination-specific functionality,Document 09,SPEC-EBMR-000,WP-02,3,PARTIAL,confirm during work-package scope review
+CP-017,Stability Linkage,20.1 Combination-specific functionality,Document 60,SPEC-PM-003,WP-09,4,PARTIAL,confirm during work-package scope review
+CP-018,Reserve Sample Linkage,20.1 Combination-specific functionality,Document 12,SPEC-EBMR-003,WP-02,2,NOT_COVERED,confirm during work-package scope review
+CP-019,Combination Complaint,20.1 Combination-specific functionality,Document 09,SPEC-EBMR-000,WP-02,3,PARTIAL,confirm during work-package scope review
+CP-020,Recall Impact Analysis,20.1 Combination-specific functionality,Document 09,SPEC-EBMR-000,WP-02,3,PARTIAL,confirm during work-package scope review
+PM-001,Complaint Intake,Required sub-functionalities,Document 35,SPEC-QMS-010,WP-05,3,PARTIAL,confirm during work-package scope review
+PM-002,Constituent Classification,Required sub-functionalities,Document 35,SPEC-QMS-010,WP-05,4,PARTIAL,confirm during work-package scope review
+PM-003,Seriousness / Criticality Assessment,Required sub-functionalities,Document 58,SPEC-PM-001,WP-09,7,COVERED,
+PM-004,Reportability Assessment,Required sub-functionalities,Document 36,SPEC-QMS-011,WP-05,4,PARTIAL,confirm during work-package scope review
+PM-005,Investigation,Required sub-functionalities,Document 10,SPEC-EBMR-001,WP-02,5,PARTIAL,confirm during work-package scope review
+PM-006,Affected Product Search,Required sub-functionalities,Document 09,SPEC-EBMR-000,WP-02,5,PARTIAL,confirm during work-package scope review
+PM-007,CAPA Link,Required sub-functionalities,Document 32,SPEC-QMS-007,WP-05,4,PARTIAL,confirm during work-package scope review
+PM-008,Field Action / Recall,Required sub-functionalities,Document 36,SPEC-QMS-011,WP-05,10,COVERED,
+PM-009,Postmarket Audit Trail,Required sub-functionalities,Document 58,SPEC-PM-001,WP-09,3,PARTIAL,confirm during work-package scope review
+PM-010,Regulatory Submission Adapter,Required sub-functionalities,Document 105,SPEC-AI-001,WP-13,3,PARTIAL,confirm during work-package scope review
+MD-001,Device Master,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 09,SPEC-EBMR-000,WP-02,4,PARTIAL,confirm during work-package scope review
+MD-002,Production Specification,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 09,SPEC-EBMR-000,WP-02,4,PARTIAL,confirm during work-package scope review
+MD-003,eDHR-Style Record,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 12,SPEC-EBMR-003,WP-02,4,PARTIAL,confirm during work-package scope review
+MD-004,Serial Number,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 11,SPEC-EBMR-002,WP-02,3,PARTIAL,confirm during work-package scope review
+MD-005,Lot Number,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 13,SPEC-EBMR-004,WP-03,2,NOT_COVERED,confirm during work-package scope review
+MD-006,UDI,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 11,SPEC-EBMR-002,WP-02,2,NOT_COVERED,confirm during work-package scope review
+MD-007,Component Traceability,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 54,SPEC-DDCP-001,WP-08,2,NOT_COVERED,confirm during work-package scope review
+MD-008,Supplier Control,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 19,SPEC-MAT-002A,WP-04,3,PARTIAL,confirm during work-package scope review
+MD-009,Incoming Acceptance,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 12,SPEC-EBMR-003,WP-02,3,PARTIAL,confirm during work-package scope review
+MD-010,Assembly Execution,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 03,SPEC-GXP-001,WP-01,3,PARTIAL,confirm during work-package scope review
+MD-011,Test Equipment,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 12,SPEC-EBMR-003,WP-02,2,NOT_COVERED,confirm during work-package scope review
+MD-012,Device Test Result,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 23,SPEC-QC-001,WP-04,4,PARTIAL,confirm during work-package scope review
+MD-013,Process Validation Link,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 12,SPEC-EBMR-003,WP-02,4,PARTIAL,confirm during work-package scope review
+MD-014,Sterilization,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 42,SPEC-EQP-005,WP-06,3,PARTIAL,confirm during work-package scope review
+MD-015,Environmental Conditions,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 09,SPEC-EBMR-000,WP-02,2,NOT_COVERED,confirm during work-package scope review
+MD-016,Nonconforming Product,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 09,SPEC-EBMR-000,WP-02,1,NOT_COVERED,confirm during work-package scope review
+MD-017,Rework,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 10,SPEC-EBMR-001,WP-02,3,PARTIAL,confirm during work-package scope review
+MD-018,Final Acceptance,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 12,SPEC-EBMR-003,WP-02,3,PARTIAL,confirm during work-package scope review
+MD-019,Label/Packaging Control,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 16,SPEC-EBMR-007,WP-03,4,PARTIAL,confirm during work-package scope review
+MD-020,Complaint Record,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 35,SPEC-QMS-010,WP-05,3,PARTIAL,confirm during work-package scope review
+MD-021,Servicing,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 78,SPEC-DATA-010,WP-11,2,NOT_COVERED,confirm during work-package scope review
+MD-022,MDR Assessment,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 35,SPEC-QMS-010,WP-05,3,PARTIAL,confirm during work-package scope review
+MD-023,Corrections / Removals,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 36,SPEC-QMS-011,WP-05,3,PARTIAL,confirm during work-package scope review
+MD-024,Device Tracking,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 09,SPEC-EBMR-000,WP-02,2,NOT_COVERED,confirm during work-package scope review
+MD-025,Device Risk Linkage,21. MEDICAL DEVICE MANUFACTURING PROFILE,Document 09,SPEC-EBMR-000,WP-02,4,PARTIAL,confirm during work-package scope review
+PH-001,Master Production & Control Record,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 10,SPEC-EBMR-001,WP-02,2,NOT_COVERED,confirm during work-package scope review
+PH-002,Batch Production Record,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 11,SPEC-EBMR-002,WP-02,3,PARTIAL,confirm during work-package scope review
+PH-003,Component Control,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 17,SPEC-EBMR-008,WP-03,2,NOT_COVERED,confirm during work-package scope review
+PH-004,Component Testing,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 19,SPEC-MAT-002A,WP-04,3,PARTIAL,confirm during work-package scope review
+PH-005,Container / Closure,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 40,SPEC-EQP-003,WP-06,3,PARTIAL,confirm during work-package scope review
+PH-006,Material Identity,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 09,SPEC-EBMR-000,WP-02,2,NOT_COVERED,confirm during work-package scope review
+PH-007,Component Weighing,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 17,SPEC-EBMR-008,WP-03,3,PARTIAL,confirm during work-package scope review
+PH-008,Yield Calculation,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 17,SPEC-EBMR-008,WP-03,5,PARTIAL,confirm during work-package scope review
+PH-009,Equipment Identification,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 04,SPEC-GXP-002,WP-01,1,NOT_COVERED,confirm during work-package scope review
+PH-010,Production Sequence,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 12,SPEC-EBMR-003,WP-02,2,NOT_COVERED,confirm during work-package scope review
+PH-011,In-Process Controls,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 57,SPEC-DDCP-004,WP-08,2,NOT_COVERED,confirm during work-package scope review
+PH-012,Time Limit Control,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 40,SPEC-EQP-003,WP-06,3,PARTIAL,confirm during work-package scope review
+PH-013,Microbial Controls,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 36,SPEC-QMS-011,WP-05,1,NOT_COVERED,confirm during work-package scope review
+PH-014,Reprocessing,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 14,SPEC-EBMR-005,WP-03,2,NOT_COVERED,confirm during work-package scope review
+PH-015,Packaging,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 14,SPEC-EBMR-005,WP-03,2,NOT_COVERED,confirm during work-package scope review
+PH-016,Label Issuance,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 16,SPEC-EBMR-007,WP-03,3,PARTIAL,confirm during work-package scope review
+PH-017,Label Reconciliation,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 16,SPEC-EBMR-007,WP-03,3,PARTIAL,confirm during work-package scope review
+PH-018,Tamper Evidence,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 16,SPEC-EBMR-007,WP-03,4,PARTIAL,confirm during work-package scope review
+PH-019,Warehousing,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 20,SPEC-MAT-002B,WP-04,3,PARTIAL,confirm during work-package scope review
+PH-020,Distribution Traceability,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 13,SPEC-EBMR-004,WP-03,3,PARTIAL,confirm during work-package scope review
+PH-021,Laboratory Controls,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 82,SPEC-VAL-004,WP-12,2,NOT_COVERED,confirm during work-package scope review
+PH-022,Release Testing,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 12,SPEC-EBMR-003,WP-02,2,NOT_COVERED,confirm during work-package scope review
+PH-023,Stability,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 09,SPEC-EBMR-000,WP-02,1,NOT_COVERED,confirm during work-package scope review
+PH-024,Special Testing,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 68,SPEC-SEC-008,WP-10,3,PARTIAL,confirm during work-package scope review
+PH-025,Reserve Samples,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 03,SPEC-GXP-001,WP-01,1,NOT_COVERED,confirm during work-package scope review
+PH-026,Laboratory Record,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 23,SPEC-QC-001,WP-04,3,PARTIAL,confirm during work-package scope review
+PH-027,Batch QA Review,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 11,SPEC-EBMR-002,WP-02,3,PARTIAL,confirm during work-package scope review
+PH-028,Complaint,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 35,SPEC-QMS-010,WP-05,3,PARTIAL,confirm during work-package scope review
+PH-029,Returned Drug,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 35,SPEC-QMS-010,WP-05,2,NOT_COVERED,confirm during work-package scope review
+PH-030,Salvage / Destruction,22. PHARMACEUTICAL MANUFACTURING PROFILE,Document 03,SPEC-GXP-001,WP-01,2,NOT_COVERED,confirm during work-package scope review
+SPEC-SEC-001,Security Architecture & Threat Model,43A. REQUIRED DOWNSTREAM DEDICATED SPECIFICATIONS,Document 61,SPEC-SEC-001,WP-10,4,PARTIAL,confirm during work-package scope review

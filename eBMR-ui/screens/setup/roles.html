@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roles & permissions · Setup · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="building"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">Organisation setup</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> Sign-in / profiles</a>
+      <div class="sidebar-section">Setup</div>
+      <a href="checklist.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Setup checklist</a>
+      <a href="company.html" class="sidebar-link"><span class="icon" data-icon="building"></span> Company &amp; sites</a>
+      <a href="users.html" class="sidebar-link"><span class="icon" data-icon="users"></span> Users</a>
+      <a href="roles.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="shield-check"></span> Roles &amp; permissions</a>
+      <a href="products.html" class="sidebar-link"><span class="icon" data-icon="package"></span> Products</a>
+      <a href="materials.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Materials &amp; items</a>
+      <a href="bom.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Bill of materials</a>
+      <a href="equipment.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Equipment &amp; rooms</a>
+      <div class="sidebar-section">Then</div>
+      <!-- <a href="../md/menu.html" class="sidebar-link"><span class="icon" data-icon="cross-medical"></span> Medical Device</a>
+      <a href="../ph/menu.html" class="sidebar-link"><span class="icon" data-icon="droplet"></span> Pharmaceutical</a> -->
+      <a href="../ddcp/menu.html" class="sidebar-link"><span class="icon" data-icon="layers"></span> Combination Product</a>
+    </nav>
+    <div class="sidebar-foot"><a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a></div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="k">Organisation</span><span class="v">Acme Life Sciences Group</span></span>
+      <span class="context-item"><span class="k">Scope</span><span class="v">Tenant-wide setup — applies to all profiles</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">L. Park — Configuration Administrator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 09:00 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="checklist.html">Setup</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Roles &amp; Permissions</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Roles &amp; Permissions</h1>
+        <p class="page-subtitle">Step 3 of 7 · What each role may attempt. The server enforces this on every request — hiding a button is never the control.</p>
+      </div></div>
+      <div class="card mb-4">
+        <div class="card-header"><div class="card-title">Permission matrix</div>
+        <button class="btn btn-primary btn-sm" data-modal-open="add-role"><span class="icon" data-icon="plus"></span> Add role</button></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table" data-list="roles">
+            <thead><tr><th>Role</th><th class="text-center">Execute step</th><th class="text-center">Dispense</th>
+            <th class="text-center">Verify / check</th><th class="text-center">Disposition</th>
+            <th class="text-center">Author master</th><th class="text-center">Release</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">Production Operator</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td></tr>
+              <tr><td><span class="font-semibold">Material/Dispensing Operator</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td></tr>
+              <tr><td><span class="font-semibold">Independent Checker</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td></tr>
+              <tr><td><span class="font-semibold">Production Supervisor</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td></tr>
+              <tr><td><span class="font-semibold">Master Author</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span class="text-muted">—</span></td></tr>
+              <tr><td><span class="font-semibold">Technical Reviewer</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span class="text-muted">—</span></td></tr>
+              <tr><td><span class="font-semibold">Device Quality</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td></tr>
+              <tr><td><span class="font-semibold">Quality Unit Reviewer</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td></tr>
+              <tr><td><span class="font-semibold">Release Authority</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span style="color:var(--status-good-text);font-weight:700">✓</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><div class="card-title">Segregation-of-duties rules</div>
+        <span class="fs-2 text-muted">Enforced server-side, cannot be switched off</span></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Rule</th><th>Effect</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">Performer ≠ verifier</span></td><td>Whoever recorded a value cannot be the one who independently checks it</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Enforced</span></td></tr>
+              <tr><td><span class="font-semibold">Author ≠ approver</span></td><td>Whoever wrote a master cannot approve it</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Enforced</span></td></tr>
+              <tr><td><span class="font-semibold">Investigator ≠ disposition approver</span></td><td>Whoever proposes a conclusion cannot Quality-approve their own conclusion</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Enforced</span></td></tr>
+              <tr><td><span class="font-semibold">Production ≠ release</span></td><td>Nobody in Production may sign a product release</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Enforced</span></td></tr>
+              <tr><td><span class="font-semibold">Administrator ≠ Quality authority</span></td><td>A configuration admin can create users but can never sign a release</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Enforced</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card card-pad">
+        <p class="fs-4 font-semibold mb-2">Why a role is not enough on its own</p>
+        <p class="fs-3 text-secondary">A role says <em>what kind</em> of action you may attempt. Before the server actually allows one, it also checks: is your training current for this specific operation, are you assigned to this site, is the record in a state that permits it, and would this action break a segregation-of-duties rule? All four are checked on every request.</p>
+      </div>
+
+
+<div class="modal-backdrop" id="add-role">
+  <div class="modal modal-lg" data-demo-form>
+    <div class="modal-header">
+      <div><div class="modal-title">Add role</div><p class="fs-3 text-muted mt-1">Roles are data, not code — you can add one without a software release.</p></div>
+      <button data-modal-close class="btn-icon btn-ghost"><span class="icon" data-icon="x"></span></button>
+    </div>
+    <div class="modal-body">
+        <div class="field"><label class="label">Role name <span class="req">*</span></label>
+          <input class="input" data-field="role" data-required placeholder="e.g. Packaging Operator" value="">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Based on</label>
+          <select class="select" data-field="base"><option>(start empty)</option><option>Production Operator</option><option>Independent Checker</option><option>Quality Unit Reviewer</option></select>
+
+        </div>        <div class="field"><label class="label">Description</label>
+          <textarea class="input" rows="2" data-field="desc" placeholder="What this role is for"></textarea>
+
+        </div>        <div class="field"><label class="label">Permissions</label>
+          <label class="checkbox-row mb-2"><input type="checkbox"><span class="fs-3">Execute a production step</span></label>
+          <label class="checkbox-row mb-2"><input type="checkbox"><span class="fs-3">Dispense / weigh materials</span></label>
+          <label class="checkbox-row mb-2"><input type="checkbox"><span class="fs-3">Independently verify another person's entry</span></label>
+          <label class="checkbox-row mb-2"><input type="checkbox"><span class="fs-3">Record a disposition</span></label>
+          <label class="checkbox-row mb-2"><input type="checkbox"><span class="fs-3">Author a manufacturing master</span></label>
+          <label class="checkbox-row"><input type="checkbox"><span class="fs-3">Sign a product release</span></label>
+        </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary" data-demo-save="roles" data-demo-message="Role created — demo only, nothing stored.">
+        <span class="icon" data-icon="check"></span> Create role</button>
+    </div>
+  </div>
+</div>
+
+<template data-list-row="roles"><td><span class="font-semibold">{{role}}</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td><td class="text-center"><span class="text-muted">—</span></td></template>
+    </main>
+  </div>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

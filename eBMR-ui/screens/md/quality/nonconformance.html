@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nonconformance · MD · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="cross-medical"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">MD · Device Quality</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Device Quality</div>
+      <a href="nonconformance.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="alert-triangle"></span> Nonconformance</a>
+      <a href="review.html" class="sidebar-link"><span class="icon" data-icon="clipboard"></span> Quality review</a>
+      <a href="release.html" class="sidebar-link"><span class="icon" data-icon="badge-check"></span> Release ceremony</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> Medical Device</span></span>
+      <span class="context-item"><span class="k">Record</span><span class="v">NC-2231</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">R. Oduya — Device Quality</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">MD</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Device Nonconformance</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Device Nonconformance</h1>
+        <p class="page-subtitle">UX-SCR-020 · Device profile only — Nonconformance / Disposition / Rework, never Deviation / Investigation</p>
+      </div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Failure record</div></div>
+        <div class="card-pad grid grid-cols-3 gap-4">
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Affected unit</p><p class="fs-4 font-semibold mt-1">SN-88213 only</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Failed step</p><p class="fs-4 font-semibold mt-1">OP-030 Final functional test</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Original result</p><p class="fs-4 font-semibold mt-1">Leak decay pressure drop 3.2 kPa against a limit of ≤ 2.0 kPa</p></div>
+        </div>
+      </div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Disposition</div></div>
+        <div class="card-pad">
+          <div class="field"><label class="label">Disposition <span class="req">*</span></label>
+            <select class="select"><option>Scrap</option><option selected>Rework — complete released path available</option><option>Use-as-is (requires justification)</option></select></div>
+          <div class="field"><label class="label">Rework instruction / version <span class="req">*</span></label>
+            <input class="input" value="IS-200-RWK-02 v1 — refastening &amp; retest"></div>
+          <div class="field"><label class="label">Quantity</label><input class="input tabular" value="1 unit" disabled></div>
+          <label class="checkbox-row mb-3"><input type="checkbox" checked><span class="fs-3">New linked execution will be created for re-verification — the original failure remains visible, not replaced</span></label>
+          <button class="btn btn-primary"><span class="icon" data-icon="check"></span> Record disposition &amp; open rework</button>
+        </div>
+      </div>
+      <div class="card card-pad"><p class="fs-3 text-muted">There is no Deviation, Investigation or generic custom action on this screen — device nonconformance uses only Nonconformance, Disposition and Rework, per profile vocabulary rules.</p></div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

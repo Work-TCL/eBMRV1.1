@@ -1,0 +1,296 @@
+# WP-10 — Scope & Requirements
+
+**In scope:** Documents 61, 62, 63, 64, 65, 66, 67, 68
+
+## Document 61 — Security Architecture, Threat Model & Control Framework (SPEC-SEC-001)
+
+- Code location: `platform/security`
+- Authoritative store: PostgreSQL (GxP Core, authoritative)
+- Risk class: **HIGHER-PROCESS-RISK**
+- Requirements: SEC-THR-001..028 (28)
+
+## Document 62 — Identity Federation, SSO, MFA, Sessions & Service Identities (SPEC-SEC-002)
+
+- Code location: `platform/security`
+- Authoritative store: PostgreSQL (GxP Core, authoritative)
+- Risk class: **HIGHER-PROCESS-RISK**
+- Requirements: IAMSEC-FR-001..026 (26)
+
+## Document 63 — Privileged Access, Support Access, Break-Glass & Administrative Security (SPEC-SEC-003)
+
+- Code location: `platform/security`
+- Authoritative store: PostgreSQL (GxP Core, authoritative)
+- Risk class: **HIGHER-PROCESS-RISK**
+- Requirements: PAM-FR-001..026 (26)
+
+## Document 64 — Application, API, UI & Secure Runtime Engineering (SPEC-SEC-004)
+
+- Code location: `platform/security`
+- Authoritative store: PostgreSQL (GxP Core, authoritative)
+- Risk class: **HIGHER-PROCESS-RISK**
+- Requirements: APPSEC-FR-001..030 (30)
+
+## Document 65 — Secrets Management, PKI, Cryptography & Key Lifecycle (SPEC-SEC-005)
+
+- Code location: `platform/security`
+- Authoritative store: PostgreSQL (GxP Core, authoritative)
+- Risk class: **HIGHER-PROCESS-RISK**
+- Requirements: KEY-FR-001..028 (28)
+
+## Document 66 — Network, Tenant, Deployment Isolation & Zero-Trust Architecture (SPEC-SEC-006)
+
+- Code location: `platform/security`
+- Authoritative store: PostgreSQL (GxP Core, authoritative)
+- Risk class: **HIGHER-PROCESS-RISK**
+- Requirements: NET-FR-001..030 (30)
+
+## Document 67 — Security Logging, Monitoring, Incident Response & Forensic Evidence (SPEC-SEC-007)
+
+- Code location: `platform/security`
+- Authoritative store: PostgreSQL (GxP Core, authoritative)
+- Risk class: **HIGHER-PROCESS-RISK**
+- Requirements: MON-FR-001..030 (30)
+
+## Document 68 — Secure SDLC, Software Supply Chain, SBOM, Vulnerability & Release Security (SPEC-SEC-008)
+
+- Code location: `platform/security`
+- Authoritative store: PostgreSQL (GxP Core, authoritative)
+- Risk class: **HIGHER-PROCESS-RISK**
+- Requirements: SDLC-FR-001..034 (34)
+
+## All requirements
+
+| ID | Doc | Requirement | Behaviour | Acceptance |
+|---|---|---|---|---|
+| SEC-THR-001 | 61 | Security architecture register | Maintain system security architecture, trust zones, assets, actors, data classifications, entry points and security owners. | Visible security design. |
+| SEC-THR-002 | 61 | Threat model lifecycle | Threat model created at architecture baseline and updated for new modules, integrations, deployment modes and material changes. | Continuous risk review. |
+| SEC-THR-003 | 61 | Threat methodology | Use STRIDE or equivalent controlled methodology with asset/abuse-case mapping; methodology version retained. | Repeatable. |
+| SEC-THR-004 | 61 | Asset catalogue | Classify GxP records, credentials, signatures, audit, source evidence, PII, configuration, code/artifacts and keys. | Protection based on value. |
+| SEC-THR-005 | 61 | Trust boundaries | Explicit boundaries between browser, Frappe, GxP services, databases, Keycloak/IdP, Edge, OT network, integrations, object store and admin plane. | No implicit trust. |
+| SEC-THR-006 | 61 | Abuse cases | Model account takeover, privilege escalation, signature fraud, audit tampering, data exfiltration, ransomware, API abuse, insider misuse, malicious integration, Edge compromise and supply-chain compro | Realistic adversary paths. |
+| SEC-THR-007 | 61 | GxP integrity threats | Explicitly model unauthorized mutation, historical overwrite, duplicate/replayed command, stale version, failed-result deletion and audit-chain tampering. | Regulated integrity. |
+| SEC-THR-008 | 61 | Availability threats | Model DoS, queue exhaustion, database outage, object-store outage, IdP outage, Edge outage and network segmentation. | Operational resilience. |
+| SEC-THR-009 | 61 | Privacy threats | Model overexposure of complaint/patient/reporter/personnel data and export/search leakage. | Confidentiality. |
+| SEC-THR-010 | 61 | OT threats | Model compromised PLC/SCADA/Edge source, forged telemetry, bad clock, protocol abuse and unauthorized machine command. | Factory boundary. |
+| SEC-THR-011 | 61 | Integration threats | Model SSRF, unsafe third-party response consumption, compromised ERP/LIMS endpoint and replayed webhook. | External trust. |
+| SEC-THR-012 | 61 | Tenant/site threats | Model cross-tenant and cross-site object access, cache leakage, search leakage and background-job scope errors. | Isolation. |
+| SEC-THR-013 | 61 | Control mapping | Each identified threat maps preventive/detective/recovery controls and verification tests. | Actionable. |
+| SEC-THR-014 | 61 | Risk rating | Use approved security-risk model with impact/likelihood/exposure and residual-risk decision. | Prioritized. |
+| SEC-THR-015 | 61 | Security acceptance | High/critical residual risk requires Security owner plus Quality/Business acceptance where GxP impact exists. | Governed. |
+| SEC-THR-016 | 61 | Security requirements | Threat mitigations generate stable security requirement IDs and tests. | Traceability. |
+| SEC-THR-017 | 61 | Security ADR | Material security tradeoff documented in ADR with threat/risk/control impact. | Explainable design. |
+| SEC-THR-018 | 61 | Secure defaults | Default deployment minimizes exposed services, uses TLS, denies generic admin access, disables machine write and requires strong auth. | Secure-by-default. |
+| SEC-THR-019 | 61 | Attack surface inventory | Maintain deployed endpoints, ports, APIs, admin interfaces, integrations and versions. | Asset awareness. |
+| SEC-THR-020 | 61 | Dependency boundary | Third-party library/service risk included in threat model where compromise affects regulated state. | Supply-chain aware. |
+| SEC-THR-021 | 61 | Customer configuration threat review | Security-impacting tenant/customer configuration has safe defaults and validation. | No insecure customization. |
+| SEC-THR-022 | 61 | Security control ownership | Every security control has implementation owner, evidence source and test owner. | Accountability. |
+| SEC-THR-023 | 61 | Exception process | Security exception is time-bounded, risk-assessed, approved and tracked to remediation. | No permanent bypass. |
+| SEC-THR-024 | 61 | Threat review trigger | Trigger on new external endpoint, auth mode, machine command, new data class, new deployment mode, major library/runtime or architectural change. | Change-sensitive. |
+| SEC-THR-025 | 61 | Security profile | Cloud, private cloud and on-prem deployments receive profile-specific threat/control baselines. | Deployment-aware. |
+| SEC-THR-026 | 61 | Control effectiveness | Security monitoring/pen test/incidents can update control effectiveness and reopen threats. | Feedback loop. |
+| SEC-THR-027 | 61 | Inspection evidence | Threat/control/risk/exception history exportable for enterprise customer assessment. | Customer assurance. |
+| SEC-THR-028 | 61 | No checklist-only security | Security framework mapping supplements—not replaces—system-specific threat modeling. | Meaningful design. |
+| IAMSEC-FR-001 | 62 | Federated identity | Support OIDC and SAML federation through Keycloak-compatible identity boundary; direct app password store is fallback only for approved isolated deployments. | Enterprise SSO. |
+| IAMSEC-FR-002 | 62 | Local fallback IdP | On-prem/private deployments can use locally managed Keycloak-compatible realm when customer IdP unavailable. | Deployment flexibility. |
+| IAMSEC-FR-003 | 62 | MFA policy | MFA requirements configurable by user risk/role/context; privileged users require MFA. | Strong auth. |
+| IAMSEC-FR-004 | 62 | MFA methods | Support WebAuthn/passkeys/security keys and approved TOTP/IdP MFA methods; weak factors configurable as disallowed. | Phishing resistance. |
+| IAMSEC-FR-005 | 62 | SSO session | Application accepts short-lived identity tokens/session assertions and validates issuer/audience/signature/expiry/nonce/state. | Token integrity. |
+| IAMSEC-FR-006 | 62 | Session binding | Session binds tenant/user/authentication context and cannot change tenant/site silently. | Scope integrity. |
+| IAMSEC-FR-007 | 62 | Session timeout | Idle and absolute session lifetimes configurable by deployment/profile; sensitive contexts shorter. | Least exposure. |
+| IAMSEC-FR-008 | 62 | Reauthentication | Sensitive security/admin operations may require fresh authentication independently of Part 11 signing. | Step-up. |
+| IAMSEC-FR-009 | 62 | Part 11 separation | Regulated signature ceremony always uses Document 04; normal MFA/session is never reused automatically as signature proof. | Correct semantics. |
+| IAMSEC-FR-010 | 62 | Token revocation | Disabled user/critical risk/session logout/revocation invalidates or rapidly expires app access. | Lifecycle. |
+| IAMSEC-FR-011 | 62 | Group/claim mapping | External groups/claims map through controlled identity mapping; external IdP does not directly assign unrestricted GxP permission. | Policy boundary. |
+| IAMSEC-FR-012 | 62 | Provisioning | SCIM or controlled directory sync may provision identity metadata; authorization remains controlled in platform. | Enterprise lifecycle. |
+| IAMSEC-FR-013 | 62 | Joiner/mover/leaver | Identity lifecycle integrates Document 07 role/qualification lifecycle and security session revocation. | Timely access removal. |
+| IAMSEC-FR-014 | 62 | Service identity | Services use workload identities/client credentials/mTLS certificates; no shared human accounts. | Machine attribution. |
+| IAMSEC-FR-015 | 62 | Device identity | Edge/connectors have distinct certificates/service principals and site scope. | Industrial identity. |
+| IAMSEC-FR-016 | 62 | Credential storage | No plaintext user/service secrets in source/config/logs. | Secret hygiene. |
+| IAMSEC-FR-017 | 62 | Authentication events | Success/failure/MFA/lockout/token/revocation events sent to security telemetry. | Detection. |
+| IAMSEC-FR-018 | 62 | Brute-force defense | Rate-limit/lockout/risk response handled primarily at IdP and supported by application controls. | Abuse protection. |
+| IAMSEC-FR-019 | 62 | Password fallback | If local passwords exist, enforce modern hashing and policy through IdP; application never implements custom password hashing. | Centralized auth. |
+| IAMSEC-FR-020 | 62 | Account recovery | Recovery handled through controlled IdP/customer process; app support cannot reset identity secretly. | Identity proof. |
+| IAMSEC-FR-021 | 62 | Impersonation | Human impersonation disabled by default; support troubleshooting uses controlled read-only/support-access model. | No hidden acting as user. |
+| IAMSEC-FR-022 | 62 | Concurrent sessions | Configurable session/device visibility and admin/security ability to revoke sessions. | Account control. |
+| IAMSEC-FR-023 | 62 | Risk context | Auth context may include MFA strength, device/trust/risk signals for policy decisions without embedding vendor-specific fields in domain. | Adaptive auth. |
+| IAMSEC-FR-024 | 62 | Clock skew | Token validation uses bounded configured clock skew; large time anomalies fail/auth-alert. | Time integrity. |
+| IAMSEC-FR-025 | 62 | Tenant discovery | Login flow never reveals sensitive tenant/customer existence beyond approved UX. | Information minimization. |
+| IAMSEC-FR-026 | 62 | Identity audit | Identity mappings, federation changes, MFA policy and service-client changes versioned/audited. | Traceability. |
+| PAM-FR-001 | 63 | Privileged role catalogue | Define platform admin, security admin, DB admin, infrastructure admin, support engineer, integration admin and customer admin separately. | Role separation. |
+| PAM-FR-002 | 63 | Admin not Quality | Privileged technical role never implies production/QC/QA/release/signature authority. | SoD. |
+| PAM-FR-003 | 63 | Named accounts | Privileged actions require named human account; shared admin accounts prohibited. | Attribution. |
+| PAM-FR-004 | 63 | MFA | Privileged interactive access requires MFA. | Strong admin auth. |
+| PAM-FR-005 | 63 | JIT access | Support just-in-time elevated access with ticket/reason/scope/start/expiry and approver. | Least privilege. |
+| PAM-FR-006 | 63 | Support access | Vendor/support access disabled by default and enabled per customer/site/time window. | Customer control. |
+| PAM-FR-007 | 63 | Support purpose | Support session has case/ticket, reason, customer approval where required and explicit resource scope. | Purpose limitation. |
+| PAM-FR-008 | 63 | Read-only default | Support role defaults read-only diagnostics; mutation requires separately approved privileged change path. | Safe support. |
+| PAM-FR-009 | 63 | Production shell | Interactive shell/SSH/kubectl access to production minimized and controlled by JIT/bastion/PAM pattern. | Reduced exposure. |
+| PAM-FR-010 | 63 | Database access | Direct production DB access restricted; GxP data repair uses controlled repair commands, not ad-hoc UPDATE. | Data integrity. |
+| PAM-FR-011 | 63 | Break-glass | Emergency account/path is disabled/sealed or tightly monitored, requires explicit reason and immediate post-use review. | Emergency resilience. |
+| PAM-FR-012 | 63 | Break-glass scope | Break-glass does not grant electronic-signature or QA release rights. | GxP boundary. |
+| PAM-FR-013 | 63 | Session recording | Privileged shell/admin session commands/activity recorded where deployment permits; database diagnostic queries logged where feasible. | Forensics. |
+| PAM-FR-014 | 63 | Clipboard/download restriction | Support export/download of sensitive data limited and audited. | Data protection. |
+| PAM-FR-015 | 63 | No impersonation | Support cannot impersonate end user to create GxP actions/signatures. | Integrity. |
+| PAM-FR-016 | 63 | Approval separation | Requester cannot approve own privileged elevation except emergency path requiring retrospective review. | SoD. |
+| PAM-FR-017 | 63 | Time bound | Elevation expires automatically; no permanent hidden grants. | Least privilege. |
+| PAM-FR-018 | 63 | Command allowlist | High-risk admin operations exposed as controlled commands with validation/audit rather than arbitrary DB/scripts. | Safe operations. |
+| PAM-FR-019 | 63 | Config changes | Security/infra production configuration changes link Change Control where GxP-impacting. | Validated state. |
+| PAM-FR-020 | 63 | Customer data access | Vendor staff tenant access requires explicit tenant scope and support entitlement. | Isolation. |
+| PAM-FR-021 | 63 | Secrets access | Viewing raw production secrets is restricted and exceptional; prefer delegated operations without secret disclosure. | Credential hygiene. |
+| PAM-FR-022 | 63 | Admin API | Administrative APIs separate namespace/scopes/rate limits and not exposed publicly unless required. | Attack surface. |
+| PAM-FR-023 | 63 | Activity monitoring | Privileged events produce high-signal telemetry and alerts for unusual scope/time/actions. | Detection. |
+| PAM-FR-024 | 63 | Periodic review | Privileged assignments and support entitlements reviewed periodically. | Governance. |
+| PAM-FR-025 | 63 | Offboarding | Termination/vendor access removal immediately revokes sessions/keys/JIT grants. | Lifecycle. |
+| PAM-FR-026 | 63 | Emergency repair evidence | Any emergency technical repair records original issue, command, before/after hashes, approver and linked deviation/change/security incident. | Inspection-ready. |
+| APPSEC-FR-001 | 64 | Server-side authorization | Every object/function/property mutation/read is authorized server-side; client-side visibility is not security. | BOLA/BFLA defense. |
+| APPSEC-FR-002 | 64 | Object scope | Tenant/site/resource identifiers are derived/validated against AuthContext and Policy decision. | No IDOR. |
+| APPSEC-FR-003 | 64 | Property authorization | Request DTO allowlists writable fields; mass-assignment to protected fields impossible. | Property-level security. |
+| APPSEC-FR-004 | 64 | Input schemas | All API inputs validated by typed schema including length, ranges, enums, formats and unknown-property policy. | Injection/malformed defense. |
+| APPSEC-FR-005 | 64 | Output minimization | Responses expose only required fields by role/context; sensitive fields omitted/masked. | Least disclosure. |
+| APPSEC-FR-006 | 64 | SQL safety | Parameterized queries/ORM safe APIs only; no string-concatenated SQL from request data. | Injection defense. |
+| APPSEC-FR-007 | 64 | Command injection | No shell command interpolation from untrusted input; use typed process APIs/allowlists where unavoidable. | RCE defense. |
+| APPSEC-FR-008 | 64 | XSS | Frappe/UI escapes untrusted output; rich text sanitized with allowlist; no unsafe HTML rendering. | Browser protection. |
+| APPSEC-FR-009 | 64 | CSRF | Cookie-authenticated browser mutations use robust CSRF protection/SameSite and origin controls; token APIs use appropriate model. | Request integrity. |
+| APPSEC-FR-010 | 64 | CORS | CORS deny-by-default, allowlisted exact origins per deployment; credentials not wildcarded. | Cross-origin security. |
+| APPSEC-FR-011 | 64 | SSRF | Outbound URL operations use allowlisted destinations/network egress controls; user-supplied URL cannot reach metadata/internal networks. | API7 defense. |
+| APPSEC-FR-012 | 64 | File upload | Validate size/type/content policy, filename handling, malware scanning/quarantine where required, store outside executable paths. | Upload security. |
+| APPSEC-FR-013 | 64 | Download authorization | Every attachment/evidence download rechecks object authorization; unguessable URL alone insufficient. | Data protection. |
+| APPSEC-FR-014 | 64 | Rate limits | Authentication, exports, search, expensive reports, integrations and sensitive business flows have rate/resource limits. | Resource protection. |
+| APPSEC-FR-015 | 64 | Pagination/bounds | List/search/report endpoints enforce result/time/size bounds. | DoS mitigation. |
+| APPSEC-FR-016 | 64 | API inventory | All endpoints/version/deprecation/auth scopes documented in OpenAPI/inventory. | Asset management. |
+| APPSEC-FR-017 | 64 | Debug exposure | Debug/admin/schema endpoints disabled or protected in production. | Misconfiguration defense. |
+| APPSEC-FR-018 | 64 | Error responses | Client gets stable non-sensitive error; stack traces/internal secrets never exposed. | Information control. |
+| APPSEC-FR-019 | 64 | Third-party API validation | Treat ERP/LIMS/IdP/Edge responses as untrusted; schema/size/status validation before consumption. | Unsafe API consumption defense. |
+| APPSEC-FR-020 | 64 | Webhook validation | Authenticate/signature/mTLS as configured; replay/idempotency checks. | Inbound trust. |
+| APPSEC-FR-021 | 64 | Export safety | CSV/spreadsheet export neutralizes formula injection where applicable and respects field permissions. | Office-client safety. |
+| APPSEC-FR-022 | 64 | Template safety | No arbitrary template/code evaluation from customer-configured expressions; rules use constrained DSL. | RCE prevention. |
+| APPSEC-FR-023 | 64 | Serialization | Avoid unsafe object deserialization; use explicit DTO schemas. | Code execution defense. |
+| APPSEC-FR-024 | 64 | Secrets in URLs | Credentials/tokens/sensitive values not placed in URLs/query strings unless protocol unavoidably requires and mitigated. | Leak prevention. |
+| APPSEC-FR-025 | 64 | Cookies | Secure, HttpOnly, SameSite cookies; session identifiers regenerated on auth privilege change as applicable. | Session defense. |
+| APPSEC-FR-026 | 64 | Security headers | CSP, frame-ancestors/X-Frame controls, Referrer-Policy, MIME sniff protection and HSTS where appropriate. | Browser hardening. |
+| APPSEC-FR-027 | 64 | API versioning | Deprecated insecure endpoint versions have removal plan/telemetry and cannot linger undocumented. | Attack surface. |
+| APPSEC-FR-028 | 64 | Graph/relationship queries | Prevent unauthorized traversal through genealogy/search/report endpoints. | Indirect disclosure. |
+| APPSEC-FR-029 | 64 | Bulk operations | Bulk mutations apply per-object authorization/business rules and bounded transaction behavior. | No batch bypass. |
+| APPSEC-FR-030 | 64 | Security tests | ASVS/API Security requirements mapped to automated tests and penetration test scenarios. | Verification. |
+| KEY-FR-001 | 65 | Secret inventory | Inventory database passwords, OAuth secrets, API keys, signing keys, mTLS keys, Edge certs and encryption keys with owner/rotation policy. | Known secrets. |
+| KEY-FR-002 | 65 | Secret manager abstraction | Production secrets retrieved from Kubernetes/cloud/on-prem secret manager abstraction; source-controlled plaintext prohibited. | Central management. |
+| KEY-FR-003 | 65 | Secret references | Application config stores secret references/identifiers, not secret values. | Safe config. |
+| KEY-FR-004 | 65 | Least access | Each service identity can retrieve only required secrets. | Least privilege. |
+| KEY-FR-005 | 65 | Rotation | Rotation supported without code change; overlap/grace for credentials/certs where protocol requires. | Lifecycle. |
+| KEY-FR-006 | 65 | Emergency rotation | Compromised secret can be revoked/rotated rapidly with incident linkage. | Response. |
+| KEY-FR-007 | 65 | PKI hierarchy | Document root/intermediate/issuing authorities or enterprise CA integration for service/Edge certificates. | Trust. |
+| KEY-FR-008 | 65 | Certificate issuance | Certificate subject/SAN/purpose/tenant/site/service binding validated before issuance. | Identity. |
+| KEY-FR-009 | 65 | Certificate rotation | Automated/controlled renewal before expiry; failed renewal alerts. | Availability. |
+| KEY-FR-010 | 65 | Certificate revocation | Revoked identity rejected promptly according to deployment's CRL/OCSP/trust-store approach. | Compromise containment. |
+| KEY-FR-011 | 65 | TLS | TLS configured using current approved deployment baseline; obsolete protocol/cipher disabled. | Transport security. |
+| KEY-FR-012 | 65 | mTLS | Use mTLS for selected service/Edge/admin integration boundaries where architecture requires. | Strong workload identity. |
+| KEY-FR-013 | 65 | At-rest encryption | Volumes/object stores/backups use platform-approved at-rest encryption; sensitive application fields can use envelope/field encryption when risk requires. | Data confidentiality. |
+| KEY-FR-014 | 65 | Field encryption | Patient/reporter/sensitive secret-like data fields can be encrypted with tenant/data-class keys where required. | Privacy. |
+| KEY-FR-015 | 65 | Key hierarchy | Data-encryption keys separated from key-encryption/master keys; external KMS/HSM supported. | Separation. |
+| KEY-FR-016 | 65 | Crypto agility | Algorithms/key sizes identified by versioned crypto profile so platform can migrate without schema redesign. | Future-proof. |
+| KEY-FR-017 | 65 | Hashing | Use approved cryptographic hashing for evidence/audit/manifests; algorithm recorded with hash. | Integrity. |
+| KEY-FR-018 | 65 | Passwords | Human password hashing delegated to IdP using modern adaptive hashing; app does not implement own password DB. | Correct scope. |
+| KEY-FR-019 | 65 | Signature cryptography | Part 11 signature evidence integrity uses Document 04/Vault design; do not confuse cryptographic document signing with user authentication. | Semantics. |
+| KEY-FR-020 | 65 | Audit checkpoints | Audit integrity checkpoint signing key separate from TLS/application credentials. | Blast radius. |
+| KEY-FR-021 | 65 | Backup keys | Backup encryption keys and restore procedures documented/tested; avoid unrecoverable encrypted backups. | Recoverability. |
+| KEY-FR-022 | 65 | Key access logging | KMS/HSM/secret accesses/administrative changes logged. | Detection. |
+| KEY-FR-023 | 65 | No secret logging | Application/Edge/CI redacts Authorization headers, cookies, private keys, passwords/tokens and configured sensitive fields. | Leak prevention. |
+| KEY-FR-024 | 65 | No secret in artifact | Container images/build outputs/packages do not contain environment secrets. | Supply-chain hygiene. |
+| KEY-FR-025 | 65 | Certificate pinning/trust | OPC UA/custom partner trust stores managed explicitly; 'trust all' prohibited in production. | External security. |
+| KEY-FR-026 | 65 | Tenant key strategy | Dedicated deployment/customer keys supported; shared SaaS-style keying not assumed. | Enterprise isolation. |
+| KEY-FR-027 | 65 | Key destruction | Retired keys destroyed only after retention/restore/legal requirements permit; destruction evidence recorded. | Lifecycle. |
+| KEY-FR-028 | 65 | Crypto self-test | Startup/health checks detect missing/expired/inaccessible critical keys/certs and fail safely. | Operational assurance. |
+| NET-FR-001 | 66 | Deployment zones | Define ingress, app, GxP service, DB, integration, observability, admin and Edge/OT zones. | Layered architecture. |
+| NET-FR-002 | 66 | Default deny | Network policies/firewalls default deny between zones and allow only required flows. | Least connectivity. |
+| NET-FR-003 | 66 | No DB internet exposure | MariaDB/PostgreSQL/object stores/internal message bus not publicly exposed. | Attack surface. |
+| NET-FR-004 | 66 | Service-to-service auth | Internal network location alone does not authorize service access; workload identity/auth required. | Zero trust. |
+| NET-FR-005 | 66 | Ingress | Only approved reverse proxy/API gateway/load balancer exposed externally; admin routes separately protected. | Controlled entry. |
+| NET-FR-006 | 66 | Egress | Application/integration services use outbound allowlists/proxy/network policy; GxP DB has no arbitrary internet egress. | SSRF containment. |
+| NET-FR-007 | 66 | OT boundary | Edge Gateway mediates IT/OT data flow; cloud/app services do not directly initiate arbitrary PLC connections. | Industrial isolation. |
+| NET-FR-008 | 66 | Edge outbound preferred | Plant Edge to server connections outbound initiated where feasible. | Reduced inbound exposure. |
+| NET-FR-009 | 66 | Admin plane | Administrative access through protected VPN/ZTNA/bastion/PAM path rather than public service ports. | Privileged isolation. |
+| NET-FR-010 | 66 | Tenant isolation | Dedicated customer deployment is baseline; within deployment tenant/site scopes still enforced in application/data/jobs. | Defense in depth. |
+| NET-FR-011 | 66 | Cross-site isolation | Site-scoped integrations, Edge identities, service config and background jobs cannot cross site without explicit enterprise scope. | Scope. |
+| NET-FR-012 | 66 | Database roles | Separate DB users/roles by service/schema/write need; Frappe DB credential cannot write GxP DB. | Data ownership. |
+| NET-FR-013 | 66 | Schema ownership | GxP service repositories own tables; integrations/read models use restricted views/API, not shared superuser. | Least privilege. |
+| NET-FR-014 | 66 | Message bus ACL | NATS/event subjects ACL by service identity; no universal publish/subscribe credential. | Event integrity. |
+| NET-FR-015 | 66 | Object store policy | Evidence buckets/prefixes restricted by service identity; immutable/WORM policies protected from app deletion. | Evidence integrity. |
+| NET-FR-016 | 66 | Kubernetes namespace | Reference K8s deployment separates workloads/namespaces/service accounts/network policies by trust/function. | Container isolation. |
+| NET-FR-017 | 66 | Container privilege | Run non-root, read-only filesystem/capability drops/seccomp/AppArmor where compatible. | Workload hardening. |
+| NET-FR-018 | 66 | Host hardening | Reference OS baseline disables unnecessary services, applies patch/config baseline and time sync. | Secure host. |
+| NET-FR-019 | 66 | TLS termination | TLS termination points explicit; re-encrypt/internal TLS where trust boundary requires. | Transport clarity. |
+| NET-FR-020 | 66 | Private endpoints | Cloud DB/object/KMS prefer private networking/endpoints where supported. | Reduced public exposure. |
+| NET-FR-021 | 66 | DNS | Internal service discovery controlled; DNS changes/security monitored; avoid trusting hostname without TLS identity. | Name integrity. |
+| NET-FR-022 | 66 | Remote sites | Site-to-central connectivity uses secure VPN/private link/TLS with explicit routing; no flat corporate network assumption. | Enterprise. |
+| NET-FR-023 | 66 | Environment isolation | Dev/test/validation/prod separated accounts/projects/namespaces/secrets/data; production credentials absent from non-prod. | SDLC safety. |
+| NET-FR-024 | 66 | Synthetic data | Non-prod uses synthetic/deidentified data by default; production data copy requires controlled approval/sanitization. | Privacy. |
+| NET-FR-025 | 66 | Backup isolation | Backup repository/access logically isolated from normal application compromise path. | Ransomware resilience. |
+| NET-FR-026 | 66 | Monitoring access | Security monitoring has read/ingest permissions, not business-write privileges. | Separation. |
+| NET-FR-027 | 66 | Port inventory | All inbound/outbound ports/protocols documented by deployment profile. | Reviewable. |
+| NET-FR-028 | 66 | Network change | GxP-impacting firewall/routing/service-exposure changes controlled and tested. | Validated state. |
+| NET-FR-029 | 66 | Segmentation test | Automated/periodic tests verify forbidden network paths remain blocked. | Verification. |
+| NET-FR-030 | 66 | No security by IP only | IP allowlist may supplement but never replace identity/auth for regulated APIs. | Zero trust. |
+| MON-FR-001 | 67 | Security event taxonomy | Define authentication, authorization, privileged, admin, config, secret/key, API abuse, integration, malware, integrity, network and data-access security events. | Consistent detection. |
+| MON-FR-002 | 67 | Separate audit vs security logs | GxP audit ledger remains regulatory mutation history; security telemetry is separate but cross-correlated. | Correct evidence. |
+| MON-FR-003 | 67 | Structured logging | Security logs include event code, UTC time, subject/service, tenant/site, source, target, result, correlation and severity. | Machine usable. |
+| MON-FR-004 | 67 | Sensitive redaction | Logs exclude secrets/tokens/passwords/private keys and minimize PII/regulated content. | Safe telemetry. |
+| MON-FR-005 | 67 | Central collection | App/services/Edge/IdP/infrastructure forward security telemetry to central SIEM/log platform where deployment supports. | Visibility. |
+| MON-FR-006 | 67 | Tamper resistance | Security logs centrally retained with restricted delete/admin roles; critical log source loss alerts. | Evidence. |
+| MON-FR-007 | 67 | Clock | All sources use synchronized UTC and carry clock-health metadata for Edge/OT. | Timeline. |
+| MON-FR-008 | 67 | Detection rules | Versioned alerts for brute force, impossible/abnormal access, privilege elevation, break-glass, denied cross-tenant, hash conflict, unusual export, cert/secret issues and service anomalies. | Detection. |
+| MON-FR-009 | 67 | Rate anomaly | Detect repeated BOLA/authorization denials, scan patterns, resource abuse and API enumeration. | API security. |
+| MON-FR-010 | 67 | Data-integrity alert | Audit hash/checkpoint, event-id payload conflict, unexpected DB mutation or evidence hash mismatch becomes critical security/quality event. | GxP integrity. |
+| MON-FR-011 | 67 | Edge security | Gateway cert misuse, config-signature failure, clock anomaly, buffer integrity failure and command denial visible centrally. | OT visibility. |
+| MON-FR-012 | 67 | Incident register | Formal security incident with severity, scope, owner, affected tenants/sites, data/GxP impact and timeline. | Managed response. |
+| MON-FR-013 | 67 | Incident states | Detected → Triage → Contain → Investigate → Eradicate/Recover → GxP/Data Impact → Close/Postmortem. | Explicit. |
+| MON-FR-014 | 67 | Evidence preservation | Forensic snapshot/log/evidence collection uses immutable refs/hashes and chain-of-custody metadata. | Investigation. |
+| MON-FR-015 | 67 | Containment actions | Revoke sessions/certs/secrets, isolate service/gateway, block integration, freeze account or disable feature through controlled commands. | Rapid response. |
+| MON-FR-016 | 67 | GxP impact assessment | Incident affecting regulated data/system may create deviation/change/CAPA/validation impact through QMS. | Quality integration. |
+| MON-FR-017 | 67 | Data breach assessment hook | Privacy/security incident can create legal/privacy assessment task without software autonomously making notification determination. | Governance. |
+| MON-FR-018 | 67 | Ransomware | Incident playbook supports isolation, credential rotation, immutable backup assessment and restoration decision. | Resilience. |
+| MON-FR-019 | 67 | Customer notification | Enterprise/customer security notification tasks tracked under contractual/regulatory policy. | Accountability. |
+| MON-FR-020 | 67 | Incident communications | Internal/external communications versioned and approved where material. | Controlled. |
+| MON-FR-021 | 67 | Postmortem | Root cause, control failure, corrective actions and lessons linked CAPA/Change/security backlog. | Improvement. |
+| MON-FR-022 | 67 | Detection validation | Security rules tested with synthetic events and periodic control checks. | No dead alerts. |
+| MON-FR-023 | 67 | Retention | Security telemetry retention configurable; incident evidence/regulated-impact evidence retained per applicable investigation policy. | Evidence. |
+| MON-FR-024 | 67 | Access | Security logs restricted; support/customer views scoped to tenant/site and role. | Confidentiality. |
+| MON-FR-025 | 67 | Export | Incident timeline/evidence package exportable without exposing unrelated tenant data. | Forensics. |
+| MON-FR-026 | 67 | Alert fatigue | Detection rules have severity, dedup/suppression windows and tuning history; suppression cannot hide critical integrity alerts silently. | Operable. |
+| MON-FR-027 | 67 | Health | Monitor log-ingestion lag/source silence/SIEM forwarding failure. | Telemetry assurance. |
+| MON-FR-028 | 67 | Metrics | MTTD/MTTR, alert volume, false positives, privileged events, integrity events and unresolved security findings. | Management. |
+| MON-FR-029 | 67 | No auto-delete | Incident closure never deletes security events/source evidence. | History. |
+| MON-FR-030 | 67 | Security/QMS linkage | Security incident IDs can be referenced by deviation/CAPA/change and vice versa without duplicating evidence. | Integrated. |
+| SDLC-FR-001 | 68 | Secure SDLC policy | Security activities integrated into requirements, design, implementation, review, test, release and maintenance. | Lifecycle. |
+| SDLC-FR-002 | 68 | SSDF mapping | Engineering process maps to NIST SSDF v1.1 practices; future v1.2 changes assessed separately when final. | Current baseline. |
+| SDLC-FR-003 | 68 | Security requirements | Security requirement IDs traced from threats/ASVS/API controls to code/tests. | Traceability. |
+| SDLC-FR-004 | 68 | Branch protection | Protected branches, reviewed PRs, status checks and restricted force-push for production code. | Integrity. |
+| SDLC-FR-005 | 68 | Code review | At least one qualified reviewer; critical security/GxP modules may require CODEOWNERS/security/architecture review. | Independent review. |
+| SDLC-FR-006 | 68 | Secret scanning | Pre-commit/CI scanning for credentials/private keys/tokens. | Leak prevention. |
+| SDLC-FR-007 | 68 | SAST | Static analysis on supported languages with severity policy and suppression review. | Vulnerability detection. |
+| SDLC-FR-008 | 68 | SCA | Dependency/software composition analysis with CVE/licensing metadata. | Supply chain. |
+| SDLC-FR-009 | 68 | SBOM | Generate machine-readable SBOM per release/image, preferably SPDX or CycloneDX profile. | Inventory. |
+| SDLC-FR-010 | 68 | Dependency pinning | Lockfiles/digests; production build does not consume unconstrained latest. | Reproducibility. |
+| SDLC-FR-011 | 68 | Artifact signing | Release images/packages/manifests signed/attested; deployment verifies approved artifact. | Provenance. |
+| SDLC-FR-012 | 68 | Build isolation | CI runners least privilege, ephemeral where possible, protected secrets, no untrusted PR access to production credentials. | Pipeline security. |
+| SDLC-FR-013 | 68 | Reproducibility/provenance | Record source commit, build workflow, builder, dependency lock, SBOM, artifact digest and tests. | Trace. |
+| SDLC-FR-014 | 68 | Container scanning | Base image/package vulnerabilities scanned; image pinned by digest. | Runtime hygiene. |
+| SDLC-FR-015 | 68 | IaC scanning | Terraform/K8s/Helm/config scanned for security misconfiguration. | Infrastructure security. |
+| SDLC-FR-016 | 68 | DAST/API test | Automated dynamic/API security tests on deployable environments. | Runtime validation. |
+| SDLC-FR-017 | 68 | Dependency allowlist | High-risk/native/cryptography/security libraries receive review/approval; abandoned packages avoided. | Risk control. |
+| SDLC-FR-018 | 68 | Vulnerability intake | Internal scans, customer reports, researchers and vendor advisories enter vulnerability register. | Complete intake. |
+| SDLC-FR-019 | 68 | Severity | Use controlled severity model considering exploitability, exposure, GxP/data impact and known exploitation. | Prioritization. |
+| SDLC-FR-020 | 68 | KEV awareness | Known exploited vulnerability status is included in prioritization/patch decision. | Real-world risk. |
+| SDLC-FR-021 | 68 | Remediation SLA | Target remediation by severity/profile; exceptions time-bounded/risk-approved. | Governance. |
+| SDLC-FR-022 | 68 | Coordinated disclosure | Security contact/process for customer/researcher reports and advisories. | Transparency. |
+| SDLC-FR-023 | 68 | CVE process | Product vulnerabilities receive CVE/advisory handling where organization becomes CNA/uses CNA process as applicable. | Industry practice. |
+| SDLC-FR-024 | 68 | Patch release | Security patch uses controlled build/sign/test/deploy path and Change/validation impact as required. | Safe updates. |
+| SDLC-FR-025 | 68 | Backport policy | Supported release branches and security backport policy defined. | Customer support. |
+| SDLC-FR-026 | 68 | Penetration testing | Independent/manual pen test before regulated pilot and periodically/material-change based. | Assurance. |
+| SDLC-FR-027 | 68 | Threat-driven tests | Threat model abuse cases become security test cases. | Risk based. |
+| SDLC-FR-028 | 68 | Fuzzing | Parsers/custom protocols/file import/high-risk APIs fuzzed where practical. | Robustness. |
+| SDLC-FR-029 | 68 | Security regression | Previously fixed vulnerability gets regression test where feasible. | Prevent recurrence. |
+| SDLC-FR-030 | 68 | Release security gate | Critical/high unresolved vulnerabilities/control failures can block release according to policy. | No insecure release. |
+| SDLC-FR-031 | 68 | Validation linkage | Security-impacting change feeds CSA/CSV validation impact and controlled deployment evidence. | GxP. |
+| SDLC-FR-032 | 68 | Third-party components | Commercial/open-source components have owner, version, license, support/EOL and vulnerability-monitoring status. | Supply chain. |
+| SDLC-FR-033 | 68 | Base image lifecycle | Approved minimal base images, refresh cadence and EOL tracking. | Container security. |
+| SDLC-FR-034 | 68 | Customer update evidence | Release notes include security/validation-impact information without exposing exploit details irresponsibly. | Enterprise operations. |

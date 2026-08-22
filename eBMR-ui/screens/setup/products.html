@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Products · Setup · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="building"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">Organisation setup</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> Sign-in / profiles</a>
+      <div class="sidebar-section">Setup</div>
+      <a href="checklist.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Setup checklist</a>
+      <a href="company.html" class="sidebar-link"><span class="icon" data-icon="building"></span> Company &amp; sites</a>
+      <a href="users.html" class="sidebar-link"><span class="icon" data-icon="users"></span> Users</a>
+      <a href="roles.html" class="sidebar-link"><span class="icon" data-icon="shield-check"></span> Roles &amp; permissions</a>
+      <a href="products.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="package"></span> Products</a>
+      <a href="materials.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Materials &amp; items</a>
+      <a href="bom.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Bill of materials</a>
+      <a href="equipment.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Equipment &amp; rooms</a>
+      <div class="sidebar-section">Then</div>
+      <!-- <a href="../md/menu.html" class="sidebar-link"><span class="icon" data-icon="cross-medical"></span> Medical Device</a>
+      <a href="../ph/menu.html" class="sidebar-link"><span class="icon" data-icon="droplet"></span> Pharmaceutical</a> -->
+      <a href="../ddcp/menu.html" class="sidebar-link"><span class="icon" data-icon="layers"></span> Combination Product</a>
+    </nav>
+    <div class="sidebar-foot"><a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a></div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="k">Organisation</span><span class="v">Acme Life Sciences Group</span></span>
+      <span class="context-item"><span class="k">Scope</span><span class="v">Tenant-wide setup — applies to all profiles</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">L. Park — Configuration Administrator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 09:00 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="checklist.html">Setup</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Products</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Products</h1>
+        <p class="page-subtitle">Step 4 of 7 · What you manufacture. Every batch, recipe and release points back to a product defined here.</p>
+      </div></div>
+      <div class="card mb-4">
+        <div class="card-header">
+          <div class="flex items-center gap-3" style="flex:1">
+            <div class="card-title">Product register</div>
+            <span class="fs-2 text-muted"><span data-list-count="products">5</span> records</span>
+          </div>
+          <div class="flex items-center gap-2"><div class="rel" style="max-width:260px;flex:1"><span class="icon" data-icon="search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ink-muted)"></span><input class="input" style="padding-left:32px" placeholder="Search…" data-filter-for="products"></div><button class="btn btn-primary btn-sm" data-modal-open="add-product"><span class="icon" data-icon="plus"></span> Add product</button></div>
+        </div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table" data-list="products">
+            <thead><tr><th>Product</th><th>Profile</th><th>Type</th><th>Presentation</th><th>Made at</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">Paracetamol 500mg Tablets</span><div class="fs-1 text-muted">PARA-500</div></td><td><span class="profile-marker" data-profile="ph" style="padding:2px 7px"><span class="icon" data-icon="droplet"></span> PH</span></td><td>Finished product</td><td>Tablet · 500 mg</td><td>Site 1</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">Amoxicillin 250mg Capsules</span><div class="fs-1 text-muted">AMOX-250</div></td><td><span class="profile-marker" data-profile="ph" style="padding:2px 7px"><span class="icon" data-icon="droplet"></span> PH</span></td><td>Finished product</td><td>Capsule · 250 mg</td><td>Site 1</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">Infusion Set IS-200</span><div class="fs-1 text-muted">IS-200</div></td><td><span class="profile-marker" data-profile="md" style="padding:2px 7px"><span class="icon" data-icon="cross-medical"></span> MD</span></td><td>Finished device</td><td>Class II · sterile barrier</td><td>Site 2</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">Infusion Set IS-140</span><div class="fs-1 text-muted">IS-140</div></td><td><span class="profile-marker" data-profile="md" style="padding:2px 7px"><span class="icon" data-icon="cross-medical"></span> MD</span></td><td>Finished device</td><td>Class II</td><td>Site 2</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">EpiRelease Auto-Injector 0.3mg</span><div class="fs-1 text-muted">EPIREL-03</div></td><td><span class="profile-marker" data-profile="ddcp" style="padding:2px 7px"><span class="icon" data-icon="layers"></span> DDCP</span></td><td>Combination product</td><td>Auto-injector · 0.3 mg</td><td>Site 3</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="empty-state" data-filter-empty="products" style="display:none">
+          <span class="icon" data-icon="search"></span><p class="fs-3">No records match your search.</p>
+        </div>
+<div class="card-pad" style="padding-top:0"><p class="fs-2 text-muted">The profile you choose decides the product's whole vocabulary downstream — a Pharmaceutical product is made in batches and raises deviations; a Medical Device product is made as serialised units and raises nonconformances.</p></div>      </div>
+
+      <div class="card card-pad mb-4">
+        <p class="fs-4 font-semibold mb-2">What the profile choice actually changes</p>
+        <div class="table-wrap"><table class="data-table">
+          <thead><tr><th>If you pick…</th><th>Execution is counted as</th><th>A problem is called</th><th>Released by</th></tr></thead>
+          <tbody>
+            <tr><td><span class="profile-marker" data-profile="ph" style="padding:2px 7px"><span class="icon" data-icon="droplet"></span> PH</span> Pharmaceutical</td><td>Batch (e.g. B-2026-0142)</td><td>Deviation / OOS</td><td>Quality Unit</td></tr>
+            <tr><td><span class="profile-marker" data-profile="md" style="padding:2px 7px"><span class="icon" data-icon="cross-medical"></span> MD</span> Medical Device</td><td>Unit serial (e.g. SN-88213)</td><td>Nonconformance</td><td>Device Quality</td></tr>
+            <tr><td><span class="profile-marker" data-profile="ddcp" style="padding:2px 7px"><span class="icon" data-icon="layers"></span> DDCP</span> Combination</td><td>Final assembly (e.g. FA-33210)</td><td>Cross-constituent issue</td><td>Final Release Authority</td></tr>
+          </tbody></table></div>
+        <p class="hint mt-3">This cannot be changed after the first batch is issued — the records would become ambiguous. Choose it deliberately.</p>
+      </div>
+
+
+<div class="modal-backdrop" id="add-product">
+  <div class="modal modal-lg" data-demo-form>
+    <div class="modal-header">
+      <div><div class="modal-title">Add product</div><p class="fs-3 text-muted mt-1">Everything downstream is built on this record, so the profile choice matters most.</p></div>
+      <button data-modal-close class="btn-icon btn-ghost"><span class="icon" data-icon="x"></span></button>
+    </div>
+    <div class="modal-body">
+        <div class="field"><label class="label">Product name <span class="req">*</span></label>
+          <input class="input" data-field="name" data-required placeholder="e.g. Ibuprofen 400mg Tablets" value="">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Product code <span class="req">*</span></label>
+          <input class="input" data-field="code" data-required placeholder="e.g. IBU-400" value="">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p><p class="hint">Short, stable, appears on every record and label.</p>
+        </div>        <div class="field"><label class="label">Profile <span class="req">*</span></label>
+          <select class="select" data-field="profile" data-required><option>Pharmaceutical</option><option>Medical Device</option><option>Combination Product</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Type <span class="req">*</span></label>
+          <select class="select" data-field="type" data-required><option>Finished product</option><option>Finished device</option><option>Combination product</option><option>Intermediate</option><option>Semi-finished</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Presentation / strength <span class="req">*</span></label>
+          <input class="input" data-field="pres" data-required placeholder="e.g. Tablet · 400 mg" value="">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Manufactured at <span class="req">*</span></label>
+          <select class="select" data-field="site" data-required><option>Site 1</option><option>Site 2</option><option>Site 3</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary" data-demo-save="products" data-demo-message="Product created — demo only, nothing stored.">
+        <span class="icon" data-icon="check"></span> Create product</button>
+    </div>
+  </div>
+</div>
+
+<template data-list-row="products"><td><span class="font-semibold">{{name}}</span><div class="fs-1 text-muted">{{code}}</div></td><td>{{profile}}</td><td>{{type}}</td><td>{{pres}}</td><td>{{site}}</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></template>
+    </main>
+  </div>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

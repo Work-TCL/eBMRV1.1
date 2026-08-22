@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Master catalogue · PH · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="database"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">PH · Masters</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Masters</div>
+      <a href="admission.html" class="sidebar-link"><span class="icon" data-icon="file-text"></span> Admission boundary</a>
+      <a href="catalogue.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="database"></span> Master catalogue</a>
+      <a href="editor.html" class="sidebar-link"><span class="icon" data-icon="pen"></span> Master editor</a>
+      <a href="validation.html" class="sidebar-link"><span class="icon" data-icon="check-circle"></span> Validation & comparison</a>
+      <a href="approval.html" class="sidebar-link"><span class="icon" data-icon="badge-check"></span> Approval & effectivity</a>
+      <a href="issuance.html" class="sidebar-link"><span class="icon" data-icon="file-plus-2"></span> Execution issuance</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="ph" style="padding:2px 8px"><span class="icon" data-icon="droplet"></span> Pharmaceutical</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">S. Rao — Master Author</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">PH</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Master Catalogue &amp; Lineage</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Master Catalogue &amp; Lineage</h1>
+        <p class="page-subtitle">UX-SCR-004 · Every Pharmaceutical master identity with its version lineage</p>
+      </div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Master catalogue — Acme Pharma</div></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Master</th><th>Version</th><th>Effective</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">Paracetamol 500mg Tablets</span><div class="fs-1 text-muted">MBR-PARA-500</div></td><td><span class="tabular">v3.2</span></td><td><span class="tabular">15 Jul 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Effective</span></td></tr>
+              <tr><td><span class="font-semibold">Paracetamol 500mg Tablets</span><div class="fs-1 text-muted">MBR-PARA-500</div></td><td><span class="tabular">v3.3</span></td><td><span class="tabular">—</span></td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Under review</span></td></tr>
+              <tr><td><span class="font-semibold">Amoxicillin 250mg Capsules</span><div class="fs-1 text-muted">MBR-AMOX-250</div></td><td><span class="tabular">v2.1</span></td><td><span class="tabular">03 Mar 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Effective</span></td></tr>
+              <tr><td><span class="font-semibold">Amoxicillin 250mg Capsules</span><div class="fs-1 text-muted">MBR-AMOX-250</div></td><td><span class="tabular">v2.0</span></td><td><span class="tabular">Superseded</span></td><td><span class="state" data-state="na"><span class="icon" data-icon="slash-circle"></span> Obsolete</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Lineage — PARA-500</div></div>
+        <div class="card-pad"><div class="stepper">
+          <div class="step-item" data-step-state="completed"><div class="step-marker"><span class="icon" data-icon="check"></span></div><div><div class="step-title"> PARA-500 — earlier revision</div><div class="step-meta">Superseded</div></div></div>
+          <div class="step-item" data-step-state="current"><div class="step-marker">2</div><div><div class="step-title"> PARA-500 v3.2 — governing</div><div class="step-meta">Currently governing all new issuance</div></div></div>
+          <div class="step-item" data-step-state="available"><div class="step-marker">3</div><div><div class="step-title"> PARA-500 v3.3 — draft</div><div class="step-meta">Under review, not yet effective</div></div></div>
+        </div></div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+/* ==========================================================================
+   EBMR-DB-13.1 token layer — the single source of every visual value.
+   No component, template or page may declare a literal colour, radius,
+   shadow, font stack or breakpoint outside this file (DB131-AC-001).
+   ========================================================================== */
+
+:root{
+
+  /* ---------- Typography — locked, UIF-GR-009 ---------- */
+  --font-body:'IBM Plex Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  --fw-regular:400;
+  --fw-medium:500;
+  --fw-semibold:600;
+  --fw-bold:700;
+
+  /* eight steps, no intermediate sizes */
+  --fs-1:11px;   /* micro   — provenance stamps, sprite labels   */
+  --fs-2:12px;   /* xs      — table headers, meta                */
+  --fs-3:13px;   /* sm      — dense table body, hints             */
+  --fs-4:14px;   /* base    — body copy, inputs                   */
+  --fs-5:15px;   /* md      — emphasised body, card titles         */
+  --fs-6:16px;   /* lg      — section titles                       */
+  --fs-7:20px;   /* xl      — page titles                          */
+  --fs-8:26px;   /* value   — KPI / measured values                */
+  --fs-micro:var(--fs-1);
+  --fs-value:var(--fs-8);
+
+  /* ---------- Brand ramp — locked, UIF-GR-009 (base #2a78d6) ---------- */
+  --brand-50:#eaf2fc;
+  --brand-100:#cde2fb;
+  --brand-200:#9ec5f4;
+  --brand-300:#6aa3e7;
+  --brand-400:#4a90e0;
+  --brand-500:#2a78d6;  /* primary action — locked */
+  --brand-600:#2266ba;  /* hover — locked */
+  --brand-700:#184f95;  /* on-tint text — locked */
+  --brand-800:#123e73;
+  --brand-900:#0d2e57;
+
+  /* ---------- Status ramp — good / warning / serious / critical ----------
+     Never re-themed, never re-mapped per profile. Components consume
+     the state tokens (see ebmr-components.css .state[data-state]),
+     not this ramp directly. */
+  --status-good-solid:#137a3b;
+  --status-good-bg:#e5f6ea;
+  --status-good-text:#0f5c2d;
+
+  --status-warning-solid:#b1790a;
+  --status-warning-bg:#fbf1dc;
+  --status-warning-text:#7a4f04;
+
+  --status-serious-solid:#c1531f;
+  --status-serious-bg:#fbe7dc;
+  --status-serious-text:#8a3714;
+
+  --status-critical-solid:#b02626;
+  --status-critical-bg:#fbe4e4;
+  --status-critical-text:#7c1c1c;
+
+  --status-neutral-solid:#6b6a65;
+  --status-neutral-bg:#eeede8;
+  --status-neutral-text:#4b4a46;
+
+  /* ---------- Ink / surface ---------- */
+  --ink-primary:#111111;
+  --ink-secondary:#4b4a46;
+  --ink-muted:#807e78;
+  --ink-on-brand:#ffffff;
+  --surface-page:#f8f8f6;
+  --surface-card:#ffffff;
+  --surface-sunken:#f1f0ec;
+  --surface-inverse:#3b6ba6;
+  --border-hairline:rgba(17,17,17,0.12);
+  --gridline:#e3e1da;
+
+  /* ---------- Space — 4px scale ---------- */
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --space-5:20px;
+  --space-6:24px;
+  --space-7:28px;
+  --space-8:32px;
+
+  /* ---------- Radius — three steps plus a pill ---------- */
+  --radius-sm:6px;
+  --radius-md:8px;
+  --radius-lg:12px;
+  --radius-pill:999px;
+
+  /* ---------- Elevation — three steps; separation is by hairline, not shadow ---------- */
+  --shadow-sm:none;
+  --shadow-md:0 1px 2px rgba(17,17,17,0.08);
+  --shadow-lg:0 16px 32px -8px rgba(17,17,17,0.18),0 4px 10px -4px rgba(17,17,17,0.10);
+
+  /* ---------- Shell metrics ---------- */
+  --sidebar-w:264px;
+  --topbar-h:56px;
+  --context-bar-h:44px;
+
+  /* ---------- Breakpoints / device baseline (DB-13.1 §12, UIF-GR-010) ---------- */
+  --bp-tablet:1024px;
+  --bp-desktop:1280px;
+
+  /* ---------- Profile marker colours (icon + text carry meaning; colour is supplemental) ---------- */
+  --profile-md:#184f95;
+  --profile-ph:#5b3fa6;
+  --profile-ddcp:#0f6b63;
+}

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Authority & training · DDCP · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="shield-check"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">DDCP · Administration</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Administration</div>
+      <a href="authority.html" class="sidebar-link" aria-current="page" data-role-allow="admin"><span class="icon" data-icon="shield-check"></span> Authority & training</a>
+      <a href="interfaces.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="database"></span> Interfaces & migration</a>
+      <a href="support.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="user"></span> Privileged support</a>
+      <a href="amendment.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="pen"></span> Post-release amendment</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="role-badge" data-role-badge style="display:none"><span class="k">Signed in as</span><span class="v" data-role-badge-text></span></div>
+      <a href="../role-select.html" class="sidebar-link"><span class="icon" data-icon="refresh"></span> Switch role</a>
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> Drug-Device Combination Product</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">L. Park — Configuration/Access Administrator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">DDCP</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Authority, Training &amp; Delegation</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Authority, Training &amp; Delegation</h1>
+        <p class="page-subtitle">UX-SCR-031 · Access, authority, qualification and delegation use separate pages and actions</p>
+      </div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Proposed role assignment — preview</div></div>
+        <div class="card-pad">
+          <p class="fs-3 mb-3">H. Novak → add role: <strong>Independent Verifier, Site 3 Line C</strong></p>
+          <div class="flex flex-wrap gap-3 mb-3"><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Enables: verification at this line</span>
+          <span class="state" data-state="conflict"><span class="icon" data-icon="alert-triangle"></span> SoD conflict: already holds Regulatory/Admission Owner on EPIREL-03</span></div>
+          <p class="fs-3 text-muted">Approval must be assigned to a different authorized person than the preparer.</p>
+        </div>
+      </div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Qualification status</div></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Person</th><th>Qualification</th><th>Source evidence</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">M. Ortiz</span></td><td>EPIREL-03 operation</td><td>Training record TR-4412</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Effective</span></td></tr>
+              <tr><td><span class="font-semibold">H. Novak</span></td><td>Independent verification</td><td>Training record TR-3390</td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Expires in 9 days</span></td></tr>
+              <tr><td><span class="font-semibold">S. Bloom</span></td><td>Master authoring — delegated</td><td>Delegation DEL-0091</td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Expires 08 Aug 2026</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

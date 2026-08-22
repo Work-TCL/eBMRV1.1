@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>First sign-in · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div style="min-height:100vh;background:var(--surface-page)">
+  <div class="context-bar">
+    <span class="context-item"><span class="k">Organisation</span><span class="v">Acme Life Sciences Group</span></span>
+    <span class="context-item"><span class="k">Invited by</span><span class="v">L. Park — Configuration Administrator</span></span>
+    <span class="context-item"><span class="k">First sign-in</span><span class="v">N. Shah</span></span>
+    <span class="context-clock"><span class="icon" data-icon="clock"></span> 06 Aug 2026, 07:15 EDT</span>
+  </div>
+  <main id="main" style="max-width:720px;margin:0 auto;padding:var(--space-8) var(--space-6)">
+
+    <div class="flex items-center gap-3 mb-5">
+      <div class="sidebar-mark" style="width:38px;height:38px"><span class="icon" data-icon="user-check"></span></div>
+      <div>
+        <div class="fs-6 font-bold">Welcome, N. Shah</div>
+        <div class="fs-3 text-muted">Four things before your first shift — about three minutes</div>
+      </div>
+    </div>
+
+    <div class="card card-pad" data-wizard="firstrun">
+      <ul class="wizard-progress">
+        <li data-step-label="1"><span class="n">1</span> Account</li>
+        <li data-step-label="2"><span class="n">2</span> Signing PIN</li>
+        <li data-step-label="3"><span class="n">3</span> Training</li>
+        <li data-step-label="4"><span class="n">4</span> Ready</li>
+      </ul>
+
+      <div data-wizard-step="1" data-active>
+        <h2 class="fs-5 font-bold mb-1">Set your password</h2>
+        <p class="fs-3 text-muted mb-4">You were invited by email. Your account already exists — it just has no password yet.</p>
+        <div class="field"><label class="label">Email</label>
+          <input class="input" value="n.shah@acme.example" disabled></div>
+        <div class="field"><label class="label">New password <span class="req">*</span></label>
+          <input type="password" class="input" data-field="pw" data-required placeholder="At least 12 characters">
+          <p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+          <p class="hint">At least 12 characters. Expires every 90 days under Acme's policy.</p></div>
+        <div class="field"><label class="label">Confirm password <span class="req">*</span></label>
+          <input type="password" class="input" data-field="pw2" data-required placeholder="Type it again">
+          <p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p></div>
+        <div class="banner" data-tone="info">
+          <span class="icon" data-icon="lock"></span>
+          <div><p class="font-semibold">Never share this password</p>
+          <p class="fs-3 mt-1">Under 21 CFR Part 11 your login is your identity. Anything recorded under it is legally attributed to you personally — not to your shift, your team or your supervisor.</p></div>
+        </div>
+        <div class="flex justify-end gap-2 mt-5">
+          <button class="btn btn-primary" data-wizard-next><span class="icon" data-icon="arrow-right"></span> Continue</button>
+        </div>
+      </div>
+
+      <div data-wizard-step="2">
+        <h2 class="fs-5 font-bold mb-1">Create your signing PIN</h2>
+        <p class="fs-3 text-muted mb-4">Your password gets you in. Your PIN is what you use to sign a step — they are deliberately different.</p>
+        <div class="field"><label class="label">Signing PIN <span class="req">*</span></label>
+          <input type="password" class="input" data-field="pin" data-required placeholder="6 digits" style="max-width:200px">
+          <p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p></div>
+        <div class="field"><label class="label">Confirm PIN <span class="req">*</span></label>
+          <input type="password" class="input" data-field="pin2" data-required placeholder="6 digits" style="max-width:200px">
+          <p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p></div>
+
+        <div class="card card-pad mt-4" style="background:var(--surface-subtle)">
+          <p class="fs-4 font-semibold mb-2">What signing actually means here</p>
+          <p class="fs-3 text-secondary">When you sign a step, the system records your name, the exact time, the step you signed, and the meaning of the signature — <span class="font-semibold">performed</span>, <span class="font-semibold">verified</span> or <span class="font-semibold">approved</span>. That record cannot be edited or deleted by anyone, including an administrator. It is the electronic equivalent of your handwritten initials on a paper batch record, and it carries the same legal weight.</p>
+          <p class="fs-3 text-secondary mt-2">You will be asked for this PIN dozens of times a shift. That friction is the point — it makes signing a conscious act rather than a click.</p>
+        </div>
+        <div class="flex justify-between gap-2 mt-5">
+          <button class="btn btn-secondary" data-wizard-back><span class="icon" data-icon="arrow-left"></span> Back</button>
+          <button class="btn btn-primary" data-wizard-next><span class="icon" data-icon="arrow-right"></span> Continue</button>
+        </div>
+      </div>
+
+      <div data-wizard-step="3">
+        <h2 class="fs-5 font-bold mb-1">Confirm your training record</h2>
+        <p class="fs-3 text-muted mb-4">You may only perform steps you are trained for. This is checked at the moment you try, not just here.</p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Qualification</th><th>Completed</th><th>Valid until</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>SOP-014 Good documentation practice</td><td class="tabular">28 Jul 2026</td><td class="tabular">28 Jul 2027</td>
+                <td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Current</span></td></tr>
+              <tr><td>SOP-022 Gowning &amp; area entry</td><td class="tabular">30 Jul 2026</td><td class="tabular">30 Jul 2027</td>
+                <td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Current</span></td></tr>
+              <tr><td>SOP-031 Filling &amp; assembly</td><td class="tabular">02 Aug 2026</td><td class="tabular">02 Aug 2027</td>
+                <td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Current</span></td></tr>
+              <tr><td>SOP-045 Integrated dose testing</td><td class="tabular">—</td><td class="tabular">—</td>
+                <td><span class="state" data-state="missing"><span class="icon" data-icon="help-circle"></span> Not trained</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="banner mt-4" data-tone="warn">
+          <span class="icon" data-icon="alert-triangle"></span>
+          <div><p class="font-semibold">One qualification is missing — this is not a blocker today</p>
+          <p class="fs-3 mt-1">You can fill and assemble from your first shift. If you open an integrated testing step, the system will refuse it and show this exact row as the reason. Ask your supervisor to schedule SOP-045.</p></div>
+        </div>
+        <div class="field mt-4">
+          <label class="checkbox-row" style="cursor:pointer">
+            <input type="checkbox" data-field="ack" data-required>
+            <span class="fs-3">I confirm this training record is accurate and that I will not attempt work I am not qualified for.</span>
+          </label>
+          <p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> You must confirm to continue.</p>
+        </div>
+        <div class="flex justify-between gap-2 mt-5">
+          <button class="btn btn-secondary" data-wizard-back><span class="icon" data-icon="arrow-left"></span> Back</button>
+          <button class="btn btn-primary" data-wizard-next><span class="icon" data-icon="check"></span> Confirm and finish</button>
+        </div>
+      </div>
+
+      <div data-wizard-step="4">
+        <h2 class="fs-5 font-bold mb-1">You are ready to work</h2>
+        <p class="fs-3 text-muted mb-4">Your account is active. Here is what your first shift looks like.</p>
+        <div class="banner" data-tone="ok">
+          <span class="icon" data-icon="check-circle"></span>
+          <div><p class="font-semibold">Account activated — N. Shah, Filling/Assembly Operator, Site 3</p>
+          <p class="fs-3 mt-1">Your supervisor has been notified. Your first assignment is already waiting.</p></div>
+        </div>
+
+        <div class="card mt-4">
+          <div class="card-header"><div class="card-title">Assigned to you</div></div>
+          <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+            <table class="data-table">
+              <thead><tr><th>Assembly</th><th>Product</th><th>Step</th><th>Area</th><th>Due</th></tr></thead>
+              <tbody>
+                <tr><td class="tabular font-semibold">FA-33210</td><td>EpiRelease Auto-Injector 0.3mg</td>
+                  <td>Step 2 — Filling / loading</td><td>Line C — FS-8</td><td class="tabular">Today 09:30</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card card-pad mt-4">
+          <p class="fs-4 font-semibold mb-2">Three rules that will save you time</p>
+          <ul class="fs-3 text-secondary" style="padding-left:18px;display:flex;flex-direction:column;gap:6px">
+            <li>Record as you go, not afterwards. The system time-stamps when you type, and a gap between doing and recording is a finding in an audit.</li>
+            <li>If something is wrong, do not work around it. Raise the exception — that is a normal, expected part of the job, not a mark against you.</li>
+            <li>If the system blocks you, read the reason. It always says what is wrong and who can resolve it.</li>
+          </ul>
+        </div>
+        <div class="flex justify-between gap-2 mt-5">
+          <button class="btn btn-secondary" data-wizard-back><span class="icon" data-icon="arrow-left"></span> Back</button>
+          <a class="btn btn-primary" href="../ddcp/my-work/inbox.html"><span class="icon" data-icon="arrow-right"></span> Go to my work</a>
+        </div>
+      </div>
+    </div>
+
+    <p class="hint mt-4">A person who joins later goes through exactly this — the organisation is already configured, so they only set up themselves.</p>
+  </main>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

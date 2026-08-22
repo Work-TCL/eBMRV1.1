@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Equipment & rooms · Setup · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="building"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">Organisation setup</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> Sign-in / profiles</a>
+      <div class="sidebar-section">Setup</div>
+      <a href="checklist.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Setup checklist</a>
+      <a href="company.html" class="sidebar-link"><span class="icon" data-icon="building"></span> Company &amp; sites</a>
+      <a href="users.html" class="sidebar-link"><span class="icon" data-icon="users"></span> Users</a>
+      <a href="roles.html" class="sidebar-link"><span class="icon" data-icon="shield-check"></span> Roles &amp; permissions</a>
+      <a href="products.html" class="sidebar-link"><span class="icon" data-icon="package"></span> Products</a>
+      <a href="materials.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Materials &amp; items</a>
+      <a href="bom.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Bill of materials</a>
+      <a href="equipment.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="gauge"></span> Equipment &amp; rooms</a>
+      <div class="sidebar-section">Then</div>
+      <!-- <a href="../md/menu.html" class="sidebar-link"><span class="icon" data-icon="cross-medical"></span> Medical Device</a>
+      <a href="../ph/menu.html" class="sidebar-link"><span class="icon" data-icon="droplet"></span> Pharmaceutical</a> -->
+      <a href="../ddcp/menu.html" class="sidebar-link"><span class="icon" data-icon="layers"></span> Combination Product</a>
+    </nav>
+    <div class="sidebar-foot"><a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a></div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="k">Organisation</span><span class="v">Acme Life Sciences Group</span></span>
+      <span class="context-item"><span class="k">Scope</span><span class="v">Tenant-wide setup — applies to all profiles</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">L. Park — Configuration Administrator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 09:00 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="checklist.html">Setup</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Equipment &amp; Rooms</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Equipment &amp; Rooms</h1>
+        <p class="page-subtitle">Step 7 of 7 · Every machine, instrument and room, with the calibration status that decides whether it may be used today.</p>
+      </div></div>
+      <div class="card card-pad mb-4">
+        <p class="fs-4 font-semibold mb-2">This is your asset register</p>
+        <p class="fs-3 text-secondary">Every row below is a physical asset the organisation owns and is accountable for — not just a name and a due date. Click <span class="font-semibold">Fill station (FS-8)</span> to see what a full asset record actually holds: calibration history, preventive maintenance, IQ/OQ/PQ qualification, and every final assembly it has ever touched.</p>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header">
+          <div class="flex items-center gap-3" style="flex:1">
+            <div class="card-title">Equipment register</div>
+            <span class="fs-2 text-muted"><span data-list-count="equipment">7</span> records</span>
+          </div>
+          <div class="flex items-center gap-2"><div class="rel" style="max-width:260px;flex:1"><span class="icon" data-icon="search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ink-muted)"></span><input class="input" style="padding-left:32px" placeholder="Search…" data-filter-for="equipment"></div><button class="btn btn-primary btn-sm" data-modal-open="add-equipment"><span class="icon" data-icon="plus"></span> Add equipment</button></div>
+        </div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table" data-list="equipment">
+            <thead><tr><th>Equipment</th><th>Class</th><th>Location</th><th>Calibration due</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">Rapid mixer granulator</span><div class="fs-1 text-muted">RMG-3</div></td><td>Granulation</td><td>Site 1 · Line A</td><td><span class="tabular">12 Sep 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Calibrated</span></td></tr>
+              <tr><td><span class="font-semibold">Balance</span><div class="fs-1 text-muted">SC-4402</div></td><td>Weighing</td><td>Site 1 · Booth D-101</td><td><span class="tabular">30 Aug 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Calibrated</span></td></tr>
+              <tr><td><span class="font-semibold">Compression press</span><div class="fs-1 text-muted">CP-7</div></td><td>Compression</td><td>Site 1 · Line A</td><td><span class="tabular">18 Nov 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Calibrated</span></td></tr>
+              <tr><td><span class="font-semibold">Leak tester</span><div class="fs-1 text-muted">EQ-7710</div></td><td>Test</td><td>Site 2 · Line B</td><td><span class="tabular">28 Jul 2026</span></td><td><span class="state" data-state="failed"><span class="icon" data-icon="x"></span> Overdue</span></td></tr>
+              <tr><td><span class="font-semibold">Assembly bench</span><div class="fs-1 text-muted">ASM-2</div></td><td>Assembly</td><td>Site 2 · Line B</td><td>—</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> No calibration required</span></td></tr>
+              <tr><td><a href="asset-detail.html" style="color:var(--brand-600);font-weight:var(--fw-semibold);text-decoration:none">Fill station</a><div class="fs-1 text-muted">FS-8 · <a href="asset-detail.html" style="color:var(--brand-600)">view asset record →</a></div></td><td>Filling</td><td>Site 3 · Line C</td><td><span class="tabular">22 Oct 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Calibrated</span></td></tr>
+              <tr><td><span class="font-semibold">Dose bench</span><div class="fs-1 text-muted">DB-2</div></td><td>Test</td><td>Site 3 · Line C</td><td><span class="tabular">15 Dec 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Calibrated</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="empty-state" data-filter-empty="equipment" style="display:none">
+          <span class="icon" data-icon="search"></span><p class="fs-3">No records match your search.</p>
+        </div>
+<div class="card-pad" style="padding-top:0"><p class="fs-2 text-muted">Calibration status is checked at the moment of use, not just here. EQ-7710 above is overdue — the readiness screen will refuse to let a batch start on it, and say why.</p></div>      </div>
+
+      <div class="card mb-4">
+        <div class="card-header">
+          <div class="flex items-center gap-3" style="flex:1">
+            <div class="card-title">Rooms &amp; areas</div>
+            <span class="fs-2 text-muted"><span data-list-count="rooms">4</span> records</span>
+          </div>
+          <div class="flex items-center gap-2"><button class="btn btn-primary btn-sm" data-modal-open="add-room"><span class="icon" data-icon="plus"></span> Add room</button></div>
+        </div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table" data-list="rooms">
+            <thead><tr><th>Room</th><th>Site</th><th>Classification</th><th>Used for</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">Dispensing booth D-101</span></td><td>Site 1</td><td>Grade D</td><td>Dispensing</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Released</span></td></tr>
+              <tr><td><span class="font-semibold">Granulation suite</span></td><td>Site 1</td><td>Grade D</td><td>Granulation</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Released</span></td></tr>
+              <tr><td><span class="font-semibold">Assembly area WS-04</span></td><td>Site 2</td><td>Controlled not classified</td><td>Device assembly</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Released</span></td></tr>
+              <tr><td><span class="font-semibold">Packaging hall PK-101</span></td><td>Site 1</td><td>Unclassified</td><td>Packaging</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Released</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="empty-state" data-filter-empty="rooms" style="display:none">
+          <span class="icon" data-icon="search"></span><p class="fs-3">No records match your search.</p>
+        </div>
+      </div>
+
+      <div class="card card-pad">
+        <p class="fs-4 font-semibold mb-2">Why equipment lives in setup, not in the recipe</p>
+        <p class="fs-3 text-secondary">A recipe says "use a balance accurate to 0.001 kg". It does not name SC-4402. The specific instrument is chosen at execution time and recorded then — so when SC-4402 goes out for calibration, every recipe keeps working, and the record still shows exactly which balance weighed that batch.</p>
+      </div>
+
+
+<div class="modal-backdrop" id="add-equipment">
+  <div class="modal modal-lg" data-demo-form>
+    <div class="modal-header">
+      <div><div class="modal-title">Add equipment</div><p class="fs-3 text-muted mt-1">The physical machine or instrument. Calibration is tracked against it.</p></div>
+      <button data-modal-close class="btn-icon btn-ghost"><span class="icon" data-icon="x"></span></button>
+    </div>
+    <div class="modal-body">
+        <div class="field"><label class="label">Equipment name <span class="req">*</span></label>
+          <input class="input" data-field="name" data-required placeholder="e.g. Tablet hardness tester" value="">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Asset ID <span class="req">*</span></label>
+          <input class="input" data-field="code" data-required placeholder="e.g. HT-9" value="">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Class <span class="req">*</span></label>
+          <select class="select" data-field="cls" data-required><option>Weighing</option><option>Granulation</option><option>Compression</option><option>Coating</option><option>Filling</option><option>Assembly</option><option>Test</option><option>Packaging</option><option>Utility</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Location <span class="req">*</span></label>
+          <select class="select" data-field="loc" data-required><option>Site 1 · Line A</option><option>Site 1 · Booth D-101</option><option>Site 2 · Line B</option><option>Site 3 · Line C</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Calibration due</label>
+          <input class="input" data-field="due" placeholder="e.g. 31 Dec 2026" value="">
+<p class="hint">Leave blank if this equipment needs no calibration.</p>
+        </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary" data-demo-save="equipment" data-demo-message="Equipment added — demo only, nothing stored.">
+        <span class="icon" data-icon="check"></span> Add equipment</button>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal-backdrop" id="add-room">
+  <div class="modal modal-lg" data-demo-form>
+    <div class="modal-header">
+      <div><div class="modal-title">Add room</div><p class="fs-3 text-muted mt-1">A physical space where regulated work happens.</p></div>
+      <button data-modal-close class="btn-icon btn-ghost"><span class="icon" data-icon="x"></span></button>
+    </div>
+    <div class="modal-body">
+        <div class="field"><label class="label">Room name <span class="req">*</span></label>
+          <input class="input" data-field="room" data-required placeholder="e.g. Coating suite" value="">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Site <span class="req">*</span></label>
+          <select class="select" data-field="site" data-required><option>Site 1</option><option>Site 2</option><option>Site 3</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Classification <span class="req">*</span></label>
+          <select class="select" data-field="cls" data-required><option>Grade A</option><option>Grade B</option><option>Grade C</option><option>Grade D</option><option>Controlled not classified</option><option>Unclassified</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Used for</label>
+          <input class="input" data-field="use" placeholder="e.g. Coating" value="">
+
+        </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary" data-demo-save="rooms" data-demo-message="Room added — demo only, nothing stored.">
+        <span class="icon" data-icon="check"></span> Add room</button>
+    </div>
+  </div>
+</div>
+
+<template data-list-row="equipment"><td><span class="font-semibold">{{name}}</span><div class="fs-1 text-muted">{{code}}</div></td><td>{{cls}}</td><td>{{loc}}</td><td class="tabular">{{due}}</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Calibrated</span></td></template>
+<template data-list-row="rooms"><td><span class="font-semibold">{{room}}</span></td><td>{{site}}</td><td>{{cls}}</td><td>{{use}}</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Released</span></td></template>
+    </main>
+  </div>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

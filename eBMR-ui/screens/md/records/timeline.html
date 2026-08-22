@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audit timeline · MD · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="file-text"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">MD · Records</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Records</div>
+      <a href="explorer.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Record explorer</a>
+      <a href="timeline.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="history"></span> Audit timeline</a>
+      <a href="export.html" class="sidebar-link"><span class="icon" data-icon="download"></span> Inspection export</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> Medical Device</span></span>
+      <span class="context-item"><span class="k">Record</span><span class="v">SN-88213</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">M. Chen — Records/Audit User</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">MD</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Audit, Signature &amp; Transition Timeline</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Audit, Signature &amp; Transition Timeline</h1>
+        <p class="page-subtitle">UX-SCR-029 · Invalidated and superseded signatures remain visible, never shown as current</p>
+      </div></div>
+      <div class="tabs mb-4" data-tab-group="tl" role="tablist">
+        <button class="tab-btn" data-tab="all" aria-selected="true" role="tab">All (34)</button>
+        <button class="tab-btn" data-tab="sig" aria-selected="false" role="tab">Signatures (8)</button>
+        <button class="tab-btn" data-tab="trans" aria-selected="false" role="tab">Transitions (6)</button>
+      </div>
+      <div class="tab-panel" data-tab-panel="all" data-tab-group-target="tl" data-active>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Event timeline</div></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Time</th><th>Actor</th><th>Event</th><th>Target</th><th>Detail</th></tr></thead>
+            <tbody>
+              <tr><td><span class="tabular">17:30:04</span></td><td>P. Nair</td><td>Signature — Release</td><td>Unit serial SN-88213</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Current</span></td></tr>
+              <tr><td><span class="tabular">15:04:11</span></td><td>A. Desai</td><td>Correction applied</td><td>Leak decay pressure drop</td><td><span class="tabular">superseded → current</span></td></tr>
+              <tr><td><span class="tabular">14:15:00</span></td><td>R. Oduya</td><td>Transition</td><td>NC-2231</td><td>Open → Disposition recorded</td></tr>
+              <tr><td><span class="tabular">11:47:22</span></td><td>K. Verma</td><td>Signature — Performed by</td><td>OP-020 Assembly</td><td><span class="state" data-state="na"><span class="icon" data-icon="slash-circle"></span> Superseded, kept visible</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </div>
+      <div class="tab-panel" data-tab-panel="sig" data-tab-group-target="tl">
+        <div class="empty-state"><span class="icon" data-icon="badge-check"></span>
+        <p class="fs-3">8 signatures — filtered view. The total count stays visible regardless of filter.</p></div>
+      </div>
+      <div class="tab-panel" data-tab-panel="trans" data-tab-group-target="tl">
+        <div class="empty-state"><span class="icon" data-icon="history"></span><p class="fs-3">6 state transitions.</p></div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

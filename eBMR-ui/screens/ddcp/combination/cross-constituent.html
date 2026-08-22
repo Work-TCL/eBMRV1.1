@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cross-constituent issue · DDCP · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="layers"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">DDCP · Combination Product</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Combination Product</div>
+      <a href="new-batch.html" class="sidebar-link" data-role-allow="planner"><span class="icon" data-icon="file-plus-2"></span> Create a final assembly</a>
+      <a href="admission.html" class="sidebar-link" data-role-allow="author"><span class="icon" data-icon="file-text"></span> Admission & Part 4</a>
+      <a href="compatibility.html" class="sidebar-link" data-role-allow="author"><span class="icon" data-icon="layers"></span> Compatibility & handoff</a>
+      <a href="integrated-master.html" class="sidebar-link" data-role-allow="author"><span class="icon" data-icon="pen"></span> Integrated master</a>
+      <a href="recipe-catalogue.html" class="sidebar-link" data-role-allow="author quality"><span class="icon" data-icon="database"></span> Recipe catalogue</a>
+      <a href="recipe-approval.html" class="sidebar-link" data-role-allow="quality"><span class="icon" data-icon="badge-check"></span> Recipe approval</a>
+      <a href="filling.html" class="sidebar-link" data-role-allow="operator"><span class="icon" data-icon="scan"></span> Filling & assembly</a>
+      <a href="testing.html" class="sidebar-link" data-role-allow="operator quality"><span class="icon" data-icon="gauge"></span> Integrated testing</a>
+      <a href="labeling.html" class="sidebar-link" data-role-allow="operator"><span class="icon" data-icon="package"></span> Labeling & genealogy</a>
+      <a href="cross-constituent.html" class="sidebar-link" aria-current="page" data-role-allow="quality"><span class="icon" data-icon="alert-triangle"></span> Cross-constituent issue</a>
+      <a href="release.html" class="sidebar-link" data-role-allow="quality"><span class="icon" data-icon="badge-check"></span> Complete review & release</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="role-badge" data-role-badge style="display:none"><span class="k">Signed in as</span><span class="v" data-role-badge-text></span></div>
+      <a href="../role-select.html" class="sidebar-link"><span class="icon" data-icon="refresh"></span> Switch role</a>
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="ddcp" style="padding:2px 8px"><span class="icon" data-icon="layers"></span> Drug-Device Combination Product</span></span>
+      <span class="context-item"><span class="k">Record</span><span class="v">XC-0091</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">J. Kwan — Cross-constituent Investigation</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">DDCP</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Cross-constituent Issue &amp; Impact</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Cross-constituent Issue &amp; Impact</h1>
+        <p class="page-subtitle">UX-SCR-041 · A single constituent's closure alone cannot close the final blocker</p>
+      </div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Trigger</div></div>
+        <div class="card-pad"><p class="fs-3">Device-side assembly torque below spec on 40 units during a line audit — assessing whether this affects drug delivery accuracy for the affected units.</p></div>
+      </div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Impact assessment — by constituent</div></div>
+        <div class="card-pad"><div class="constituent-row">
+          <div class="constituent-badge"><span class="label">Drug constituent impact</span><span class="value">Under assessment</span><div class="mt-2"><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> In progress</span></div></div>
+          <div class="constituent-badge"><span class="label">Device constituent impact</span><span class="value">Confirmed — 40 units affected</span><div class="mt-2"><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Assessed</span></div></div>
+          <div class="constituent-badge"><span class="label">Final product impact</span><span class="value">Cannot close until both above resolve</span><div class="mt-2"><span class="state" data-state="blocked"><span class="icon" data-icon="lock"></span> Blocked</span></div></div>
+        </div></div>
+      </div>
+      <div class="card card-pad">
+        <button class="btn btn-primary" disabled><span class="icon" data-icon="check"></span> Close XC-0091</button>
+        <p class="btn-reason"><span class="icon" data-icon="lock"></span> Unavailable — drug constituent impact assessment is still in progress. Device closure alone cannot close a cross-constituent blocker.</p>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

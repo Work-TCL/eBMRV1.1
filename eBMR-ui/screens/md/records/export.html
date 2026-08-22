@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inspection export · MD · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="file-text"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">MD · Records</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Records</div>
+      <a href="explorer.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Record explorer</a>
+      <a href="timeline.html" class="sidebar-link"><span class="icon" data-icon="history"></span> Audit timeline</a>
+      <a href="export.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="download"></span> Inspection export</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> Medical Device</span></span>
+      <span class="context-item"><span class="k">Record</span><span class="v">SN-88213</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">M. Chen — Records/Audit User</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">MD</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Inspection Export</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Inspection Export</h1>
+        <p class="page-subtitle">UX-SCR-030 · "PDF generated" is not presented as proof the complete authoritative record exists</p>
+      </div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Scope &amp; purpose</div></div>
+        <div class="card-pad grid grid-cols-2 gap-4">
+          <div class="field mb-0"><label class="label">Purpose <span class="req">*</span></label>
+            <select class="select"><option>Regulatory inspection request</option><option>Internal Quality review copy</option><option>Customer complaint investigation</option></select></div>
+          <div class="field mb-0"><label class="label">Included record families</label>
+            <input class="input" value="Full record, exceptions, lab results, signatures" disabled></div>
+        </div>
+        <div class="card-pad" style="padding-top:0"><div class="flex items-start gap-3" style="padding:var(--space-3);background:var(--surface-sunken);border-radius:var(--radius-md)">
+          <span class="icon" data-icon="info" style="color:var(--ink-muted);flex-shrink:0;margin-top:2px"></span>
+          <p class="fs-3 text-muted">Declared external dependency: laboratory results are linked, not embedded — the export notes this as a reference, not a copy.</p></div></div>
+      </div>
+      <div class="card card-pad mb-4"><button class="btn btn-primary"><span class="icon" data-icon="download"></span> Generate export</button><p class="hint mt-2">Generates asynchronously when safe. On completion this panel shows manifest and digest verification plus any omissions — not simply "PDF generated".</p></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Prior export — manifest</div></div>
+        <div class="card-pad grid grid-cols-3 gap-4">
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Generated</p><p class="fs-4 font-semibold mt-1 tabular">04 Aug 2026, 09:12 EDT</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Digest</p><p class="fs-4 font-semibold mt-1 tabular">sha256:7ab2…41f0</p></div>
+          <div><p class="fs-1 font-semibold text-muted" style="text-transform:uppercase">Omissions</p><p class="fs-4 font-semibold mt-1" style="color:var(--status-warning-text)">1 — external reference unavailable at export time</p></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

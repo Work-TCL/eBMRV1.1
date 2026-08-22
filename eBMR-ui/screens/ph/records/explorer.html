@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Record explorer · PH · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="file-text"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">PH · Records</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Records</div>
+      <a href="explorer.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="database"></span> Record explorer</a>
+      <a href="timeline.html" class="sidebar-link"><span class="icon" data-icon="history"></span> Audit timeline</a>
+      <a href="export.html" class="sidebar-link"><span class="icon" data-icon="download"></span> Inspection export</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="ph" style="padding:2px 8px"><span class="icon" data-icon="droplet"></span> Pharmaceutical</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">M. Chen — Records/Audit User</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">PH</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Record Explorer &amp; Genealogy</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Record Explorer &amp; Genealogy</h1>
+        <p class="page-subtitle">UX-SCR-028 · Read and navigation only — search defaults to authorized minimum identifiers</p>
+      </div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Pharmaceutical records</div></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Batch</th><th>Product</th><th>Profile</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold tabular">B-2026-0142</span></td><td>Paracetamol 500mg Tablets</td><td><span class="profile-marker" data-profile="ph" style="padding:2px 7px"><span class="icon" data-icon="droplet"></span> PH</span></td><td><span class="state" data-state="conflict"><span class="icon" data-icon="alert-triangle"></span> Awaiting review</span></td></tr>
+              <tr><td><span class="font-semibold tabular">B-2026-0141</span></td><td>Paracetamol 500mg Tablets</td><td><span class="profile-marker" data-profile="ph" style="padding:2px 7px"><span class="icon" data-icon="droplet"></span> PH</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Released</span></td></tr>
+              <tr><td><span class="font-semibold tabular">B-2026-0140</span></td><td>Paracetamol 500mg Tablets</td><td><span class="profile-marker" data-profile="ph" style="padding:2px 7px"><span class="icon" data-icon="droplet"></span> PH</span></td><td><span class="state" data-state="blocked"><span class="icon" data-icon="lock"></span> Held</span></td></tr>
+              <tr><td><span class="font-semibold tabular">B-2026-0089</span></td><td>Amoxicillin 250mg Capsules</td><td><span class="profile-marker" data-profile="ph" style="padding:2px 7px"><span class="icon" data-icon="droplet"></span> PH</span></td><td><span class="state" data-state="failed"><span class="icon" data-icon="x"></span> Rejected</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Genealogy — B-2026-0142</div></div>
+        <div class="card-pad"><div class="stepper">
+          <div class="step-item" data-step-state="completed"><div class="step-marker"><span class="icon" data-icon="check"></span></div><div><div class="step-title"> Materials</div><div class="step-meta">4 lots, status verified at use</div></div></div>
+          <div class="step-item" data-step-state="completed"><div class="step-marker"><span class="icon" data-icon="check"></span></div><div><div class="step-title"> Equipment used</div><div class="step-meta">RMG-3, SC-4402, CP-7</div></div></div>
+          <div class="step-item" data-step-state="completed"><div class="step-marker"><span class="icon" data-icon="check"></span></div><div><div class="step-title"> Output</div><div class="step-meta">248,120 tablets — genealogy links verified</div></div></div>
+        </div></div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

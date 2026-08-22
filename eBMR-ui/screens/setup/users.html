@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Users · Setup · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="building"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">Organisation setup</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> Sign-in / profiles</a>
+      <div class="sidebar-section">Setup</div>
+      <a href="checklist.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Setup checklist</a>
+      <a href="company.html" class="sidebar-link"><span class="icon" data-icon="building"></span> Company &amp; sites</a>
+      <a href="users.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="users"></span> Users</a>
+      <a href="roles.html" class="sidebar-link"><span class="icon" data-icon="shield-check"></span> Roles &amp; permissions</a>
+      <a href="products.html" class="sidebar-link"><span class="icon" data-icon="package"></span> Products</a>
+      <a href="materials.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Materials &amp; items</a>
+      <a href="bom.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Bill of materials</a>
+      <a href="equipment.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Equipment &amp; rooms</a>
+      <div class="sidebar-section">Then</div>
+      <!-- <a href="../md/menu.html" class="sidebar-link"><span class="icon" data-icon="cross-medical"></span> Medical Device</a>
+      <a href="../ph/menu.html" class="sidebar-link"><span class="icon" data-icon="droplet"></span> Pharmaceutical</a> -->
+      <a href="../ddcp/menu.html" class="sidebar-link"><span class="icon" data-icon="layers"></span> Combination Product</a>
+    </nav>
+    <div class="sidebar-foot"><a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a></div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="k">Organisation</span><span class="v">Acme Life Sciences Group</span></span>
+      <span class="context-item"><span class="k">Scope</span><span class="v">Tenant-wide setup — applies to all profiles</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">L. Park — Configuration Administrator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 09:00 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="checklist.html">Setup</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Users</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Users</h1>
+        <p class="page-subtitle">Step 2 of 7 · Everyone who can sign in. A user is a person, never a shared account — Part 11 requires each signature to belong to one identifiable human.</p>
+      </div></div>
+      <div class="card mb-4">
+        <div class="card-header">
+          <div class="flex items-center gap-3" style="flex:1">
+            <div class="card-title">People</div>
+            <span class="fs-2 text-muted"><span data-list-count="users">8</span> records</span>
+          </div>
+          <div class="flex items-center gap-2"><div class="rel" style="max-width:260px;flex:1"><span class="icon" data-icon="search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ink-muted)"></span><input class="input" style="padding-left:32px" placeholder="Search…" data-filter-for="users"></div><button class="btn btn-primary btn-sm" data-modal-open="add-user"><span class="icon" data-icon="plus"></span> Invite user</button></div>
+        </div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table" data-list="users">
+            <thead><tr><th>Name</th><th>Primary role</th><th>Sites</th><th>Department</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">S. Rao</span><div class="fs-1 text-muted">s.rao@acme.example</div></td><td>Master Author</td><td>Site 1, Site 2</td><td>Quality Assurance</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">K. Verma</span><div class="fs-1 text-muted">k.verma@acme.example</div></td><td>Production Operator</td><td>Site 2</td><td>Production</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">J. Rao</span><div class="fs-1 text-muted">j.rao@acme.example</div></td><td>Material/Dispensing Operator</td><td>Site 1</td><td>Production</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">D. Iyer</span><div class="fs-1 text-muted">d.iyer@acme.example</div></td><td>Independent Checker</td><td>Site 1</td><td>Quality Control</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">R. Oduya</span><div class="fs-1 text-muted">r.oduya@acme.example</div></td><td>Device Quality</td><td>Site 2</td><td>Quality Assurance</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">P. Nair</span><div class="fs-1 text-muted">p.nair@acme.example</div></td><td>Release Authority</td><td>All sites</td><td>Quality Assurance</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">A. Desai</span><div class="fs-1 text-muted">a.desai@acme.example</div></td><td>Production Supervisor</td><td>Site 1, Site 2</td><td>Production</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Active</span></td></tr>
+              <tr><td><span class="font-semibold">T. Mehta</span><div class="fs-1 text-muted">t.mehta@acme.example</div></td><td>Production Operator</td><td>Site 1</td><td>Production</td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Invited — not yet signed in</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="empty-state" data-filter-empty="users" style="display:none">
+          <span class="icon" data-icon="search"></span><p class="fs-3">No records match your search.</p>
+        </div>
+<div class="card-pad" style="padding-top:0"><p class="fs-2 text-muted">Inviting a user does not grant them anything on its own — roles and training are separate steps, and both are required before they can sign anything.</p></div>      </div>
+
+      <div class="card card-pad mb-4">
+        <p class="fs-4 font-semibold mb-2">Three things a person needs before they can work</p>
+        <div class="grid grid-cols-3 gap-4">
+          <div><p class="fs-3 font-semibold">1. An account</p><p class="fs-3 text-muted mt-1">Created here. On its own it lets them sign in and see nothing.</p></div>
+          <div><p class="fs-3 font-semibold">2. A role</p><p class="fs-3 text-muted mt-1">Assigned on the Roles screen. Decides what they may attempt.</p></div>
+          <div><p class="fs-3 font-semibold">3. Current training</p><p class="fs-3 text-muted mt-1">Recorded per operation. Expired training blocks the action, even with the right role.</p></div>
+        </div>
+      </div>
+
+
+<div class="modal-backdrop" id="add-user">
+  <div class="modal modal-lg" data-demo-form>
+    <div class="modal-header">
+      <div><div class="modal-title">Invite user</div><p class="fs-3 text-muted mt-1">They receive an email invitation; the account stays inactive until they set a password.</p></div>
+      <button data-modal-close class="btn-icon btn-ghost"><span class="icon" data-icon="x"></span></button>
+    </div>
+    <div class="modal-body">
+        <div class="field"><label class="label">Full name <span class="req">*</span></label>
+          <input class="input" data-field="name" data-required placeholder="e.g. N. Shah" value="">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Email <span class="req">*</span></label>
+          <input class="input" data-field="email" data-required placeholder="name@acme.example" value="">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Primary role <span class="req">*</span></label>
+          <select class="select" data-field="role" data-required><option>Production Operator</option><option>Material/Dispensing Operator</option><option>Production Supervisor</option><option>Independent Checker</option><option>QC Analyst</option><option>Master Author</option><option>Technical Reviewer</option><option>Device Quality</option><option>Quality Unit Reviewer</option><option>Release Authority</option><option>Configuration Administrator</option><option>Records/Audit User</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Sites <span class="req">*</span></label>
+          <select class="select" data-field="sites" data-required><option>Site 1</option><option>Site 2</option><option>Site 3</option><option>Site 1, Site 2</option><option>All sites</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Department <span class="req">*</span></label>
+          <select class="select" data-field="dept" data-required><option>Production</option><option>Quality Assurance</option><option>Quality Control</option><option>Engineering</option><option>Warehouse</option><option>Regulatory</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary" data-demo-save="users" data-demo-message="Invitation sent — demo only, nothing stored.">
+        <span class="icon" data-icon="check"></span> Send invitation</button>
+    </div>
+  </div>
+</div>
+
+<template data-list-row="users"><td><span class="font-semibold">{{name}}</span><div class="fs-1 text-muted">{{email}}</div></td><td>{{role}}</td><td>{{sites}}</td><td>{{dept}}</td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Invited — not yet signed in</span></td></template>
+    </main>
+  </div>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

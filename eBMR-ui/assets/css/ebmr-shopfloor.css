@@ -1,0 +1,57 @@
+/* ==========================================================================
+   EBMR-DB-13.1 §12 — shop-floor density layer.
+   Applies only at [data-density="shopfloor"] on <html>, for tablet
+   (1024x768 landscape) and shared-workstation (1366x768) execution routes.
+   Changes size and emphasis only — never what is permitted, shown or
+   recorded (DB-13.1 §12).
+   ========================================================================== */
+
+html[data-density="shopfloor"]{
+  --context-bar-h:56px;
+}
+
+html[data-density="shopfloor"] body{font-size:var(--fs-5)}
+
+html[data-density="shopfloor"] .btn{
+  min-height:44px;padding:12px var(--space-5);font-size:var(--fs-5);
+}
+html[data-density="shopfloor"] .btn-icon{min-width:44px;min-height:44px}
+html[data-density="shopfloor"] .btn-sm{min-height:40px;padding:9px var(--space-4)}
+
+html[data-density="shopfloor"] .input,
+html[data-density="shopfloor"] .select,
+html[data-density="shopfloor"] textarea.input{
+  min-height:48px;font-size:var(--fs-5);padding:12px var(--space-4);
+}
+
+html[data-density="shopfloor"] .input-measure .input.tabular{font-size:var(--fs-7);font-weight:var(--fw-bold)}
+html[data-density="shopfloor"] .kpi-value{font-size:22px}
+
+html[data-density="shopfloor"] .step-marker{width:38px;height:38px;font-size:var(--fs-4)}
+html[data-density="shopfloor"] .step-title{font-size:var(--fs-5)}
+html[data-density="shopfloor"] .step-meta{font-size:var(--fs-3)}
+
+html[data-density="shopfloor"] .sig-block{padding:var(--space-5)}
+html[data-density="shopfloor"] .sig-manifest{font-size:var(--fs-5)}
+html[data-density="shopfloor"] .sig-role{font-size:var(--fs-2)}
+
+/* Navigation chrome deliberately does NOT scale with density. DB-13.1 §12
+   enumerates what the shop-floor layer enlarges — targets, inputs, measured
+   values, context bar, step markers, signature block — and the sidebar is not
+   among them. Keeping nav identical across desktop and shop-floor screens
+   means the same menu looks the same everywhere, which is what stops an
+   operator second-guessing whether they are on the screen they expected.
+   The work area still gets full 44px/48px touch targets above. */
+html[data-density="shopfloor"] .tab-btn{min-height:44px;font-size:var(--fs-4)}
+html[data-density="shopfloor"] .checkbox-row input[type=checkbox],
+html[data-density="shopfloor"] .checkbox-row input[type=radio]{width:22px;height:22px}
+
+/* Tablet portrait is not a supported execution orientation — stated, not silent. */
+.orientation-block{display:none}
+@media (max-width:1023px) and (orientation:portrait){
+  html[data-density="shopfloor"] .app-shell{display:none}
+  html[data-density="shopfloor"] .orientation-block{
+    display:flex;min-height:100vh;align-items:center;justify-content:center;
+    padding:var(--space-6);text-align:center;background:var(--surface-page);
+  }
+}

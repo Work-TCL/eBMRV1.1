@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Material scan/issue · PH · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="gauge"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">PH · Production</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Production</div>
+      <a href="new-batch.html" class="sidebar-link"><span class="icon" data-icon="file-plus-2"></span> Create a batch</a>
+      <a href="control-board.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Control board</a>
+      <a href="readiness.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Readiness checklist</a>
+      <a href="execution.html" class="sidebar-link"><span class="icon" data-icon="droplet"></span> Guided execution</a>
+      <a href="dispensing.html" class="sidebar-link"><span class="icon" data-icon="droplet"></span> Dispensing — independent check</a>
+      <a href="material-scan.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="scan"></span> Material scan/issue</a>
+      <a href="equipment.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Equipment/line clearance</a>
+      <a href="verification.html" class="sidebar-link"><span class="icon" data-icon="user"></span> Independent verification</a>
+      <a href="inspection.html" class="sidebar-link"><span class="icon" data-icon="search"></span> Inspection/sampling result</a>
+      <a href="timer-yield.html" class="sidebar-link"><span class="icon" data-icon="clock"></span> Timer/yield/reconciliation</a>
+      <a href="pause.html" class="sidebar-link"><span class="icon" data-icon="alert-circle"></span> Pause/interruption</a>
+      <a href="hold.html" class="sidebar-link"><span class="icon" data-icon="flag"></span> Hold/issue</a>
+      <a href="packaging.html" class="sidebar-link"><span class="icon" data-icon="package"></span> Packaging/label control</a>
+      <a href="lab.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Lab dependency panel</a>
+      <a href="correction.html" class="sidebar-link"><span class="icon" data-icon="pen"></span> Correction/late-entry</a>
+      <a href="completion.html" class="sidebar-link"><span class="icon" data-icon="clipboard"></span> Completion review</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="ph" style="padding:2px 8px"><span class="icon" data-icon="droplet"></span> Pharmaceutical</span></span>
+      <span class="context-item"><span class="k">Destination</span><span class="v">Batch B-2026-0142</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">J. Rao — Material/Dispensing Operator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">PH</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Material Scan / Issue / Use / Return</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Material Scan / Issue / Use / Return</h1>
+        <p class="page-subtitle">UX-SCR-012 · A scan owns focus and states what is expected before capture</p>
+      </div></div>
+      <div class="card mb-4"><div class="card-pad"><div class="scan-field mb-2"><span class="icon" data-icon="scan"></span><input class="input tabular" value="MAT-1001 / LOT-P7741"><span class="scan-tag">Scan</span></div><p class="hint">Expected: Paracetamol IP (API), component of Paracetamol 500mg Tablets v3.2 — the scan field states what is expected before capture.</p></div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Materials for this execution</div></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Material</th><th>Lot</th><th>Required</th><th>Actual</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">Paracetamol IP (API)</span><div class="fs-1 text-muted">MAT-1001</div></td><td><span class="tabular">LOT-P7741</span></td><td><span class="tabular">50.00 kg</span></td><td><span class="tabular">50.080 kg</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Within tolerance</span></td></tr>
+              <tr><td><span class="font-semibold">Microcrystalline cellulose</span><div class="fs-1 text-muted">MAT-1002</div></td><td><span class="tabular">LOT-M2290</span></td><td><span class="tabular">120.00 kg</span></td><td><span class="tabular">120.730 kg</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Within tolerance</span></td></tr>
+              <tr><td><span class="font-semibold">Magnesium stearate</span><div class="fs-1 text-muted">MAT-1003</div></td><td><span class="tabular">LOT-A2291</span></td><td><span class="tabular">1.80 kg</span></td><td><span class="tabular">1.895 kg</span></td><td><span class="state" data-state="conflict"><span class="icon" data-icon="alert-triangle"></span> Over tolerance +5.3%</span></td></tr>
+              <tr><td><span class="font-semibold">Opadry coating (blue)</span><div class="fs-1 text-muted">MAT-1004</div></td><td><span class="tabular">—</span></td><td><span class="tabular">6.40 kg</span></td><td><span class="tabular">—</span></td><td><span class="state" data-state="missing"><span class="icon" data-icon="help-circle"></span> Pending — coating stage</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card card-pad"><p class="fs-3 font-semibold mb-3">Deliberate confirmation required — separate labeled actions</p><div class="flex flex-wrap gap-3"><button class="btn btn-primary"><span class="icon" data-icon="check"></span> Issue</button><button class="btn btn-secondary"><span class="icon" data-icon="check-circle"></span> Consume / charge</button><button class="btn btn-secondary"><span class="icon" data-icon="arrow-left"></span> Return</button><button class="btn btn-secondary">Scrap</button><button class="btn btn-ghost">Reversal</button></div></div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Materials & items · Setup · NZ-eBMR</title>
+<link rel="stylesheet" href="../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../assets/css/ebmr-components.css">
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="building"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">Organisation setup</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> Sign-in / profiles</a>
+      <div class="sidebar-section">Setup</div>
+      <a href="checklist.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Setup checklist</a>
+      <a href="company.html" class="sidebar-link"><span class="icon" data-icon="building"></span> Company &amp; sites</a>
+      <a href="users.html" class="sidebar-link"><span class="icon" data-icon="users"></span> Users</a>
+      <a href="roles.html" class="sidebar-link"><span class="icon" data-icon="shield-check"></span> Roles &amp; permissions</a>
+      <a href="products.html" class="sidebar-link"><span class="icon" data-icon="package"></span> Products</a>
+      <a href="materials.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="database"></span> Materials &amp; items</a>
+      <a href="bom.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Bill of materials</a>
+      <a href="equipment.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Equipment &amp; rooms</a>
+      <div class="sidebar-section">Then</div>
+      <!-- <a href="../md/menu.html" class="sidebar-link"><span class="icon" data-icon="cross-medical"></span> Medical Device</a>
+      <a href="../ph/menu.html" class="sidebar-link"><span class="icon" data-icon="droplet"></span> Pharmaceutical</a> -->
+      <a href="../ddcp/menu.html" class="sidebar-link"><span class="icon" data-icon="layers"></span> Combination Product</a>
+    </nav>
+    <div class="sidebar-foot"><a href="../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a></div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="k">Organisation</span><span class="v">Acme Life Sciences Group</span></span>
+      <span class="context-item"><span class="k">Scope</span><span class="v">Tenant-wide setup — applies to all profiles</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">L. Park — Configuration Administrator</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 09:00 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="checklist.html">Setup</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Materials &amp; Items</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Materials &amp; Items</h1>
+        <p class="page-subtitle">Step 5 of 7 · Everything that goes into a product or touches it — actives, excipients, components, packaging.</p>
+      </div></div>
+      <div class="card mb-4">
+        <div class="card-header">
+          <div class="flex items-center gap-3" style="flex:1">
+            <div class="card-title">Material register</div>
+            <span class="fs-2 text-muted"><span data-list-count="materials">9</span> records</span>
+          </div>
+          <div class="flex items-center gap-2"><div class="rel" style="max-width:260px;flex:1"><span class="icon" data-icon="search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ink-muted)"></span><input class="input" style="padding-left:32px" placeholder="Search…" data-filter-for="materials"></div><button class="btn btn-primary btn-sm" data-modal-open="add-material"><span class="icon" data-icon="plus"></span> Add material</button></div>
+        </div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table" data-list="materials">
+            <thead><tr><th>Material</th><th>Category</th><th>Unit</th><th>Supplier</th><th>Shelf life</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">Paracetamol IP</span><div class="fs-1 text-muted">MAT-1001</div></td><td>Active ingredient (API)</td><td>kg</td><td>Hindustan Chem</td><td>2 years</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Approved</span></td></tr>
+              <tr><td><span class="font-semibold">Microcrystalline cellulose</span><div class="fs-1 text-muted">MAT-1002</div></td><td>Excipient</td><td>kg</td><td>FMC BioPolymer</td><td>3 years</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Approved</span></td></tr>
+              <tr><td><span class="font-semibold">Magnesium stearate</span><div class="fs-1 text-muted">MAT-1003</div></td><td>Excipient (lubricant)</td><td>kg</td><td>Peter Greven</td><td>3 years</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Approved</span></td></tr>
+              <tr><td><span class="font-semibold">Opadry coating (blue)</span><div class="fs-1 text-muted">MAT-1004</div></td><td>Coating</td><td>kg</td><td>Colorcon</td><td>2 years</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Approved</span></td></tr>
+              <tr><td><span class="font-semibold">Housing shell</span><div class="fs-1 text-muted">COMP-4471</div></td><td>Component</td><td>pcs</td><td>Precision Mould Co</td><td>—</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Approved</span></td></tr>
+              <tr><td><span class="font-semibold">Luer connector</span><div class="fs-1 text-muted">COMP-4488</div></td><td>Component</td><td>pcs</td><td>MedFit Ltd</td><td>—</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Approved</span></td></tr>
+              <tr><td><span class="font-semibold">Tubing 2.1m</span><div class="fs-1 text-muted">COMP-4502</div></td><td>Component</td><td>pcs</td><td>PolyTube Inc</td><td>—</td><td><span class="state" data-state="stale"><span class="icon" data-icon="clock"></span> Retest due</span></td></tr>
+              <tr><td><span class="font-semibold">Primary label roll</span><div class="fs-1 text-muted">LBL-PARA-500-A</div></td><td>Packaging — label</td><td>rolls</td><td>PrintPack</td><td>—</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Approved</span></td></tr>
+              <tr><td><span class="font-semibold">Carton 30s</span><div class="fs-1 text-muted">CTN-PARA-500-30</div></td><td>Packaging — carton</td><td>pcs</td><td>PrintPack</td><td>—</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Approved</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="empty-state" data-filter-empty="materials" style="display:none">
+          <span class="icon" data-icon="search"></span><p class="fs-3">No records match your search.</p>
+        </div>
+<div class="card-pad" style="padding-top:0"><p class="fs-2 text-muted">Status here is the material's approval as an item type. Each delivered lot is approved separately — an approved material can still have a rejected lot.</p></div>      </div>
+
+      <div class="card card-pad mb-4">
+        <p class="fs-4 font-semibold mb-2">Material vs lot — the distinction that matters</p>
+        <div class="grid grid-cols-2 gap-4">
+          <div><p class="fs-3 font-semibold">Material (this screen)</p><p class="fs-3 text-muted mt-1">"Magnesium stearate, MAT-1003" — the kind of thing. Defined once, used forever.</p></div>
+          <div><p class="fs-3 font-semibold">Lot (recorded during production)</p><p class="fs-3 text-muted mt-1">"LOT-A2291, received 12 Jul, expires Mar 2028" — a specific delivery. Each lot carries its own status, expiry and test results.</p></div>
+        </div>
+        <p class="hint mt-3">Genealogy links a finished batch to the exact lots used — so if a supplier recalls one lot, you can find every affected batch in seconds.</p>
+      </div>
+
+
+<div class="modal-backdrop" id="add-material">
+  <div class="modal modal-lg" data-demo-form>
+    <div class="modal-header">
+      <div><div class="modal-title">Add material</div><p class="fs-3 text-muted mt-1">Define the item type once; individual lots are recorded as they arrive.</p></div>
+      <button data-modal-close class="btn-icon btn-ghost"><span class="icon" data-icon="x"></span></button>
+    </div>
+    <div class="modal-body">
+        <div class="field"><label class="label">Material name <span class="req">*</span></label>
+          <input class="input" data-field="name" data-required placeholder="e.g. Croscarmellose sodium" value="">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Material code <span class="req">*</span></label>
+          <input class="input" data-field="code" data-required placeholder="e.g. MAT-1005" value="">
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Category <span class="req">*</span></label>
+          <select class="select" data-field="cat" data-required><option>Active ingredient (API)</option><option>Excipient</option><option>Excipient (lubricant)</option><option>Coating</option><option>Component</option><option>Packaging — label</option><option>Packaging — carton</option><option>Consumable</option><option>Solvent</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Unit of measure <span class="req">*</span></label>
+          <select class="select" data-field="unit" data-required><option>kg</option><option>g</option><option>L</option><option>mL</option><option>pcs</option><option>rolls</option><option>m</option></select>
+<p class="error-text" data-error-for style="display:none"><span class="icon" data-icon="alert-circle"></span> This field is required.</p>
+        </div>        <div class="field"><label class="label">Supplier</label>
+          <input class="input" data-field="supp" placeholder="e.g. Hindustan Chem" value="">
+
+        </div>        <div class="field"><label class="label">Shelf life</label>
+          <input class="input" data-field="shelf" placeholder="e.g. 2 years" value="">
+<p class="hint">Leave blank for components with no expiry.</p>
+        </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary" data-demo-save="materials" data-demo-message="Material created — demo only, nothing stored.">
+        <span class="icon" data-icon="check"></span> Create material</button>
+    </div>
+  </div>
+</div>
+
+<template data-list-row="materials"><td><span class="font-semibold">{{name}}</span><div class="fs-1 text-muted">{{code}}</div></td><td>{{cat}}</td><td>{{unit}}</td><td>{{supp}}</td><td>{{shelf}}</td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Approved</span></td></template>
+    </main>
+  </div>
+</div>
+<script src="../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

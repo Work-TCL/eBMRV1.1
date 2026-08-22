@@ -1,0 +1,52 @@
+name: ci
+# Gates defined in docs/generated/39_CI_CD_RELEASE_EVIDENCE_MODEL.md
+on: [pull_request, push]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Specs are read-only
+        run: tooling/guardrails/assert-no-spec-edits.sh
+      - name: Lint & typecheck
+        run: npm run lint && npm run typecheck
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Architecture guardrails
+        run: npm run guardrails            # docs/generated/34_ARCHITECTURE_GUARDRAIL_MATRIX.md
+      - name: Contract lint & compatibility
+        run: npm run contracts:check
+      - name: Requirement ID uniqueness & single event producer
+        run: npm run specs:conformance     # Document 115 REM-FR-001/003
+      - name: Traceability check
+        run: npm run traceability:check
+      - name: Migration safety
+        run: npm run migrations:check
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SAST
+        run: npm run security:sast
+      - name: Dependency & licence (SCA)
+        run: npm run security:sca          # Document 104
+      - name: Secret scan
+        run: npm run security:secrets
+      - name: IaC & container scan
+        run: npm run security:iac
+
+  integration:
+    needs: [quality, security]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Integration & contract tests
+        run: npm run test:integration
+      - name: Build once
+        run: npm run build:artifact
+      - name: SBOM
+        run: npm run sbom:generate
+      - name: Sign artefact
+        run: npm run artifact:sign

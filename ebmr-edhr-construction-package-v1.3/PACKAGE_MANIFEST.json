@@ -1,0 +1,2861 @@
+{
+ "package": "eBMR / eDHR Claude Code Construction Package",
+ "version": "1.3",
+ "status": "Ready for Review",
+ "generated": "2026-08-21",
+ "entry_point": "START_HERE.md",
+ "spec_baseline": "Documents 01-105 + approved 106-115",
+ "file_count": 567,
+ "total_bytes": 31635131,
+ "inventory": {
+  "Documents ingested": "105 (+10 approved gap-resolution documents)",
+  "Requirements compiled": 3229,
+  "Modules / submodules": "105 modules across 15 work packages",
+  "Function / service contracts": 1017,
+  "Data entities": 258,
+  "Planned initial migrations": 258,
+  "API operations": 497,
+  "Event types": 484,
+  "State machines": 72,
+  "UI surfaces": 741,
+  "Integrations": 8,
+  "Error codes": 277,
+  "Security controls": 204,
+  "Threats registered": 28,
+  "Validation traceability rows": 3229,
+  "Signature points (Doc 106)": 171,
+  "Document 01 capabilities traced": "215 (47 auto-matched COVERED, remainder for scope review)",
+  "AI use cases registered": 7,
+  "SPEC_GAPs": "20 (all resolved, 0 open blocking)",
+  "Test cases authored": 9150,
+  "Traceability rows": 2965,
+  "Requirements without a test case": 0
+ },
+ "files": [
+  {
+   "path": ".claude/rules/00-architecture-non-negotiables.md",
+   "bytes": 12241,
+   "sha256": "c3302804dfa9161828650e1ac2469d52e34634c2adb6dcd5c7f6fd0e402658b9"
+  },
+  {
+   "path": ".claude/rules/01-gxp-mutation-rules.md",
+   "bytes": 10159,
+   "sha256": "7bfdd5cb41d0c131dfb1b8f27f22a429810ee57088e6b13b3b3cccd34584353a"
+  },
+  {
+   "path": ".claude/rules/02-part11-signature-rules.md",
+   "bytes": 8270,
+   "sha256": "59d8d79e8e3b06aa955ead1994bc903a93738df93da616a8ff62baa067fd5523"
+  },
+  {
+   "path": ".claude/rules/03-audit-vault-data-integrity.md",
+   "bytes": 8461,
+   "sha256": "8e66b229e8fb923a16a1313d40e1c95f5c5d390b4e14c847b113f7c32ce769d5"
+  },
+  {
+   "path": ".claude/rules/04-data-ownership-database.md",
+   "bytes": 7727,
+   "sha256": "c711a334afe0c37be06b4b63614113241c4317675cba84830a3ee1f36286a83b"
+  },
+  {
+   "path": ".claude/rules/05-api-event-contracts.md",
+   "bytes": 6845,
+   "sha256": "7fd14f069f94cea52743e8ded41feb35cfeea89084e426b15c3b7fd4849d0482"
+  },
+  {
+   "path": ".claude/rules/06-security-rules.md",
+   "bytes": 8283,
+   "sha256": "1b119310ef9a91feaa91cbec9e2e814e590f5c47bb4c084e410a1e519c8b77e0"
+  },
+  {
+   "path": ".claude/rules/07-testing-validation.md",
+   "bytes": 6949,
+   "sha256": "bcbfe9405cbb0d727723179578528a650a3fc28c3fd88b6577c34d8cb16a7f96"
+  },
+  {
+   "path": ".claude/rules/08-database-migrations.md",
+   "bytes": 7013,
+   "sha256": "44cfd9c10577a517aba0951d885fe49ba6d98d70021e1b3b36a07b98a3227fbe"
+  },
+  {
+   "path": ".claude/rules/09-dependencies-sbom-license.md",
+   "bytes": 6638,
+   "sha256": "f2669c8a351afb7035a82f5dba38f30683970cf85f317fcf8e1fbbeefeace7a2"
+  },
+  {
+   "path": ".claude/rules/10-ai-governance.md",
+   "bytes": 7941,
+   "sha256": "e639c880746aed375f610028cc77b1385b9d20ab421388c8369173035d65c651"
+  },
+  {
+   "path": ".claude/settings.example.json",
+   "bytes": 804,
+   "sha256": "29a20ce61888bf4b16532efd97e428faa544421433aad2b56738dff795eae57d"
+  },
+  {
+   "path": ".github/CODEOWNERS",
+   "bytes": 1120,
+   "sha256": "d20fb0315cc44b25a5f32bbe2be59d28dd61834536080afff3e5057f9b1255aa"
+  },
+  {
+   "path": ".github/pull_request_template.md",
+   "bytes": 777,
+   "sha256": "b8bc67465172e663d1c640ad1fb398b68e11d1626d4806149e345d9fd697209b"
+  },
+  {
+   "path": ".github/workflows/ci.yml",
+   "bytes": 1660,
+   "sha256": "a0ae573021e8e8d09ddea9bef579cad11a94c5953cd58d3741b7cd6b65cd8727"
+  },
+  {
+   "path": "CLAUDE.md",
+   "bytes": 8264,
+   "sha256": "8b439145a2379901de163a2f296bcd72a5760b7647a7034a8823f638f934a4e2"
+  },
+  {
+   "path": "README.md",
+   "bytes": 12635,
+   "sha256": "dcc2d559fe467af83187df03524624cc596afc877df43ccf16c5d9986a1d6285"
+  },
+  {
+   "path": "START_HERE.md",
+   "bytes": 19068,
+   "sha256": "9453fe36d1a7bbf7a297a9b7192004a71637c5c6d3a16b21b73f470b789e0001"
+  },
+  {
+   "path": "docs/adr/ADR-0001-repository-layout.md",
+   "bytes": 1373,
+   "sha256": "3b2bc9295a5696b231fddb33d23c08a4af1d5b049f6a04a7df8be4e97ac3e9a1"
+  },
+  {
+   "path": "docs/adr/ADR-0002-gxp-core-deployment-unit.md",
+   "bytes": 991,
+   "sha256": "ac22dc155d2491e911dba129ad98fca34c8f89497fbd33ba1da233f61207c614"
+  },
+  {
+   "path": "docs/adr/ADR-0003-contract-first-codegen.md",
+   "bytes": 743,
+   "sha256": "5b1f468e4f6fb35ef700673a6a5e35f1190fe01cfe3e51c3ef47dcf3ecc2dbe9"
+  },
+  {
+   "path": "docs/adr/ADR-0004-requirement-id-namespace.md",
+   "bytes": 793,
+   "sha256": "1a92f7d5318ec83edb8b8491031dd8ea5b8be950b689b711dd9a288bbdafc0f2"
+  },
+  {
+   "path": "docs/adr/ADR-0005-frappe-base-layer-erpnext-external.md",
+   "bytes": 2596,
+   "sha256": "802cf4b4c5b5d6ede6a1efc67281548db54ac187e0e5a1ce142c81450d735148"
+  },
+  {
+   "path": "docs/engineering/AI_GOVERNANCE_POLICY.md",
+   "bytes": 10580,
+   "sha256": "c0a360e8a779b3c024022f5e3b92e1939eda67d5bab6c0ef10aafa3f5fb1f4a1"
+  },
+  {
+   "path": "docs/engineering/API_EVENT_CONTRACT_STANDARD.md",
+   "bytes": 5734,
+   "sha256": "de0723e41cc6e66b73d2d59ae095709ca2f553718787eca516bc61ef39a94527"
+  },
+  {
+   "path": "docs/engineering/ARCHITECTURE_RULES_FOR_AGENTS.md",
+   "bytes": 6474,
+   "sha256": "8a0e39951809a3585d698317025e9e6520de9d9c143253f2ad37087222a74797"
+  },
+  {
+   "path": "docs/engineering/CI_CD_RELEASE_PROCESS.md",
+   "bytes": 5748,
+   "sha256": "d648dfb728a0d0a60ceee659a715f936e6ca08e0b7850aafad84b5c6f1f1f2e6"
+  },
+  {
+   "path": "docs/engineering/CODING_STANDARDS.md",
+   "bytes": 6614,
+   "sha256": "f130a0e5adb20623013a5a0bbd7f26ee65d0c761641049c1978c6ac6b5d53266"
+  },
+  {
+   "path": "docs/engineering/DATABASE_MIGRATION_STANDARD.md",
+   "bytes": 5530,
+   "sha256": "4ae4baadef30dd382d10a47e0059e0e9d833412c9f3871a63429bba25d3e05e9"
+  },
+  {
+   "path": "docs/engineering/REPOSITORY_BRANCHING_STANDARD.md",
+   "bytes": 5204,
+   "sha256": "cab49e61bf13fb9d6fddbf53e09a2fec46f74b84ad26962e4989c27fea9591be"
+  },
+  {
+   "path": "docs/engineering/SBOM_LICENSE_POLICY.md",
+   "bytes": 5972,
+   "sha256": "8909a654ee55209950cdbc2c468e3eedfcb1587ec6590f2645b2d56226d0ac4d"
+  },
+  {
+   "path": "docs/engineering/TESTING_STRATEGY.md",
+   "bytes": 6200,
+   "sha256": "41dd993fe15cc4b968f3785d0369871901cc0134af6794b08b5d4764cc57a23e"
+  },
+  {
+   "path": "docs/generated/00_PROJECT_OUTLINE.md",
+   "bytes": 118005,
+   "sha256": "9c013ca003a155b8f7f6b09720f71864abb7391509411e44a4a590ba2956f696"
+  },
+  {
+   "path": "docs/generated/01_REQUIREMENT_REGISTRY.csv",
+   "bytes": 1380652,
+   "sha256": "127269d4d63ddf1c5dc520c3ae3759e2dcc6a3eb1ff809dde893b94cc084dedc"
+  },
+  {
+   "path": "docs/generated/02_MODULE_DEPENDENCY_MAP.md",
+   "bytes": 14339,
+   "sha256": "c76af4d906d92ede5735cdae3dd972f69d26844ff55811970cfbcc6a9c5ba528"
+  },
+  {
+   "path": "docs/generated/03_FUNCTION_CATALOGUE.csv",
+   "bytes": 1896814,
+   "sha256": "9dc04ced3ef6f45bc34da1d517556fb9187e0adb7ce2c8a302f31ecd8914a1cf"
+  },
+  {
+   "path": "docs/generated/04_DATA_MODEL_CATALOGUE.md",
+   "bytes": 193566,
+   "sha256": "0ad77c032e27bc9977a323a655504016ff479fc1d9207a2e8fd7e5a44dd899db"
+  },
+  {
+   "path": "docs/generated/05_DATABASE_OWNERSHIP_MATRIX.md",
+   "bytes": 61227,
+   "sha256": "d281b766cdff212cded720b500f13f7f10950ffabc04539762bb89ae91805444"
+  },
+  {
+   "path": "docs/generated/06_API_CATALOGUE.yaml",
+   "bytes": 542963,
+   "sha256": "997f6673da2297b6dabbbf7d3ab6d55acecceb24d12c320236be3c93230dadbb"
+  },
+  {
+   "path": "docs/generated/07_EVENT_CATALOGUE.yaml",
+   "bytes": 408596,
+   "sha256": "1efd1270c91d866e0b0a4e1f15949837764a5fddf4bd25570f298bfa20150eb2"
+  },
+  {
+   "path": "docs/generated/08_STATE_MACHINE_CATALOGUE.md",
+   "bytes": 43076,
+   "sha256": "5cfdfcbde553d8b04419a7882db37d7ddd61e8c8d67ea5575605bb61d0ff3343"
+  },
+  {
+   "path": "docs/generated/09_UI_ACTION_API_MAP.md",
+   "bytes": 124779,
+   "sha256": "866662e3731b63d18a58d7b30d8ee78e7f9c0ac90c97173ae3c09b40245351c8"
+  },
+  {
+   "path": "docs/generated/10_ROLE_PERMISSION_SOD_MATRIX.md",
+   "bytes": 13447,
+   "sha256": "c46ebccd9b9a4e15ef4ba37fab728392307014f276be14c67424db82315d0dfe"
+  },
+  {
+   "path": "docs/generated/11_SIGNATURE_POLICY_MAP.md",
+   "bytes": 13773,
+   "sha256": "7d8b0e6858b9f875d4a12adc11d832c9a7979e7b4a6f05bef82dd53d63f22170"
+  },
+  {
+   "path": "docs/generated/12_AUDIT_EVENT_MAP.md",
+   "bytes": 19281,
+   "sha256": "221a8b91a3acc204a7ad9cadd38431424e15a337b06dc4b2aaaef4f5bbfc2eef"
+  },
+  {
+   "path": "docs/generated/13_INTEGRATION_CONTRACT_MAP.md",
+   "bytes": 2990,
+   "sha256": "d21ebf23c05241434e9544b762285821ecce68d0d4d2fdcc419425c3c073a115"
+  },
+  {
+   "path": "docs/generated/14_ERROR_CODE_REGISTRY.md",
+   "bytes": 20419,
+   "sha256": "589a4ec6855f62ce8fd9995004b687eb9b6f73b09aadc4c47e3f076ed8bd13a1"
+  },
+  {
+   "path": "docs/generated/15_TEST_TRACEABILITY_MATRIX.csv",
+   "bytes": 323662,
+   "sha256": "305e3472e8ab9de402e4fc7932b6fd0fc832bc7756bfef3657d7ed6b8fdd1720"
+  },
+  {
+   "path": "docs/generated/16_IMPLEMENTATION_PHASE_PLAN.md",
+   "bytes": 4723,
+   "sha256": "8fb3355f233d05ba382fb5142eef7b7182f82c09ef48be1c9972a0caed7b678a"
+  },
+  {
+   "path": "docs/generated/17_REPOSITORY_STRUCTURE.md",
+   "bytes": 23788,
+   "sha256": "3280a5a5fc90b79ec1a09dc0c604bfc485bb82f91d9e1c0ec4c3083bbd73024c"
+  },
+  {
+   "path": "docs/generated/18_SPEC_GAPS.md",
+   "bytes": 43342,
+   "sha256": "d8389364fc36639445c687ff699b52a8a25eb0ba4ae3d319c4d62bfe2e6fb1db"
+  },
+  {
+   "path": "docs/generated/19_ADR_INDEX.md",
+   "bytes": 2487,
+   "sha256": "f3c28924e92743eadc4810dfe6c1e1e972565f9720bdf0c0c5fd02c904464035"
+  },
+  {
+   "path": "docs/generated/20_PRODUCT_PROFILE_INHERITANCE_MAP.md",
+   "bytes": 2216,
+   "sha256": "9a6ceaab7de152e0619625e19295b286d63e01fa15d508b11983dcb66a899f83"
+  },
+  {
+   "path": "docs/generated/21_REGULATORY_OBLIGATION_MATRIX.md",
+   "bytes": 14717,
+   "sha256": "45b814bdcdfa45da3932c60d927e1d5c21b9238226f96233cc89b2d3e57b9d15"
+  },
+  {
+   "path": "docs/generated/22_SECURITY_CONTROL_MATRIX.md",
+   "bytes": 43036,
+   "sha256": "217c52cdc6aa6b599843ceb783154b5d942b8d0f9853085f7b43b8ee5f83badc"
+  },
+  {
+   "path": "docs/generated/23_THREAT_MODEL_REGISTER.md",
+   "bytes": 7258,
+   "sha256": "39806a11fb357dda7cbd415e00984663aa0ad7ad347ac831a53816972cbb49a0"
+  },
+  {
+   "path": "docs/generated/24_SECURITY_TEST_PLAN.md",
+   "bytes": 4190,
+   "sha256": "000e5f8c865d8b23576ea34712b7b2a79ca3b1c5a9e9cf454ca6df7d313031fd"
+  },
+  {
+   "path": "docs/generated/25_DATA_OWNERSHIP_AND_LINEAGE_MATRIX.md",
+   "bytes": 2413,
+   "sha256": "526583cb12e65d92f1b5ac68d687c193dabe1d3901e75c4b9a1d8110a76b6f77"
+  },
+  {
+   "path": "docs/generated/26_RPO_RTO_BACKUP_RESTORE_MATRIX.md",
+   "bytes": 1751,
+   "sha256": "f42b8d00546527dad6563362309f52ef337882ea543a7f94dab5b80f9ce0897b"
+  },
+  {
+   "path": "docs/generated/27_CAPACITY_SLO_OBSERVABILITY_MODEL.md",
+   "bytes": 1969,
+   "sha256": "22c67f575224f8728f60d2927ba2067f759b05aaeaf873d239edba1b22906242"
+  },
+  {
+   "path": "docs/generated/28_INTENDED_USE_GXP_RISK_MATRIX.md",
+   "bytes": 19758,
+   "sha256": "5b3cd8e0a94a135653cf017a7348442a4bfd5fc7e07d2efac01eddbe41aef3e8"
+  },
+  {
+   "path": "docs/generated/29_VALIDATION_TRACEABILITY_MASTER.csv",
+   "bytes": 922434,
+   "sha256": "318ad08c5ce67de9ec2cec72aafab07959ebf735078dea0a3330d84171b65b8a"
+  },
+  {
+   "path": "docs/generated/30_QUALIFICATION_TEST_CATALOGUE.md",
+   "bytes": 8642,
+   "sha256": "0724b103960859ecf63853446a89f8e7849597388fc85d839cf9ee4ec325a72f"
+  },
+  {
+   "path": "docs/generated/31_VALIDATED_STATE_CHANGE_REVALIDATION_MATRIX.md",
+   "bytes": 2661,
+   "sha256": "862a293da0805701b5ac38c5e5e6f79754ce76c1f34b65ed8a57059fba4fc773"
+  },
+  {
+   "path": "docs/generated/32_VALIDATION_EVIDENCE_INDEX.md",
+   "bytes": 2031,
+   "sha256": "278bba83a81d9827549155eaaadf1936168d216e8e05809e22feb1870531e3b3"
+  },
+  {
+   "path": "docs/generated/33_CODING_STANDARD_COMPLIANCE_MATRIX.md",
+   "bytes": 12401,
+   "sha256": "cbed11f15515ced054cf8ac2589e934a495e069a17baa21ef16540141a5f1181"
+  },
+  {
+   "path": "docs/generated/34_ARCHITECTURE_GUARDRAIL_MATRIX.md",
+   "bytes": 7544,
+   "sha256": "27564a7858da6091df71c191370f961149649ba433b019405400b5a695e17c42"
+  },
+  {
+   "path": "docs/generated/35_REPOSITORY_OWNERSHIP_RELEASE_MAP.md",
+   "bytes": 3265,
+   "sha256": "dc44d2a229283d458c01f7ad056e5385d245290d7ac3d875acae5642fb1c166e"
+  },
+  {
+   "path": "docs/generated/36_DATABASE_MIGRATION_CATALOGUE.md",
+   "bytes": 78302,
+   "sha256": "1962e9e1cbe165c6ec3a4be050133104071f8670627035056327563f410e227e"
+  },
+  {
+   "path": "docs/generated/37_API_EVENT_COMPATIBILITY_REGISTRY.md",
+   "bytes": 131035,
+   "sha256": "2f8d7bdb7ce721d63ee3600d1a6ea42825660f96d795071695bcda7e6d72737e"
+  },
+  {
+   "path": "docs/generated/38_ENGINEERING_TEST_COVERAGE_MATRIX.md",
+   "bytes": 18179,
+   "sha256": "a0c5d011e4af69559959d4cedfb0d0167311f2a012a21239f03ec0e915a956ff"
+  },
+  {
+   "path": "docs/generated/39_CI_CD_RELEASE_EVIDENCE_MODEL.md",
+   "bytes": 2353,
+   "sha256": "fee0105496613b9c190df1a147e6c9dc027a80bda1a035e0bce88f1adb6e6613"
+  },
+  {
+   "path": "docs/generated/40_SBOM_LICENSE_DEPENDENCY_REGISTER.md",
+   "bytes": 2021,
+   "sha256": "dd204f1460581159e2768350b36881b7946ff81f088ec89485bd3dc7712cb932"
+  },
+  {
+   "path": "docs/generated/41_AI_GOVERNANCE_REGISTER.md",
+   "bytes": 12144,
+   "sha256": "bff32cf96ec5bca30490dfa2b8a6eda42ce9ade5afbc805b4c82c79f0091e55d"
+  },
+  {
+   "path": "docs/generated/42_CAPABILITY_COVERAGE_MATRIX.csv",
+   "bytes": 30880,
+   "sha256": "598c6d074a7e66cde0fab657e3c2c19c00f75f1eae923756a968406912275f94"
+  },
+  {
+   "path": "docs/generated/PHASE_0_CONSTRUCTION_REVIEW.md",
+   "bytes": 3540,
+   "sha256": "1bd99e63fb5fd76d6c4175146504438faf15b9bf3dc37477c38238e2e709a8a7"
+  },
+  {
+   "path": "gap-resolution/18_SPEC_GAPS.md",
+   "bytes": 43342,
+   "sha256": "d8389364fc36639445c687ff699b52a8a25eb0ba4ae3d319c4d62bfe2e6fb1db"
+  },
+  {
+   "path": "gap-resolution/SPEC_GAP_RESOLUTION_INDEX.md",
+   "bytes": 5751,
+   "sha256": "5aec5a4652075f7f5d12583bb07429f2b79361572da1f18556c2b56fb6208831"
+  },
+  {
+   "path": "gap-resolution/addenda/Document_106_Signature_Policy_Baseline_and_Signature_Point_Register_v1_0_APPROVED.md",
+   "bytes": 48088,
+   "sha256": "50fa6f0352a6f5e2e0fabcce36b895f6d29d51cdc5adb210a55998c53c73052a"
+  },
+  {
+   "path": "gap-resolution/addenda/Document_107_Segregation_of_Duties_Incompatible_Role_Baseline_v1_0_APPROVED.md",
+   "bytes": 11870,
+   "sha256": "9738a1c0700fa6c9fe0ad50cb9b0126410c519b9279cf71e498e92d9b5b6baed"
+  },
+  {
+   "path": "gap-resolution/addenda/Document_108_Record_Retention_Archival_Legal_Hold_Disposal_Baseline_v1_0_APPROVED.md",
+   "bytes": 11992,
+   "sha256": "14ffab50ac7aa65fdc10a918e191a4963548385951772000c1b119c34431bddf"
+  },
+  {
+   "path": "gap-resolution/addenda/Document_109_Availability_RPO_RTO_SLO_Capacity_Observability_Baseline_v1_0_APPROVED.md",
+   "bytes": 10791,
+   "sha256": "d0b0d1e703bf384222d1643e2b6aeb947a2e4d52cd56ff21387691f79bf2aa83"
+  },
+  {
+   "path": "gap-resolution/addenda/Document_110_Calculation_Precision_Rounding_UOM_Numeric_Integrity_Baseline_v1_0_APPROVED.md",
+   "bytes": 8726,
+   "sha256": "3bee7e63a14aeb18dcf7dc02a2b877d7bc3567e46f03cf72cd8f600cf1f16ed4"
+  },
+  {
+   "path": "gap-resolution/addenda/Document_111_GxP_Function_Risk_Classification_Baseline_v1_0_APPROVED.md",
+   "bytes": 37134,
+   "sha256": "fdca6b07b233e157f308b694242624fd0ced35318d1e30ca3faf700ea8a3e4c2"
+  },
+  {
+   "path": "gap-resolution/addenda/Document_112_Entity_Schema_Completion_Migration_Contract_Addendum_v1_0_APPROVED.md",
+   "bytes": 32716,
+   "sha256": "4bdbeed04d1e944b694c7d690050d8ef0004d3a985eaffc8505db6f8a73f762b"
+  },
+  {
+   "path": "gap-resolution/addenda/Document_113_Contract_Completion_Standard_v1_0_APPROVED.md",
+   "bytes": 11422,
+   "sha256": "2df72e22da162f5869b99b3b7ab69797d89fe1e22d5de46c17cf493ba5cd1fab"
+  },
+  {
+   "path": "gap-resolution/addenda/Document_114_Platform_Glossary_Controlled_Terminology_v1_0_APPROVED.md",
+   "bytes": 9881,
+   "sha256": "d7b87e7ae9215ff2608ccf6795c96cdb0d734ceb1fc40c8b0a0416730a7c09cd"
+  },
+  {
+   "path": "gap-resolution/addenda/Document_115_ID_Namespace_Event_Ownership_Capability_Traceability_Remediation_v1_0_APPROVED.md",
+   "bytes": 7325,
+   "sha256": "9b4f5586e49cbf3bc5f8e3ea2174ee1e3250b89478e6efbf1b9f0191c7f9d037"
+  },
+  {
+   "path": "gap-resolution/patches/DOCUMENT_PATCH_LIST.md",
+   "bytes": 4002,
+   "sha256": "4349456e83c628e6ee1bf51887ade1db102b728c0788426add0e7e2d43db780d"
+  },
+  {
+   "path": "prompts/00_BOOTSTRAP_PHASE0.md",
+   "bytes": 1776,
+   "sha256": "045c4d9914d7fb163d219282eb88b2691b077869e744cad3d1c802fb42fe23ab"
+  },
+  {
+   "path": "prompts/01_REPOSITORY_FOUNDATION.md",
+   "bytes": 1883,
+   "sha256": "b4d4ad869a16d79314afddbcd3d0083cc0923816572feb1376190d6868249d91"
+  },
+  {
+   "path": "prompts/README.md",
+   "bytes": 2649,
+   "sha256": "e90695c65d722df0c6667bc6bb09019e0d0b3592f3d2b84b663e9a8d42268db3"
+  },
+  {
+   "path": "prompts/WP-00/01_DOC-001.md",
+   "bytes": 42595,
+   "sha256": "93abb52f3d41ecad0039d7675400974a9ab1823f5c3b418a9ca9ddbb76ea1460"
+  },
+  {
+   "path": "prompts/WP-00/02_DOC-002.md",
+   "bytes": 15407,
+   "sha256": "836365137e0804a1838b3a7cec9de93e29c4c7e83cef687df4d764c68de7026c"
+  },
+  {
+   "path": "prompts/WP-00/100_SPEC-ENG-004.md",
+   "bytes": 14017,
+   "sha256": "125b7f7b892daf032b122e3318d478ee46354f2bb420c3f39483d7017ac94c40"
+  },
+  {
+   "path": "prompts/WP-00/101_SPEC-ENG-005.md",
+   "bytes": 14119,
+   "sha256": "ed0847e05c35cb115e8887e4856d05aa322333dd74928491bf4a2b9535f80495"
+  },
+  {
+   "path": "prompts/WP-00/102_SPEC-ENG-006.md",
+   "bytes": 14608,
+   "sha256": "14657a7bb455124233516c25d5497545b292512b45c824dca960af3d43a4ef92"
+  },
+  {
+   "path": "prompts/WP-00/103_SPEC-ENG-007.md",
+   "bytes": 14485,
+   "sha256": "0df1b1e2cdc927aa7eb6a65b6bec6b5cfb6d7928d53bb8ea3e070ece15ae6f90"
+  },
+  {
+   "path": "prompts/WP-00/104_SPEC-ENG-008.md",
+   "bytes": 14535,
+   "sha256": "cb11c100377a5c4c3fae5eedd7563e08d008398168f0dadf5efdb50b7533f610"
+  },
+  {
+   "path": "prompts/WP-00/97_SPEC-ENG-001.md",
+   "bytes": 14946,
+   "sha256": "2f43ebb711c7eb2867c08892056be557adecd64b0bfc86acacb41696442ac9c8"
+  },
+  {
+   "path": "prompts/WP-00/98_SPEC-ENG-002.md",
+   "bytes": 14983,
+   "sha256": "9d9583bd61e44d3146a6826c7eb6b59d93d763e8dd34290b052334d0352f3e05"
+  },
+  {
+   "path": "prompts/WP-00/99_SPEC-ENG-003.md",
+   "bytes": 13674,
+   "sha256": "beff7fea03c2fc802885bdc2d3be86c7d0f21bc4364641a8ee96c3d4b1fe24e7"
+  },
+  {
+   "path": "prompts/WP-01/03_SPEC-GXP-001.md",
+   "bytes": 17688,
+   "sha256": "244bdd0f9bd661540d877c5631d0215fb98315f134c61290c537d54438732492"
+  },
+  {
+   "path": "prompts/WP-01/04_SPEC-GXP-002.md",
+   "bytes": 17405,
+   "sha256": "91e809ab7dbf56235d8911329f76c0caaf3248c757b1b0e3a008bbe9680b3789"
+  },
+  {
+   "path": "prompts/WP-01/05_SPEC-GXP-003.md",
+   "bytes": 15633,
+   "sha256": "9351f2ae48a6d9bbf8f56bfe602197c0e0ab2fe5634b728e3e9422bdaf27bed8"
+  },
+  {
+   "path": "prompts/WP-01/06_SPEC-GXP-004.md",
+   "bytes": 15823,
+   "sha256": "0e4a23fb5a4a9f57642c13ff7d75643db8c6c260412d7ecb78414e16ab60ae00"
+  },
+  {
+   "path": "prompts/WP-01/07_SPEC-IAM-001.md",
+   "bytes": 15729,
+   "sha256": "fc274dbfed8ab1aa7e8a89d4351b65f1621881dea2d3bfd3e2107b00876314ab"
+  },
+  {
+   "path": "prompts/WP-01/08_SPEC-GXP-006.md",
+   "bytes": 15915,
+   "sha256": "c1dff071bc38dbeba1d2e12213e7618225190a4dadc0350e3b5ff9c6c3617cce"
+  },
+  {
+   "path": "prompts/WP-02/09_SPEC-EBMR-000.md",
+   "bytes": 17523,
+   "sha256": "46bf12eb39451bb74897b20341e439547a5e6a472a4b37846649996827ec6d62"
+  },
+  {
+   "path": "prompts/WP-02/10_SPEC-EBMR-001.md",
+   "bytes": 17196,
+   "sha256": "d93c3a019e3377ab0a4d5e495b19876007cc0e2abc85b4eb7dcf86979375f1ea"
+  },
+  {
+   "path": "prompts/WP-02/11_SPEC-EBMR-002.md",
+   "bytes": 17759,
+   "sha256": "a13c1adf4fa05be068d6c5601e22e0718169a6c838855a12cb7c1a8ca936c050"
+  },
+  {
+   "path": "prompts/WP-02/12_SPEC-EBMR-003.md",
+   "bytes": 15286,
+   "sha256": "7f48d7a6bf54e340965351978de5bef8e91b6e6dfd2eb7b4d8b4924c8a357fb0"
+  },
+  {
+   "path": "prompts/WP-03/13_SPEC-EBMR-004.md",
+   "bytes": 14511,
+   "sha256": "e335100ec856b1333b00bb901adae6becb827a410356be6d3edf46a4962703f9"
+  },
+  {
+   "path": "prompts/WP-03/14_SPEC-EBMR-005.md",
+   "bytes": 15182,
+   "sha256": "fd72a4127c242cfef8102c60c9aa1533c4efdea7492c708b415f22edfcbb600c"
+  },
+  {
+   "path": "prompts/WP-03/15_SPEC-EBMR-006.md",
+   "bytes": 15781,
+   "sha256": "8d280e7636b1d0310541c01f605430802d8f5ef260f03e11c27b9fe65f9ad1f5"
+  },
+  {
+   "path": "prompts/WP-03/16_SPEC-EBMR-007.md",
+   "bytes": 15590,
+   "sha256": "18463eee3f9eb8f5043b0218ff19df2374fdd99ca662ca88d76d363929f83766"
+  },
+  {
+   "path": "prompts/WP-03/17_SPEC-EBMR-008.md",
+   "bytes": 15255,
+   "sha256": "0536eb9edb7192f864b379a89134d223b7a99d6abcb379aa126fab9b889533e0"
+  },
+  {
+   "path": "prompts/WP-04/18_SPEC-MAT-001.md",
+   "bytes": 15916,
+   "sha256": "e7f8a91aa5b42888a4deca001710032754a4307bb3e40cc47199680b4bc54767"
+  },
+  {
+   "path": "prompts/WP-04/19_SPEC-MAT-002A.md",
+   "bytes": 15392,
+   "sha256": "f49d16fc7cd95852962751b057d8680a3c92e84b61e42efc2d8e10e467bd2aae"
+  },
+  {
+   "path": "prompts/WP-04/20_SPEC-MAT-002B.md",
+   "bytes": 15013,
+   "sha256": "9ae5b8ecca0aa27ccb73293034997df661b09a38bfabd13278b2369d2cdc0c94"
+  },
+  {
+   "path": "prompts/WP-04/21_SPEC-MAT-002C.md",
+   "bytes": 14979,
+   "sha256": "381fd5505c73c775323f223f12fe79f4bc615a7e9f17f1529788fede4bb15abf"
+  },
+  {
+   "path": "prompts/WP-04/22_SPEC-MAT-002D.md",
+   "bytes": 15255,
+   "sha256": "b0cabe5adaaeb8eadbd9b19b84c2faea5dc0f85e0f4fd6942f8e4bc8c64b5641"
+  },
+  {
+   "path": "prompts/WP-04/23_SPEC-QC-001.md",
+   "bytes": 17832,
+   "sha256": "28fb3c3c39221fdbbc8d9123ce06dca6a946f184d98c1f0d9bb276ff2b729636"
+  },
+  {
+   "path": "prompts/WP-04/24_SPEC-QC-002.md",
+   "bytes": 15062,
+   "sha256": "edc1e029b171fa46c9766087d75301b8a0f1f7fcd55914015447d4a41f956f4f"
+  },
+  {
+   "path": "prompts/WP-04/25_SPEC-QC-003.md",
+   "bytes": 18271,
+   "sha256": "d8854bcc8949ef69241af1aecf85110ab5c96e4f9a0d6ddf2f7226bd918d7eb3"
+  },
+  {
+   "path": "prompts/WP-05/26_SPEC-QMS-001.md",
+   "bytes": 13130,
+   "sha256": "ea616230003007b3b28b548441fe4f71ede914575c5baeec7a7a9498a6dfd72a"
+  },
+  {
+   "path": "prompts/WP-05/27_SPEC-QMS-002.md",
+   "bytes": 12214,
+   "sha256": "1d703f3122010854029d0a6d62d0d741d640c43519cf00f669a01288fd616fd3"
+  },
+  {
+   "path": "prompts/WP-05/28_SPEC-QMS-003.md",
+   "bytes": 11511,
+   "sha256": "8b41bb25d49f24ed194096084a109141128465abf8ce99d25bf597ef5da32236"
+  },
+  {
+   "path": "prompts/WP-05/29_SPEC-QMS-004.md",
+   "bytes": 12667,
+   "sha256": "12507d5ea1d52aa151e0b1952e53822110e8de73a6d03a1e6a4212bc7a6d5d74"
+  },
+  {
+   "path": "prompts/WP-05/30_SPEC-QMS-005.md",
+   "bytes": 12486,
+   "sha256": "8c1a1ec7beb266bb2cd7e0609a77ce286f66d58584f632ad5b8b255e3f75d203"
+  },
+  {
+   "path": "prompts/WP-05/31_SPEC-QMS-006.md",
+   "bytes": 12368,
+   "sha256": "ab723b24501daf7e632a5f4ab8ed097b86010e2c7aa1f24a8c6924ddd8d2769a"
+  },
+  {
+   "path": "prompts/WP-05/32_SPEC-QMS-007.md",
+   "bytes": 11344,
+   "sha256": "fa4544d5da776c81853fb5dcbddbf71251e11b7ad8a6b4a5fea84c23838f25a3"
+  },
+  {
+   "path": "prompts/WP-05/33_SPEC-QMS-008.md",
+   "bytes": 11014,
+   "sha256": "5f78f06e310c1a4886ca40c16d885fee6cde9f222d2a7c64f7c38306e0d1826f"
+  },
+  {
+   "path": "prompts/WP-05/34_SPEC-QMS-009.md",
+   "bytes": 11254,
+   "sha256": "175bcde388ac433765c0782a25e62c66a601d632e16befd32553af61f26e1ae7"
+  },
+  {
+   "path": "prompts/WP-05/35_SPEC-QMS-010.md",
+   "bytes": 12738,
+   "sha256": "d45841d8aa97a1ddee8377b6fbdd284494e8c59ae327f4184b58083fe79165b0"
+  },
+  {
+   "path": "prompts/WP-05/36_SPEC-QMS-011.md",
+   "bytes": 12506,
+   "sha256": "19a106682ba004139e6ea1266c39b9db9b16e877f59f8f80c9a4109b139b5319"
+  },
+  {
+   "path": "prompts/WP-05/37_SPEC-QMS-012.md",
+   "bytes": 12479,
+   "sha256": "c0c15fffa2312d1965de07ae674e9050095e0896b51ea3177cbb1b5bd31f567d"
+  },
+  {
+   "path": "prompts/WP-06/38_SPEC-EQP-001.md",
+   "bytes": 15055,
+   "sha256": "aa555eb9709aefe9566c95bf05139652ec0b4b9863a4fc225d936264d3208807"
+  },
+  {
+   "path": "prompts/WP-06/39_SPEC-EQP-002.md",
+   "bytes": 14061,
+   "sha256": "31e242a9da09c632d681af4ab2fe73587a743e378f1990bcd34d27a4bd641e73"
+  },
+  {
+   "path": "prompts/WP-06/40_SPEC-EQP-003.md",
+   "bytes": 14279,
+   "sha256": "20e0a5a55e4f2c2e4249060fd9db084b89e7dc71689d09f861545d986b60ffa0"
+  },
+  {
+   "path": "prompts/WP-06/41_SPEC-EQP-004.md",
+   "bytes": 13711,
+   "sha256": "3c3072fbc31347cdbb416de6e8e30ce6ab77fae4d41813871a34e60dce56449e"
+  },
+  {
+   "path": "prompts/WP-06/42_SPEC-EQP-005.md",
+   "bytes": 14998,
+   "sha256": "d0d652fbd37143dece7320fd27028beeec0aab722f2ac26f22643c0c49e6bb66"
+  },
+  {
+   "path": "prompts/WP-06/43_SPEC-EDGE-001.md",
+   "bytes": 17023,
+   "sha256": "3ed3d20f9f250c36b494e2964d36519dd015eff7040646909803161563f06d1a"
+  },
+  {
+   "path": "prompts/WP-06/44_SPEC-EDGE-002.md",
+   "bytes": 13548,
+   "sha256": "05793c42ef12ca9770db8c79ca07a5aeb446c3c1b16a9da72edfbf1478fde534"
+  },
+  {
+   "path": "prompts/WP-06/45_SPEC-EDGE-003.md",
+   "bytes": 13002,
+   "sha256": "c54b005cc088649ac3141c27f490dd7459174cba24a0485f5f325c85899708ab"
+  },
+  {
+   "path": "prompts/WP-06/46_SPEC-EDGE-004.md",
+   "bytes": 13641,
+   "sha256": "6febb89d8edc123954cbf2bb3fec714d3d1a02a64aa65c2a2f5c1289bdabec4f"
+  },
+  {
+   "path": "prompts/WP-06/47_SPEC-EDGE-005.md",
+   "bytes": 15071,
+   "sha256": "40a5244eddacd85237573d55755e48c6b759017d60a779c56834f5e63fa6bed5"
+  },
+  {
+   "path": "prompts/WP-07/48_SPEC-ERP-001.md",
+   "bytes": 15586,
+   "sha256": "fc49d8c48055387ea67958f47f77397e9c0326e3143b8a0d64da8cdbe71d88dd"
+  },
+  {
+   "path": "prompts/WP-07/49_SPEC-ERP-002.md",
+   "bytes": 13155,
+   "sha256": "ffbd687a49aff5efeaac7a93942a497a1bba44627f50e8717899b809a3015688"
+  },
+  {
+   "path": "prompts/WP-07/50_SPEC-ERP-003.md",
+   "bytes": 12859,
+   "sha256": "de62d978d6f625371047006e98ecbdb6dd709bae4f77c4dd1d2b6a9af6056cf2"
+  },
+  {
+   "path": "prompts/WP-07/51_SPEC-ERP-004.md",
+   "bytes": 13506,
+   "sha256": "5fa4bb0da038ecfe2fac5a73a91067553300855097f5e988a889c451e7b9d806"
+  },
+  {
+   "path": "prompts/WP-07/52_SPEC-ERP-005.md",
+   "bytes": 13913,
+   "sha256": "a2c21babe593baf8607c93ebdd7236a26785d65d2ab066b20e0bfa4bf3647606"
+  },
+  {
+   "path": "prompts/WP-07/53_SPEC-ERP-006.md",
+   "bytes": 14662,
+   "sha256": "b0db30dfbebf3b38d83874facbaf4953749012464f52ec125ab38082899c4656"
+  },
+  {
+   "path": "prompts/WP-08/54_SPEC-DDCP-001.md",
+   "bytes": 17145,
+   "sha256": "75ffd5f2fa9b9ea64308dcd3299d51e5f04063bf4eda7f2332af1b4dd5243653"
+  },
+  {
+   "path": "prompts/WP-08/55_SPEC-DDCP-002.md",
+   "bytes": 15545,
+   "sha256": "66b3b82414628e0329f655ecbfc974feba82d323c89d4e5363148d95ffa1b8c8"
+  },
+  {
+   "path": "prompts/WP-08/56_SPEC-DDCP-003.md",
+   "bytes": 14536,
+   "sha256": "84d9458e3a1e4faa51d22c731d2030bf0ff5ea063fabbc5b106846cbc264b995"
+  },
+  {
+   "path": "prompts/WP-08/57_SPEC-DDCP-004.md",
+   "bytes": 15166,
+   "sha256": "48f60765be893ee148f8154a07502a9c72b86128c1d42498aeae85d93284ce0b"
+  },
+  {
+   "path": "prompts/WP-09/58_SPEC-PM-001.md",
+   "bytes": 18950,
+   "sha256": "3cd2287104c32d890f06eeba4a6ec3feea8032cd2320bfd855a0ca64af361709"
+  },
+  {
+   "path": "prompts/WP-09/59_SPEC-PM-002.md",
+   "bytes": 17922,
+   "sha256": "998b0316253ce0849f9d16845ba45c201038733ca74038c7bfb07bdf41752869"
+  },
+  {
+   "path": "prompts/WP-09/60_SPEC-PM-003.md",
+   "bytes": 19719,
+   "sha256": "8743f9d0eac5ed95352907e47f4ae79f918dbb225caf0f8bd01e174c5799db6e"
+  },
+  {
+   "path": "prompts/WP-10/61_SPEC-SEC-001.md",
+   "bytes": 15906,
+   "sha256": "a79a79397ce287ebaa0732001e4b82a8e72c33ef8ba0fcfea8f704fb20fa0653"
+  },
+  {
+   "path": "prompts/WP-10/62_SPEC-SEC-002.md",
+   "bytes": 15123,
+   "sha256": "67daeb58b174ce636422eb710da455ade0cea0339cb1460e70a22b15ce44d8a5"
+  },
+  {
+   "path": "prompts/WP-10/63_SPEC-SEC-003.md",
+   "bytes": 14976,
+   "sha256": "c2afcd8dd8b49d5ea1a22a2dbcffddd5e58779ddabc98855a4d16786d696e356"
+  },
+  {
+   "path": "prompts/WP-10/64_SPEC-SEC-004.md",
+   "bytes": 15448,
+   "sha256": "87aff86259a7bc14a7316f819562b71dda0148dea29834498e4eb21498156f8c"
+  },
+  {
+   "path": "prompts/WP-10/65_SPEC-SEC-005.md",
+   "bytes": 15041,
+   "sha256": "f5618d3e418d401a2a2aded7b7fa5f571ec5d650f5867389d2d8daa0e6eb73f3"
+  },
+  {
+   "path": "prompts/WP-10/66_SPEC-SEC-006.md",
+   "bytes": 14942,
+   "sha256": "a8f16c3496419a577cf2549cc7b920d36a6d8caf9730d52e3a4d226342d513a6"
+  },
+  {
+   "path": "prompts/WP-10/67_SPEC-SEC-007.md",
+   "bytes": 15820,
+   "sha256": "4796553df5f6ae33f6f9abd9281fe816e17684f61ae922360c1a26be1d8a5772"
+  },
+  {
+   "path": "prompts/WP-10/68_SPEC-SEC-008.md",
+   "bytes": 16222,
+   "sha256": "2f519fb0524f209073fadfaced01511620ae2b8af4940eacc35d1f3d57218ee5"
+  },
+  {
+   "path": "prompts/WP-11/69_SPEC-DATA-001.md",
+   "bytes": 15718,
+   "sha256": "ce9ebe47861be7a1a7c2ce5275c54e141d1e618c8bfc464ec6f75af76d589178"
+  },
+  {
+   "path": "prompts/WP-11/70_SPEC-DATA-002.md",
+   "bytes": 15872,
+   "sha256": "0e0361ee81081f7fd4ddf3a48fd1be4ccc5718381d74383dd2aa52711fc65254"
+  },
+  {
+   "path": "prompts/WP-11/71_SPEC-DATA-003.md",
+   "bytes": 14381,
+   "sha256": "76f0579ec98c6b8e1d3c768bcd75b56b313881527e46457fc81238a390ecf7bd"
+  },
+  {
+   "path": "prompts/WP-11/72_SPEC-DATA-004.md",
+   "bytes": 15666,
+   "sha256": "dfc43713abd0e2d4e45f4eb240015c9fa9733d4ac4666c309254269a587ca179"
+  },
+  {
+   "path": "prompts/WP-11/73_SPEC-DATA-005.md",
+   "bytes": 15045,
+   "sha256": "01e4d10871154f503923258db925fe95c7336e3df833900735afa696108b10fe"
+  },
+  {
+   "path": "prompts/WP-11/74_SPEC-DATA-006.md",
+   "bytes": 14708,
+   "sha256": "bab75bb91e5a8422e1778e986b8273e3d7ace7b93f429611ae8d8489c501a0af"
+  },
+  {
+   "path": "prompts/WP-11/75_SPEC-DATA-007.md",
+   "bytes": 15006,
+   "sha256": "6de07490faa04865c985557ffdee543cb552fd17b518869ce40a038dcf367a2a"
+  },
+  {
+   "path": "prompts/WP-11/76_SPEC-DATA-008.md",
+   "bytes": 15607,
+   "sha256": "4f2168d916913247191fe10d44806484b69b8a56c385d00c6d3e6c60ced32ee3"
+  },
+  {
+   "path": "prompts/WP-11/77_SPEC-DATA-009.md",
+   "bytes": 15757,
+   "sha256": "e21e7a821fb2e55723492e6e33ab9512a2f09044d88253410308b06f59f54ab1"
+  },
+  {
+   "path": "prompts/WP-11/78_SPEC-DATA-010.md",
+   "bytes": 16068,
+   "sha256": "36227f4d40ac4798ba8a24ad3eb74f689431aa29b2c1641951df44be1c1a1571"
+  },
+  {
+   "path": "prompts/WP-12/79_SPEC-VAL-001.md",
+   "bytes": 14450,
+   "sha256": "cc5db6e2d00fd7a02de39341b1354ce3cfe08dbc0935b997dd224da0e1a4f933"
+  },
+  {
+   "path": "prompts/WP-12/80_SPEC-VAL-002.md",
+   "bytes": 12768,
+   "sha256": "f41bfeac6ad7fa5d3eaadbc74fb15dc5516e82c6b546f8a572c6e366fb20be1b"
+  },
+  {
+   "path": "prompts/WP-12/81_SPEC-VAL-003.md",
+   "bytes": 12838,
+   "sha256": "1b79d5f180f73e11181e23938bd9b5cf60fa0e37b1c093ad03604cd6054250e8"
+  },
+  {
+   "path": "prompts/WP-12/82_SPEC-VAL-004.md",
+   "bytes": 13259,
+   "sha256": "e42708b09f55a7c65547189b2c420697dcf17d9a4c74677e8190ed8403b8d775"
+  },
+  {
+   "path": "prompts/WP-12/83_SPEC-VAL-005.md",
+   "bytes": 12108,
+   "sha256": "fa52ca61d191a47c842dc24b95eb1e9de2e0392352b9e5a53c2196df76197bea"
+  },
+  {
+   "path": "prompts/WP-12/84_SPEC-VAL-006.md",
+   "bytes": 11614,
+   "sha256": "afc857b1f50d2fddb87536929559f38aee2305d86093149c65150dcd7d182104"
+  },
+  {
+   "path": "prompts/WP-12/86_SPEC-VAL-008.md",
+   "bytes": 12161,
+   "sha256": "a375600ba3fda6d935a67bd01a9946e779f6c518980b4b545e1af4862c379112"
+  },
+  {
+   "path": "prompts/WP-12/88_SPEC-VAL-010.md",
+   "bytes": 12889,
+   "sha256": "9b5ff8b82e2e277b051200ecff9a136151d883b8d3a39f817307cecef40c1328"
+  },
+  {
+   "path": "prompts/WP-12/89_SPEC-VAL-011.md",
+   "bytes": 12662,
+   "sha256": "604d34ba18b5132bf0c3a2d2e5279b14c11e19765192aea67de3728d266969a6"
+  },
+  {
+   "path": "prompts/WP-12/90_SPEC-VAL-012.md",
+   "bytes": 12630,
+   "sha256": "f99598200266f8ae1b98b014e7a85c5d85bc4ee010e6ea6182ac27f58d646bbb"
+  },
+  {
+   "path": "prompts/WP-12/91_SPEC-VAL-013.md",
+   "bytes": 12044,
+   "sha256": "c8cd11117aab50094435842e6a55ca77f1c7a20ba052028be7dfe7706b844e07"
+  },
+  {
+   "path": "prompts/WP-12/92_SPEC-VAL-014.md",
+   "bytes": 12597,
+   "sha256": "bf1baf88776c1ad143e0750c6f69776aa14a37fe1c1d586741dd9c434318f6ea"
+  },
+  {
+   "path": "prompts/WP-12/93_SPEC-VAL-015.md",
+   "bytes": 12407,
+   "sha256": "3c30e8cac4a6e58e5b047166e8aa960180fad6c9a62ac11220af1f8146682ae1"
+  },
+  {
+   "path": "prompts/WP-12/94_SPEC-VAL-016.md",
+   "bytes": 12505,
+   "sha256": "6b4d300121f2e118cd83798d2f99e23df3310ccb877747b05c12dbfebcc669a1"
+  },
+  {
+   "path": "prompts/WP-12/96_SPEC-VAL-018.md",
+   "bytes": 13852,
+   "sha256": "b8a7979930d231d9ba6e4b56332366cc349558f744241c1c00c947726a525fb2"
+  },
+  {
+   "path": "prompts/WP-13/105_SPEC-AI-001.md",
+   "bytes": 20701,
+   "sha256": "3f8365bc205c39ddc4a8651945e8152ed5d602c0458baabe66f16ca65dc872c9"
+  },
+  {
+   "path": "prompts/WP-14/85_SPEC-VAL-007.md",
+   "bytes": 12190,
+   "sha256": "ab0f17979310eb8911ad990cad4cdfee8ad8b797ee10794362cdc677e272a0bb"
+  },
+  {
+   "path": "prompts/WP-14/87_SPEC-VAL-009.md",
+   "bytes": 12547,
+   "sha256": "d07b90e61bc332df05af5c814cd51947f641d2eb22f8710246dfc978b5804fce"
+  },
+  {
+   "path": "prompts/WP-14/95_SPEC-VAL-017.md",
+   "bytes": 13053,
+   "sha256": "d6bb99220124838fa1a26589b418eb765da37bc16ad75113e4ec35ed9fc8562d"
+  },
+  {
+   "path": "specs/README.md",
+   "bytes": 1814,
+   "sha256": "59e4d01df8d983aae3304c484c5f50d0db02449739ec3179a460f2418d2a099b"
+  },
+  {
+   "path": "status/BUILD_STATUS.md",
+   "bytes": 9837,
+   "sha256": "9bb8c598eaf2db67289e712ad99e14fec7d926b94db6dd691b9516521a95f38b"
+  },
+  {
+   "path": "status/STATUS_MODEL.md",
+   "bytes": 3110,
+   "sha256": "f72a2315cf74ad5b651a40c1099be591503310857b914c26dc138d20e213d195"
+  },
+  {
+   "path": "status/build-status.json",
+   "bytes": 181612,
+   "sha256": "f6a8121c9f651b28437d4cdaaa5c45de7b8f77015fb2a4b32561e1bd8304997d"
+  },
+  {
+   "path": "test-cases/TEST_CASE_LIBRARY.csv",
+   "bytes": 8448509,
+   "sha256": "0740ad0cbf311f380a701dec797f5f0be668eda0486954bae339a1bcb5fbc6be"
+  },
+  {
+   "path": "test-cases/TEST_CASE_STANDARD.md",
+   "bytes": 3101,
+   "sha256": "cfb5dabdd1488414fab1dce0bd16c21408be7f29bad709099bc2c5e000db7e08"
+  },
+  {
+   "path": "test-cases/WP-00/Document_100_SPEC-ENG-004_TEST_CASES.md",
+   "bytes": 87722,
+   "sha256": "8511b4d5626c496965c3f97b367fc177ef026317520cda43ddc02403790b33ba"
+  },
+  {
+   "path": "test-cases/WP-00/Document_101_SPEC-ENG-005_TEST_CASES.md",
+   "bytes": 97702,
+   "sha256": "9471c3cf8992fd2df13a69ca71e4ef416c1f718bf84f04765938511d489a0047"
+  },
+  {
+   "path": "test-cases/WP-00/Document_102_SPEC-ENG-006_TEST_CASES.md",
+   "bytes": 110357,
+   "sha256": "346721432ad2e1c2452f1959cd3fa5e4fa0713645172e988d05ca3e98f860477"
+  },
+  {
+   "path": "test-cases/WP-00/Document_103_SPEC-ENG-007_TEST_CASES.md",
+   "bytes": 117517,
+   "sha256": "8be43e1da1f93b5e204c23fe991da2b87bfcd7c2584942fbc58da7b7a872bce3"
+  },
+  {
+   "path": "test-cases/WP-00/Document_104_SPEC-ENG-008_TEST_CASES.md",
+   "bytes": 94482,
+   "sha256": "d45e5f692225287fe1a67e10c91be2c11fb176d04ebc74b683128c9fd055c9d2"
+  },
+  {
+   "path": "test-cases/WP-00/Document_97_SPEC-ENG-001_TEST_CASES.md",
+   "bytes": 98524,
+   "sha256": "0a00d657879bbbddbe5bffe6a3982f70cdfbbb859f62f7b268df8d6963c5109f"
+  },
+  {
+   "path": "test-cases/WP-00/Document_98_SPEC-ENG-002_TEST_CASES.md",
+   "bytes": 109038,
+   "sha256": "a6050f7f3af749cdde61de89b36b245a4d9a1a33fc1b9e1659f38e4c35a4735a"
+  },
+  {
+   "path": "test-cases/WP-00/Document_99_SPEC-ENG-003_TEST_CASES.md",
+   "bytes": 101210,
+   "sha256": "964e6a7b89c7e581ddf4c301afeae04852e2c0e356c48abdc6c2052eca4e878c"
+  },
+  {
+   "path": "test-cases/WP-00/README.md",
+   "bytes": 1522,
+   "sha256": "ff77c7b49e8a8c04511f7a622e0e7a65e1183cbef1c11606fd5e7a466def70a9"
+  },
+  {
+   "path": "test-cases/WP-01/Document_03_SPEC-GXP-001_TEST_CASES.md",
+   "bytes": 154508,
+   "sha256": "a2b5d75cceb1a006795af9e147b230ea6246ba379cccb722825ad13a59a177b3"
+  },
+  {
+   "path": "test-cases/WP-01/Document_04_SPEC-GXP-002_TEST_CASES.md",
+   "bytes": 163654,
+   "sha256": "f7b09f96e85749c42a148bf580854b7f76a612e9b5962c0ba6c8e32b21616ad4"
+  },
+  {
+   "path": "test-cases/WP-01/Document_05_SPEC-GXP-003_TEST_CASES.md",
+   "bytes": 142600,
+   "sha256": "cc768d4baa2c16041a2067d050b4f03d364c8388787e34a0585e64ec4f522f7b"
+  },
+  {
+   "path": "test-cases/WP-01/Document_06_SPEC-GXP-004_TEST_CASES.md",
+   "bytes": 167900,
+   "sha256": "570fa012af593d4d2f9fa57fc31ab1431a7714a5c81cbc59b2e0e350df834d5b"
+  },
+  {
+   "path": "test-cases/WP-01/Document_07_SPEC-IAM-001_TEST_CASES.md",
+   "bytes": 133659,
+   "sha256": "60901502e359b0fe7666daf1af811589d438611a92f5c92f7d591134db07b634"
+  },
+  {
+   "path": "test-cases/WP-01/Document_08_SPEC-GXP-006_TEST_CASES.md",
+   "bytes": 148924,
+   "sha256": "4ecffc48828c982cbb51fc6de597fa2e0169959170b07b71949ade74985c8aaa"
+  },
+  {
+   "path": "test-cases/WP-01/README.md",
+   "bytes": 1265,
+   "sha256": "fa7eecb82e4c49ec877cdfeac96b74a8855c06b5aa4656abe5a2abf60ac910a1"
+  },
+  {
+   "path": "test-cases/WP-02/Document_09_SPEC-EBMR-000_TEST_CASES.md",
+   "bytes": 140866,
+   "sha256": "6ecc950e1eb8db36d076df2f6dcc6b2860c21f5125a68e29c10f6fe591a15f87"
+  },
+  {
+   "path": "test-cases/WP-02/Document_10_SPEC-EBMR-001_TEST_CASES.md",
+   "bytes": 132466,
+   "sha256": "a50d2bb5dddd159ab7028e138468171eec1e91557b171aebb43349b262837870"
+  },
+  {
+   "path": "test-cases/WP-02/Document_11_SPEC-EBMR-002_TEST_CASES.md",
+   "bytes": 149608,
+   "sha256": "93f647a0ec1cdf276e154b58f0752cffcca4b299d980063e947861d3ff817338"
+  },
+  {
+   "path": "test-cases/WP-02/Document_12_SPEC-EBMR-003_TEST_CASES.md",
+   "bytes": 123266,
+   "sha256": "ad5f8bf29484f01c109b4d3a05e9096192d730898a8eaafed0506ba4e694e65e"
+  },
+  {
+   "path": "test-cases/WP-02/README.md",
+   "bytes": 1067,
+   "sha256": "a36f541c4b19a78020a80dd1ed944d67646636b320f4b4c598e529766b9e9ac2"
+  },
+  {
+   "path": "test-cases/WP-03/Document_13_SPEC-EBMR-004_TEST_CASES.md",
+   "bytes": 99602,
+   "sha256": "1e5a3c1cb304252e182552108d7a14083188e71e11eccedd6504bfdf0d0e04ea"
+  },
+  {
+   "path": "test-cases/WP-03/Document_14_SPEC-EBMR-005_TEST_CASES.md",
+   "bytes": 124542,
+   "sha256": "2a9578fb2057501875208af2981feae8a913080906ea15714bf0cd03e201ad3f"
+  },
+  {
+   "path": "test-cases/WP-03/Document_15_SPEC-EBMR-006_TEST_CASES.md",
+   "bytes": 163677,
+   "sha256": "bd7bc1724023085f7a0abac89eca81ffbd4f859f7343180068c02341927d461b"
+  },
+  {
+   "path": "test-cases/WP-03/Document_16_SPEC-EBMR-007_TEST_CASES.md",
+   "bytes": 119808,
+   "sha256": "e7c792587a29936ed92a63d486060bd825f4e928d03faf3dedccb784b70f7a22"
+  },
+  {
+   "path": "test-cases/WP-03/Document_17_SPEC-EBMR-008_TEST_CASES.md",
+   "bytes": 141424,
+   "sha256": "a892772f1f845ca91d7640ffdae3dcb8bcb83c99cb6cd676d784978dced17c50"
+  },
+  {
+   "path": "test-cases/WP-03/README.md",
+   "bytes": 1185,
+   "sha256": "654262ff6fbea11813924bade438f592c2c70df57cf8b1a3ba0ae8ebf81bda1c"
+  },
+  {
+   "path": "test-cases/WP-04/Document_18_SPEC-MAT-001_TEST_CASES.md",
+   "bytes": 120193,
+   "sha256": "8ec4b1af1ae562ecefe5507240aa9ddf88e5749776b55c7d45648c8e3970ae31"
+  },
+  {
+   "path": "test-cases/WP-04/Document_19_SPEC-MAT-002A_TEST_CASES.md",
+   "bytes": 114138,
+   "sha256": "8e008026e43b5bb6a34ffc4a6805f91ed1e02f4cdd16a22db3a57b7d1656e610"
+  },
+  {
+   "path": "test-cases/WP-04/Document_20_SPEC-MAT-002B_TEST_CASES.md",
+   "bytes": 116126,
+   "sha256": "fa3c24a7b9708ae327b9c473c5dac236017fe421ae6c3dba641eed8d0bc697dc"
+  },
+  {
+   "path": "test-cases/WP-04/Document_21_SPEC-MAT-002C_TEST_CASES.md",
+   "bytes": 117699,
+   "sha256": "b75b70ae994e5560a3199212ddd5b8fa8d18945671f669741d06e44112b16c00"
+  },
+  {
+   "path": "test-cases/WP-04/Document_22_SPEC-MAT-002D_TEST_CASES.md",
+   "bytes": 127649,
+   "sha256": "a6065ddbf82d3a3a627252a0fb57329340fbf6e7eb9656a48d145d169021cae2"
+  },
+  {
+   "path": "test-cases/WP-04/Document_23_SPEC-QC-001_TEST_CASES.md",
+   "bytes": 179512,
+   "sha256": "5ea5ce736245ac1389a225dd3136045a0ffe21560f069180ba1995f77a30eb69"
+  },
+  {
+   "path": "test-cases/WP-04/Document_24_SPEC-QC-002_TEST_CASES.md",
+   "bytes": 151866,
+   "sha256": "4f8b706595c290136424cca76267a54b61c4cdf146ec8bf727ef5ba52175c8bb"
+  },
+  {
+   "path": "test-cases/WP-04/Document_25_SPEC-QC-003_TEST_CASES.md",
+   "bytes": 173251,
+   "sha256": "d8a553ff4a5cfe61082ef5ca10c579bb089c52c8bb229bafe7c1efea8ec10ce8"
+  },
+  {
+   "path": "test-cases/WP-04/README.md",
+   "bytes": 1519,
+   "sha256": "a74689870bd2ebec826d09683ef70c011663fdf06da1658e33370d75c655d0ad"
+  },
+  {
+   "path": "test-cases/WP-05/Document_26_SPEC-QMS-001_TEST_CASES.md",
+   "bytes": 81588,
+   "sha256": "1f1c43778ce9c2b69f8eda7238960f97af9ed5dd076f4d47884c9ed754ab7334"
+  },
+  {
+   "path": "test-cases/WP-05/Document_27_SPEC-QMS-002_TEST_CASES.md",
+   "bytes": 68532,
+   "sha256": "1f0a57891b90c8fe69509ce0eea792106d224807d70f2fd4ada9b32f2906b54b"
+  },
+  {
+   "path": "test-cases/WP-05/Document_28_SPEC-QMS-003_TEST_CASES.md",
+   "bytes": 71611,
+   "sha256": "ed155ce14ecdbe481496cd7300c108b5f66993c431ec17b16f3412843a3d18b5"
+  },
+  {
+   "path": "test-cases/WP-05/Document_29_SPEC-QMS-004_TEST_CASES.md",
+   "bytes": 68653,
+   "sha256": "9ee41482716411edc79e4339ebf0f9e9d8494b806eb118b9c8bda23c279ec317"
+  },
+  {
+   "path": "test-cases/WP-05/Document_30_SPEC-QMS-005_TEST_CASES.md",
+   "bytes": 86030,
+   "sha256": "2a37b8c54821868c914cd68159d3fad44daca331f2c06c46c58a2aa6ae546518"
+  },
+  {
+   "path": "test-cases/WP-05/Document_31_SPEC-QMS-006_TEST_CASES.md",
+   "bytes": 75586,
+   "sha256": "277772096b87c0fb945cba2fc35fcff0b50095b74a270b73fa3f69a1d1abf450"
+  },
+  {
+   "path": "test-cases/WP-05/Document_32_SPEC-QMS-007_TEST_CASES.md",
+   "bytes": 52498,
+   "sha256": "386882e1369bf58e49eb891d66267bcb43f1e49c13c8eb4ac9e2d4bb64c573ac"
+  },
+  {
+   "path": "test-cases/WP-05/Document_33_SPEC-QMS-008_TEST_CASES.md",
+   "bytes": 51323,
+   "sha256": "18087f4b99fb023926a2e0721201c09cc0df7b057fac0655b40a1a6dfe27e2d7"
+  },
+  {
+   "path": "test-cases/WP-05/Document_34_SPEC-QMS-009_TEST_CASES.md",
+   "bytes": 63057,
+   "sha256": "25cdf9d97e4d8b21b751486aaac1a31ef21ad67b56ccd85e7706f8452e105eb0"
+  },
+  {
+   "path": "test-cases/WP-05/Document_35_SPEC-QMS-010_TEST_CASES.md",
+   "bytes": 73585,
+   "sha256": "6d34617ed4066de118d6c783214b7209211bf60f22a30b8e85fff3fdbe69b507"
+  },
+  {
+   "path": "test-cases/WP-05/Document_36_SPEC-QMS-011_TEST_CASES.md",
+   "bytes": 63869,
+   "sha256": "5d20ed41cf5c818a0cd693eb55c14d04e241774f3a776e5cb0187ec485d2b797"
+  },
+  {
+   "path": "test-cases/WP-05/Document_37_SPEC-QMS-012_TEST_CASES.md",
+   "bytes": 75588,
+   "sha256": "ab495e9f1d9f823c27a332cd1fb05161513cc5dada77696ae68b09e746eea02f"
+  },
+  {
+   "path": "test-cases/WP-05/README.md",
+   "bytes": 1931,
+   "sha256": "8b20182fe80cee8c848b9dc1e24fa027770328ae0803417cfb36d72cec5a753e"
+  },
+  {
+   "path": "test-cases/WP-06/Document_38_SPEC-EQP-001_TEST_CASES.md",
+   "bytes": 97110,
+   "sha256": "76d24ea0a0e1a349a3859789d5802196c75792de04b184831c4187c5dd80a421"
+  },
+  {
+   "path": "test-cases/WP-06/Document_39_SPEC-EQP-002_TEST_CASES.md",
+   "bytes": 84900,
+   "sha256": "bcf09e42a8299c106c159b99cb4352158ad74b13ffdc45077c0644f902a598c4"
+  },
+  {
+   "path": "test-cases/WP-06/Document_40_SPEC-EQP-003_TEST_CASES.md",
+   "bytes": 86396,
+   "sha256": "d205d3b5235d566f824101935a1339762430055a813cfcf28574b9ad86252698"
+  },
+  {
+   "path": "test-cases/WP-06/Document_41_SPEC-EQP-004_TEST_CASES.md",
+   "bytes": 79916,
+   "sha256": "81ba7715b5450afaae86e2b359dce9f3b232ece13f7f78ec6f424674e4ac5dfb"
+  },
+  {
+   "path": "test-cases/WP-06/Document_42_SPEC-EQP-005_TEST_CASES.md",
+   "bytes": 109480,
+   "sha256": "3626957fb03ff5e56f1cdd3852086eacb64877a385ca7fd09305c539434823e4"
+  },
+  {
+   "path": "test-cases/WP-06/Document_43_SPEC-EDGE-001_TEST_CASES.md",
+   "bytes": 128074,
+   "sha256": "86827bb423aeb9baf5ba2e4baf997f389be920f1abd9b3de44397479578433ff"
+  },
+  {
+   "path": "test-cases/WP-06/Document_44_SPEC-EDGE-002_TEST_CASES.md",
+   "bytes": 77325,
+   "sha256": "d226740d15fe379e9e9a09edd8063bd5161a808cf409ec729d23c849cf726ecf"
+  },
+  {
+   "path": "test-cases/WP-06/Document_45_SPEC-EDGE-003_TEST_CASES.md",
+   "bytes": 74936,
+   "sha256": "94db56be8d08a91f79438084ffff70c60e8ac02f9098cfde257adf518ba891a6"
+  },
+  {
+   "path": "test-cases/WP-06/Document_46_SPEC-EDGE-004_TEST_CASES.md",
+   "bytes": 85522,
+   "sha256": "b52a8c34d80aaca247c75c920881ac1f0e013ce0c0d787352df971f5b6a7ac5a"
+  },
+  {
+   "path": "test-cases/WP-06/Document_47_SPEC-EDGE-005_TEST_CASES.md",
+   "bytes": 101708,
+   "sha256": "12152ba88b4a0053a35c19180198affec7a7bc5a40a0cd010e7e65e59f1d367a"
+  },
+  {
+   "path": "test-cases/WP-06/README.md",
+   "bytes": 1733,
+   "sha256": "36aa46dc7b02af0e576368acbf64c2362908847203ceac2bd1f61623534b8849"
+  },
+  {
+   "path": "test-cases/WP-07/Document_48_SPEC-ERP-001_TEST_CASES.md",
+   "bytes": 133943,
+   "sha256": "c8fd8c75e4c74db91322bb102deb4222858a0f9e6fc7cc335f943a6956e22d1c"
+  },
+  {
+   "path": "test-cases/WP-07/Document_49_SPEC-ERP-002_TEST_CASES.md",
+   "bytes": 107711,
+   "sha256": "c8254c9ac077013663a85373b1e3f5ace832911e4e70f0a3dd12aa640de31374"
+  },
+  {
+   "path": "test-cases/WP-07/Document_50_SPEC-ERP-003_TEST_CASES.md",
+   "bytes": 83571,
+   "sha256": "d27cfb34d5e2d7aa0fde4b124468066bf3758ab715cbf72a1d391bdaf39ae633"
+  },
+  {
+   "path": "test-cases/WP-07/Document_51_SPEC-ERP-004_TEST_CASES.md",
+   "bytes": 93120,
+   "sha256": "6e0bb7449884c1d6f81ffaf7fd13f6c2c71beb18404fedaa1218ff5db7888c22"
+  },
+  {
+   "path": "test-cases/WP-07/Document_52_SPEC-ERP-005_TEST_CASES.md",
+   "bytes": 108278,
+   "sha256": "46f1414f5727f3f7788dbd158e6ca549ea0021776d9b1d25215bd95f022cea81"
+  },
+  {
+   "path": "test-cases/WP-07/Document_53_SPEC-ERP-006_TEST_CASES.md",
+   "bytes": 110730,
+   "sha256": "44cd437c4d78fbc98c47758a8e9c3cf4053661e5da768c3971759e4f179de678"
+  },
+  {
+   "path": "test-cases/WP-07/README.md",
+   "bytes": 1278,
+   "sha256": "508a8201ca8facf05fc708920878bb87dd834caf8f23640f17475fa3a7b249de"
+  },
+  {
+   "path": "test-cases/WP-08/Document_54_SPEC-DDCP-001_TEST_CASES.md",
+   "bytes": 115823,
+   "sha256": "b0415d1f53ca705a3e4e9c2a33f172790f2edbe69f6b3649b23392937e66bbce"
+  },
+  {
+   "path": "test-cases/WP-08/Document_55_SPEC-DDCP-002_TEST_CASES.md",
+   "bytes": 102057,
+   "sha256": "f1144808c8c7dfd77919ab0f57c39c7a478afaa265c7d3236e519680f77afae2"
+  },
+  {
+   "path": "test-cases/WP-08/Document_56_SPEC-DDCP-003_TEST_CASES.md",
+   "bytes": 99148,
+   "sha256": "907cbc8d90da3c9a404fc94f302a886c65e2489778d4fabf4155bf380bb0b981"
+  },
+  {
+   "path": "test-cases/WP-08/Document_57_SPEC-DDCP-004_TEST_CASES.md",
+   "bytes": 107844,
+   "sha256": "e9a8654d8cf194813ab89bbd851d29d0fe41f3d2838bd821adf2470377fc1f12"
+  },
+  {
+   "path": "test-cases/WP-08/README.md",
+   "bytes": 1077,
+   "sha256": "8c8ecc34c00072fc55b0f6848b5ced310275719cc6090b63206994db320c405b"
+  },
+  {
+   "path": "test-cases/WP-09/Document_58_SPEC-PM-001_TEST_CASES.md",
+   "bytes": 105419,
+   "sha256": "0f4c9a591ec85997a1bb3ddacb1ae23389a86d667af02178547f4bc0f308524b"
+  },
+  {
+   "path": "test-cases/WP-09/Document_59_SPEC-PM-002_TEST_CASES.md",
+   "bytes": 118819,
+   "sha256": "c72ca4f89ccd45d9fb50796a50239971026518543fe3e1145dd99171d3b9420b"
+  },
+  {
+   "path": "test-cases/WP-09/Document_60_SPEC-PM-003_TEST_CASES.md",
+   "bytes": 104423,
+   "sha256": "83324fc49f2c561f287302c50dae00321e6114febd4c991ff461efae2b67fe69"
+  },
+  {
+   "path": "test-cases/WP-09/README.md",
+   "bytes": 960,
+   "sha256": "ab65cdc65cff68f78f24a08aee9d3cbb54cacd204e99c522acbb90483f20212d"
+  },
+  {
+   "path": "test-cases/WP-10/Document_61_SPEC-SEC-001_TEST_CASES.md",
+   "bytes": 99022,
+   "sha256": "2bb7f55376ab6907466d5ca0600fc0944d2b895a0971e39b7b2fe874f14294e6"
+  },
+  {
+   "path": "test-cases/WP-10/Document_62_SPEC-SEC-002_TEST_CASES.md",
+   "bytes": 92481,
+   "sha256": "ab538bf1ee451b623f9c14112d8b896f50f26c2269381de7d84aba72d2ab4260"
+  },
+  {
+   "path": "test-cases/WP-10/Document_63_SPEC-SEC-003_TEST_CASES.md",
+   "bytes": 80167,
+   "sha256": "ff5f940cfa0aab92bd036564b59354ba0b571905855f918696f52a11a7ecaac8"
+  },
+  {
+   "path": "test-cases/WP-10/Document_64_SPEC-SEC-004_TEST_CASES.md",
+   "bytes": 84410,
+   "sha256": "3f460546affdbc8eaa434e18fc8ee24e4728b8bdfe501794eac028a8df49e28f"
+  },
+  {
+   "path": "test-cases/WP-10/Document_65_SPEC-SEC-005_TEST_CASES.md",
+   "bytes": 89676,
+   "sha256": "22e3973a3c9a89396d54e828f209fecffe4be48dffc6e3f2b2699bf1556436a7"
+  },
+  {
+   "path": "test-cases/WP-10/Document_66_SPEC-SEC-006_TEST_CASES.md",
+   "bytes": 87703,
+   "sha256": "da45b6b3ad8f5dc6a67203073236d531267726edb5301ea647e67fe565a42780"
+  },
+  {
+   "path": "test-cases/WP-10/Document_67_SPEC-SEC-007_TEST_CASES.md",
+   "bytes": 93022,
+   "sha256": "fd3ddbde7a4df039f58753a98d0ed788707a09af8c97879a6bae1d4bfecda723"
+  },
+  {
+   "path": "test-cases/WP-10/Document_68_SPEC-SEC-008_TEST_CASES.md",
+   "bytes": 100426,
+   "sha256": "e58921ec482f27293eb684b71eb1284ada88c3407497742a28c4be945d36ccf9"
+  },
+  {
+   "path": "test-cases/WP-10/README.md",
+   "bytes": 1516,
+   "sha256": "88f97ee4c1349f8c6344dc8ea176fc0e3217940ea5331ef3b425bbf884bc1d64"
+  },
+  {
+   "path": "test-cases/WP-11/Document_69_SPEC-DATA-001_TEST_CASES.md",
+   "bytes": 104589,
+   "sha256": "be476ec44e9e78c15cc5ce0a2928c57f31227f028ccb6d024eafaba419765c92"
+  },
+  {
+   "path": "test-cases/WP-11/Document_70_SPEC-DATA-002_TEST_CASES.md",
+   "bytes": 102814,
+   "sha256": "dbb41a4f75054b09e0a60352cabeff1acf7e93573b3546cb2a0887e78f76de45"
+  },
+  {
+   "path": "test-cases/WP-11/Document_71_SPEC-DATA-003_TEST_CASES.md",
+   "bytes": 84919,
+   "sha256": "3e559bcc7ebbe46eb464f831a2a9bd8b1eec769b22bf6bb6c9142ba07cbb6fcc"
+  },
+  {
+   "path": "test-cases/WP-11/Document_72_SPEC-DATA-004_TEST_CASES.md",
+   "bytes": 96122,
+   "sha256": "f8da511ecafc60cd6a8e1312d3ba086af9b54bdabf0415b34438793609912a7c"
+  },
+  {
+   "path": "test-cases/WP-11/Document_73_SPEC-DATA-005_TEST_CASES.md",
+   "bytes": 96923,
+   "sha256": "7bff711684354966fc63c5230d337261b20e9b8e6c408a5186b7beeab29a02f0"
+  },
+  {
+   "path": "test-cases/WP-11/Document_74_SPEC-DATA-006_TEST_CASES.md",
+   "bytes": 101506,
+   "sha256": "8021f33be668df9393011788484b584a5b56a7e02d326e95d54cae6d03f2ba19"
+  },
+  {
+   "path": "test-cases/WP-11/Document_75_SPEC-DATA-007_TEST_CASES.md",
+   "bytes": 89324,
+   "sha256": "6e6f321739a2009dcc4c2f31d79e17c55ebe033765d68da8d212497fd867c683"
+  },
+  {
+   "path": "test-cases/WP-11/Document_76_SPEC-DATA-008_TEST_CASES.md",
+   "bytes": 96283,
+   "sha256": "67be57212f5600be300ebbdd960dc0593a86a3e1ce1f3940da3208dc5b46e3a9"
+  },
+  {
+   "path": "test-cases/WP-11/Document_77_SPEC-DATA-009_TEST_CASES.md",
+   "bytes": 102240,
+   "sha256": "fc318153be714bfe42c8c8da4859b7f3072182ae40f8a34d3e11bf3c167f59ff"
+  },
+  {
+   "path": "test-cases/WP-11/Document_78_SPEC-DATA-010_TEST_CASES.md",
+   "bytes": 112925,
+   "sha256": "335c71d766df4ee9a5bba6cbb396c2c135dabb35d4335fddf499c72cb2ad89b0"
+  },
+  {
+   "path": "test-cases/WP-11/README.md",
+   "bytes": 1767,
+   "sha256": "85fd0bfaff8fddf70e66497495d23fabc405caa9a14a674d276154087e15490a"
+  },
+  {
+   "path": "test-cases/WP-12/Document_79_SPEC-VAL-001_TEST_CASES.md",
+   "bytes": 93859,
+   "sha256": "50275f859c1a357b4f1fa7ba403850e145d620681f2b457896f8738368a430d6"
+  },
+  {
+   "path": "test-cases/WP-12/Document_80_SPEC-VAL-002_TEST_CASES.md",
+   "bytes": 72270,
+   "sha256": "dfd409471adb14b2a0c729d2dcb4084c9532baabc160608b49aae0b77e1ea81c"
+  },
+  {
+   "path": "test-cases/WP-12/Document_81_SPEC-VAL-003_TEST_CASES.md",
+   "bytes": 76216,
+   "sha256": "f85b006d18bff4c96159231871d61d7866b461438ad87188be65498c7ebf26ec"
+  },
+  {
+   "path": "test-cases/WP-12/Document_82_SPEC-VAL-004_TEST_CASES.md",
+   "bytes": 70989,
+   "sha256": "22a95f972fba0edafe3a5d8f5a23d586a4a1ce82e33fdfdd2d5e4481a6b9a370"
+  },
+  {
+   "path": "test-cases/WP-12/Document_83_SPEC-VAL-005_TEST_CASES.md",
+   "bytes": 63669,
+   "sha256": "3d5f389ebe5f13a5892464c703fd21b42497387aef84e86d053988ee5cba7fef"
+  },
+  {
+   "path": "test-cases/WP-12/Document_84_SPEC-VAL-006_TEST_CASES.md",
+   "bytes": 61070,
+   "sha256": "c380dbe0ab67162be198dd4591422e9f1a8fbcb320a752d96e4fd19c30e28e5b"
+  },
+  {
+   "path": "test-cases/WP-12/Document_86_SPEC-VAL-008_TEST_CASES.md",
+   "bytes": 55697,
+   "sha256": "31879aa7949c7f70c9059010ee5ec71e37f185ce8b7c2c292239589d32e9a4b2"
+  },
+  {
+   "path": "test-cases/WP-12/Document_88_SPEC-VAL-010_TEST_CASES.md",
+   "bytes": 91048,
+   "sha256": "5cfdd9790abfbc9d10f147579b407cfdbc9dc847ae6c907280a09c20b9001a63"
+  },
+  {
+   "path": "test-cases/WP-12/Document_89_SPEC-VAL-011_TEST_CASES.md",
+   "bytes": 80766,
+   "sha256": "52d4c2bda4195a6811163d15bcceadc0b24302e6e633ba449a140545a0edae10"
+  },
+  {
+   "path": "test-cases/WP-12/Document_90_SPEC-VAL-012_TEST_CASES.md",
+   "bytes": 88727,
+   "sha256": "a89e53755eef5e8d41469efee26744c8de8521be9983bc5bd2aef7950ba8286b"
+  },
+  {
+   "path": "test-cases/WP-12/Document_91_SPEC-VAL-013_TEST_CASES.md",
+   "bytes": 60477,
+   "sha256": "31fe73a47d8e172e96fa2962e1c82d99a447ff8677a5b51a8a96eec981a5795f"
+  },
+  {
+   "path": "test-cases/WP-12/Document_92_SPEC-VAL-014_TEST_CASES.md",
+   "bytes": 66025,
+   "sha256": "328c596fff24fbad41dc16016c4229ac2aa991ed925db4afef6117e1f84dc3c6"
+  },
+  {
+   "path": "test-cases/WP-12/Document_93_SPEC-VAL-015_TEST_CASES.md",
+   "bytes": 76824,
+   "sha256": "0aff3be66fcf20c897fb99c535321c28978f8afbc325accce7a5253c94658f9d"
+  },
+  {
+   "path": "test-cases/WP-12/Document_94_SPEC-VAL-016_TEST_CASES.md",
+   "bytes": 75297,
+   "sha256": "8e3bada29775c0703512c63649f906b688c983bc5ede7bdb9d67079c1f55a18b"
+  },
+  {
+   "path": "test-cases/WP-12/Document_96_SPEC-VAL-018_TEST_CASES.md",
+   "bytes": 82781,
+   "sha256": "1eeb998903857774bc71021dcc46deb7286214da0259f7f011e941685b3832d6"
+  },
+  {
+   "path": "test-cases/WP-12/README.md",
+   "bytes": 2349,
+   "sha256": "1a54c687264b1df28aa4300a40d4c1c565bd6332c1e0050fd761e35450aaa5dc"
+  },
+  {
+   "path": "test-cases/WP-13/Document_105_SPEC-AI-001_TEST_CASES.md",
+   "bytes": 204276,
+   "sha256": "6a0e3db7ae64dc3025df95c7f3987b3bea8da7d72cfdbc001e3e7e7460e67b21"
+  },
+  {
+   "path": "test-cases/WP-13/README.md",
+   "bytes": 736,
+   "sha256": "dd3ecc127d67e91ae360103b3588622b33a3358246c8ce73126a5ca13c767546"
+  },
+  {
+   "path": "test-cases/WP-14/Document_85_SPEC-VAL-007_TEST_CASES.md",
+   "bytes": 62661,
+   "sha256": "63c26f731414e52fe98539999187775a252fcd137fbcbd9b1a4e1713d0c5acab"
+  },
+  {
+   "path": "test-cases/WP-14/Document_87_SPEC-VAL-009_TEST_CASES.md",
+   "bytes": 72428,
+   "sha256": "b8d5aaeeec6c5d86d2d75dd483eee7ca83ff13952fa9ccb2b929f06b84e8b87c"
+  },
+  {
+   "path": "test-cases/WP-14/Document_95_SPEC-VAL-017_TEST_CASES.md",
+   "bytes": 82559,
+   "sha256": "f0ebc3ad8a8f59acc2646e40bd3b549554cd4e4dd99789469decf9e577cffed9"
+  },
+  {
+   "path": "test-cases/WP-14/README.md",
+   "bytes": 959,
+   "sha256": "7bba2023d0f84be0cb295f729ff054609412d65672825e47f81bde501731ddca"
+  },
+  {
+   "path": "tooling/status/rollup.py",
+   "bytes": 4156,
+   "sha256": "a7448f21fcf771ccf5efc1844163e1b6afd36268c8afa58f551e111f9e94ba66"
+  },
+  {
+   "path": "traceability/COVERAGE_REPORT.md",
+   "bytes": 2152,
+   "sha256": "28b405e10e926770aa1725ce4fa7e85d4b88e679f1b564022b981359194ac527"
+  },
+  {
+   "path": "traceability/TRACEABILITY_MASTER.csv",
+   "bytes": 2565107,
+   "sha256": "b35cc6fc1248ab62baa635d69c9f7445d61cbd91cb651910b14cb40377207168"
+  },
+  {
+   "path": "traceability/TRACEABILITY_MODEL.md",
+   "bytes": 2759,
+   "sha256": "812c068b50b14e487b1bf3453c26e20ab2c6134c34654b370fa585e731ff1dd7"
+  },
+  {
+   "path": "traceability/WP-00_TRACEABILITY.md",
+   "bytes": 30823,
+   "sha256": "07527867b25f71e2764660749901950cdef0a6f5c81a3ed2eff39869b1676c63"
+  },
+  {
+   "path": "traceability/WP-01_TRACEABILITY.md",
+   "bytes": 21735,
+   "sha256": "211e7196115a875bb50e2acf9a7a844205790bb4b089219264efb5408bde89f5"
+  },
+  {
+   "path": "traceability/WP-02_TRACEABILITY.md",
+   "bytes": 15657,
+   "sha256": "07517879de26c2ed5f1d9f4c761cb72801cfdef12288dd332dd3f32a34ed86f8"
+  },
+  {
+   "path": "traceability/WP-03_TRACEABILITY.md",
+   "bytes": 17912,
+   "sha256": "05b63a8d73072807e478932456c185e0ee655fb932b69550381bf8c4dfcbe392"
+  },
+  {
+   "path": "traceability/WP-04_TRACEABILITY.md",
+   "bytes": 30370,
+   "sha256": "a753c20aecff146014b8aa5a592b17eafcbcd5be2fb391e47fac2e767ebe10a5"
+  },
+  {
+   "path": "traceability/WP-05_TRACEABILITY.md",
+   "bytes": 28163,
+   "sha256": "f5a259b41ae0663e319d2b9708a501aab65f1f72d8106a23227690781f75f1ca"
+  },
+  {
+   "path": "traceability/WP-06_TRACEABILITY.md",
+   "bytes": 31803,
+   "sha256": "6979f35b14c7eb7752024fbbdb5246a5090b645286026589b301e81e24817543"
+  },
+  {
+   "path": "traceability/WP-07_TRACEABILITY.md",
+   "bytes": 18237,
+   "sha256": "50f3ac345a08b43c65260a3acd6519ed47f309252c3dffd70256fd662c4ca1d6"
+  },
+  {
+   "path": "traceability/WP-08_TRACEABILITY.md",
+   "bytes": 14011,
+   "sha256": "ff2c4781f763a7e8cfa2a8846f2d8fe837d7cf5a1095934e720e2e27d08bacbd"
+  },
+  {
+   "path": "traceability/WP-09_TRACEABILITY.md",
+   "bytes": 11502,
+   "sha256": "b698b292d9490d1fba4175ad2e289a719f5ab08c899ec08cdec0a5c5888ae098"
+  },
+  {
+   "path": "traceability/WP-10_TRACEABILITY.md",
+   "bytes": 26004,
+   "sha256": "41639f7234c9974a80c6f7e9c3f4a8c5b0d4106e0f4a886b6dd22f8bcafb4060"
+  },
+  {
+   "path": "traceability/WP-11_TRACEABILITY.md",
+   "bytes": 35049,
+   "sha256": "444d0ccfe6ddc099317380da44aa27859f780e551b097122c0751e5f0798c334"
+  },
+  {
+   "path": "traceability/WP-12_TRACEABILITY.md",
+   "bytes": 38102,
+   "sha256": "cc418ed082c18a5b64115df3334c7ac6810a0c2ad993b22285bdec1ccd347b68"
+  },
+  {
+   "path": "traceability/WP-13_TRACEABILITY.md",
+   "bytes": 6594,
+   "sha256": "abf80c22e5067ab97a81b118a1185574239a1a10e6f3c229cbae30bd895dcd84"
+  },
+  {
+   "path": "traceability/WP-14_TRACEABILITY.md",
+   "bytes": 7557,
+   "sha256": "d846fe1f0cb94db8e8f30cc97996c9f93ebee04e3586922629d4755458952e55"
+  },
+  {
+   "path": "work-packages/WP-00/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 84576,
+   "sha256": "2778110283e55749f052cc6837f724ebf877a883eb4ff599961c1323ab79ff3c"
+  },
+  {
+   "path": "work-packages/WP-00/02_DEPENDENCIES.md",
+   "bytes": 501,
+   "sha256": "cfbdb009bd8bee5c61526ab718ad69c50379ec8d0c0ae5fb84ca8987c34dbe47"
+  },
+  {
+   "path": "work-packages/WP-00/03_FUNCTION_CONTRACTS.md",
+   "bytes": 9868,
+   "sha256": "8052d86f9a52a03736e58644eaebbd7c022c2918c71a00cccf82f9cee68cc00b"
+  },
+  {
+   "path": "work-packages/WP-00/04_DATA_MODEL.md",
+   "bytes": 1688,
+   "sha256": "9ecb16f2045f8143b916eabca787ea41eca1ef759d58e6bf001755df7f4ecb78"
+  },
+  {
+   "path": "work-packages/WP-00/05_API_EVENT_CONTRACTS.md",
+   "bytes": 409,
+   "sha256": "a86b481634a842f5973e8c4be66aa205b5baa02a5181c783fb0906ece4604a14"
+  },
+  {
+   "path": "work-packages/WP-00/06_UI_WORKFLOWS.md",
+   "bytes": 200,
+   "sha256": "bd4b9486fc33d1e6d3575edadacb71e40617f2c8b9d1a8b07a3d3ea1e382343b"
+  },
+  {
+   "path": "work-packages/WP-00/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 471,
+   "sha256": "4fb756b42b019566684f60c4db36ad4c3a757acaf8a67094ff0839d0412e4172"
+  },
+  {
+   "path": "work-packages/WP-00/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 2563,
+   "sha256": "7be2425ce169e0378c4c34dcc4047f8afd49eadb45283951a923f7857b4b3956"
+  },
+  {
+   "path": "work-packages/WP-00/09_TEST_PLAN.md",
+   "bytes": 5149,
+   "sha256": "b06523082e414ddfa3b909fb305e904e7c466ae4911fd5ab887b78905a03c57b"
+  },
+  {
+   "path": "work-packages/WP-00/10_VALIDATION_IMPACT.md",
+   "bytes": 1473,
+   "sha256": "049215aaa16d1d929dc8fefd4bea4760dea5c5c7b9e8d62266138e70d06ba6f5"
+  },
+  {
+   "path": "work-packages/WP-00/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1757,
+   "sha256": "c4b6b32c41e6a506d0ab4705d60129fbee2d2a62b8b4bd95eb8e7a49a805ffe9"
+  },
+  {
+   "path": "work-packages/WP-00/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "128cf1ff0e1cfd5fdc4ac9b4a16f7df37da27b456966255bd0f4baa8236911f9"
+  },
+  {
+   "path": "work-packages/WP-00/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 2461,
+   "sha256": "c6c693cae9b7fc2ecdcb641f28a93b8c8a75b19a146fb35ef1510e0fd0471b02"
+  },
+  {
+   "path": "work-packages/WP-00/CLAUDE_CODE_PROMPT.md",
+   "bytes": 4406,
+   "sha256": "c1d269070ef2b973f9e338d7d51aaa7654bd15a1b83c4995630d65b4bb8a32ae"
+  },
+  {
+   "path": "work-packages/WP-00/README.md",
+   "bytes": 1197,
+   "sha256": "bc01f32951d74c4d003378ad5fbbf64876f1f531c87c126b6b6f071da736b1f4"
+  },
+  {
+   "path": "work-packages/WP-01/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 40536,
+   "sha256": "237a880a0e68216075ab13071b321bbfb1920a3a66fa5126d4e8a579777b42d0"
+  },
+  {
+   "path": "work-packages/WP-01/02_DEPENDENCIES.md",
+   "bytes": 737,
+   "sha256": "1bcf194192b9a37eb5344c3993598df64a5e115841844b467edd2e9880c7647f"
+  },
+  {
+   "path": "work-packages/WP-01/03_FUNCTION_CONTRACTS.md",
+   "bytes": 374,
+   "sha256": "0a85e501fe1dbe5ff0fd3a8d0a237b63e813e1679c5c2eae8fc5ad0e44f89bc2"
+  },
+  {
+   "path": "work-packages/WP-01/04_DATA_MODEL.md",
+   "bytes": 2392,
+   "sha256": "35f05ac7a95ba603c7240a0c15d7350845ecac925a6bdc71885d23cc44f4c535"
+  },
+  {
+   "path": "work-packages/WP-01/05_API_EVENT_CONTRACTS.md",
+   "bytes": 2033,
+   "sha256": "e2147494d467e192fae2f77198a6b2347168f3b96b42be1d137cd82c23c5182d"
+  },
+  {
+   "path": "work-packages/WP-01/06_UI_WORKFLOWS.md",
+   "bytes": 2919,
+   "sha256": "d962c4f1029dda642a518cc8715458e234831f12ee5a5238ce408023a0c60b1e"
+  },
+  {
+   "path": "work-packages/WP-01/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 857,
+   "sha256": "3e98a18d3c94536a3509ab8d2e91032cfb1a806296e359ba5b43d6ee7ceb4ee2"
+  },
+  {
+   "path": "work-packages/WP-01/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 3359,
+   "sha256": "39411f2b6a7c21424d834a54d37d293db29e9010af820d933934ff2203c443da"
+  },
+  {
+   "path": "work-packages/WP-01/09_TEST_PLAN.md",
+   "bytes": 10565,
+   "sha256": "7663be4dcaeda05c1ac41c8d56618d1e38e07af10570a6dee7c75807d41343aa"
+  },
+  {
+   "path": "work-packages/WP-01/10_VALIDATION_IMPACT.md",
+   "bytes": 1062,
+   "sha256": "9c4fbf26f7bd74d8f337543d786797908f96e3161fe525f5aaeac2e00577e7df"
+  },
+  {
+   "path": "work-packages/WP-01/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1503,
+   "sha256": "2ce691df260ddf2fadc37289f6d058f8ca7c529621a668babdb439f2f3ec64ac"
+  },
+  {
+   "path": "work-packages/WP-01/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "37178f2f86a2a0481ce446e6e841a93e09ffadeab021ed0181dc23d4412be03e"
+  },
+  {
+   "path": "work-packages/WP-01/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 2087,
+   "sha256": "93d3b02e5291233e82c97de6cf380f6a8f74ef1461fd3d75364811c40978fb2c"
+  },
+  {
+   "path": "work-packages/WP-01/CLAUDE_CODE_PROMPT.md",
+   "bytes": 4166,
+   "sha256": "e588dff233fd3acb43f1b180edc934357beba544143f9a616cef3b4b3734bfc5"
+  },
+  {
+   "path": "work-packages/WP-01/README.md",
+   "bytes": 1164,
+   "sha256": "ac7f2ce9af6159f0107d7e7695ffad00ed7016ad836003221cae0ce40425eb1e"
+  },
+  {
+   "path": "work-packages/WP-02/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 26878,
+   "sha256": "df8bda05a2fc6e20d0283600bdbe32c0caea396eccfb8ec10c205f654bd2ae5e"
+  },
+  {
+   "path": "work-packages/WP-02/02_DEPENDENCIES.md",
+   "bytes": 689,
+   "sha256": "499aa00302a034f7fc67187f4a6071bd6cf68f3f1fffb0bcd064c1ae4980603c"
+  },
+  {
+   "path": "work-packages/WP-02/03_FUNCTION_CONTRACTS.md",
+   "bytes": 374,
+   "sha256": "cbbb6a051d7baeaa7cb98433bedfede4a078e6d1a3ae05fcb4d9c27e36cd3c7f"
+  },
+  {
+   "path": "work-packages/WP-02/04_DATA_MODEL.md",
+   "bytes": 3104,
+   "sha256": "e1dfef7276000d5d403315c74231c6a98c98aa7dac5fa19895dea3eac672db81"
+  },
+  {
+   "path": "work-packages/WP-02/05_API_EVENT_CONTRACTS.md",
+   "bytes": 4615,
+   "sha256": "108d257f30e768d26ca638fd2ec5c4e73d86fb0d129d3faaabc7f956566c219f"
+  },
+  {
+   "path": "work-packages/WP-02/06_UI_WORKFLOWS.md",
+   "bytes": 2466,
+   "sha256": "5fe84ca05818cf911c2428ced4b0bad6f1632ade400ed5c0802dc4b00421bdb9"
+  },
+  {
+   "path": "work-packages/WP-02/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 701,
+   "sha256": "b9f1bbe9ac7921ce4649e0ae3e78128b467850ba6a5803f69a905d36a122d846"
+  },
+  {
+   "path": "work-packages/WP-02/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 1813,
+   "sha256": "167dd88ab47b98bf02838a2f891f5f501f128518017396f4dfc24ad71dc7ae51"
+  },
+  {
+   "path": "work-packages/WP-02/09_TEST_PLAN.md",
+   "bytes": 4497,
+   "sha256": "38d7463f60efc49111123eacee9e16938dcd1a741262c017c9b4a72745d28e43"
+  },
+  {
+   "path": "work-packages/WP-02/10_VALIDATION_IMPACT.md",
+   "bytes": 852,
+   "sha256": "5ac5bfa728dff450dd2235cb4428fc712f7b630874d8a96f7099e8ece645b4d9"
+  },
+  {
+   "path": "work-packages/WP-02/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1379,
+   "sha256": "591a0f629874441e046eab2eb4b08e429e0df95fbb0721f77365958e3166d825"
+  },
+  {
+   "path": "work-packages/WP-02/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "cee5cf3c4d8fb9f75ac00b502b29f9c4f6455b94b0d7b65693028818c3875d3f"
+  },
+  {
+   "path": "work-packages/WP-02/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 1887,
+   "sha256": "76b6054e17e566a2aabe256cd51486b6a2b3e2ce06151d6d7b7b7800c9677da4"
+  },
+  {
+   "path": "work-packages/WP-02/CLAUDE_CODE_PROMPT.md",
+   "bytes": 3885,
+   "sha256": "b42cef8c1f8ef75a953a248ad17df08c31ab53c6a6e20bb024fd363588d5e75e"
+  },
+  {
+   "path": "work-packages/WP-02/README.md",
+   "bytes": 1142,
+   "sha256": "49c044b515636a17d3a9f238401f366143d70bbfc1f4485f238e01addd3c5402"
+  },
+  {
+   "path": "work-packages/WP-03/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 28781,
+   "sha256": "539af91df423cba91f615196a8861dd9a1abb9cdc10003e4d06804ca612bda14"
+  },
+  {
+   "path": "work-packages/WP-03/02_DEPENDENCIES.md",
+   "bytes": 522,
+   "sha256": "c9d17fc4b5b7c725d43cdcbb7fb2d67441991ddffc44ad0e7741ac9cb0201061"
+  },
+  {
+   "path": "work-packages/WP-03/03_FUNCTION_CONTRACTS.md",
+   "bytes": 374,
+   "sha256": "f7e6d25695943dcb67044a06f45c9d063c9920b9a60bcb192d306845bb3c0327"
+  },
+  {
+   "path": "work-packages/WP-03/04_DATA_MODEL.md",
+   "bytes": 1863,
+   "sha256": "9a786949f64391ec3ba3bac2e86cfc3f04d1d1d00bfdf3e8e3dae073cd792be3"
+  },
+  {
+   "path": "work-packages/WP-03/05_API_EVENT_CONTRACTS.md",
+   "bytes": 4754,
+   "sha256": "7b14cc40d0a984870dd88fc23bdb92e6cb416722172ae0dfec1b6d0cb6f4d19d"
+  },
+  {
+   "path": "work-packages/WP-03/06_UI_WORKFLOWS.md",
+   "bytes": 2597,
+   "sha256": "4bb1698f357ab9327c2ab545b70d485a063daf17c12c82bdec19c2e607b9361f"
+  },
+  {
+   "path": "work-packages/WP-03/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 1149,
+   "sha256": "d93883844db66cd75bdaa15c77124a38f2d67c1481181ae96899153fe895e963"
+  },
+  {
+   "path": "work-packages/WP-03/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 1401,
+   "sha256": "224307f5eb5ed5c15738bafbe60188179a0935b549d44f29c8db3665f84a405a"
+  },
+  {
+   "path": "work-packages/WP-03/09_TEST_PLAN.md",
+   "bytes": 4216,
+   "sha256": "62c9ea2c7e9fd5793c6b3bcaa25c2704ee10a7c3e33ba88adf8057564ad7b473"
+  },
+  {
+   "path": "work-packages/WP-03/10_VALIDATION_IMPACT.md",
+   "bytes": 960,
+   "sha256": "00744423363cc689b59f24c89c3973e76d40d65fb40e3f4a3fc9e091ed3b1518"
+  },
+  {
+   "path": "work-packages/WP-03/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1441,
+   "sha256": "c9ebdb8cf966e048a103d7b65ecbd86912d8dfd28c47be79bd1d75f61eed0f98"
+  },
+  {
+   "path": "work-packages/WP-03/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "a376edcef8d42be1e48b46ed91930be13c6191a53e8fa5d677b682f29786d60f"
+  },
+  {
+   "path": "work-packages/WP-03/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 1993,
+   "sha256": "121ab8ecffb15310017901439420d9c47ba93f2fb0dba24b66157bc3a3069722"
+  },
+  {
+   "path": "work-packages/WP-03/CLAUDE_CODE_PROMPT.md",
+   "bytes": 4049,
+   "sha256": "02f4e988f5d0f31a7d84146c41cb0bd48449f69edd805ceacb3fe687dc2cc865"
+  },
+  {
+   "path": "work-packages/WP-03/README.md",
+   "bytes": 1167,
+   "sha256": "ef6c7de682cdb7a97a4f63c0a2f7df9026cc40bb059ce342e7209953773f7033"
+  },
+  {
+   "path": "work-packages/WP-04/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 49519,
+   "sha256": "c04bfcc062711f76918c4e23b55e1c54b410a6c42a16e0f794318614f5166b91"
+  },
+  {
+   "path": "work-packages/WP-04/02_DEPENDENCIES.md",
+   "bytes": 560,
+   "sha256": "11f3c1556600d8befa773c0d430bb92f6b2ada23e56a2ba10480a8e669688e6a"
+  },
+  {
+   "path": "work-packages/WP-04/03_FUNCTION_CONTRACTS.md",
+   "bytes": 374,
+   "sha256": "48d4dd46d93abe2ae07cf9c2d3088e975a8cba8a3f496a9ea665dccda71a8fda"
+  },
+  {
+   "path": "work-packages/WP-04/04_DATA_MODEL.md",
+   "bytes": 4264,
+   "sha256": "54188215893a60e8099e0df08b7ae5ba86d32935be54f8349d0645b8a782f70e"
+  },
+  {
+   "path": "work-packages/WP-04/05_API_EVENT_CONTRACTS.md",
+   "bytes": 7981,
+   "sha256": "0483a659ef4c812cf60626674149eb194f16be2003d841ef5267c03176d515c6"
+  },
+  {
+   "path": "work-packages/WP-04/06_UI_WORKFLOWS.md",
+   "bytes": 3972,
+   "sha256": "5aa05a0aa9ab6025a2c031e2ea7f2a0495d89f9d519d52ecb640afc11c4c85c6"
+  },
+  {
+   "path": "work-packages/WP-04/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 1230,
+   "sha256": "9b2c5d2e95f5314433df7ae6a35cbbfaf194edd6f1589bfc4b1d46c2a2800752"
+  },
+  {
+   "path": "work-packages/WP-04/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 3418,
+   "sha256": "33373d9330da995274c33bf2e3e9d9db144937de9aea19d274b55f7744a24948"
+  },
+  {
+   "path": "work-packages/WP-04/09_TEST_PLAN.md",
+   "bytes": 8879,
+   "sha256": "f3bcee212c33b1c5e9af026f3d2ac2acb9c8ac77f7736b08e6750a9928e24f3f"
+  },
+  {
+   "path": "work-packages/WP-04/10_VALIDATION_IMPACT.md",
+   "bytes": 1277,
+   "sha256": "48dfc4e82e37d8b9cf927983cbc88d007e2a585bc87404a83ceed20f2b5bc272"
+  },
+  {
+   "path": "work-packages/WP-04/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1627,
+   "sha256": "7f2c2b80b1628cb8afa47d7fc8b271d09d1262c6a3d74fab58d18d7e37957dab"
+  },
+  {
+   "path": "work-packages/WP-04/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "36cbf4e686a8101726bfbe64356b0a24c2d86cdc89542fbfcb98cd3427006966"
+  },
+  {
+   "path": "work-packages/WP-04/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 2297,
+   "sha256": "e6456517c0d728f6397981afd2476304ae35eb31f57ac82e09dcaed8696bc288"
+  },
+  {
+   "path": "work-packages/WP-04/CLAUDE_CODE_PROMPT.md",
+   "bytes": 4519,
+   "sha256": "e034fadc72a01aef8fe57380e9477f1ff14d5050193e0f539f46a231d41eea72"
+  },
+  {
+   "path": "work-packages/WP-04/README.md",
+   "bytes": 1172,
+   "sha256": "67f92c9f109837057a19935d75c3e437869e2b7dca7c5805db5c9dbce82eef5e"
+  },
+  {
+   "path": "work-packages/WP-05/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 34166,
+   "sha256": "3b0a33068655ea3ff3e84ce8cf8c5212149705221fc1b7c55f2919aa70f1691a"
+  },
+  {
+   "path": "work-packages/WP-05/02_DEPENDENCIES.md",
+   "bytes": 518,
+   "sha256": "75e2849aa79cf20ba944adc032eeb96b620ce36ab6a7e5ac91ff743048588274"
+  },
+  {
+   "path": "work-packages/WP-05/03_FUNCTION_CONTRACTS.md",
+   "bytes": 374,
+   "sha256": "2f1fb57f80f8c02d57af396341a882ce3412640b2b1a9970ffa8f27c5ff2273d"
+  },
+  {
+   "path": "work-packages/WP-05/04_DATA_MODEL.md",
+   "bytes": 3855,
+   "sha256": "0d285e8c12b7820e8a50cb1b1d5ce4307fa5376e2e2fb9bd46b1b337dd045320"
+  },
+  {
+   "path": "work-packages/WP-05/05_API_EVENT_CONTRACTS.md",
+   "bytes": 8955,
+   "sha256": "3bc3b9601c1094da45f01081a22d8e0a4e087de46d39670fc80a0cfaf6340069"
+  },
+  {
+   "path": "work-packages/WP-05/06_UI_WORKFLOWS.md",
+   "bytes": 4851,
+   "sha256": "6bfd9c1cf3fb17c3ad0b8fce8bdfa39954e47a91ccda7fdba09daca4b9fabe0c"
+  },
+  {
+   "path": "work-packages/WP-05/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 1959,
+   "sha256": "069010a9c191355a45b629e7ef674e78f6dc9756a04ad9291721926b84ef1277"
+  },
+  {
+   "path": "work-packages/WP-05/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 5927,
+   "sha256": "784eccddcee188aed93135ee6ac1f05b4645e86eae85f849a641dc2fbdbd6d0a"
+  },
+  {
+   "path": "work-packages/WP-05/09_TEST_PLAN.md",
+   "bytes": 5702,
+   "sha256": "9e2098ee4c1ff4a1484bfb5dcb08bdb2b1e511aca8d52b532cafbed685620191"
+  },
+  {
+   "path": "work-packages/WP-05/10_VALIDATION_IMPACT.md",
+   "bytes": 1708,
+   "sha256": "2bdafc0dac2a16834656eaeaeb3ed15995531426cfea552ec2268bc475dd316e"
+  },
+  {
+   "path": "work-packages/WP-05/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1875,
+   "sha256": "cb3d537dcff868d3fbec0b116c2ff6aaa4d664424851fa417999c02dc3dd48db"
+  },
+  {
+   "path": "work-packages/WP-05/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "dfbd823a8b7de5904673ace02fbbfb19bc028a5a1501952ee4cd6a6b13fe4549"
+  },
+  {
+   "path": "work-packages/WP-05/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 2705,
+   "sha256": "d600c180824aafb369ec7299b5135b7eca7e257fc4f2c81ce1a6e9e546a864dd"
+  },
+  {
+   "path": "work-packages/WP-05/CLAUDE_CODE_PROMPT.md",
+   "bytes": 4772,
+   "sha256": "aec57b771207a37f0b1429a0be709aa076f1dd8a829ab9a244f4d2f3a1748bec"
+  },
+  {
+   "path": "work-packages/WP-05/README.md",
+   "bytes": 1184,
+   "sha256": "8a8762fca4795d6d5aaa8cde3957b5500dcae6770841a71376e32fca8ab96cc3"
+  },
+  {
+   "path": "work-packages/WP-06/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 46711,
+   "sha256": "edad27ebb9150e0c4c61eb1d448b8344a91979be48c3ceec7a5a27c242af8086"
+  },
+  {
+   "path": "work-packages/WP-06/02_DEPENDENCIES.md",
+   "bytes": 529,
+   "sha256": "92580fad255d26288ed6a7f2e714e28c8f5d571879e4635e60fb0e04d8047b2b"
+  },
+  {
+   "path": "work-packages/WP-06/03_FUNCTION_CONTRACTS.md",
+   "bytes": 9397,
+   "sha256": "8cf8ded8f1617d43ce010fd4324c3322acb2c64a898f5b3c24f6dad0763054c9"
+  },
+  {
+   "path": "work-packages/WP-06/04_DATA_MODEL.md",
+   "bytes": 2543,
+   "sha256": "078869ca7a4513c430f66ffc7706971cd14e25ef52c73b542a1dadb425db37e1"
+  },
+  {
+   "path": "work-packages/WP-06/05_API_EVENT_CONTRACTS.md",
+   "bytes": 4874,
+   "sha256": "33f148a978f0cf64b134373f6f519dc00244af8bbaa4e49d51640a91cb5f09e3"
+  },
+  {
+   "path": "work-packages/WP-06/06_UI_WORKFLOWS.md",
+   "bytes": 2514,
+   "sha256": "2fecd07bfe460d4a542ffcc8a976a492e6cbfb95d4026e8918180180da5dddda"
+  },
+  {
+   "path": "work-packages/WP-06/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 552,
+   "sha256": "5979647b72a71b384ecf47d36eb8ccd169415fbada63446122be0cc571efa924"
+  },
+  {
+   "path": "work-packages/WP-06/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 4606,
+   "sha256": "d19f8e53b78c8a3879fee65fbe1349948f768457e9425716b84063f4af969674"
+  },
+  {
+   "path": "work-packages/WP-06/09_TEST_PLAN.md",
+   "bytes": 5418,
+   "sha256": "60a715a4bf6cf52d5d951796e4afc76bb0242175715b3d40e93165a1a3d1447d"
+  },
+  {
+   "path": "work-packages/WP-06/10_VALIDATION_IMPACT.md",
+   "bytes": 1495,
+   "sha256": "65247c8158e5bbae809c5fa59db3457c41b2182cc53e4d42008917f11f5dc0b6"
+  },
+  {
+   "path": "work-packages/WP-06/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1751,
+   "sha256": "e04cf534a8020ca989d768048bb97d07359f513d3621898902e0eb4bf57ce4d6"
+  },
+  {
+   "path": "work-packages/WP-06/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "464a5c8eeaa0793a46cb41836e1c55b78636ecd44d66cfb22ab4a45ea0a4d300"
+  },
+  {
+   "path": "work-packages/WP-06/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 2513,
+   "sha256": "d09efe13357332db1c08f74f6df36f8414cc62802f84161f6d6878280fd8a420"
+  },
+  {
+   "path": "work-packages/WP-06/CLAUDE_CODE_PROMPT.md",
+   "bytes": 4741,
+   "sha256": "95a9e7e721b6d66d9128eb994e33f5a065e561c402edf48215b9b387a7eff93d"
+  },
+  {
+   "path": "work-packages/WP-06/README.md",
+   "bytes": 1180,
+   "sha256": "8f1b8ed8908c24292bb7c01364accca98c32d7c8c89c4a94ed7148387d3a5942"
+  },
+  {
+   "path": "work-packages/WP-07/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 26742,
+   "sha256": "0ac01ee86ccc875cf8eac546eb7e1f518777625216167094bd744718017c1a37"
+  },
+  {
+   "path": "work-packages/WP-07/02_DEPENDENCIES.md",
+   "bytes": 499,
+   "sha256": "18d461f4368477a6d079016d215c5a66890ec9f9a20628d99ed68d08874e035c"
+  },
+  {
+   "path": "work-packages/WP-07/03_FUNCTION_CONTRACTS.md",
+   "bytes": 9188,
+   "sha256": "b37790ccd71286e06426f01d0ea2db34bc5aabd4c45e17538465d56739e575a6"
+  },
+  {
+   "path": "work-packages/WP-07/04_DATA_MODEL.md",
+   "bytes": 315,
+   "sha256": "e4158e9e08720ff1efe781d78477291e7488063877d8bff9bde28b710cf5f8e1"
+  },
+  {
+   "path": "work-packages/WP-07/05_API_EVENT_CONTRACTS.md",
+   "bytes": 409,
+   "sha256": "a7d6e89c0035c730e36cc87aa340e69c6da8ef236d66b7b8479d329535bb7f20"
+  },
+  {
+   "path": "work-packages/WP-07/06_UI_WORKFLOWS.md",
+   "bytes": 600,
+   "sha256": "d18a8b6acd6052a30f5d88bf4af4f8dea06e8bddef2d9aa4091e581f531e16cb"
+  },
+  {
+   "path": "work-packages/WP-07/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 471,
+   "sha256": "b49605b75a31b814c860231daa611b3e6bf8cb78da6091be3faae634a8aa3002"
+  },
+  {
+   "path": "work-packages/WP-07/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 1663,
+   "sha256": "e865478bdebee1cb886539a076c0c36c81d949ec41fc33a6e117adf7c5c25d71"
+  },
+  {
+   "path": "work-packages/WP-07/09_TEST_PLAN.md",
+   "bytes": 4243,
+   "sha256": "e738f861c6410be7d983369311c242acfca781c8d5232ce4b74ff8f5a4d6ddf8"
+  },
+  {
+   "path": "work-packages/WP-07/10_VALIDATION_IMPACT.md",
+   "bytes": 1062,
+   "sha256": "9be0bb71479e99dacd2b45cfdb176553597d7538b666298dbe00c530b3dc568b"
+  },
+  {
+   "path": "work-packages/WP-07/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1503,
+   "sha256": "0349fbc52bbfc96c5b61021377ca2c608a53f1d9f2e3228e62b211c264e70677"
+  },
+  {
+   "path": "work-packages/WP-07/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "daff703b2705978bfeed2c25d6d48e4c682354b26987081c08073da80408a3c0"
+  },
+  {
+   "path": "work-packages/WP-07/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 2087,
+   "sha256": "52d8993a35891ec118879f0d258696ed8c638a07987eb29a8bedfdd6a9507ca9"
+  },
+  {
+   "path": "work-packages/WP-07/CLAUDE_CODE_PROMPT.md",
+   "bytes": 4139,
+   "sha256": "f6318d050ab37f60ebb45a1bf8132c78ee2b1ab299d36cf2a6860db65e4da3d5"
+  },
+  {
+   "path": "work-packages/WP-07/README.md",
+   "bytes": 1146,
+   "sha256": "50a8a328d951d55e649e8ea0da3a1d00d940a3922662d08e6bf43a2b6e203a59"
+  },
+  {
+   "path": "work-packages/WP-08/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 21443,
+   "sha256": "a05a37940c75e65a7d53ac3d76e6d86c0e38025db683aaecc564302969999462"
+  },
+  {
+   "path": "work-packages/WP-08/02_DEPENDENCIES.md",
+   "bytes": 506,
+   "sha256": "da25508ddb6252f66a6f6298a4bfdb03e34d207422db9b99aca81a67ba00ed97"
+  },
+  {
+   "path": "work-packages/WP-08/03_FUNCTION_CONTRACTS.md",
+   "bytes": 7664,
+   "sha256": "bfb447029447650f4ed61b41cf76fd9809329a046cb1a30456a5e16b40cd7b91"
+  },
+  {
+   "path": "work-packages/WP-08/04_DATA_MODEL.md",
+   "bytes": 1468,
+   "sha256": "d3994b12534a47823a03f8c5f624e04acde7b3b383b431a9fcddf194ef15651f"
+  },
+  {
+   "path": "work-packages/WP-08/05_API_EVENT_CONTRACTS.md",
+   "bytes": 409,
+   "sha256": "60fc91ee8083cb8d628261c7290559ff9c2de705775d3f705638b488b6d12d75"
+  },
+  {
+   "path": "work-packages/WP-08/06_UI_WORKFLOWS.md",
+   "bytes": 2108,
+   "sha256": "1fc384161aa0f8a90f9c98c373d442629960dd609c98c7cd2a642f1e5a5f8cda"
+  },
+  {
+   "path": "work-packages/WP-08/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 471,
+   "sha256": "15d1047d10249a64d206a13347b4930facd891f4c327aa7eea8b69aba0924b84"
+  },
+  {
+   "path": "work-packages/WP-08/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 1180,
+   "sha256": "dcd0a924076cc2eca170d3c8f16f95067310d47136c02b725ee0042a07403a21"
+  },
+  {
+   "path": "work-packages/WP-08/09_TEST_PLAN.md",
+   "bytes": 2999,
+   "sha256": "69700e94cb96599515f33db02ff00b0c0ad7ae3b055dcb56d80772191b601331"
+  },
+  {
+   "path": "work-packages/WP-08/10_VALIDATION_IMPACT.md",
+   "bytes": 852,
+   "sha256": "559e9dc5cc1810ee818bd857e486e910cda239e6d3fa98c6b4b25ec965e164ba"
+  },
+  {
+   "path": "work-packages/WP-08/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1379,
+   "sha256": "7875996824f2720e94bacc426fe47238ae79ee89453a74de20e4671bfdfeb076"
+  },
+  {
+   "path": "work-packages/WP-08/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "c1dc0c14daa0255026a1193089b8b4c76a2373e4b27e93ebfdc973e5dce14e6b"
+  },
+  {
+   "path": "work-packages/WP-08/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 1887,
+   "sha256": "4065d88e0c3fa39ecbc9c335dac9f4606c9049ddf96e4f6b971d1adc43cfd20c"
+  },
+  {
+   "path": "work-packages/WP-08/CLAUDE_CODE_PROMPT.md",
+   "bytes": 3936,
+   "sha256": "646e48563cca25f8a160528780ad068dca316b29b520746ee60e5808da0d5b66"
+  },
+  {
+   "path": "work-packages/WP-08/README.md",
+   "bytes": 1154,
+   "sha256": "5e7dc7966b5244d18503682b85381971cb2a8b3be7c00ea462246602e915b47f"
+  },
+  {
+   "path": "work-packages/WP-09/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 18154,
+   "sha256": "e13c66d45b682e7c3d6f86f0c3cdd82584ee6fc7cfc07adc66b15a78fe377cf7"
+  },
+  {
+   "path": "work-packages/WP-09/02_DEPENDENCIES.md",
+   "bytes": 492,
+   "sha256": "2ab60b5b53bbab3805f6f8b264132494c582383feea49955f10acb68a3bc994c"
+  },
+  {
+   "path": "work-packages/WP-09/03_FUNCTION_CONTRACTS.md",
+   "bytes": 8205,
+   "sha256": "f2991ace7d048238537c045f442362136ffdf618aba0612e38a9e2be45b0901f"
+  },
+  {
+   "path": "work-packages/WP-09/04_DATA_MODEL.md",
+   "bytes": 2023,
+   "sha256": "5cfa59dbe0d34fca94ce7e17d5dacf37acccfaa9075db2f58dbdc1ff100b3bdb"
+  },
+  {
+   "path": "work-packages/WP-09/05_API_EVENT_CONTRACTS.md",
+   "bytes": 3843,
+   "sha256": "5e98826b07f29ca2ca701b3ff2e680f5f379003b956e020af57eb18a1f9d73b6"
+  },
+  {
+   "path": "work-packages/WP-09/06_UI_WORKFLOWS.md",
+   "bytes": 1813,
+   "sha256": "a04190e70d636176430d470670afff73c1cf5ebde7caa3ab50eaf570096a85a3"
+  },
+  {
+   "path": "work-packages/WP-09/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 781,
+   "sha256": "b6df607e74b5e4452d247b53e88744656d76c9e0d1cb1f0a4484c207a21fed6f"
+  },
+  {
+   "path": "work-packages/WP-09/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 957,
+   "sha256": "c41346c8559e0216e1fa1fe03341d7322fbdce6fa84168b1e7187cc9e4644cad"
+  },
+  {
+   "path": "work-packages/WP-09/09_TEST_PLAN.md",
+   "bytes": 3298,
+   "sha256": "dd575644853513ce12b3095f7160bdaf874f7001cb92038d8ddc11004d1e3941"
+  },
+  {
+   "path": "work-packages/WP-09/10_VALIDATION_IMPACT.md",
+   "bytes": 738,
+   "sha256": "ef3329937eecee1b2c5e524e3d1b5e86a4d86b6fe51564e6621bd13afc3542df"
+  },
+  {
+   "path": "work-packages/WP-09/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1317,
+   "sha256": "4ebc0ebd2de466433a284d6eac1b05f99dd3d772ab3223b4a77ca4cec28d602e"
+  },
+  {
+   "path": "work-packages/WP-09/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "a684f9e410b0d430b5392634300a15e3faaa042d53a18bcf1063f58336c518ec"
+  },
+  {
+   "path": "work-packages/WP-09/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 1769,
+   "sha256": "b94d9b6177042a2b99f9fafe0d96aad98d348aa8b7ca0372f41fd7b66170e645"
+  },
+  {
+   "path": "work-packages/WP-09/CLAUDE_CODE_PROMPT.md",
+   "bytes": 3818,
+   "sha256": "7edea2662bc0a9362786dcde10881b86170ff04b6ba3562a0f9b329ba24cb039"
+  },
+  {
+   "path": "work-packages/WP-09/README.md",
+   "bytes": 1132,
+   "sha256": "c1905cf89d835de21d5a3dd3536b80409417b47fa01efca4af980f3f6e411790"
+  },
+  {
+   "path": "work-packages/WP-10/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 39419,
+   "sha256": "b79885b64e68048747f8219dff2fe4940d2c217d96bc89e73a1dfbde774b17e1"
+  },
+  {
+   "path": "work-packages/WP-10/02_DEPENDENCIES.md",
+   "bytes": 532,
+   "sha256": "320096adebdaf33f1657b00728f78d620aea1b998d6319b4d03a06f8acdb6bbb"
+  },
+  {
+   "path": "work-packages/WP-10/03_FUNCTION_CONTRACTS.md",
+   "bytes": 10591,
+   "sha256": "2b50159d1c57528a9c75c842d6f3cee2478b9016053c7ab554ea0c2a7ad41666"
+  },
+  {
+   "path": "work-packages/WP-10/04_DATA_MODEL.md",
+   "bytes": 2538,
+   "sha256": "4912fa29dd1ce612ba754e6dac0e9b5d4825991600610f234b0465e803b71321"
+  },
+  {
+   "path": "work-packages/WP-10/05_API_EVENT_CONTRACTS.md",
+   "bytes": 4758,
+   "sha256": "089630d2937a4742dc7c17555c15b4d9d92006cb8c84b7aa2e00b731cb47826a"
+  },
+  {
+   "path": "work-packages/WP-10/06_UI_WORKFLOWS.md",
+   "bytes": 2540,
+   "sha256": "b04bb63bb7557e6abd5655ff00e3adb89bcbce102c8494322777b4b6d3bd9971"
+  },
+  {
+   "path": "work-packages/WP-10/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 731,
+   "sha256": "7de299d21a81c95a852c037ef59f6693effcfea48ab514ca706db5f82fbc4093"
+  },
+  {
+   "path": "work-packages/WP-10/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 2290,
+   "sha256": "21b99c372a141aca5dc0fc60abcbb0be0aa7d5432613409ef02d4a04e2181d78"
+  },
+  {
+   "path": "work-packages/WP-10/09_TEST_PLAN.md",
+   "bytes": 4177,
+   "sha256": "62211955c2240e4e5279a8ec5a37971c4a8cb5847132d004d27f433ac9143ed1"
+  },
+  {
+   "path": "work-packages/WP-10/10_VALIDATION_IMPACT.md",
+   "bytes": 1276,
+   "sha256": "3e44c7ce8a585072845813cdc5f999023f45104db5441ee7525f08c6006c090e"
+  },
+  {
+   "path": "work-packages/WP-10/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1627,
+   "sha256": "18baca6310bd7e4262c2f07d4b1589a440bcf75923e5edd42822637713ba8113"
+  },
+  {
+   "path": "work-packages/WP-10/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "0cbc1feb1f95612ba717ec152e27975ceef45e0b90d6d75375b76d37d6474ea0"
+  },
+  {
+   "path": "work-packages/WP-10/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 2295,
+   "sha256": "be99af6251e9fe295f824f983edb3a083159a0ddc00f8fb70575f97a63dd538c"
+  },
+  {
+   "path": "work-packages/WP-10/CLAUDE_CODE_PROMPT.md",
+   "bytes": 4445,
+   "sha256": "69e24d607c3154e334a397c92397caca0ab555246955ef571b886612122c4445"
+  },
+  {
+   "path": "work-packages/WP-10/README.md",
+   "bytes": 1164,
+   "sha256": "e5923ab59a8683dd8f6347fcea5a206069b58b5a7eb4d5b28a0c3927ee1962f9"
+  },
+  {
+   "path": "work-packages/WP-11/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 51768,
+   "sha256": "047c0e93f0f13410ead276870cc13811651a12f5f73a8d807e7696e37709c35f"
+  },
+  {
+   "path": "work-packages/WP-11/02_DEPENDENCIES.md",
+   "bytes": 538,
+   "sha256": "d43b51455d607b1737315ee086466e6727330bf39ef6cd8e25c1d68db83a9631"
+  },
+  {
+   "path": "work-packages/WP-11/03_FUNCTION_CONTRACTS.md",
+   "bytes": 12347,
+   "sha256": "fe05f4341c646b2c04ed22207bdd71236292ab99883423152e3ca102a46fa74b"
+  },
+  {
+   "path": "work-packages/WP-11/04_DATA_MODEL.md",
+   "bytes": 1863,
+   "sha256": "bf5aa64fd017df36bdb3e6c94dbb5cb807c98c96743462d52ea913395d75a047"
+  },
+  {
+   "path": "work-packages/WP-11/05_API_EVENT_CONTRACTS.md",
+   "bytes": 4278,
+   "sha256": "177506bfb2997d6a6699f4e09c996249bfd6927472b1bb6cc5d4c3226257ac83"
+  },
+  {
+   "path": "work-packages/WP-11/06_UI_WORKFLOWS.md",
+   "bytes": 2899,
+   "sha256": "3d1ce3db358a05e82b279d33ceb530ebb9b075180896c95c9c622382aa1363cf"
+  },
+  {
+   "path": "work-packages/WP-11/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 471,
+   "sha256": "00f81cc6cfb50671205c0e62d39533ae74329fb56148e94e74cfbd148fcee591"
+  },
+  {
+   "path": "work-packages/WP-11/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 2885,
+   "sha256": "36523cda4898601c5ff8f0ee2a7d2293c2575edaa4179cdd856d14fbb24368f1"
+  },
+  {
+   "path": "work-packages/WP-11/09_TEST_PLAN.md",
+   "bytes": 5316,
+   "sha256": "160d2b0d2bc70f63fe9457acba40c1bdd9fedad4d6f4a37ce3cceb5d6f9b8724"
+  },
+  {
+   "path": "work-packages/WP-11/10_VALIDATION_IMPACT.md",
+   "bytes": 1500,
+   "sha256": "66aae72336e4355956c64069dad8df4e0defcc21a35f31811b8861e1e2905a82"
+  },
+  {
+   "path": "work-packages/WP-11/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1751,
+   "sha256": "c56c053f0f06b853f839c22c391175a2da78d782323da097f9a27ce20d790ae2"
+  },
+  {
+   "path": "work-packages/WP-11/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "866e8c388dfddcbde55029aff48118209a9a6b6846a77c0d5c14ccbefac8d353"
+  },
+  {
+   "path": "work-packages/WP-11/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 2523,
+   "sha256": "0a4d21e0b8c28bdf58710d67c5d07b10dfa73657d159cbafaeb9f83cd7f1e3ad"
+  },
+  {
+   "path": "work-packages/WP-11/CLAUDE_CODE_PROMPT.md",
+   "bytes": 4795,
+   "sha256": "500f0a928a086677e8787632130d1f431b46a919683f81a35201239c98074d0a"
+  },
+  {
+   "path": "work-packages/WP-11/README.md",
+   "bytes": 1211,
+   "sha256": "7f94c1b7f8b63052b01c80d37d0a9952606fc9a150a38e4adf78ff3f372fa3ac"
+  },
+  {
+   "path": "work-packages/WP-12/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 44568,
+   "sha256": "50b57e919c73508240af52843797bae8b22f7c8d840bfc58f9809b4a0691f337"
+  },
+  {
+   "path": "work-packages/WP-12/02_DEPENDENCIES.md",
+   "bytes": 576,
+   "sha256": "41f6bfd3251287904fae07b212209e1f5f01666cc667833590536aa0227dcd8c"
+  },
+  {
+   "path": "work-packages/WP-12/03_FUNCTION_CONTRACTS.md",
+   "bytes": 11923,
+   "sha256": "48d70ab5a5792affbea81a993f4f376f8a02c2ec3738f658d0cc0e492f980fdc"
+  },
+  {
+   "path": "work-packages/WP-12/04_DATA_MODEL.md",
+   "bytes": 3253,
+   "sha256": "87e1387b71394922e1a92aa70402e1d683e83b84ef07252a2bb49e1c80f432d3"
+  },
+  {
+   "path": "work-packages/WP-12/05_API_EVENT_CONTRACTS.md",
+   "bytes": 7240,
+   "sha256": "46f291608ae1664d11e9ea75f49c607f4ab19b289d3a898391ce012da5dd362b"
+  },
+  {
+   "path": "work-packages/WP-12/06_UI_WORKFLOWS.md",
+   "bytes": 3590,
+   "sha256": "e8e146f87ec2341074f38c8b12bdf5696aa9720d790b0bb15d42dfd49d014968"
+  },
+  {
+   "path": "work-packages/WP-12/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 1440,
+   "sha256": "bbd4d7f61e24800f5ce8e7c60259f29de9ef022983e40b3e86edb4501a27f1e5"
+  },
+  {
+   "path": "work-packages/WP-12/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 4266,
+   "sha256": "65ab446c502df80930b3fe2fd014d7972ff6557ce5e152d4196ffcd644eb1877"
+  },
+  {
+   "path": "work-packages/WP-12/09_TEST_PLAN.md",
+   "bytes": 5580,
+   "sha256": "92e766a695c3dd7baa4f69d4512166665a2ce9fdc3ade2ac4d7d39dc21621e60"
+  },
+  {
+   "path": "work-packages/WP-12/10_VALIDATION_IMPACT.md",
+   "bytes": 2025,
+   "sha256": "90b6f34bc92edfbcfc9c6d42431b68c5c435892d8ee602f7a008215a17e6fc3d"
+  },
+  {
+   "path": "work-packages/WP-12/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 2061,
+   "sha256": "9d383af53d41bdcccb179e83c3cf29f4d5de8a7a53a00d27412d343ff4126115"
+  },
+  {
+   "path": "work-packages/WP-12/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "85cdc99149a1f0a462c8ac681b65f8e2aaf9161c59b93aaa36987f92876608c5"
+  },
+  {
+   "path": "work-packages/WP-12/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 3023,
+   "sha256": "6d69e52fa46c5b3fa89ed73776697b6e95be30f380d4240c1ccd9adcef9ea8be"
+  },
+  {
+   "path": "work-packages/WP-12/CLAUDE_CODE_PROMPT.md",
+   "bytes": 5491,
+   "sha256": "4cfb2f10de7608b3a16f6dd26092fcec4c3f73869fa24805d7ecee0218de1c67"
+  },
+  {
+   "path": "work-packages/WP-12/README.md",
+   "bytes": 1286,
+   "sha256": "f456e7325a7ea1a1f5978d98592cd4d927d6c1bceb6864ef6bc6cfdcde3151b7"
+  },
+  {
+   "path": "work-packages/WP-13/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 10289,
+   "sha256": "fe543dd5c6f68d477bb1fbcd68714a38419007ee26603767a9bcb7f286ae20e6"
+  },
+  {
+   "path": "work-packages/WP-13/02_DEPENDENCIES.md",
+   "bytes": 506,
+   "sha256": "a64fcffb1c49d190f9553867f70074bfc8b1cc1e106b9b6416de1d1598c97afc"
+  },
+  {
+   "path": "work-packages/WP-13/03_FUNCTION_CONTRACTS.md",
+   "bytes": 2702,
+   "sha256": "522913e727dee46f4041d3b59dc3ec7cac1610d75f2800edb857c48fe32b0698"
+  },
+  {
+   "path": "work-packages/WP-13/04_DATA_MODEL.md",
+   "bytes": 315,
+   "sha256": "20e6953383b705facd6f519c82461431a4e77a1e35ad91440b583f2d9c390371"
+  },
+  {
+   "path": "work-packages/WP-13/05_API_EVENT_CONTRACTS.md",
+   "bytes": 409,
+   "sha256": "ed62be2b411401ecc057089a5b19ebd59977213f2233a8ac2117ad9460c6e246"
+  },
+  {
+   "path": "work-packages/WP-13/06_UI_WORKFLOWS.md",
+   "bytes": 200,
+   "sha256": "fc211ec994ce075bceedf765cb5f35955c2e982c25271ac0b475be4e8d6216c6"
+  },
+  {
+   "path": "work-packages/WP-13/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 471,
+   "sha256": "938f576a4a9d79321644500125d2a1396e60d3263ccb3c0c4e96a23ebdf133fe"
+  },
+  {
+   "path": "work-packages/WP-13/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 343,
+   "sha256": "7decbbdd48a13ac3b433fca18fdbd036e15f5e8a3afd58ed47eddff9d5851020"
+  },
+  {
+   "path": "work-packages/WP-13/09_TEST_PLAN.md",
+   "bytes": 1010,
+   "sha256": "e15f0b2da4d6ceef9dbf4b336eef1d57d702aa5fb62fd40d2641c23b33ab155d"
+  },
+  {
+   "path": "work-packages/WP-13/10_VALIDATION_IMPACT.md",
+   "bytes": 527,
+   "sha256": "421408ea15a4effe073bc2082392a443365ff246a063b485489c84b505d15e89"
+  },
+  {
+   "path": "work-packages/WP-13/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1194,
+   "sha256": "8bf9fbacb5ac762e978e6eab07a8cfdc0ddc3325bc9892291f6e5c40d41894b4"
+  },
+  {
+   "path": "work-packages/WP-13/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "06be26e9d809878d50155278dc3043c3c23934a7c15843c74810b817e17c4051"
+  },
+  {
+   "path": "work-packages/WP-13/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 1567,
+   "sha256": "7f4e5168c09c23325f8e8d462ba2363dd183d03e30bca30958963ba4e6757e3c"
+  },
+  {
+   "path": "work-packages/WP-13/CLAUDE_CODE_PROMPT.md",
+   "bytes": 3420,
+   "sha256": "b6650647be01271920d4d1720e0fbb51cb435b374b1dec43c93a1fb2396859e6"
+  },
+  {
+   "path": "work-packages/WP-13/README.md",
+   "bytes": 1138,
+   "sha256": "9cf6cf1379abc708b45085c98a29fdfd74120dfa51f38fc8c31cc7d77036e5bd"
+  },
+  {
+   "path": "work-packages/WP-14/01_SCOPE_AND_REQUIREMENTS.md",
+   "bytes": 8470,
+   "sha256": "1bc98549ca7cc8f76b329b3384d68c8e66d52eecccc9605567d9370733d8bac1"
+  },
+  {
+   "path": "work-packages/WP-14/02_DEPENDENCIES.md",
+   "bytes": 492,
+   "sha256": "3fff212a86f91ae6242b89e70466b389e39a39f16ef7f1f20dc33bc3c9210d0c"
+  },
+  {
+   "path": "work-packages/WP-14/03_FUNCTION_CONTRACTS.md",
+   "bytes": 2824,
+   "sha256": "e094832297a7ffa1f5e3b39a52529bf7d94ce6df94267e58d6063ffbb59a354e"
+  },
+  {
+   "path": "work-packages/WP-14/04_DATA_MODEL.md",
+   "bytes": 973,
+   "sha256": "ddf88359f9792fe636abd83da5caf48d1cf7bbf38004954e93edbd19f932eef0"
+  },
+  {
+   "path": "work-packages/WP-14/05_API_EVENT_CONTRACTS.md",
+   "bytes": 1881,
+   "sha256": "d11a7390490557c2d5f7db257fa69e7d580273ac81f6144e8ef21ef3c2e61941"
+  },
+  {
+   "path": "work-packages/WP-14/06_UI_WORKFLOWS.md",
+   "bytes": 835,
+   "sha256": "ffdf228c91ed6e651cf48b679a1c2923f4962d6abeaa0cd8f841d29df7e667e0"
+  },
+  {
+   "path": "work-packages/WP-14/07_SECURITY_AUTH_SIGNATURE.md",
+   "bytes": 883,
+   "sha256": "37280818b6f198f261d906b14cc352d6fb14b3abc75122a7c7d0419d7d6fee96"
+  },
+  {
+   "path": "work-packages/WP-14/08_IMPLEMENTATION_SEQUENCE.md",
+   "bytes": 929,
+   "sha256": "a039db535a7106a43b92914a056e411a25c8f6f1a12e2804f163c0659a149d6e"
+  },
+  {
+   "path": "work-packages/WP-14/09_TEST_PLAN.md",
+   "bytes": 1355,
+   "sha256": "14e4b79e9b0bfb9b8fed222585165acae9d5e718f17ad138f8523f151eb746eb"
+  },
+  {
+   "path": "work-packages/WP-14/10_VALIDATION_IMPACT.md",
+   "bytes": 741,
+   "sha256": "e9f0f09b6cfb440b5ed7d27f7fd60a429cec9260f532758ea3f2c5ecb2edf14b"
+  },
+  {
+   "path": "work-packages/WP-14/11_ACCEPTANCE_CHECKLIST.md",
+   "bytes": 1317,
+   "sha256": "8d66ef080d45fda9906386a0d60108100d0acfa9d03d6bab7234b68384f28e93"
+  },
+  {
+   "path": "work-packages/WP-14/12_SPEC_GAPS.md",
+   "bytes": 531,
+   "sha256": "a2d80e04433ee78cc3ad972671c39d662e6a34ddf4aff9377dfbd685c8a6560c"
+  },
+  {
+   "path": "work-packages/WP-14/13_TRACEABILITY_AND_STATUS.md",
+   "bytes": 1775,
+   "sha256": "e5c6f31ba5251b2e325fbecb6cd8c200b937dce43f35860886eab5e8a51a24f4"
+  },
+  {
+   "path": "work-packages/WP-14/CLAUDE_CODE_PROMPT.md",
+   "bytes": 3724,
+   "sha256": "426e9c7f2407ce0efb63b50fa94d6a27f892bd0b65cc32cccc6ec58c4391bdd9"
+  },
+  {
+   "path": "work-packages/WP-14/README.md",
+   "bytes": 1149,
+   "sha256": "702630e7e552ccfc8fee494c9eb67e8cb519d30ece97dc394dc3b71ab3a3a83b"
+  }
+ ]
+}

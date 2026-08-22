@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Equipment/line clearance · MD · NZ-eBMR</title>
+<link rel="stylesheet" href="../../../assets/css/ebmr-fonts.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-tokens.css">
+<link rel="stylesheet" href="../../../assets/css/ebmr-components.css">
+
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-mark"><span class="icon" data-icon="gauge"></span></div><div><div class="fs-3 font-bold" style="color:var(--ink-primary)">NZ-eBMR</div><div class="fs-1" style="color:var(--ink-muted)">MD · Production</div></div></div>
+    <nav class="sidebar-nav scrollbar-thin">
+      <a href="../menu.html" class="sidebar-link"><span class="icon" data-icon="arrow-left"></span> All work areas</a>
+      <div class="sidebar-section">Production</div>
+      <a href="new-batch.html" class="sidebar-link"><span class="icon" data-icon="file-plus-2"></span> Create a batch</a>
+      <a href="control-board.html" class="sidebar-link"><span class="icon" data-icon="gauge"></span> Control board</a>
+      <a href="readiness.html" class="sidebar-link"><span class="icon" data-icon="list-checks"></span> Readiness checklist</a>
+      <a href="execution.html" class="sidebar-link"><span class="icon" data-icon="cross-medical"></span> Guided execution</a>
+      <a href="material-scan.html" class="sidebar-link"><span class="icon" data-icon="scan"></span> Material scan/issue</a>
+      <a href="equipment.html" class="sidebar-link" aria-current="page"><span class="icon" data-icon="gauge"></span> Equipment/line clearance</a>
+      <a href="verification.html" class="sidebar-link"><span class="icon" data-icon="user"></span> Independent verification</a>
+      <a href="inspection.html" class="sidebar-link"><span class="icon" data-icon="search"></span> Inspection/sampling result</a>
+      <a href="timer-yield.html" class="sidebar-link"><span class="icon" data-icon="clock"></span> Timer/yield/reconciliation</a>
+      <a href="pause.html" class="sidebar-link"><span class="icon" data-icon="alert-circle"></span> Pause/interruption</a>
+      <a href="hold.html" class="sidebar-link"><span class="icon" data-icon="flag"></span> Hold/issue</a>
+      <a href="packaging.html" class="sidebar-link"><span class="icon" data-icon="package"></span> Packaging/label control</a>
+      <a href="lab.html" class="sidebar-link"><span class="icon" data-icon="database"></span> Lab dependency panel</a>
+      <a href="correction.html" class="sidebar-link"><span class="icon" data-icon="pen"></span> Correction/late-entry</a>
+      <a href="completion.html" class="sidebar-link"><span class="icon" data-icon="clipboard"></span> Completion review</a>
+      <div class="sidebar-section">Organisation</div>
+      <a href="../../setup/checklist.html" class="sidebar-link" data-role-allow="admin"><span class="icon" data-icon="list-checks"></span> Setup &amp; masters</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="../../001-sign-in.html" class="sidebar-link"><span class="icon" data-icon="log-out"></span> Sign out</a>
+    </div>
+  </aside>
+  <div class="main-col">
+    <div class="context-bar">
+      <span class="context-item"><span class="profile-marker" data-profile="md" style="padding:2px 8px"><span class="icon" data-icon="cross-medical"></span> Medical Device</span></span>
+      <span class="context-item"><span class="k">Line</span><span class="v">Site 2 · Line B</span></span>
+      <span class="context-item"><span class="commit-indicator" data-commit="committed"><span class="dot"></span> Committed</span></span>
+      <span class="context-item"><span class="k">Signed in</span><span class="v">A. Desai — Production Supervisor</span></span>
+      <span class="context-clock"><span class="icon" data-icon="clock"></span> 05 Aug 2026, 14:02 EDT</span>
+    </div>
+    <header class="topbar">
+      <button data-sidebar-toggle class="btn-icon btn-ghost"><span class="icon" data-icon="menu"></span></button>
+      <div class="breadcrumb"><a href="../menu.html">MD</a>
+        <span class="icon" data-icon="chevron-right"></span>
+        <span class="font-semibold" style="color:var(--ink-primary)">Equipment &amp; Line Clearance Readiness</span></div>
+      
+    </header>
+    <main id="main" class="content">
+      <div class="page-head"><div>
+        <h1 class="page-title">Equipment &amp; Line Clearance Readiness</h1>
+        <p class="page-subtitle">UX-SCR-014 · Readiness and use/clearance events for equipment on this line</p>
+      </div></div>
+      <div class="card mb-4 ">
+        <div class="card-header"><div class="card-title">Equipment on Line B</div></div>
+        <div class="table-wrap" style="border:none;border-top:1px solid var(--border-hairline)">
+          <table class="data-table">
+            <thead><tr><th>Equipment</th><th>Class</th><th>Calibration</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td><span class="font-semibold">EQ-7710</span></td><td>Leak tester</td><td><span class="tabular">Overdue since 28 Jul 2026</span></td><td><span class="state" data-state="failed"><span class="icon" data-icon="x"></span> Calibration overdue</span></td></tr>
+              <tr><td><span class="font-semibold">TF-11</span></td><td>Test fixture</td><td><span class="tabular">Current — expires 04 Oct 2026</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Cleared</span></td></tr>
+              <tr><td><span class="font-semibold">ASM-2</span></td><td>Assembly bench</td><td><span class="tabular">Not applicable</span></td><td><span class="state" data-state="accepted"><span class="icon" data-icon="check-circle"></span> Cleared</span></td></tr>
+              <tr><td><span class="font-semibold">Line B</span></td><td>Line</td><td><span class="tabular">—</span></td><td><span class="state" data-state="conflict"><span class="icon" data-icon="alert-triangle"></span> Clearance required</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card card-pad"><div class="flex gap-3"><button class="btn btn-primary"><span class="icon" data-icon="check"></span> Record clearance</button><button class="btn btn-secondary" disabled>Use equipment</button></div><p class="btn-reason"><span class="icon" data-icon="lock"></span> EQ-7710 cannot be used — calibration overdue. This is stated, not silently hidden.</p></div>
+    </main>
+  </div>
+</div>
+<script src="../../../assets/js/ebmr-ui.js"></script>
+</body>
+</html>

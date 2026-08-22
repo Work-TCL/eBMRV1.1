@@ -1,0 +1,18 @@
+# Ownership per docs/generated/35_REPOSITORY_OWNERSHIP_RELEASE_MAP.md
+/specs/                       @specification-owner @head-of-quality
+/CLAUDE.md                    @platform-architect
+/.claude/                     @platform-architect
+/docs/generated/              @platform-architect @validation-lead
+/docs/adr/                    @platform-architect
+/services/gxp-api/            @gxp-core-lead @validation-lead
+/services/gxp-api/src/modules/signature/  @gxp-core-lead @head-of-quality
+/services/gxp-api/src/modules/audit/      @gxp-core-lead @head-of-quality
+/services/gxp-api/src/modules/vault/      @gxp-core-lead @head-of-quality
+/services/security/           @security-lead @security-officer
+/services/integration-gateway/ @integration-lead
+/services/ai-gateway/         @ai-lead @head-of-quality @security-officer
+/apps/ebmr_frappe/            @application-lead
+/edge/                        @edge-lead @security-officer
+/contracts/                   @contract-owner @platform-architect
+/infrastructure/              @sre-lead @security-officer
+/validation/                  @validation-lead @head-of-quality
