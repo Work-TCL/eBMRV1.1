@@ -1,0 +1,480 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QMS-006 — Training & Personnel Qualification
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-05 Document 31 slice actually built
+    (`services/gxp-api/app/modules/qms/training_*.py`): requirement (curriculum) -> assignment (ASSIGNED
+    -> ASSESSMENT_PENDING/COMPLETED, or -> FAILED) -> qualification issuance/renewal -> waiver, matching
+    the module's own 8-op API list exactly (`/training/v1`), plus the `signature-challenges`
+    ceremony-entry-point endpoint (SG-138 engineering half, not in Document 31's own list — contracted
+    because the router implements it).
+
+
+    TRN-FR-016's platform-wide execution gate ("Policy Service blocks operation when training/
+    qualification inactive") is cross-module by nature — the enforcement point would be in every OTHER
+    module's Mutation Gateway call, reading this module's own state, which is not wired yet. See
+    docs/generated/18_SPEC_GAPS.md SG-086..SG-090.
+
+
+    Signature ceremony on assignment create/complete/assess, per the module's own 8-op API list —
+    requirements/qualifications/waivers carry no signature column. **UPDATE (same day, later pass):**
+    `create` originally had no signature-challenges entry point — `create_assignment()` flushed the new
+    `TrainingAssignment` row and only then tried to consume a `challenge_id` the caller must already
+    hold, but no challenge could be issued for a record that didn't exist yet at request time. Fixed:
+    `POST /training/v1/assignments/signature-challenges` (no path id) pregenerates the assignment's UUID
+    server-side, binds the challenge to `(id, version=1)` — the version every new row in this codebase
+    starts at — and returns that id to the caller as `assignment_id` for the subsequent
+    `POST /training/v1/assignments` call (`CreateTrainingAssignmentCommand.assignment_id`). `POST
+    /training/v1/assignments/{assignment_id}/signature-challenges` (with a path id) continues to cover
+    only complete/assess, unchanged. All three actions return `SIGNATURE_POLICY_UNRESOLVED` today
+    regardless (SG-138's policy-data half is still open).
+tags:
+  - name: qms-training-qualification
+
+paths:
+  /training/v1/requirements:
+    post:
+      operationId: postCreateRequirement
+      tags: [qms-training-qualification]
+      summary: Define a training/curriculum requirement (TRN-FR-001/002/004)
+      description: Requires `training.requirement.create`. `source_type` must be one of Document 31's six sources; `training_type` one of its seven types.
+      x-requirement-ids: [TRN-FR-001, TRN-FR-002, TRN-FR-004, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateTrainingRequirementCommand' } } }
+      responses:
+        '200': { description: Created. `aggregate_id` is the requirement id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — unrecognized source_type/training_type, or blank title.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /training/v1/assignments:
+    post:
+      operationId: postCreateAssignment
+      tags: [qms-training-qualification]
+      summary: Assign a requirement to a subject, snapshotting the requirement's content version (TRN-FR-003/005/012/021)
+      description: >
+        Requires `training.assignment.create`. Resolves the `training_assignment`/`create` Document 106
+        policy. `assignment_id` may be supplied (from `POST /training/v1/assignments/signature-challenges`'s
+        response) to bind this row to a challenge already obtained for it — see the module-level note.
+      x-requirement-ids: [TRN-FR-003, TRN-FR-005, TRN-FR-012, TRN-FR-021, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateTrainingAssignmentCommand' } } }
+      responses:
+        '200': { description: Assigned, state ASSIGNED. `aggregate_id` is the assignment id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "IDEMPOTENCY_CONFLICT or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /training/v1/assignments/signature-challenges:
+    post:
+      operationId: postCreateAssignmentSignatureChallenge
+      tags: [qms-training-qualification]
+      summary: Create the Part 11 signature challenge for a not-yet-created assignment's "create" action (SG-138 fix)
+      description: >
+        Not in Document 31's own 8-op API list; contracted because the router implements it. No path id
+        — the assignment row does not exist yet at challenge time. Pregenerates the assignment's UUID
+        server-side, resolves the `training_assignment`/`create` Document 106 policy, and binds the
+        challenge to `(id, version=1)`. Returns that id as `assignment_id` for the caller to pass into
+        the subsequent `POST /training/v1/assignments` call. Returns `SIGNATURE_POLICY_UNRESOLVED` today
+        (SG-138's policy-data half is still open).
+      x-requirement-ids: [TRN-FR-003, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateAssignmentSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/CreateAssignmentSignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not \"create\".", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /training/v1/assignments/{assignment_id}/signature-challenges:
+    parameters:
+      - { name: assignment_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAssignmentSignatureChallenge
+      tags: [qms-training-qualification]
+      summary: Create the Part 11 signature challenge for complete/assess (SG-138 engineering half)
+      description: >
+        Not in Document 31's own 8-op API list; contracted because the router implements it. Deliberately
+        does not accept `action: create` — see the module-level description for why. Resolves the
+        `training_assignment`/`{action}` Document 106 policy and binds a challenge to the current
+        assignment's id/version/hash. Returns `SIGNATURE_POLICY_UNRESOLVED` today for both actions
+        (SG-138's policy-data half is still open).
+      x-requirement-ids: [TRN-FR-006, TRN-FR-007, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AssignmentSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not one of complete/assess.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /training/v1/assignments/{assignment_id}/complete:
+    parameters:
+      - { name: assignment_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCompleteAssignment
+      tags: [qms-training-qualification]
+      summary: Complete an assignment — signed per Document 106 (TRN-FR-006/017)
+      description: >
+        Requires `training.assignment.complete`. ASSIGNED -> ASSESSMENT_PENDING (if the requirement
+        requires assessment) or -> COMPLETED. `trainer_user_id` is checked against
+        `required_trainer_qualification_code` when the requirement declares one (TRN-FR-017).
+        Equivalency credit requires `equivalency_evidence` and `equivalency_approved_by_user_id`
+        (TRN-FR-014). Resolves the `training_assignment`/`complete` Document 106 policy.
+      x-requirement-ids: [TRN-FR-006, TRN-FR-014, TRN-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CompleteTrainingAssignmentCommand' } } }
+      responses:
+        '200': { description: Completed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, TRAINER_NOT_QUALIFIED, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (equivalency_credit missing evidence/approver) or assignment_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /training/v1/assignments/{assignment_id}/assess:
+    parameters:
+      - { name: assignment_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAssessAssignment
+      tags: [qms-training-qualification]
+      summary: Assess an exam/practical assignment — signed per Document 106 (TRN-FR-007/008)
+      description: Requires `training.assignment.assess`. ASSESSMENT_PENDING -> COMPLETED (passed) or -> FAILED. Resolves the `training_assignment`/`assess` Document 106 policy.
+      x-requirement-ids: [TRN-FR-007, TRN-FR-008, TRN-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AssessTrainingAssignmentCommand' } } }
+      responses:
+        '200': { description: Assessed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, TRAINER_NOT_QUALIFIED, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: assignment_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /training/v1/qualifications:
+    post:
+      operationId: postCreateQualification
+      tags: [qms-training-qualification]
+      summary: Issue or renew a qualification (TRN-FR-009/010)
+      description: Requires `training.qualification.create`. `source_assignment_id`, if given, must reference a COMPLETED assignment; `renewed_from_qualification_id`, if given, marks the prior record RENEWED.
+      x-requirement-ids: [TRN-FR-009, TRN-FR-010, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateQualificationCommand' } } }
+      responses:
+        '200': { description: Issued, state QUALIFIED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — missing qualification_code, or source_assignment not COMPLETED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /training/v1/waivers:
+    post:
+      operationId: postCreateWaiver
+      tags: [qms-training-qualification]
+      summary: Waive a requirement for a subject (TRN-FR-015)
+      description: Requires `training.waiver.create`. `approved_by_user_id` must differ from `subject_id` (WAIVER_NOT_AUTHORIZED otherwise).
+      x-requirement-ids: [TRN-FR-015, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateWaiverCommand' } } }
+      responses:
+        '200': { description: Created., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "IDEMPOTENCY_CONFLICT or WAIVER_NOT_AUTHORIZED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — reason required.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /training/v1/subjects/{subject_id}/status:
+    parameters:
+      - { name: subject_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getSubjectStatus
+      tags: [qms-training-qualification]
+      summary: One subject's assignments and qualifications (TRN-FR-020/023)
+      x-requirement-ids: [TRN-FR-020, TRN-FR-023]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubjectStatusResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /training/v1/matrix:
+    get:
+      operationId: getMatrix
+      tags: [qms-training-qualification]
+      summary: Role-vs-required training matrix for a site (TRN-FR-020)
+      x-requirement-ids: [TRN-FR-020]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: site_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/TrainingMatrixResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    TrainingSourceType:
+      type: string
+      description: "`SOURCE_TYPES` in `app/modules/qms/training_models.py` (TRN-FR-002)."
+      x-requirement-ids: [TRN-FR-002]
+      enum: [document, role, qualification, change, capa, manager_assignment]
+
+    TrainingType:
+      type: string
+      description: "`TRAINING_TYPES` (TRN-FR-004)."
+      x-requirement-ids: [TRN-FR-004]
+      enum: [read_and_understand, instructor_led, practical_ojt, exam, demonstration, qualification, recurring]
+
+    AssignmentState:
+      type: string
+      description: "`ASSIGNMENT_STATES`."
+      x-requirement-ids: [TRN-FR-003, CTR-FR-017]
+      enum: [ASSIGNED, ASSESSMENT_PENDING, COMPLETED, FAILED]
+
+    QualificationState:
+      type: string
+      description: "`QUALIFICATION_STATES`. No operation sets EXPIRING/EXPIRED explicitly — only QUALIFIED at issuance and RENEWED on supersession."
+      x-requirement-ids: [TRN-FR-009, TRN-FR-010, CTR-FR-017]
+      enum: [QUALIFIED, EXPIRING, EXPIRED, RENEWED]
+
+    TrainingAssignment:
+      type: object
+      description: One training assignment (`app/modules/qms/training_router.py:_assignment_dict`). A response schema, so not closed.
+      x-requirement-ids: [TRN-FR-003, TRN-FR-006]
+      required: [id, subject_id, requirement_id, state, attempt_number, version]
+      properties:
+        id: { type: string, format: uuid }
+        subject_id: { type: string, format: uuid }
+        requirement_id: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/AssignmentState' }
+        result: { type: [string, "null"] }
+        assigned_at: { type: [string, "null"], format: date-time }
+        due_at: { type: [string, "null"], format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+        score: { type: [number, "null"] }
+        attempt_number: { type: integer, minimum: 1 }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+
+    QualificationRecord:
+      type: object
+      description: One qualification record (`app/modules/qms/training_router.py:_qualification_dict`). A response schema, so not closed.
+      x-requirement-ids: [TRN-FR-009, TRN-FR-010]
+      required: [id, subject_id, qualification_code, state, version]
+      properties:
+        id: { type: string, format: uuid }
+        subject_id: { type: string, format: uuid }
+        qualification_code: { type: string }
+        state: { $ref: '#/components/schemas/QualificationState' }
+        effective_from: { type: [string, "null"], format: date-time }
+        effective_to: { type: [string, "null"], format: date-time }
+        version: { type: integer, minimum: 1 }
+
+    SubjectStatusResult:
+      type: object
+      description: getSubjectStatus's response.
+      x-requirement-ids: [TRN-FR-020, TRN-FR-023]
+      required: [subject_id, assignments, qualifications]
+      properties:
+        subject_id: { type: string, format: uuid }
+        assignments: { type: array, items: { $ref: '#/components/schemas/TrainingAssignment' } }
+        qualifications: { type: array, items: { $ref: '#/components/schemas/QualificationRecord' } }
+
+    TrainingMatrixRow:
+      type: object
+      description: One requirement's row in getMatrix's response.
+      x-requirement-ids: [TRN-FR-020]
+      required: [requirement_id, title, training_type, assigned_count, completed_count, failed_count, open_count]
+      properties:
+        requirement_id: { type: string, format: uuid }
+        title: { type: string }
+        training_type: { $ref: '#/components/schemas/TrainingType' }
+        assigned_count: { type: integer, minimum: 0 }
+        completed_count: { type: integer, minimum: 0 }
+        failed_count: { type: integer, minimum: 0 }
+        open_count: { type: integer, minimum: 0 }
+
+    TrainingMatrixResult:
+      type: object
+      description: getMatrix's response.
+      x-requirement-ids: [TRN-FR-020]
+      required: [site_id, requirements]
+      properties:
+        site_id: { type: string, format: uuid }
+        requirements: { type: array, items: { $ref: '#/components/schemas/TrainingMatrixRow' } }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postAssignmentSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    AssignmentSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own. Deliberately does not accept "create" — see the module-level description.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [complete, assess] }
+
+    CreateAssignmentSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload for postCreateAssignmentSignatureChallenge. Only "create" — the sibling of AssignmentSignatureChallengeRequest's complete/assess, split into its own endpoint because it has no path id (SG-138 fix).
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [create] }
+
+    CreateAssignmentSignatureChallengeResponse:
+      type: object
+      description: postCreateAssignmentSignatureChallenge's response — SignatureChallengeResponse plus the server-pregenerated assignment_id the caller must pass into the subsequent POST /training/v1/assignments call.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at, assignment_id]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+        assignment_id: { type: string, format: uuid }
+
+    CreateTrainingRequirementCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [TRN-FR-001, TRN-FR-002, TRN-FR-004, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, title, source_type, training_type]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        title: { type: string }
+        source_type: { $ref: '#/components/schemas/TrainingSourceType' }
+        training_type: { $ref: '#/components/schemas/TrainingType' }
+        scope: { type: [object, "null"], description: TRN-FR-001 multi-dimensional curriculum scope (role/site/department/product/process/equipment/area). }
+        source_reference_id: { type: [string, "null"], format: uuid }
+        content_document_version_id: { type: [string, "null"], format: uuid, description: "TRN-FR-005 real FK to controlled_document_version." }
+        recurrence_interval_days: { type: [integer, "null"] }
+        requires_assessment: { type: boolean, default: false }
+        pass_score: { type: [number, "null"] }
+        required_trainer_qualification_code: { type: [string, "null"], description: TRN-FR-017. }
+
+    CreateTrainingAssignmentCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [TRN-FR-003, TRN-FR-012, TRN-FR-021, TRN-FR-022, MUT-FR-005, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, requirement_id, subject_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        requirement_id: { type: string, format: uuid }
+        subject_id: { type: string, format: uuid }
+        due_at: { type: [string, "null"], format: date-time }
+        retrain_of_assignment_id: { type: [string, "null"], format: uuid, description: TRN-FR-012/022 links a retraining assignment to the one it supersedes. }
+        retraining_trigger: { type: [string, "null"] }
+        waiver_id: { type: [string, "null"], format: uuid }
+        external_source: { type: [string, "null"], description: TRN-FR-021. }
+        external_reference: { type: [string, "null"] }
+        assignment_id: { type: [string, "null"], format: uuid, description: "From POST /training/v1/assignments/signature-challenges's response — binds this row to an already-obtained create challenge (SG-138)." }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    CompleteTrainingAssignmentCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [TRN-FR-006, TRN-FR-014, TRN-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, assignment_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        assignment_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        trainer_user_id: { type: [string, "null"], format: uuid }
+        evidence_vault_object_id: { type: [string, "null"], format: uuid }
+        equivalency_credit: { type: boolean, default: false, description: TRN-FR-014. }
+        equivalency_evidence: { type: [string, "null"], description: Required when equivalency_credit is true. }
+        equivalency_approved_by_user_id: { type: [string, "null"], format: uuid, description: Required when equivalency_credit is true. }
+        reason: { type: [string, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    AssessTrainingAssignmentCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [TRN-FR-007, TRN-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, assignment_id, expected_version, passed]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        assignment_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        passed: { type: boolean }
+        score: { type: [number, "null"] }
+        practical_checklist: { type: [object, "null"], description: TRN-FR-008. }
+        trainer_user_id: { type: [string, "null"], format: uuid }
+        reason: { type: [string, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    CreateQualificationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [TRN-FR-009, TRN-FR-010, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, subject_id, qualification_code, effective_from]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        subject_id: { type: string, format: uuid }
+        qualification_code: { type: string }
+        effective_from: { type: string, format: date-time }
+        effective_to: { type: [string, "null"], format: date-time }
+        scope: { type: [object, "null"] }
+        evaluator_user_id: { type: [string, "null"], format: uuid }
+        source_assignment_id: { type: [string, "null"], format: uuid, description: Must reference a COMPLETED assignment if given. }
+        renewed_from_qualification_id: { type: [string, "null"], format: uuid, description: TRN-FR-010, marks the prior record RENEWED. }
+
+    CreateWaiverCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [TRN-FR-015, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, subject_id, requirement_id, reason, approved_by_user_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        subject_id: { type: string, format: uuid }
+        requirement_id: { type: string, format: uuid }
+        reason: { type: string }
+        approved_by_user_id: { type: string, format: uuid, description: Must differ from subject_id (WAIVER_NOT_AUTHORIZED otherwise). }
+        scope: { type: [object, "null"] }
+        expires_at: { type: [string, "null"], format: date-time }

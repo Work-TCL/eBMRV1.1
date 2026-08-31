@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qms-009.json",
+  "title": "SPEC-QMS-009 \u2014 Internal Audit Management Events",
+  "description": "Document 113 event contract for the 6 event types Document 34's own module (app/modules/qms/internal_audit_commands.py) actually emits. All 6 declared SPEC-QMS-009 events in 07_EVENT_CATALOGUE.yaml are genuinely implemented -- no divergence for this module.\n\nREUSE NOTE: 'AuditFindingOpened' is emitted by both add_finding() (id, audit_id, finding_number, is_repeat_finding) and respond_to_finding() when the response does not close the finding (id, state) -- a response in progress reuses the 'opened' event name. 'AuditReportApproved' is a secondary event on the internal_audit aggregate, written only when add_finding() is adding the audit's FIRST finding (internal_audit_commands.py:306-313) -- not emitted on every finding. Both real, observed characteristics of the built code, not invented here.",
+  "x-requirement-ids": [
+    "AUDIT-FR-001",
+    "AUDIT-FR-002",
+    "AUDIT-FR-006",
+    "AUDIT-FR-007",
+    "AUDIT-FR-009",
+    "AUDIT-FR-010",
+    "AUDIT-FR-011",
+    "AUDIT-FR-014",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "InternalAuditScheduledPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "audit_number"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "audit_number": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "AUDIT-FR-001",
+        "AUDIT-FR-002"
+      ]
+    },
+    "InternalAuditStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "AUDIT-FR-002"
+      ]
+    },
+    "AuditFindingOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted by add_finding() (id, audit_id, finding_number, is_repeat_finding) and respond_to_finding() when the response does not close the finding (id, state) -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "audit_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "finding_number": {
+          "type": "string"
+        },
+        "is_repeat_finding": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "../openapi/spec-qms-009.yaml#/components/schemas/FindingState"
+        }
+      },
+      "x-requirement-ids": [
+        "AUDIT-FR-006",
+        "AUDIT-FR-007",
+        "AUDIT-FR-014"
+      ]
+    },
+    "AuditReportApprovedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Written only when add_finding() adds the audit's first finding (internal_audit_commands.py:313).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "AUDIT-FR-010"
+      ]
+    },
+    "AuditFindingClosedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effective"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "effective": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "AUDIT-FR-009"
+      ]
+    },
+    "InternalAuditClosedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "AUDIT-FR-011"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "InternalAuditScheduled",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-009",
+      "aggregate_type": "internal_audit",
+      "payload": {
+        "$ref": "#/$defs/InternalAuditScheduledPayload"
+      },
+      "x-requirement-ids": [
+        "AUDIT-FR-001",
+        "AUDIT-FR-002"
+      ]
+    },
+    {
+      "event_type": "InternalAuditStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-009",
+      "aggregate_type": "internal_audit",
+      "payload": {
+        "$ref": "#/$defs/InternalAuditStartedPayload"
+      },
+      "x-requirement-ids": [
+        "AUDIT-FR-002"
+      ]
+    },
+    {
+      "event_type": "AuditFindingOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-009",
+      "aggregate_type": "audit_finding",
+      "payload": {
+        "$ref": "#/$defs/AuditFindingOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "AUDIT-FR-006",
+        "AUDIT-FR-007",
+        "AUDIT-FR-014"
+      ]
+    },
+    {
+      "event_type": "AuditReportApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-009",
+      "aggregate_type": "internal_audit",
+      "payload": {
+        "$ref": "#/$defs/AuditReportApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "AUDIT-FR-010"
+      ]
+    },
+    {
+      "event_type": "AuditFindingClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-009",
+      "aggregate_type": "audit_finding",
+      "payload": {
+        "$ref": "#/$defs/AuditFindingClosedPayload"
+      },
+      "x-requirement-ids": [
+        "AUDIT-FR-009"
+      ]
+    },
+    {
+      "event_type": "InternalAuditClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-009",
+      "aggregate_type": "internal_audit",
+      "payload": {
+        "$ref": "#/$defs/InternalAuditClosedPayload"
+      },
+      "x-requirement-ids": [
+        "AUDIT-FR-011"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,267 @@
+openapi: 3.1.0
+info:
+  title: SPEC-GXP-001 — GxP Mutation Gateway (canonical envelopes & platform error registry)
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 03. This file is deliberately **components-only** and declares no
+    paths of its own, because the Mutation Gateway as built is an in-process kernel
+    (`services/gxp-api/app/mutation/`: `check_idempotency`, `write_audit_event`, `write_outbox_event`,
+    `record_command_receipt`) that every owning module's command handler calls from inside its own
+    PostgreSQL transaction. There is no generic command endpoint in the running service.
+
+
+    DIVERGENCE FROM 06_API_CATALOGUE.yaml (recorded, not invented): the catalogue declares four
+    SPEC-GXP-001 operations — `POST /gxp/v1/commands/{commandType}`, `POST /gxp/v1/commands/{command_type}`
+    (a duplicate of the first with a different id/casing), `GET /gxp/v1/commands/{commandId}/receipt` and
+    `GET /gxp/v1/records/{type}/{id}/mutation-history`. **None of the four is implemented**; the running
+    app exposes no `/gxp/` prefix at all. No schema is invented for them here. See SG-013 and SG-139.
+
+
+    What this file therefore owns is the thing Document 113 §2 actually makes canonical and that every
+    other contract needs: the command envelope, the mutation receipt, the error response and the platform
+    error-code registry (§4), plus the shared list envelope. Sibling contracts `$ref` these by relative
+    file path rather than redefining them — SPEC-GXP-001 is the declared owner of command/idempotency/
+    expected-version semantics (Document 03, CTR-FR-031 contract ownership), so a neutral unowned
+    `_common.yaml` would have been a contract surface with no owning module.
+
+
+    Scope note: `expected_version` is NOT a field of the shared envelope. The built `CommandEnvelope`
+    carries only `idempotency_key`; each command that mutates an existing aggregate declares its own
+    `expected_version` field (see spec-gxp-003/004/006 and the WP-02..WP-06 contracts). Commands that
+    create an aggregate have no prior version to assert. This is a real gap against CTRC-FR-006
+    ("expected version universal") for the create-then-transition commands in this work package —
+    recorded in SG-014, not papered over.
+
+tags:
+  - name: gxp-core
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Human session token issued by `POST /auth/token`. Actor identity is resolved server-side from
+        this token only; a client-supplied actor field is never trusted for an authority decision
+        (MUT-FR-002 / Document 113 §3 F5). Non-human (edge gateway) identities use a separate bearer
+        scheme that is never accepted on the same route (see spec-edge-001).
+
+  schemas:
+    CommandEnvelope:
+      type: object
+      additionalProperties: false
+      description: >
+        The canonical state-changing command envelope as built (`app/mutation/schemas.py:CommandEnvelope`,
+        `ConfigDict(extra="forbid")`). Every command payload schema in this platform composes this and
+        closes itself with `additionalProperties: false` (MUT-FR-005 / Document 113 §3 F6).
+
+
+        Document 113 §2 also lists `command_id`, `command_type`, `schema_version`, `tenant_id`, `site_id`,
+        `aggregate_type`, `aggregate_id`, `expected_version`, `requested_at`, `reason` and a nested
+        `payload` object. The built envelope carries none of those as transported request fields: the
+        command type and aggregate type are fixed by the route, the aggregate id is a path parameter,
+        tenant/site scope is derived server-side from the authenticated actor (CTR-FR-011 — an untrusted
+        caller field must not be able to override authenticated scope), `command_id` and `requested_at`
+        are assigned server-side, and `reason`/`expected_version` are declared per command where the
+        domain requires them. This is a deliberate narrowing, not an omission; the compatibility impact
+        is recorded in 37_API_EVENT_COMPATIBILITY_REGISTRY.md.
+      x-requirement-ids: [MUT-FR-005, MUT-FR-010, CTR-FR-004, CTR-FR-008, CTR-FR-011]
+      required: [idempotency_key]
+      properties:
+        idempotency_key:
+          type: string
+          maxLength: 200
+          description: >
+            Client-generated for UI actions; `source_system + source_event_id` for integration and edge
+            callers (Document 113 §5 I2). Replaying the same key with the same payload returns the
+            original receipt and creates no second regulated event (I1); replaying it with a different
+            payload returns `IDEMPOTENCY_CONFLICT` (I4).
+
+    MutationReceipt:
+      type: object
+      additionalProperties: false
+      description: >
+        The canonical response of every committed regulated command
+        (`app/mutation/schemas.py:MutationReceipt`, MUT-FR-019).
+
+
+        Document 113 §2's receipt also lists `previous_version`, `decision`, `signature_ids` (plural),
+        `record_hash`, `committed_at_utc` and `projection_status`. The built receipt returns
+        `resulting_version` without `previous_version`, a single nullable `signature_id`, and omits
+        `decision`/`record_hash`/`committed_at_utc`/`projection_status` — a 200 response *is* the
+        COMMITTED decision, and per-record digests live on the vault object rather than on the receipt.
+        Recorded in 37_API_EVENT_COMPATIBILITY_REGISTRY.md; multi-signature ceremonies (Document 106
+        rows requiring two signers) are modelled today as two separate commands each returning their own
+        receipt, which is why `signature_id` is singular.
+      x-requirement-ids: [MUT-FR-019, MUT-FR-027, CTR-FR-010]
+      required: [command_id, aggregate_id, resulting_version, audit_event_id, correlation_id]
+      properties:
+        command_id:
+          type: string
+          format: uuid
+          description: Identifier of the persisted command receipt row (MUT-FR-028/032).
+        aggregate_id:
+          type: string
+          format: uuid
+        resulting_version:
+          type: integer
+          minimum: 1
+          description: Aggregate version after the commit.
+        audit_event_id:
+          type: string
+          format: uuid
+          description: >
+            The audit event written in the same transaction as the domain state and the outbox row
+            (MUT-FR-015/016/018). A committed receipt without one is impossible by construction.
+        signature_id:
+          type: [string, "null"]
+          format: uuid
+          description: Present only when the resolved signature policy required a signature (MUT-FR-012).
+        correlation_id:
+          type: string
+          format: uuid
+          description: Propagated to the audit event and the outbox event (MUT-FR-027 / CTR-FR-010).
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      description: >
+        The canonical error body emitted by the `GxPError` exception handler in `app/main.py`. Clients
+        branch on `code` and never on `message` (CTR-FR-006).
+
+
+        DIVERGENCE: Document 113 §2 shows `{error_code, message, correlation_id, details}` and Document
+        101 §5 shows a nested `{"error": {code, message, correlation_id, retryable, field_errors}}`. The
+        two source documents disagree with each other, and the built shape matches neither: it is a flat
+        `{code, message, details}` with no `correlation_id` and no `retryable`. The shape is not changed
+        here — all 434 implemented operations already emit it and changing it is a breaking change for
+        every consumer. The three-way conflict is raised as SG-140.
+      x-requirement-ids: [MUT-FR-021, CTR-FR-006, CTRC-FR-004]
+      required: [code, message, details]
+      properties:
+        code:
+          $ref: '#/components/schemas/PlatformErrorCode'
+        message:
+          type: string
+          description: Human readable, localizable, never parsed by clients.
+        details:
+          type: object
+          description: Structured context for the condition (e.g. `{expected_version, current_version}`).
+
+    PlatformErrorCode:
+      type: string
+      description: >
+        Document 113 §4's platform-wide error classes, as actually raised by `app/mutation/errors.py`.
+        Only codes some code path really raises are listed — the same "don't register a code nothing
+        raises" discipline used by every module contract in this repo. Module-specific codes are declared
+        in that module's own contract and take the form `<DOMAIN_NOUN>_<CONDITION>`; reusing one of these
+        platform codes with different semantics is prohibited (Document 113 §4).
+
+
+        Class mapping (Document 113 §4): authentication → UNAUTHORIZED; authorization/scope → FORBIDDEN,
+        ROLE_MISSING, SOD_CONFLICT, QUALIFICATION_MISSING, QUALIFICATION_EXPIRED; schema/validation →
+        VALIDATION_FAILED, NOT_FOUND; state/domain → INVALID_TRANSITION; concurrency/idempotency →
+        STALE_VERSION, IDEMPOTENCY_CONFLICT; signature → MISSING_SIGNATURE,
+        SIGNATURE_CHALLENGE_INVALID, SIGNATURE_POLICY_UNRESOLVED; rules/calculation → RULE_GATE_FAILED;
+        dependency/system → DEPENDENCY_UNAVAILABLE, SYSTEM_FAULT.
+
+
+        Document 113 §4 additionally names AUTHENTICATION_REQUIRED, TOKEN_INVALID, TENANT_SCOPE_DENIED,
+        ACTION_NOT_AUTHORIZED, SCHEMA_INVALID, REASON_REQUIRED, EXPECTED_VERSION_REQUIRED,
+        REPLAY_DETECTED, SIGNATURE_REQUIRED, SIGNATURE_STALE, PRECISION_*, UOM_*, DIVISION_UNDEFINED and
+        SOURCE_NOT_REGISTERED. None of those spellings is raised by this codebase; the conditions they
+        name are covered by the codes below under different names, or are not implemented. The naming
+        divergence is recorded in SG-012.
+      x-requirement-ids: [MUT-FR-021, CTR-FR-006]
+      enum:
+        - UNAUTHORIZED
+        - FORBIDDEN
+        - ROLE_MISSING
+        - SOD_CONFLICT
+        - QUALIFICATION_MISSING
+        - QUALIFICATION_EXPIRED
+        - VALIDATION_FAILED
+        - NOT_FOUND
+        - INVALID_TRANSITION
+        - STALE_VERSION
+        - IDEMPOTENCY_CONFLICT
+        - MISSING_SIGNATURE
+        - SIGNATURE_CHALLENGE_INVALID
+        - SIGNATURE_POLICY_UNRESOLVED
+        - RULE_GATE_FAILED
+        - DEPENDENCY_UNAVAILABLE
+        - SYSTEM_FAULT
+
+    PageEnvelope:
+      type: object
+      description: >
+        The shared list envelope produced by `app/core/pagination.py`. Every list endpoint in the
+        platform returns this shape plus an `items` array (CTR-FR-012). Offset/limit paging with a
+        bounded `page_size` (1..100) and a stable declared sort; Document 101 CTR-FR-012 prefers
+        cursor/keyset paging for large lists, which this is not — recorded in
+        37_API_EVENT_COMPATIBILITY_REGISTRY.md as a known deviation.
+      x-requirement-ids: [CTR-FR-012, CTR-FR-013]
+      required: [total, page, page_size, total_pages]
+      properties:
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1, maximum: 100 }
+        total_pages: { type: integer, minimum: 1 }
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Query:
+      name: q
+      in: query
+      required: false
+      description: Free-text search over the endpoint's declared searchable columns.
+      schema: { type: string }
+    SortBy:
+      name: sort_by
+      in: query
+      required: false
+      description: Must be one of the endpoint's declared sortable columns; anything else falls back to the default sort.
+      schema: { type: string }
+    SortDir:
+      name: sort_dir
+      in: query
+      required: false
+      schema: { type: string, enum: [asc, desc], default: asc }
+
+  responses:
+    Unauthorized:
+      description: UNAUTHORIZED — no valid bearer token.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Forbidden:
+      description: FORBIDDEN / ROLE_MISSING / SOD_CONFLICT / QUALIFICATION_* — the policy decision denied this action.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    NotFound:
+      description: NOT_FOUND — the addressed record does not exist or is outside the actor's site scope.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Conflict:
+      description: >
+        STALE_VERSION / INVALID_TRANSITION / IDEMPOTENCY_CONFLICT / SIGNATURE_CHALLENGE_INVALID /
+        SIGNATURE_POLICY_UNRESOLVED / RULE_GATE_FAILED — a precondition on current state failed.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    ValidationFailed:
+      description: VALIDATION_FAILED — the request failed schema or business validation.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    MissingSignature:
+      description: MISSING_SIGNATURE — a required signature was absent, or fresh step-up authentication failed.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    DependencyUnavailable:
+      description: >
+        DEPENDENCY_UNAVAILABLE — a compliance-critical dependency (authoritative database, policy or
+        signature service) is unreachable. The mutation did not commit; the platform fails closed and
+        never commits in a degraded mode (MUT-FR-022).
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }

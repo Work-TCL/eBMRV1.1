@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.iam.models import Role, User, UserSiteRole
-from app.mutation.errors import ForbiddenError, UnauthorizedError
+from app.mutation.errors import UnauthorizedError
 
 
 async def get_user_by_username(session: AsyncSession, username: str) -> User | None:
@@ -29,16 +29,3 @@ async def get_role_names(session: AsyncSession, user_id: uuid.UUID, site_id: uui
     return set(result.scalars().all())
 
 
-async def require_role(
-    session: AsyncSession, user_id: uuid.UUID, site_id: uuid.UUID, *allowed_role_names: str
-) -> set[str]:
-    """RBAC gate (MUT-FR-006 equivalent). Raises ForbiddenError if the actor holds none of the
-    allowed roles at this site. Returns the actor's role set so callers can also use it for SoD checks.
-    """
-    roles = await get_role_names(session, user_id, site_id)
-    if not roles.intersection(allowed_role_names):
-        raise ForbiddenError(
-            "Actor lacks a required role at this site",
-            required_any_of=list(allowed_role_names),
-        )
-    return roles

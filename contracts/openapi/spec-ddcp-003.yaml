@@ -1,0 +1,419 @@
+openapi: 3.1.0
+info:
+  title: SPEC-DDCP-003 — Inhalation MDI/DPI DDCP Manufacturing Profile
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 56 (`services/gxp-api/app/modules/ddcp/inhalation_router.py` +
+    `inhalation_commands.py`). SG-150 (`docs/generated/18_SPEC_GAPS.md`): no Document 112 schema exists for
+    this document -- reuses Document 54's tables/functions per the DDCP Platform Rule, the same strategy
+    `spec-ddcp-002.yaml` (Document 55) already applies. `ddcp_process_operation` (operation_type=
+    INHALER_FILL) is reused from Document 55, not a new table. RBAC reuses Document 54's already-seeded
+    `ddcp_profile.*`/`ddcp_fill.*`/`ddcp_device.*`/`ddcp_release.*` action codes.
+tags:
+  - name: ddcp-inhalation
+
+paths:
+  /ddcp/v1/inhalation/profiles:
+    post:
+      operationId: postCreateInhalationProfile
+      tags: [ddcp-inhalation]
+      summary: Author an MDI/DPI inhalation DDCP profile draft (INH-FR-001..005)
+      x-requirement-ids: [INH-FR-001, INH-FR-002, INH-FR-003, INH-FR-004, INH-FR-005, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInhalationProfileVersionCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422':
+          description: PROFILE_SCHEMA_INVALID
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/inhalation/profiles/{profile_id}/release:
+    parameters:
+      - { name: profile_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReleaseInhalationProfile
+      tags: [ddcp-inhalation]
+      summary: Release an inhalation DDCP profile version (calls Document 54's shared release_injectable_profile_version)
+      x-requirement-ids: [INH-FR-001, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: 'spec-ddcp-001.yaml#/components/schemas/ReleaseInjectableProfileVersionCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: PROFILE_RELEASE_BLOCKED / VALIDATION_FAILED
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/inhalation/batches/{batch_id}/readiness:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: profile_version_id, in: query, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getInhalationReadiness
+      tags: [ddcp-inhalation]
+      summary: Inhalation readiness composition, without transitioning state (INH-FR-002..005/018)
+      x-requirement-ids: [INH-FR-002, INH-FR-003, INH-FR-004, INH-FR-005, INH-FR-018]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/InhalationReadiness' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '422':
+          description: INHALATION_PROFILE_NOT_EFFECTIVE
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/inhalation/fill-runs:
+    post:
+      operationId: postStartInhalerFillRun
+      tags: [ddcp-inhalation]
+      summary: Start an inhaler fill run (INH-FR-007/008/019/020)
+      description: >
+        blend_hold_limit_rule_id is optional (INH-FR-019) -- same SG-148/150 rules-engine pattern as
+        Document 54's PFS-FR-007; omitting it means no hold-time check.
+      x-requirement-ids: [INH-FR-007, INH-FR-008, INH-FR-019, INH-FR-020, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartInhalerFillRunCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409':
+          description: BLEND_HOLD_TIME_EXPIRED / existing active fill run for this batch
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: FILL_ROUTE_MISMATCH / readiness not satisfied
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/inhalation/fill-runs/{operation_id}/complete:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCompleteInhalerFillRun
+      tags: [ddcp-inhalation]
+      summary: Complete an inhaler fill/manufacturing run (INH-FR-020/021/022/026)
+      x-requirement-ids: [INH-FR-020, INH-FR-021, INH-FR-022, INH-FR-026, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteInhalerManufacturingRunCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: INHALER_RECONCILIATION_FAILED
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/inhalation/closure-results:
+    post:
+      operationId: postRecordCrimpOrClosureResult
+      tags: [ddcp-inhalation]
+      summary: Record a valve/crimp/closure/leak result through a released rule (INH-FR-009/012)
+      description: SG-148/150 rules-engine-evaluated pattern; stores via device_functional_test_link.
+      x-requirement-ids: [INH-FR-009, INH-FR-012, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordCrimpOrClosureResultCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/inhalation/dose-tests:
+    post:
+      operationId: postRecordInhalerDoseTest
+      tags: [ddcp-inhalation]
+      summary: Record a delivered-dose/aerodynamic/spray-pattern/priming test result (INH-FR-013..017)
+      x-requirement-ids: [INH-FR-013, INH-FR-014, INH-FR-015, INH-FR-016, INH-FR-017, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordInhalerDoseTestCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/inhalation/dose-counter-tests:
+    post:
+      operationId: postRecordDoseCounterTest
+      tags: [ddcp-inhalation]
+      summary: Record a dose counter mechanism test result (INH-FR-017)
+      x-requirement-ids: [INH-FR-017, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordDoseCounterTestCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/inhalation/batches/{batch_id}/release-readiness:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postEvaluateInhalerReleaseReadiness
+      tags: [ddcp-inhalation]
+      summary: Evaluate DRUG_CONSTITUENT/DEVICE_CONSTITUENT/COMBINED_PRODUCT checkpoints (INH-FR-025/026/027)
+      x-requirement-ids: [INH-FR-025, INH-FR-026, INH-FR-027, MUT-FR-005, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-ddcp-001.yaml#/components/schemas/PfsReleaseReadiness' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/inhalation/batches/{batch_id}/evidence-package:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCreateInhalerBatchEvidencePackage
+      tags: [ddcp-inhalation]
+      summary: Generate a reproducible inhaler batch evidence package (INH-FR-024/030)
+      x-requirement-ids: [INH-FR-024, INH-FR-030, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInhalerBatchEvidencePackageCommand' }
+      responses:
+        '200':
+          description: Created — a new manifest_version, state FROZEN.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — batch_id in path and body must match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/inhalation/batches/{batch_id}/genealogy:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getInhalerLotTrace
+      tags: [ddcp-inhalation]
+      summary: Trace an inhaler lot's formulation/component/test genealogy (INH-FR-024/030)
+      x-requirement-ids: [INH-FR-024, INH-FR-030]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/InhalerGenealogyGraph' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/inhalation/dose-unit-bindings:
+    post:
+      operationId: postBindDoseUnitToDevice
+      tags: [ddcp-inhalation]
+      summary: Bind a DPI powder dose/blister/capsule lot to a device (INH-FR-011)
+      description: >
+        Reuses ddcp_unit_binding (binding_type=DOSE_UNIT_TO_DEVICE), the same shared table Document 55's
+        drug-container binding and Document 57's device-to-coating binding already use (SG-150).
+        Application-level uniqueness prevents DOSE_UNIT_BINDING_ALREADY_USED.
+      x-requirement-ids: [INH-FR-011, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BindDoseUnitToDeviceCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: DOSE_UNIT_BINDING_ALREADY_USED
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateInhalationProfileVersionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INH-FR-001, INH-FR-002, INH-FR-003, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, profile_code, subtype]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        profile_code: { type: string }
+        subtype: { type: string, enum: [MDI, DPI] }
+        fill_route: { type: [string, "null"] }
+        environment_profile_id: { type: [string, "null"] }
+        constituent_architecture: { type: object, default: {} }
+        required_controls: { type: object, default: {} }
+        release_checkpoint_set: { type: object }
+        constituent_requirements: { type: array, items: { type: object } }
+
+    StartInhalerFillRunCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INH-FR-007, INH-FR-008, INH-FR-019, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, profile_version_id, fill_route]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        profile_version_id: { type: string, format: uuid }
+        fill_route: { type: string }
+        line_id: { type: [string, "null"], format: uuid }
+        equipment_id: { type: [string, "null"], format: uuid }
+        program_id: { type: [string, "null"] }
+        program_version: { type: [string, "null"] }
+        environment_status: { type: [object, "null"] }
+        blend_hold_limit_rule_id: { type: [string, "null"], description: "INH-FR-019. A released rules.gxp_rule_definition rule_id, same SG-148/150 pattern as Document 54's PFS-FR-007." }
+
+    CompleteInhalerManufacturingRunCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INH-FR-020, INH-FR-021, INH-FR-022, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, operation_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        operation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"] }
+
+    RecordCrimpOrClosureResultCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INH-FR-009, INH-FR-012, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, unit_or_sample_id, measured_value, uom, acceptance_rule_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        unit_or_sample_id: { type: string }
+        measured_value: { type: string, description: Decimal-as-string. }
+        uom: { type: string }
+        acceptance_rule_id: { type: string }
+        test_type: { type: string, default: SEAL }
+
+    RecordInhalerDoseTestCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INH-FR-013, INH-FR-014, INH-FR-015, INH-FR-016, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, test_type, qc_record_reference]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        test_type: { type: string }
+        qc_record_reference: { type: object }
+        method_reference: { type: [object, "null"] }
+        result_state: { type: string, enum: [PENDING, PASS, FAIL, OOS], default: PENDING }
+
+    RecordDoseCounterTestCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INH-FR-017, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, unit_or_sample_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        unit_or_sample_id: { type: string }
+        program_version: { type: [string, "null"] }
+        result_state: { type: string, enum: [PENDING, PASS, FAIL, OOS], default: PENDING }
+
+    CreateInhalerBatchEvidencePackageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INH-FR-024, INH-FR-030, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+
+    InhalationReadiness:
+      type: object
+      description: "`evaluate_inhalation_readiness` in `app/modules/ddcp/inhalation_commands.py` — pure read, no writes."
+      x-requirement-ids: [INH-FR-002, INH-FR-003, INH-FR-004, INH-FR-005, INH-FR-018]
+      required: [batch_id, profile_version_id, ready, blockers]
+      properties:
+        batch_id: { type: string, format: uuid }
+        profile_version_id: { type: string, format: uuid }
+        ready: { type: boolean }
+        blockers: { type: array, items: { type: object } }
+
+    InhalerGenealogyGraph:
+      type: object
+      description: "`trace_inhaler_lot` in `app/modules/ddcp/inhalation_commands.py` — pure read, no writes."
+      x-requirement-ids: [INH-FR-024, INH-FR-030]
+      required: [batch_id, formulation_and_component_handoffs, device_assembly_records, functional_test_links, production_counts]
+      properties:
+        batch_id: { type: string, format: uuid }
+        formulation_and_component_handoffs: { type: array, items: { type: object } }
+        device_assembly_records: { type: array, items: { type: object } }
+        functional_test_links: { type: array, items: { type: object } }
+        production_counts: { type: array, items: { type: object } }
+
+    BindDoseUnitToDeviceCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INH-FR-011, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, dose_unit_reference, device_reference]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        dose_unit_reference: { type: object }
+        device_reference: { type: object }

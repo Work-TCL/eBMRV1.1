@@ -1,0 +1,494 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QMS-007 — Supplier Corrective Action Request (SCAR)
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-05 Document 32 slice actually built
+    (`services/gxp-api/app/modules/qms/scar_*.py`): create supplier quality case -> issue SCAR ->
+    supplier response -> internal review (signed) -> effectiveness -> close (signed), matching the
+    module's own 6-op API list exactly (across two owned entities, `SupplierQualityCase` and
+    `ScarRecord`), plus the `signature-challenges` ceremony-entry-point endpoint (SG-138 engineering
+    half, not in Document 32's own list — contracted because the router implements it).
+
+
+    SCAR-FR-017 (supplier scorecard/risk contribution) and SCAR-FR-018 (export) are deliberately not
+    built — see docs/generated/18_SPEC_GAPS.md SG-091. `review`/`close` are both signed
+    (SCAR_SIGNATURE_ACTIONS = `("review", "close")`) and return `SIGNATURE_POLICY_UNRESOLVED` today
+    (SG-138's policy-data half is still open).
+tags:
+  - name: qms-scar
+
+paths:
+  /qms/v1/supplier-cases:
+    post:
+      operationId: postCreateSupplierCase
+      tags: [qms-scar]
+      summary: Open a supplier quality case (SCAR-FR-001/002/003/011)
+      description: Requires `scar.case.create`. `affected_lots` must be non-empty. Presence of `containment` starts the case directly in CONTAINMENT instead of OPEN.
+      x-requirement-ids: [SCAR-FR-001, SCAR-FR-002, SCAR-FR-003, SCAR-FR-011, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateSupplierCaseCommand' } } }
+      responses:
+        '200': { description: Created. `aggregate_id` is the case id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: "IDEMPOTENCY_CONFLICT or SUPPLIER_SOURCE_SUSPENDED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED or SCAR_SOURCE_REQUIRED (empty affected_lots).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+    get:
+      operationId: getSupplierCases
+      tags: [qms-scar]
+      summary: Paginated, filterable supplier quality case list (non-authoritative read, AG-11)
+      x-requirement-ids: [SCAR-FR-001, SCAR-FR-002]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+        - { name: site_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: state, in: query, required: false, schema: { $ref: '#/components/schemas/CaseState' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SupplierCaseListResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /qms/v1/supplier-cases/{case_id}:
+    parameters:
+      - { name: case_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getSupplierCaseDetail
+      tags: [qms-scar]
+      summary: One case with full detail and its SCARs (SCAR-FR-001/002/003/012)
+      x-requirement-ids: [SCAR-FR-001, SCAR-FR-002, SCAR-FR-003, SCAR-FR-012]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SupplierCaseDetail' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /qms/v1/supplier-cases/{case_id}/scar:
+    parameters:
+      - { name: case_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postIssueScar
+      tags: [qms-scar]
+      summary: Issue a formal SCAR against an open case (SCAR-FR-004/014)
+      description: Requires `scar.issue`. Case must be OPEN/CONTAINMENT. Computes the repeat-issue flag against this supplier/material/defect_code.
+      x-requirement-ids: [SCAR-FR-004, SCAR-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/IssueScarCommand' } } }
+      responses:
+        '200': { description: Issued, state SCAR_ISSUED. `aggregate_id` is the scar id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION (case), IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (problem_statement required) or case_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/scars:
+    get:
+      operationId: getScars
+      tags: [qms-scar]
+      summary: Paginated, filterable SCAR list (non-authoritative read, AG-11)
+      x-requirement-ids: [SCAR-FR-004]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+        - { name: site_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: state, in: query, required: false, schema: { $ref: '#/components/schemas/ScarState' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ScarListResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /qms/v1/scars/{scar_id}:
+    parameters:
+      - { name: scar_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getScarDetail
+      tags: [qms-scar]
+      summary: One SCAR with full evidence, review, effectiveness and closure history (SCAR-FR-004..016)
+      x-requirement-ids: [SCAR-FR-004, SCAR-FR-005, SCAR-FR-006, SCAR-FR-007, SCAR-FR-008, SCAR-FR-009, SCAR-FR-010, SCAR-FR-013]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ScarDetail' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /qms/v1/scars/{scar_id}/response:
+    parameters:
+      - { name: scar_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordSupplierResponse
+      tags: [qms-scar]
+      summary: Record the supplier's acknowledgment, root cause and actions (SCAR-FR-005/006/007)
+      description: Requires `scar.response`. SCAR_ISSUED -> SUPPLIER_RESPONSE only. Supplier root cause/evidence is captured as the supplier's own statement, not accepted fact (SCAR-FR-006).
+      x-requirement-ids: [SCAR-FR-005, SCAR-FR-006, SCAR-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordSupplierResponseCommand' } } }
+      responses:
+        '200': { description: Recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: scar_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/scars/{scar_id}/signature-challenges:
+    parameters:
+      - { name: scar_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postScarSignatureChallenge
+      tags: [qms-scar]
+      summary: Create the Part 11 signature challenge for review/close (SG-138 engineering half)
+      description: >
+        Not in Document 32's own 6-op API list; contracted because the router implements it. Resolves
+        the `scar_record`/`{action}` Document 106 policy and binds a challenge to the current SCAR's
+        id/version/hash. Returns `SIGNATURE_POLICY_UNRESOLVED` today for both actions (SG-138's
+        policy-data half is still open).
+      x-requirement-ids: [SCAR-FR-008, SCAR-FR-016, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ScarSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not one of review/close.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/scars/{scar_id}/review:
+    parameters:
+      - { name: scar_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReviewScar
+      tags: [qms-scar]
+      summary: Internal QA accept/reject of the supplier's response — signed per Document 106 (SCAR-FR-008)
+      description: Requires `scar.review`. SUPPLIER_RESPONSE -> IMPLEMENTATION only, and only once acknowledgment/root_cause/actions are all recorded. Resolves the `scar_record`/`review` Document 106 policy.
+      x-requirement-ids: [SCAR-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReviewScarCommand' } } }
+      responses:
+        '200': { description: Reviewed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, SUPPLIER_RESPONSE_INCOMPLETE, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (rationale required, bad decision) or scar_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qms/v1/scars/{scar_id}/effectiveness:
+    parameters:
+      - { name: scar_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordEffectiveness
+      tags: [qms-scar]
+      summary: Record the post-implementation effectiveness check (SCAR-FR-009)
+      description: Requires `scar.effectiveness`. IMPLEMENTATION -> EFFECTIVENESS only, and only once the review accepted the response.
+      x-requirement-ids: [SCAR-FR-009, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordEffectivenessCommand' } } }
+      responses:
+        '200': { description: Recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or SCAR_REVIEW_REJECTED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (bad result) or scar_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/scars/{scar_id}/close:
+    parameters:
+      - { name: scar_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCloseScar
+      tags: [qms-scar]
+      summary: QA closure with a source-status decision — signed per Document 106 (SCAR-FR-010/011/013/016)
+      description: >
+        Requires `scar.close`. EFFECTIVENESS -> CLOSED only, and only once effectiveness is recorded.
+        `source_status_decision` (no_change/requalify/suspend/reinstate) may emit a
+        `SupplierSourceSuspended` outbox event. Resolves the `scar_record`/`close` Document 106 policy.
+      x-requirement-ids: [SCAR-FR-010, SCAR-FR-011, SCAR-FR-013, SCAR-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CloseScarCommand' } } }
+      responses:
+        '200': { description: Closed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, EFFECTIVENESS_REQUIRED, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (unrecognized source_status_decision, blank conclusion) or scar_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CaseState:
+      type: string
+      description: "`CASE_STATES` in `app/modules/qms/scar_models.py`."
+      x-requirement-ids: [SCAR-FR-001, CTR-FR-017]
+      enum: [OPEN, CONTAINMENT, SCAR_ISSUED, CLOSED]
+
+    ScarState:
+      type: string
+      description: "`SCAR_STATES`."
+      x-requirement-ids: [SCAR-FR-004, CTR-FR-017]
+      enum: [SCAR_ISSUED, SUPPLIER_RESPONSE, IMPLEMENTATION, EFFECTIVENESS, CLOSED]
+
+    ScarSourceType:
+      type: string
+      description: "`SCAR_SOURCE_TYPES` (SCAR-FR-001)."
+      x-requirement-ids: [SCAR-FR-001]
+      enum: [incoming_reject, deviation, complaint, audit, trend, manufacturing_defect]
+
+    SourceStatusDecision:
+      type: string
+      description: "`SOURCE_STATUS_DECISIONS` (SCAR-FR-010/011)."
+      x-requirement-ids: [SCAR-FR-010, SCAR-FR-011]
+      enum: [no_change, requalify, suspend, reinstate]
+
+    SupplierQualityCase:
+      type: object
+      description: One supplier quality case (`app/modules/qms/scar_router.py:_case_dict`). A response schema, so not closed.
+      x-requirement-ids: [SCAR-FR-001, SCAR-FR-002]
+      required: [id, site_id, quality_event_id, case_number, supplier_id, defect_code, severity, internal_owner_subject_id, state, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        quality_event_id: { type: string, format: uuid }
+        case_number: { type: string }
+        source_type: { oneOf: [{ $ref: '#/components/schemas/ScarSourceType' }, { type: "null" }] }
+        source_id: { type: [string, "null"], format: uuid }
+        supplier_id: { type: string, format: uuid }
+        supplier_site_id: { type: [string, "null"], format: uuid }
+        material_id: { type: [string, "null"], format: uuid }
+        affected_lots: { type: array, items: { type: object } }
+        defect_code: { type: string }
+        severity: { type: string }
+        internal_owner_subject_id: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/CaseState' }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        created_at: { type: [string, "null"], format: date-time }
+        closed_at: { type: [string, "null"], format: date-time }
+
+    Scar:
+      type: object
+      description: One SCAR record (`app/modules/qms/scar_router.py:_scar_dict`). A response schema, so not closed.
+      x-requirement-ids: [SCAR-FR-004]
+      required: [id, site_id, case_id, scar_number, issued_at, problem_statement, requalification_required, capa_required, is_repeat_issue, state, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        case_id: { type: string, format: uuid }
+        scar_number: { type: string }
+        issued_at: { type: string, format: date-time }
+        due_date: { type: [string, "null"], format: date-time }
+        problem_statement: { type: string }
+        requalification_required: { type: boolean }
+        source_status_decision: { oneOf: [{ $ref: '#/components/schemas/SourceStatusDecision' }, { type: "null" }] }
+        capa_required: { type: boolean }
+        is_repeat_issue: { type: boolean }
+        state: { $ref: '#/components/schemas/ScarState' }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: [string, "null"], format: date-time }
+        closed_at: { type: [string, "null"], format: date-time }
+
+    SupplierCaseDetail:
+      type: object
+      description: getSupplierCaseDetail's response — SupplierQualityCase plus semi-structured fields and its SCARs.
+      x-requirement-ids: [SCAR-FR-002, SCAR-FR-003, SCAR-FR-012]
+      allOf:
+        - $ref: '#/components/schemas/SupplierQualityCase'
+        - type: object
+          required: [scars]
+          properties:
+            material_spec_ref: { type: [object, "null"] }
+            containment: { type: [object, "null"] }
+            asl_impact: { type: [object, "null"] }
+            alternate_source_ref: { type: [object, "null"], description: SCAR-FR-012 emergency alternate source. }
+            scars: { type: array, items: { $ref: '#/components/schemas/Scar' } }
+
+    ScarDetail:
+      type: object
+      description: getScarDetail's response — Scar plus every semi-structured field.
+      x-requirement-ids: [SCAR-FR-005, SCAR-FR-006, SCAR-FR-007, SCAR-FR-008, SCAR-FR-009, SCAR-FR-010, SCAR-FR-013]
+      allOf:
+        - $ref: '#/components/schemas/Scar'
+        - type: object
+          required: [review_history, effectiveness_history, closure_history]
+          properties:
+            evidence: { type: [object, "null"] }
+            acknowledgment: { type: [object, "null"] }
+            supplier_root_cause: { type: [object, "null"], description: "The supplier's own statement, not accepted fact (SCAR-FR-006)." }
+            supplier_actions: { type: [object, "null"] }
+            internal_review: { type: [object, "null"] }
+            review_history: { type: array, items: { type: object } }
+            effectiveness: { type: [object, "null"] }
+            effectiveness_history: { type: array, items: { type: object } }
+            requalification_rationale: { type: [string, "null"] }
+            capa_rationale: { type: [string, "null"] }
+            related_case_ids: { type: [array, "null"] }
+            closure_history: { type: array, items: { type: object } }
+
+    SupplierCaseListResult:
+      type: object
+      description: getSupplierCases's response — the shared page envelope plus items.
+      x-requirement-ids: [SCAR-FR-001, CTR-FR-012]
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/SupplierQualityCase' } } }
+
+    ScarListResult:
+      type: object
+      description: getScars's response — the shared page envelope plus items.
+      x-requirement-ids: [SCAR-FR-004, CTR-FR-012]
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/Scar' } } }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postScarSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    ScarSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [review, close] }
+
+    CreateSupplierCaseCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SCAR-FR-001, SCAR-FR-002, SCAR-FR-003, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, case_number, supplier_id, affected_lots, defect_code, severity, internal_owner_subject_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        case_number: { type: string }
+        supplier_id: { type: string, format: uuid }
+        supplier_site_id: { type: [string, "null"], format: uuid }
+        material_id: { type: [string, "null"], format: uuid }
+        material_spec_ref: { type: [object, "null"] }
+        affected_lots: { type: array, minItems: 1, items: { type: object } }
+        defect_code: { type: string }
+        severity: { type: string }
+        internal_owner_subject_id: { type: string, format: uuid }
+        source_type: { oneOf: [{ $ref: '#/components/schemas/ScarSourceType' }, { type: "null" }] }
+        source_id: { type: [string, "null"], format: uuid }
+        source_version: { type: [integer, "null"] }
+        containment: { type: [object, "null"], description: Presence starts the case in CONTAINMENT instead of OPEN. }
+        alternate_source_ref: { type: [object, "null"] }
+
+    IssueScarCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SCAR-FR-004, SCAR-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, case_id, case_expected_version, scar_number, problem_statement]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        case_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        case_expected_version: { type: integer, minimum: 1 }
+        scar_number: { type: string }
+        due_date: { type: [string, "null"], format: date-time }
+        problem_statement: { type: string }
+        evidence: { type: [object, "null"] }
+
+    RecordSupplierResponseCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SCAR-FR-005, SCAR-FR-006, SCAR-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, scar_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        scar_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        acknowledgment: { type: [object, "null"] }
+        supplier_root_cause: { type: [object, "null"] }
+        supplier_actions: { type: [object, "null"] }
+        reason: { type: [string, "null"] }
+
+    ReviewScarCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SCAR-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, scar_id, expected_version, decision, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        scar_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        decision: { type: string, enum: [accepted, rejected] }
+        rationale: { type: string }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    RecordEffectivenessCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SCAR-FR-009, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, scar_id, expected_version, result]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        scar_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        result: { type: string, enum: [pass, fail] }
+        evidence: { type: [object, "null"] }
+        reason: { type: [string, "null"] }
+
+    CloseScarCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SCAR-FR-010, SCAR-FR-011, SCAR-FR-013, SCAR-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, scar_id, expected_version, source_status_decision, conclusion]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        scar_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        source_status_decision: { $ref: '#/components/schemas/SourceStatusDecision' }
+        conclusion: { type: string }
+        requalification_required: { type: boolean, default: false }
+        requalification_rationale: { type: [string, "null"] }
+        capa_required: { type: boolean, default: false }
+        capa_rationale: { type: [string, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qms-008.json",
+  "title": "SPEC-QMS-008 \u2014 Risk Management Events",
+  "description": "Document 113 event contract for the 6 event types Document 33's own module (app/modules/qms/risk_commands.py) actually emits. All 6 declared SPEC-QMS-008 events in 07_EVENT_CATALOGUE.yaml are genuinely implemented -- no divergence for this module.\n\nREUSE NOTE: add_assessment() selects between 'RiskAssessmentCompleted' and 'RiskReassessed' with the exact same payload shape ({id, version_id, cycle_number}) -- 'RiskReassessed' only when cycle_number > 1 for an initial-type assessment; a residual assessment (the else branch) always emits 'RiskAssessmentCompleted' regardless of cycle number (risk_commands.py:239/251). Real, observed characteristic of the built code, not invented here.",
+  "x-requirement-ids": [
+    "RSK-FR-001",
+    "RSK-FR-004",
+    "RSK-FR-005",
+    "RSK-FR-006",
+    "RSK-FR-007",
+    "RSK-FR-008",
+    "RSK-FR-012",
+    "RSK-FR-013",
+    "RSK-FR-014",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "RiskCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "risk_number",
+        "risk_type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "risk_number": {
+          "type": "string"
+        },
+        "risk_type": {
+          "$ref": "../openapi/spec-qms-008.yaml#/components/schemas/RiskType"
+        }
+      },
+      "x-requirement-ids": [
+        "RSK-FR-001",
+        "RSK-FR-003"
+      ]
+    },
+    "RiskAssessmentCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version_id",
+        "cycle_number"
+      ],
+      "description": "Same shape for both RiskAssessmentCompleted and RiskReassessed -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "version_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "cycle_number": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "x-requirement-ids": [
+        "RSK-FR-004",
+        "RSK-FR-006",
+        "RSK-FR-012"
+      ]
+    },
+    "RiskMitigationRequiredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "version_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "RSK-FR-005",
+        "RSK-FR-008"
+      ]
+    },
+    "RiskAcceptedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "version_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "RSK-FR-007"
+      ]
+    },
+    "RiskReviewTriggeredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "trigger_type",
+        "outcome"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "trigger_type": {
+          "$ref": "../openapi/spec-qms-008.yaml#/components/schemas/ReviewTriggerType"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "still_current",
+            "reassessment_required"
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "RSK-FR-013",
+        "RSK-FR-014"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "RiskCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-008",
+      "aggregate_type": "risk_record",
+      "payload": {
+        "$ref": "#/$defs/RiskCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "RSK-FR-001",
+        "RSK-FR-003"
+      ]
+    },
+    {
+      "event_type": "RiskAssessmentCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-008",
+      "aggregate_type": "risk_record",
+      "payload": {
+        "$ref": "#/$defs/RiskAssessmentCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "RSK-FR-004",
+        "RSK-FR-006",
+        "RSK-FR-012"
+      ]
+    },
+    {
+      "event_type": "RiskReassessed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-008",
+      "aggregate_type": "risk_record",
+      "payload": {
+        "$ref": "#/$defs/RiskAssessmentCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "RSK-FR-004",
+        "RSK-FR-012"
+      ]
+    },
+    {
+      "event_type": "RiskMitigationRequired",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-008",
+      "aggregate_type": "risk_record",
+      "payload": {
+        "$ref": "#/$defs/RiskMitigationRequiredPayload"
+      },
+      "x-requirement-ids": [
+        "RSK-FR-005",
+        "RSK-FR-008"
+      ]
+    },
+    {
+      "event_type": "RiskAccepted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-008",
+      "aggregate_type": "risk_record",
+      "payload": {
+        "$ref": "#/$defs/RiskAcceptedPayload"
+      },
+      "x-requirement-ids": [
+        "RSK-FR-007"
+      ]
+    },
+    {
+      "event_type": "RiskReviewTriggered",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-008",
+      "aggregate_type": "risk_record",
+      "payload": {
+        "$ref": "#/$defs/RiskReviewTriggeredPayload"
+      },
+      "x-requirement-ids": [
+        "RSK-FR-013",
+        "RSK-FR-014"
+      ]
+    }
+  ]
+}

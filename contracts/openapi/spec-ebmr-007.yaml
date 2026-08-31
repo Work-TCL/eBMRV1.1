@@ -1,0 +1,523 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EBMR-007 — Packaging, Labeling & Reconciliation
+  version: 0.1.0
+  description: >
+    Document 113 contract for the Document 16 slice actually built
+    (`services/gxp-api/app/modules/packaging/`): create a packaging run against a batch, complete line
+    clearance, issue labels with duplicate-serial detection (PKG-FR-008, partial), reconcile labels
+    (PKG-FR-013) and packaging (PKG-FR-017) against an exact-balance default, complete a run gated on
+    clearance + both reconciliations balanced (PKG-FR-028), and the two read endpoints (a paginated run
+    list, a run detail with its label issues/reconciliations/package nodes).
+
+
+    ONLY 1 OF 4 OWNED ENTITIES IS DDL-READY THE ORDINARY WAY: `label_issue` is DDL-ready in
+    `docs/generated/04_DATA_MODEL_CATALOGUE.md`. `packaging_run`/`label_reconciliation`/`package_node`
+    are prose-only field-name lists there, but — like Document 15's `release_evaluation`/
+    `release_decision` — all three are genuinely unambiguous (bigint counters, a state/version pair,
+    self-referential hierarchy fields) and are typed directly in `app/modules/packaging/models.py` as an
+    ordinary engineering decision, the same latitude already used across Documents 10/15.
+
+
+    NO LABEL-MASTER OR PRINT-JOB ENTITY EXISTS: `label_version_id`/`print_job_id` on `LabelIssue` are
+    unenforced logical-reference columns — no `label_version`/artwork-master or `print_job` entity exists
+    anywhere in this codebase's data model catalogue, not even in Document 16's own 4-entity list despite
+    `print_job_id` being referenced there and a `POST /packaging/v1/print-jobs` endpoint being listed.
+    Consequently `POST /packaging/v1/print-jobs`, `.../labels/{id}/reprint`, `.../label-application` and
+    `.../inspection` are not built this pass (no entity to persist their results against) — see SG-056.
+
+
+    NO READ API IN THE SOURCE DOCUMENT, BUT BUILT HERE ANYWAY: Document 16's own §6 API table defines
+    zero GET operations, even though its §8 UI Surfaces section lists read-oriented screens that would
+    need one — assessed as a real authoring gap in the source document (not an intentional "no read API"
+    boundary) and 2 read endpoints are built despite that, unlike the stricter "don't add outside the
+    document's own list" discipline this codebase otherwise applies (e.g. genealogy's write path, this
+    same session's `spec-ebmr-004.yaml`). See SG-056.
+
+
+    NO SIGNATURE ANYWHERE: none of Document 16's 10 named operations require a Document 106 signature
+    (every row in its own API table lists "—" for Signature) — none of the 6 write operations in this
+    contract are signature-gated, unlike every release/suspend/complete-type action in the other WP-02/
+    WP-03 contracts this session has written.
+
+
+    STATE MODEL IS A NARROW SLICE (Document 16 §4): the real model is `NOT_READY → LINE_CLEARANCE →
+    READY → IN_PROGRESS → RECONCILIATION_PENDING → COMPLETE`, with alternates `HOLD`, `EXCEPTION`,
+    `ABORTED`. There is exactly one line-clearance endpoint (not a separate start/complete pair), so
+    `LINE_CLEARANCE` is folded into a single `not_ready → ready` transition. `hold` stays a named state
+    in `PACKAGING_STATES` (the source's own catalogue includes it, PKG-FR-024) but has no driving
+    endpoint in Document 16's own 10-API list — unlike Documents 11/12/15's hold actions, there is no
+    `POST .../hold` operation, so `hold` is unreachable through this contract. `EXCEPTION`/`ABORTED` are
+    unreachable for the same reason.
+tags:
+  - name: packaging
+
+paths:
+  /packaging/v1/runs:
+    post:
+      operationId: postCreatePackagingRun
+      tags: [packaging]
+      summary: Create a packaging run against a batch (PKG-FR-001)
+      description: Requires the `packaging.execute` policy action. `line_ref` is free text — no equipment master exists yet to validate it against (SG-050/055).
+      x-requirement-ids: [PKG-FR-001, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePackagingRunCommand' }
+      responses:
+        '200':
+          description: Created, state `not_ready`. `aggregate_id` is the `run_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `batch_id` does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+    get:
+      operationId: getPackagingRuns
+      tags: [packaging]
+      summary: Paginated, filterable, sortable packaging run list
+      description: >
+        Requires `packaging.view`, evaluated against `site_id` when supplied. Unlike most list endpoints
+        in this codebase, this one genuinely paginates (`app/core/pagination.py`, CTR-FR-012's offset/
+        limit deviation from cursor paging, same as every other paginated endpoint here). `q` free-text
+        searches `line_ref` only.
+      x-requirement-ids: [PKG-FR-001, PKG-FR-010]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: site_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: batch_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: state
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/PackagingRunState' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/PackagingRunPage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /packaging/v1/runs/{run_id}:
+    parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getPackagingRunDetail
+      tags: [packaging]
+      summary: One packaging run with its label issues, label reconciliations and package nodes (PKG-FR-001/013/017/018)
+      description: >
+        Requires `packaging.view`, evaluated against the run's own `site_id`. `package_nodes` returns
+        every `PackageNode` for the run's `batch_id` regardless of hierarchy depth — flat, not nested
+        under `parent_package_id` (PKG-FR-018 — package hierarchy exists as a self-referential parent
+        pointer per node, not as a nested tree in this response).
+      x-requirement-ids: [PKG-FR-001, PKG-FR-013, PKG-FR-017, PKG-FR-018]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/PackagingRunDetail' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /packaging/v1/runs/{run_id}/line-clearance:
+    parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postPackagingLineClearance
+      tags: [packaging]
+      summary: Complete line clearance, moving a run from not_ready to ready (PKG-FR-009)
+      description: Requires `packaging.execute`. Only `not_ready` may transition — `ALLOWED_TRANSITIONS["not_ready"] = {"ready"}`. Sets `line_clearance_completed = true`, a precondition `postCompletePackagingRun` checks.
+      x-requirement-ids: [PKG-FR-009, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LineClearanceCommand' }
+      responses:
+        '200':
+          description: Cleared.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: INVALID_TRANSITION — the run is not `not_ready`, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `run_id` in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /packaging/v1/runs/{run_id}/labels/issue:
+    parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postIssueLabel
+      tags: [packaging]
+      summary: Issue labels against a run, with duplicate-serial detection (PKG-FR-004/008, partial)
+      description: >
+        Requires `packaging.execute`. Only `ready` or `in_progress` — `VALIDATION_FAILED` otherwise; the
+        first issue against a `ready` run auto-advances it to `in_progress` and stamps `started_at`.
+        `quantity_issued` must be positive. `serial_range` duplicate checking (PKG-FR-008) only covers an
+        explicit `{"serials": [...]}` list, checked against every other `label_issue` already issued for
+        packaging runs of the *same `product_version_id`* (not just this run) — numeric range-based
+        allocation dedup is not built this pass (SG-056).
+      x-requirement-ids: [PKG-FR-004, PKG-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueLabelCommand' }
+      responses:
+        '200':
+          description: Issued.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: IDEMPOTENCY_CONFLICT or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `run_id` in path and body do not match, the run is not `ready`/`in_progress`, `quantity_issued` is not positive, or a duplicate serial was found (`details.duplicate_serials`).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /packaging/v1/runs/{run_id}/reconcile-labels:
+    parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postReconcileLabels
+      tags: [packaging]
+      summary: Reconcile issued labels against an exact-balance default (PKG-FR-013/014)
+      description: >
+        Requires `packaging.execute`. Only `in_progress` or `reconciliation_pending`. `issued` is computed
+        server-side (sum of every `label_issue.quantity_issued` for this run) — never accepted from the
+        caller. `calculated_variance = issued - (applied + returned + destroyed + rejected + samples)`;
+        `result` is `"balanced"` only when the variance is exactly 0. Document 16 §10's real
+        tolerance-rule evaluation is delegated to Document 08 (Rules Engine, `tolerance_rule` on
+        `LabelReconciliation`), but no released rule exists for this yet (SG-056, PKG-FR-014's waiver/
+        profile scope not built), so exact balance is the only non-guessed default applied. Always
+        transitions to `reconciliation_pending` regardless of `result` — a discrepancy does not block the
+        transition, only `postCompletePackagingRun` later.
+      x-requirement-ids: [PKG-FR-013, PKG-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReconcileLabelsCommand' }
+      responses:
+        '200':
+          description: Reconciled (result may be `balanced` or `discrepancy`; both succeed at 200).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: IDEMPOTENCY_CONFLICT or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `run_id` in path and body do not match, or the run is not `in_progress`/`reconciliation_pending`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /packaging/v1/runs/{run_id}/reconcile-packaging:
+    parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postReconcilePackaging
+      tags: [packaging]
+      summary: Reconcile component/finished-pack quantities (PKG-FR-017)
+      description: >
+        Requires `packaging.execute`. Only `in_progress` or `reconciliation_pending`. No dedicated entity
+        exists for this reconciliation (unlike label reconciliation's `LabelReconciliation` table) — it
+        writes `PackagingRun.reconciliation_state` directly rather than a persisted line-item row, so
+        there is no history of past packaging-reconciliation attempts, only the current value. Same
+        exact-balance default as `postReconcileLabels` (`variance = components_issued - (finished_packs +
+        destroyed + rejects + samples)`, `returned` is not a parameter here). Always transitions to
+        `reconciliation_pending` regardless of result.
+      x-requirement-ids: [PKG-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReconcilePackagingCommand' }
+      responses:
+        '200':
+          description: Reconciled (result may be `balanced` or `discrepancy`; both succeed at 200).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: IDEMPOTENCY_CONFLICT or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `run_id` in path and body do not match, or the run is not `in_progress`/`reconciliation_pending`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /packaging/v1/runs/{run_id}/complete:
+    parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postCompletePackagingRun
+      tags: [packaging]
+      summary: Complete a packaging run, gated on clearance and both reconciliations balancing (PKG-FR-028)
+      description: >
+        Requires `packaging.execute`. Only a state with `complete` in its `ALLOWED_TRANSITIONS` set
+        (`reconciliation_pending`). `VALIDATION_FAILED` unless all three hold:
+        `line_clearance_completed == true`, `reconciliation_state == "balanced"`, and the *most recent*
+        `LabelReconciliation.result == "balanced"` (an empty reconciliation history also fails this
+        check). No signature required (Document 16 has none, see the file description).
+      x-requirement-ids: [PKG-FR-028, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompletePackagingRunCommand' }
+      responses:
+        '200':
+          description: Completed.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: IDEMPOTENCY_CONFLICT or INVALID_TRANSITION — the run is not `reconciliation_pending`, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `run_id` in path and body do not match, line clearance is incomplete, or either reconciliation is not balanced.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    PackagingRunState:
+      type: string
+      description: >
+        `PACKAGING_STATES` in `app/modules/packaging/models.py` — the source's own full state catalogue
+        (Document 16 §4), though `hold`/`exception`/`aborted` are unreachable this pass (no driving
+        endpoint — see the file description). `ALLOWED_TRANSITIONS` is the only transition table any
+        endpoint uses: not_ready→ready; ready→in_progress; in_progress→in_progress|reconciliation_pending;
+        reconciliation_pending→reconciliation_pending|complete; complete/hold are terminal.
+      x-requirement-ids: [PKG-FR-010, PKG-FR-024, CTR-FR-017]
+      enum: [not_ready, ready, in_progress, reconciliation_pending, complete, hold]
+
+    ReconciliationResult:
+      type: string
+      description: "`RECONCILIATION_RESULTS` in `app/modules/packaging/models.py`."
+      x-requirement-ids: [PKG-FR-013, PKG-FR-017]
+      enum: [balanced, discrepancy]
+
+    PackageLevel:
+      type: string
+      description: "`PACKAGE_LEVELS` in `app/modules/packaging/models.py` (PKG-FR-018)."
+      x-requirement-ids: [PKG-FR-018]
+      enum: [unit, carton, shipper, pallet]
+
+    PackagingRun:
+      type: object
+      description: One packaging run (`app/modules/packaging/router.py:_run_dict`). A response schema, so not closed.
+      x-requirement-ids: [PKG-FR-001, PKG-FR-009, PKG-FR-010]
+      required: [id, site_id, batch_id, product_version_id, state, version, line_clearance_completed, reconciliation_state]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        batch_id: { type: string, format: uuid }
+        product_version_id: { type: string, format: uuid, description: "Reused generically for \"packaging configuration version\" — no dedicated packaging-configuration entity exists in this codebase." }
+        line_ref: { type: [string, "null"], maxLength: 120, description: Free text — no equipment master to validate against yet. }
+        state: { $ref: '#/components/schemas/PackagingRunState' }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        line_clearance_completed: { type: boolean }
+        reconciliation_state: { type: string, description: "\"not_started\" until postReconcilePackaging first runs, then \"balanced\" or \"discrepancy\"." }
+        started_at: { type: [string, "null"], format: date-time }
+        ended_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+
+    PackagingRunPage:
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/PackagingRun' } }
+      description: getPackagingRuns's response — the shared page envelope plus the runs for the requested page.
+      x-requirement-ids: [PKG-FR-001, CTR-FR-012]
+
+    LabelIssue:
+      type: object
+      description: One label issuance (`app/modules/packaging/router.py:get_packaging_run`'s inline dict).
+      x-requirement-ids: [PKG-FR-004, PKG-FR-008]
+      required: [id, quantity_issued, issued_by, issued_at, state]
+      properties:
+        id: { type: string, format: uuid }
+        label_version_id: { type: [string, "null"], format: uuid, description: Unenforced logical reference — no label-master entity exists yet (SG-056). }
+        quantity_issued: { type: integer, minimum: 1 }
+        serial_range: { type: [object, "null"], description: "Freeform; only the {\"serials\": [...]} shape is checked for duplicates (PKG-FR-008, partial)." }
+        print_job_id: { type: [string, "null"], format: uuid, description: Unenforced logical reference — no print_job entity exists yet (SG-056). }
+        issued_by: { type: string, format: uuid }
+        issued_at: { type: string, format: date-time }
+        state: { type: string, description: "Always \"issued\" this pass — no reprint/void command exists." }
+
+    LabelReconciliation:
+      type: object
+      description: One label reconciliation record (`app/modules/packaging/router.py:get_packaging_run`'s inline dict).
+      x-requirement-ids: [PKG-FR-013, PKG-FR-014]
+      required: [id, issued, applied, returned, destroyed, rejected, samples, calculated_variance, result, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        issued: { type: integer, description: Server-computed sum of quantity_issued across every label_issue for this run — never accepted from the caller. }
+        applied: { type: integer }
+        returned: { type: integer }
+        destroyed: { type: integer }
+        rejected: { type: integer }
+        samples: { type: integer }
+        calculated_variance: { type: integer, description: "issued - (applied + returned + destroyed + rejected + samples)." }
+        tolerance_rule: { type: [string, "null"], description: Unenforced logical reference — no released Document 08 rule exists for this yet (SG-056); exact balance (variance == 0) is the only default applied. }
+        result: { $ref: '#/components/schemas/ReconciliationResult' }
+        investigation_link: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+
+    PackageNode:
+      type: object
+      description: One node in the packaging hierarchy (`app/modules/packaging/router.py:get_packaging_run`'s inline dict). No public write API — created internally (`app/modules/packaging/service.py:create_package_node`), the same "internal write path, read-only public surface" pattern this session's `spec-ebmr-004.yaml` (genealogy) documents.
+      x-requirement-ids: [PKG-FR-018, PKG-FR-019]
+      required: [id, package_level, state]
+      properties:
+        id: { type: string, format: uuid }
+        package_level: { $ref: '#/components/schemas/PackageLevel' }
+        business_ref: { type: [string, "null"] }
+        parent_package_id: { type: [string, "null"], format: uuid, description: Self-referential — forms the package hierarchy one link at a time, not returned as a nested tree. }
+        state: { type: string, description: "Always \"created\" this pass." }
+
+    PackagingRunDetail:
+      type: object
+      description: getPackagingRunDetail's response — PackagingRun plus its label issues, label reconciliations and package nodes.
+      x-requirement-ids: [PKG-FR-001, PKG-FR-013, PKG-FR-017, PKG-FR-018]
+      allOf:
+        - $ref: '#/components/schemas/PackagingRun'
+        - type: object
+          required: [label_issues, label_reconciliations, package_nodes]
+          properties:
+            label_issues: { type: array, items: { $ref: '#/components/schemas/LabelIssue' } }
+            label_reconciliations: { type: array, items: { $ref: '#/components/schemas/LabelReconciliation' }, description: Every reconciliation ever recorded for this run, oldest first — the current reconciliation_state reflects only the most recent one. }
+            package_nodes: { type: array, items: { $ref: '#/components/schemas/PackageNode' }, description: Every PackageNode for this run's batch_id, flat. }
+
+    CreatePackagingRunCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PKG-FR-001, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        line_ref: { type: [string, "null"], maxLength: 120 }
+
+    LineClearanceCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PKG-FR-009, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, run_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        run_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"] }
+
+    IssueLabelCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PKG-FR-004, PKG-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, run_id, expected_version, quantity_issued]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        run_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        label_version_id: { type: [string, "null"], format: uuid }
+        quantity_issued: { type: integer, minimum: 1 }
+        serial_range: { type: [object, "null"] }
+
+    ReconcileLabelsCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PKG-FR-013, PKG-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, run_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        run_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        applied: { type: integer, minimum: 0, default: 0 }
+        returned: { type: integer, minimum: 0, default: 0 }
+        destroyed: { type: integer, minimum: 0, default: 0 }
+        rejected: { type: integer, minimum: 0, default: 0 }
+        samples: { type: integer, minimum: 0, default: 0 }
+
+    ReconcilePackagingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PKG-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, run_id, expected_version, components_issued]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        run_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        components_issued: { type: integer, minimum: 0 }
+        finished_packs: { type: integer, minimum: 0, default: 0 }
+        rejects: { type: integer, minimum: 0, default: 0 }
+        samples: { type: integer, minimum: 0, default: 0 }
+        destroyed: { type: integer, minimum: 0, default: 0 }
+
+    CompletePackagingRunCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PKG-FR-028, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, run_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        run_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }

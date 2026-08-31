@@ -92,7 +92,7 @@ async def test_disposition_requires_qc_reviewer_role(client, seeded):
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 403
-    assert resp.json()["code"] == "FORBIDDEN"
+    assert resp.json()["code"] == "ROLE_MISSING"
 
 
 async def test_issue_from_quarantine_lot_rejected(client, seeded):
@@ -222,6 +222,10 @@ async def test_full_material_genealogy_flow(client, seeded, db):
 
     rows = (await db.execute(select(MaterialIssue).where(MaterialIssue.batch_id == batch_id))).scalars().all()
     assert len(rows) == 1
+    # SG-146 (remainder): "kg" has no released rules.gxp_uom row in this environment -- the dual-write
+    # is a no-op, and the issue's uom_id is copied from the lot's own (also unresolved) value.
+    assert rows[0].uom == "kg"
+    assert rows[0].uom_id is None
 
 
 async def test_over_issue_rejected(client, seeded):

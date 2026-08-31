@@ -1,0 +1,491 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QMS-009 — Internal Audit Management
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-05 Document 34 slice actually built
+    (`services/gxp-api/app/modules/qms/internal_audit_*.py`): create internal audit -> start -> findings
+    -> response -> verify (signed) -> close (signed), matching the module's own 6-op API list exactly
+    across two owned entities (`InternalAudit`, `AuditFinding`), plus the `signature-challenges`
+    ceremony-entry-point endpoints (SG-138 engineering half, not in Document 34's own list — contracted
+    because the router implements them; two endpoints, one per record type, since `internal_audit` and
+    `audit_finding` are separate record types on separate sub-resources).
+
+
+    AUDIT-FR-004(checklist)/012(schedule change)/015(metrics)/016(external audit tracking) are
+    deliberately not built — see docs/generated/18_SPEC_GAPS.md SG-101; the broader "own function" half
+    of AUDIT-FR-003 (auditor independence) is out of scope — see SG-102. `start`/`close` on
+    `internal_audit` and `verify` on `audit_finding` are signed (INTERNAL_AUDIT_SIGNATURE_ACTIONS =
+    `("start", "close")`, AUDIT_FINDING_SIGNATURE_ACTIONS = `("verify",)`); all three return
+    `SIGNATURE_POLICY_UNRESOLVED` today (SG-138's policy-data half is still open).
+tags:
+  - name: qms-internal-audit
+
+paths:
+  /qms/v1/audits:
+    post:
+      operationId: postCreateInternalAudit
+      tags: [qms-internal-audit]
+      summary: Schedule an internal audit (AUDIT-FR-001/002/003)
+      description: Requires `internal_audit.create`. At least one of `site_scope`/`process_scope` is required; `auditees` must not overlap `lead_auditor_id`/`team` (AUDITOR_SOD_CONFLICT).
+      x-requirement-ids: [AUDIT-FR-001, AUDIT-FR-002, AUDIT-FR-003, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateInternalAuditCommand' } } }
+      responses:
+        '200': { description: Created, state SCHEDULED. `aggregate_id` is the audit id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: "IDEMPOTENCY_CONFLICT or AUDITOR_SOD_CONFLICT.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED or AUDIT_SCOPE_INCOMPLETE (neither site_scope nor process_scope given).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+    get:
+      operationId: getInternalAudits
+      tags: [qms-internal-audit]
+      summary: Paginated, filterable internal audit list (non-authoritative read, AG-11)
+      x-requirement-ids: [AUDIT-FR-001]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+        - { name: site_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: state, in: query, required: false, schema: { $ref: '#/components/schemas/InternalAuditState' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/InternalAuditListResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /qms/v1/audits/{audit_id}:
+    parameters:
+      - { name: audit_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getInternalAuditDetail
+      tags: [qms-internal-audit]
+      summary: One audit with full scope/criteria detail and its findings (AUDIT-FR-002/005)
+      x-requirement-ids: [AUDIT-FR-002, AUDIT-FR-005]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/InternalAuditDetail' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /qms/v1/audits/{audit_id}/signature-challenges:
+    parameters:
+      - { name: audit_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postInternalAuditSignatureChallenge
+      tags: [qms-internal-audit]
+      summary: Create the Part 11 signature challenge for start/close (SG-138 engineering half)
+      description: >
+        Not in Document 34's own 6-op API list; contracted because the router implements it. Resolves
+        the `internal_audit`/`{action}` Document 106 policy and binds a challenge to the current audit's
+        id/version/hash. Returns `SIGNATURE_POLICY_UNRESOLVED` today for both actions (SG-138's
+        policy-data half is still open).
+      x-requirement-ids: [AUDIT-FR-002, AUDIT-FR-011, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/InternalAuditSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not one of start/close.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/audits/{audit_id}/start:
+    parameters:
+      - { name: audit_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postStartInternalAudit
+      tags: [qms-internal-audit]
+      summary: Begin fieldwork — signed per Document 106 (AUDIT-FR-002)
+      description: Requires `internal_audit.start`. SCHEDULED -> IN_PROGRESS only. Resolves the `internal_audit`/`start` Document 106 policy.
+      x-requirement-ids: [AUDIT-FR-002, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/StartInternalAuditCommand' } } }
+      responses:
+        '200': { description: Started., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: audit_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qms/v1/audits/{audit_id}/findings:
+    parameters:
+      - { name: audit_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAddFinding
+      tags: [qms-internal-audit]
+      summary: Add a finding, also generating the audit report on first finding (AUDIT-FR-006/010/014)
+      description: Requires `internal_audit.finding.add`. Audit must be IN_PROGRESS; on the first finding, the audit also moves to FINDINGS_OPEN (a secondary `AuditReportApproved` event is written).
+      x-requirement-ids: [AUDIT-FR-006, AUDIT-FR-010, AUDIT-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AddFindingCommand' } } }
+      responses:
+        '200': { description: "Added. `aggregate_id`/`resulting_version` describe the audit, not the finding, when the audit also advances.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION (audit), IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (missing requirement_ref/observation/severity) or audit_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/audits/{audit_id}/close:
+    parameters:
+      - { name: audit_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCloseInternalAudit
+      tags: [qms-internal-audit]
+      summary: Close after every finding is verified — signed per Document 106 (AUDIT-FR-011)
+      description: Requires `internal_audit.close`. Only once every finding on the audit is VERIFIED. Resolves the `internal_audit`/`close` Document 106 policy.
+      x-requirement-ids: [AUDIT-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CloseInternalAuditCommand' } } }
+      responses:
+        '200': { description: Closed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, AUDIT_CLOSURE_BLOCKED (an unverified finding remains), or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (conclusion required) or audit_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qms/v1/findings:
+    get:
+      operationId: getAuditFindings
+      tags: [qms-internal-audit]
+      summary: Cross-audit finding worklist, or one audit's findings via audit_id (AUDIT-FR-006/015)
+      description: "AUDIT-FR-018 open-findings view."
+      x-requirement-ids: [AUDIT-FR-006, AUDIT-FR-015]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+        - { name: site_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: state, in: query, required: false, schema: { $ref: '#/components/schemas/FindingState' } }
+        - { name: audit_id, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AuditFindingListResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /qms/v1/findings/{finding_id}:
+    parameters:
+      - { name: finding_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getAuditFindingDetail
+      tags: [qms-internal-audit]
+      summary: One finding's full detail (AUDIT-FR-006/007/009)
+      x-requirement-ids: [AUDIT-FR-006, AUDIT-FR-007, AUDIT-FR-009]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AuditFinding' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /qms/v1/findings/{finding_id}/signature-challenges:
+    parameters:
+      - { name: finding_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAuditFindingSignatureChallenge
+      tags: [qms-internal-audit]
+      summary: Create the Part 11 signature challenge for verify (SG-138 engineering half)
+      description: >
+        Not in Document 34's own 6-op API list; contracted because the router implements it. Resolves
+        the `audit_finding`/`verify` Document 106 policy and binds a challenge to the current finding's
+        id/version/hash. Returns `SIGNATURE_POLICY_UNRESOLVED` today (SG-138's policy-data half is still
+        open).
+      x-requirement-ids: [AUDIT-FR-009, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AuditFindingSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not verify.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/findings/{finding_id}/response:
+    parameters:
+      - { name: finding_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRespondToFinding
+      tags: [qms-internal-audit]
+      summary: Record correction, root cause and action for a finding (AUDIT-FR-007/008)
+      description: Requires `internal_audit.finding.response`. OPEN -> RESPONSE_SUBMITTED only.
+      x-requirement-ids: [AUDIT-FR-007, AUDIT-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RespondToFindingCommand' } } }
+      responses:
+        '200': { description: Recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (correction/root_cause/action required) or finding_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/findings/{finding_id}/verify:
+    parameters:
+      - { name: finding_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postVerifyFinding
+      tags: [qms-internal-audit]
+      summary: QA/auditor verification of effectiveness — signed per Document 106 (AUDIT-FR-009)
+      description: Requires `internal_audit.finding.verify`. RESPONSE_SUBMITTED -> VERIFIED only. Resolves the `audit_finding`/`verify` Document 106 policy.
+      x-requirement-ids: [AUDIT-FR-009, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VerifyFindingCommand' } } }
+      responses:
+        '200': { description: Verified., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION (finding response not yet submitted), or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (verification_notes required) or finding_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    InternalAuditState:
+      type: string
+      description: "`INTERNAL_AUDIT_STATES` in `app/modules/qms/internal_audit_models.py`."
+      x-requirement-ids: [AUDIT-FR-001, CTR-FR-017]
+      enum: [SCHEDULED, IN_PROGRESS, FINDINGS_OPEN, CLOSED]
+
+    FindingState:
+      type: string
+      description: "`FINDING_STATES`."
+      x-requirement-ids: [AUDIT-FR-006, CTR-FR-017]
+      enum: [OPEN, RESPONSE_SUBMITTED, VERIFIED]
+
+    InternalAudit:
+      type: object
+      description: One internal audit (`app/modules/qms/internal_audit_router.py:_audit_dict`). A response schema, so not closed.
+      x-requirement-ids: [AUDIT-FR-001, AUDIT-FR-002]
+      required: [id, site_id, quality_event_id, audit_number, program_ref, lead_auditor_id, scheduled_at, state, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        quality_event_id: { type: string, format: uuid }
+        audit_number: { type: string }
+        program_ref: { type: string }
+        lead_auditor_id: { type: string, format: uuid }
+        team: { type: [array, "null"], items: { type: string, format: uuid } }
+        auditees: { type: [array, "null"], items: { type: string, format: uuid } }
+        scheduled_at: { type: string, format: date-time }
+        actual_start_at: { type: [string, "null"], format: date-time }
+        actual_end_at: { type: [string, "null"], format: date-time }
+        state: { $ref: '#/components/schemas/InternalAuditState' }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        created_at: { type: [string, "null"], format: date-time }
+
+    InternalAuditDetail:
+      type: object
+      description: getInternalAuditDetail's response — InternalAudit plus scope/criteria and its findings.
+      x-requirement-ids: [AUDIT-FR-002, AUDIT-FR-005]
+      allOf:
+        - $ref: '#/components/schemas/InternalAudit'
+        - type: object
+          required: [criteria_refs, findings]
+          properties:
+            site_scope: { type: [object, "null"] }
+            process_scope: { type: [object, "null"] }
+            criteria_refs: { type: object }
+            findings: { type: array, items: { $ref: '#/components/schemas/AuditFinding' } }
+
+    AuditFinding:
+      type: object
+      description: One audit finding (`app/modules/qms/internal_audit_router.py:_finding_dict`). A response schema, so not closed.
+      x-requirement-ids: [AUDIT-FR-006, AUDIT-FR-007, AUDIT-FR-009]
+      required: [id, site_id, audit_id, finding_number, requirement_ref, observation, severity, owner_subject_id, capa_required, is_repeat_finding, state, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        audit_id: { type: string, format: uuid }
+        finding_number: { type: string }
+        requirement_ref: { type: string }
+        observation: { type: string }
+        evidence: { type: [object, "null"] }
+        severity: { type: string }
+        owner_subject_id: { type: string, format: uuid }
+        due_date: { type: [string, "null"], format: date-time }
+        response: { type: [object, "null"] }
+        capa_required: { type: boolean }
+        capa_rationale: { type: [string, "null"] }
+        is_repeat_finding: { type: boolean }
+        verification: { type: [object, "null"] }
+        state: { $ref: '#/components/schemas/FindingState' }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: [string, "null"], format: date-time }
+        closed_at: { type: [string, "null"], format: date-time }
+
+    InternalAuditListResult:
+      type: object
+      description: getInternalAudits's response — the shared page envelope plus items.
+      x-requirement-ids: [AUDIT-FR-001, CTR-FR-012]
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/InternalAudit' } } }
+
+    AuditFindingListResult:
+      type: object
+      description: getAuditFindings's response — the shared page envelope plus items.
+      x-requirement-ids: [AUDIT-FR-006, AUDIT-FR-015, CTR-FR-012]
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/AuditFinding' } } }
+
+    SignatureChallengeResponse:
+      type: object
+      description: Response shared by postInternalAuditSignatureChallenge and postAuditFindingSignatureChallenge.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    InternalAuditSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [start, close] }
+
+    AuditFindingSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [verify] }
+
+    CreateInternalAuditCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [AUDIT-FR-001, AUDIT-FR-002, AUDIT-FR-003, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, audit_number, program_ref, criteria_refs, lead_auditor_id, scheduled_at]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        audit_number: { type: string }
+        program_ref: { type: string }
+        criteria_refs: { type: object }
+        lead_auditor_id: { type: string, format: uuid }
+        scheduled_at: { type: string, format: date-time }
+        site_scope: { type: [object, "null"], description: "At least one of site_scope/process_scope is required (AUDIT_SCOPE_INCOMPLETE otherwise)." }
+        process_scope: { type: [object, "null"] }
+        team: { type: [array, "null"], items: { type: string, format: uuid } }
+        auditees: { type: [array, "null"], items: { type: string, format: uuid }, description: Must not overlap lead_auditor_id/team (AUDITOR_SOD_CONFLICT). }
+
+    StartInternalAuditCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, audit_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        audit_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    AddFindingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [AUDIT-FR-006, AUDIT-FR-010, AUDIT-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, audit_id, audit_expected_version, finding_number, requirement_ref, observation, severity, owner_subject_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        audit_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        audit_expected_version: { type: integer, minimum: 1 }
+        finding_number: { type: string }
+        requirement_ref: { type: string }
+        observation: { type: string }
+        severity: { type: string }
+        owner_subject_id: { type: string, format: uuid }
+        evidence: { type: [object, "null"] }
+        due_date: { type: [string, "null"], format: date-time }
+
+    CloseInternalAuditCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [AUDIT-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, audit_id, expected_version, conclusion]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        audit_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        conclusion: { type: string }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    RespondToFindingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [AUDIT-FR-007, AUDIT-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, finding_id, expected_version, correction, root_cause, action]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        finding_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        correction: { type: string }
+        root_cause: { type: string }
+        action: { type: string }
+        due_date: { type: [string, "null"], format: date-time, description: Overwrites the finding's due date if given. }
+        capa_required: { type: boolean, default: false }
+        capa_rationale: { type: [string, "null"] }
+        reason: { type: [string, "null"] }
+
+    VerifyFindingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [AUDIT-FR-009, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, finding_id, expected_version, verification_notes, effective]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        finding_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        verification_notes: { type: string }
+        effective: { type: boolean }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

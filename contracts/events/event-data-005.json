@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-data-005.json",
+  "title": "SPEC-DATA-005 — Transactional Outbox Event Envelope (canonical, all producers)",
+  "description": "Document 113 event-contract work, opened 2026-08-29 (first pass: envelope plus the WP-05 QMS module's own event schemas -- see event-qms-001.json..event-qms-012.json). This file is deliberately components-only, the same role spec-gxp-001.yaml plays for commands/receipts/errors: every producing module's own event-*.json $ref's EventEnvelope from here rather than redefining it, since Document 73 (SPEC-DATA-005, the PostgreSQL transactional outbox) is the declared owner of event/idempotency/replay semantics (AG-09, Document 113 §2/§5).\n\nDIVERGENCE FROM Document 113 §2, AS OF THE FIRST PASS (2026-08-29 -- recorded, not invented, matching the same discipline spec-gxp-001.yaml already applies to CommandEnvelope/MutationReceipt/ErrorResponse): Document 113's canonical event envelope lists event_id, event_type, schema_version, tenant_id, site_id, aggregate_type, aggregate_id, aggregate_version, occurred_at_utc, correlation_id, causation_id, payload. At that time the envelope actually built and written by every producer (app/mutation/gateway.py::write_outbox_event(), backed by app/modules/mutation/models.py::OutboxEvent) carried event_id (the row's own primary key, called 'id' at the ORM/DB level), event_type, aggregate_type, aggregate_id, aggregate_version, payload, correlation_id, causation_id, occurred_at (server-assigned, not client-supplied _utc-suffixed), and published_at (an outbox-publisher bookkeeping field Document 113 does not name at all). It carried NO schema_version, tenant_id or site_id at the envelope level: this is a genuine single-tenant-per-deployment baseline (no tenant_id column exists anywhere in this codebase, matching CommandEnvelope's own documented narrowing in spec-gxp-001.yaml), site scope is derivable from the aggregate itself when the aggregate type carries one but is not duplicated onto the envelope. Every event-*.json file's own 'schema_version' field (see event-qms-*.json) was, at that time, contract-side metadata only, tracked in 37_API_EVENT_COMPATIBILITY_REGISTRY.md, not a transported field. This mirrored CTRC-FR-002's envelope-conformance intent (one canonical shape, no per-producer reinvention) while contracting the envelope that was actually written, not the aspirational one.\n\nUPDATE 2026-08-31 (WP-11 Document 73, migration 0072): `schema_version` is now a real transported field on every outbox row -- `mutation.outbox_events.schema_version` (additive, `server_default '1.0'`, existing rows backfilled by the default, no rewrite) and `write_outbox_event()` now always sets it (default '1.0' when a producer does not pass one). This closes that specific divergence from Document 113 §2's canonical envelope (EVT-FR-001). `tenant_id`/`site_id` remain deliberately absent from the envelope for the reason above (ADR-0006); that divergence stands.\n\nTRANSPORT NOTE (AG-09/AG-10): NATS/JetStream is the declared transport, but app/main.py::outbox_publisher_loop() is, by its own docstring, 'a Phase 1 stand-in for a real bus' that reads committed outbox rows and logs them rather than publishing anywhere. No NATS subject naming, channel, or binding convention exists in this codebase to contract. Full AsyncAPI 2.x/3.x (channels/operations/servers/bindings) would require inventing that transport-binding layer, which is exactly the kind of undecided architectural detail CLAUDE.md §4 reserves from being guessed. This file and its per-module siblings therefore use plain JSON Schema (draft 2020-12) describing the envelope and payload shapes only -- one of the two formats Document 113 §1 names as acceptable ('OpenAPI 3.1 / AsyncAPI / JSON Schema') -- with a lightweight top-level 'events' list (mirroring 07_EVENT_CATALOGUE.yaml's own existing list shape) standing in for AsyncAPI's channel/message declarations. This is an ordinary engineering format choice, not a regulated one, and is recorded here as a disclosed decision rather than silently assumed.\n\nSCOPE OF THIS PASS: covers the envelope (this file) plus the twelve WP-05 QMS modules' own event schemas (event-qms-001.json..event-qms-012.json, Documents 26-37, 68 real emitted event types verified directly against every `write_outbox_event(...)` call site in app/modules/qms/*.py -- not the aspirational names 07_EVENT_CATALOGUE.yaml declares for the same modules, several of which are not actually produced by any code path; see each event-qms-*.json's own description for the specific divergences found). The remaining ~400 events across the other 70+ modules are explicitly out of scope for this pass -- deliberately deferred, not silently skipped; SG-013's point 3 in docs/generated/18_SPEC_GAPS.md tracks this as still open.",
+  "x-requirement-ids": ["EVT-FR-001", "EVT-FR-002", "EVT-FR-003", "EVT-FR-004", "CTRC-FR-002", "CTRC-FR-008", "CTRC-FR-009"],
+  "$defs": {
+    "EventEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The canonical event envelope as actually built (app/modules/mutation/models.py::OutboxEvent, written by app/mutation/gateway.py::write_outbox_event() inside the same PostgreSQL transaction as the domain state and audit event it accompanies, per AG-09/MUT-FR-018). Every producing module's own event-*.json 'events' entries carry a 'payload' schema that plugs into the 'payload' property below.",
+      "x-requirement-ids": ["EVT-FR-001", "EVT-FR-002", "MUT-FR-015", "MUT-FR-018"],
+      "required": ["event_id", "event_type", "schema_version", "aggregate_type", "aggregate_id", "aggregate_version", "payload", "correlation_id", "occurred_at"],
+      "properties": {
+        "event_id": {
+          "type": "string", "format": "uuid",
+          "description": "The outbox row's own primary key (OutboxEvent.id). Document 113 §2 also calls this event_id; same name, real field."
+        },
+        "event_type": {
+          "type": "string",
+          "description": "Stable semantic name (e.g. DeviationOpened). Exactly one producing module per event_type (CTRC-FR-008) -- enforced by convention today, not by a registry gate."
+        },
+        "schema_version": {
+          "type": "string", "default": "1.0",
+          "description": "Migration 0072 (2026-08-31, Document 73): a real transported field, `OutboxEvent.schema_version`, set by every write_outbox_event() call (default '1.0'). Per-event-type schema evolution (EVT-FR-011/012) bumps this; app/modules/eventbus/schema_registry.py::verify_event_schema_compatibility() is the CI gate for additive-vs-breaking changes."
+        },
+        "aggregate_type": {
+          "type": "string",
+          "description": "The owning entity's record_type-style name, e.g. deviation_record, capa_record. Matches the aggregate_type string each module's own commands.py passes to write_audit_event()/write_outbox_event()."
+        },
+        "aggregate_id": { "type": "string", "format": "uuid" },
+        "aggregate_version": {
+          "type": "integer", "minimum": 1,
+          "description": "The aggregate's resulting_version at the point this event was written (MUT-FR-009 optimistic-concurrency version, not a separate event sequence number)."
+        },
+        "payload": {
+          "type": "object",
+          "description": "Event-specific. See the owning module's own event-*.json for the exact per-event_type shape (F1: every payload field maps to a real entity field or a documented computed value)."
+        },
+        "correlation_id": {
+          "type": "string", "format": "uuid",
+          "description": "Shared with the MutationReceipt of the command that produced this event and with the audit event written in the same transaction (MUT-FR-027)."
+        },
+        "causation_id": {
+          "type": ["string", "null"], "format": "uuid",
+          "description": "Optional; not populated by any QMS call site verified in this pass (every write_outbox_event() call in app/modules/qms/*.py omits it, taking the default None)."
+        },
+        "occurred_at": {
+          "type": "string", "format": "date-time",
+          "description": "Server-assigned UTC (OutboxEvent.occurred_at, server_default now()). Not client-supplied; not named occurred_at_utc despite the _utc-suffixed name Document 113 §2 uses -- same field, different name, recorded as a real divergence."
+        },
+        "published_at": {
+          "type": ["string", "null"], "format": "date-time",
+          "description": "Set by the outbox publisher loop once (nominally) published. Null until then. Not part of Document 113 §2's canonical envelope at all -- outbox-implementation bookkeeping the spec doesn't anticipate, disclosed here rather than omitted."
+        }
+      }
+    },
+    "EventDeadLetteredPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["consumer_name", "event_id", "attempt_count", "reason"],
+      "properties": {
+        "consumer_name": { "type": "string" },
+        "event_id": { "type": "string", "format": "uuid" },
+        "attempt_count": { "type": "integer" },
+        "reason": { "type": "string" },
+        "dead_lettered_at": { "type": "string", "format": "date-time" }
+      },
+      "x-requirement-ids": ["EVT-FR-010"]
+    },
+    "EventReplayStartedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["consumer_name", "event_ids", "reason", "requested_by"],
+      "properties": {
+        "consumer_name": { "type": "string" },
+        "event_ids": { "type": "array", "items": { "type": "string", "format": "uuid" } },
+        "reason": { "type": "string" },
+        "requested_by": { "type": "string", "format": "uuid" },
+        "started_at": { "type": "string", "format": "date-time" }
+      },
+      "x-requirement-ids": ["EVT-FR-016", "EVT-FR-017"]
+    },
+    "EventPublishedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["event_id", "subject"],
+      "properties": {
+        "event_id": { "type": "string", "format": "uuid" },
+        "subject": { "type": "string" },
+        "acknowledged": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["EVT-FR-004"]
+    },
+    "EventSchemaBreakingChangeDetectedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["violations"],
+      "properties": {
+        "event_type": { "type": ["string", "null"] },
+        "violations": { "type": "array", "items": { "type": "string" } }
+      },
+      "x-requirement-ids": ["EVT-FR-011", "EVT-FR-012"]
+    },
+    "ConsumerLagExceededPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["consumer_name", "lag_seconds", "threshold_seconds"],
+      "properties": {
+        "consumer_name": { "type": "string" },
+        "lag_seconds": { "type": "number" },
+        "threshold_seconds": { "type": "number" }
+      },
+      "x-requirement-ids": ["EVT-FR-009", "EVT-FR-025"]
+    },
+    "OutboxLagExceededPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["lag_seconds", "threshold_seconds"],
+      "properties": {
+        "lag_seconds": { "type": "number" },
+        "threshold_seconds": { "type": "number" }
+      },
+      "x-requirement-ids": ["EVT-FR-025"]
+    }
+  },
+  "events": [
+    { "event_type": "EventDeadLettered", "schema_version": "1.0", "producer": "SPEC-DATA-005", "aggregate_type": "consumer_inbox", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EventDeadLetteredPayload" }, "x-requirement-ids": ["EVT-FR-010"] },
+    { "event_type": "EventReplayStarted", "schema_version": "1.0", "producer": "SPEC-DATA-005", "aggregate_type": "consumer_inbox", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EventReplayStartedPayload" }, "x-requirement-ids": ["EVT-FR-016"] },
+    { "event_type": "EventPublished", "schema_version": "1.0", "producer": "SPEC-DATA-005", "aggregate_type": "event_pipeline", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EventPublishedPayload" }, "x-requirement-ids": ["EVT-FR-004"] },
+    { "event_type": "EventSchemaBreakingChangeDetected", "schema_version": "1.0", "producer": "SPEC-DATA-005", "aggregate_type": "event_pipeline", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EventSchemaBreakingChangeDetectedPayload" }, "x-requirement-ids": ["EVT-FR-011"] },
+    { "event_type": "ConsumerLagExceeded", "schema_version": "1.0", "producer": "SPEC-DATA-005", "aggregate_type": "event_pipeline", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ConsumerLagExceededPayload" }, "x-requirement-ids": ["EVT-FR-009"] },
+    { "event_type": "OutboxLagExceeded", "schema_version": "1.0", "producer": "SPEC-DATA-005", "aggregate_type": "event_pipeline", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/OutboxLagExceededPayload" }, "x-requirement-ids": ["EVT-FR-025"] }
+  ]
+}

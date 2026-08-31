@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qms-012.json",
+  "title": "SPEC-QMS-012 \u2014 Quality Metrics, Trending & Effectiveness Checks Events",
+  "description": "Document 113 event contract for the 7 event types Document 37's own module (app/modules/qms/quality_metrics_commands.py) actually emits. All 7 declared SPEC-QMS-012 events in 07_EVENT_CATALOGUE.yaml are genuinely implemented -- no divergence for this module.\n\nREUSE NOTE: 'QualityMetricCalculated' is, despite its name, emitted from FOUR call sites across two aggregate types -- create_metric_definition() on quality_metric_definition (id, metric_code, version_no), release_metric_definition() on quality_metric_definition (id, metric_code, version_no), the prior-version supersession side-effect of release also on quality_metric_definition (id, state=\"SUPERSEDED\"), and calculate_snapshot() on quality_metric_snapshot (id, metric_definition_id) -- the only one of the four that is actually a calculation. Real, observed characteristic of the built code (quality_metrics_commands.py:158/213/227/278), not invented here.",
+  "x-requirement-ids": [
+    "MET-FR-001",
+    "MET-FR-002",
+    "MET-FR-012",
+    "MET-FR-014",
+    "MET-FR-016",
+    "MET-FR-017",
+    "MET-FR-018",
+    "MET-FR-019",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "QualityMetricCalculatedOnDefinitionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "The quality_metric_definition-aggregate emission -- create/release (id, metric_code, version_no) or supersession (id, state) -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "metric_code": {
+          "type": "string"
+        },
+        "version_no": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "type": "string",
+          "const": "SUPERSEDED"
+        }
+      },
+      "x-requirement-ids": [
+        "MET-FR-001",
+        "MET-FR-002"
+      ]
+    },
+    "QualityMetricCalculatedOnSnapshotPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "metric_definition_id"
+      ],
+      "description": "The quality_metric_snapshot-aggregate emission (calculate_snapshot()) -- the only one of the four QualityMetricCalculated emissions that is a real calculation.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "metric_definition_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "MET-FR-012",
+        "MET-FR-014"
+      ]
+    },
+    "QualityTrendThresholdExceededPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted only when CalculateSnapshotCommand.threshold_exceeded is true.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "MET-FR-017"
+      ]
+    },
+    "QualitySignalAssessmentOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted alongside QualityTrendThresholdExceeded, same condition.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "MET-FR-017"
+      ]
+    },
+    "EffectivenessCheckDuePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_module"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "source_module": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MET-FR-018"
+      ]
+    },
+    "EffectivenessCheckResultPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "result"
+      ],
+      "description": "Same shape for both EffectivenessCheckPassed and EffectivenessCheckFailed.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result": {
+          "$ref": "../openapi/spec-qms-012.yaml#/components/schemas/EffectivenessResult"
+        }
+      },
+      "x-requirement-ids": [
+        "MET-FR-018",
+        "MET-FR-019"
+      ]
+    },
+    "ManagementReviewPackageFrozenPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "review_package_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "review_package_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "MET-FR-016"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "QualityMetricCalculated",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-012",
+      "aggregate_type": "quality_metric_definition",
+      "payload": {
+        "$ref": "#/$defs/QualityMetricCalculatedOnDefinitionPayload"
+      },
+      "x-requirement-ids": [
+        "MET-FR-001",
+        "MET-FR-002"
+      ]
+    },
+    {
+      "event_type": "QualityMetricCalculated",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-012",
+      "aggregate_type": "quality_metric_snapshot",
+      "payload": {
+        "$ref": "#/$defs/QualityMetricCalculatedOnSnapshotPayload"
+      },
+      "x-requirement-ids": [
+        "MET-FR-012",
+        "MET-FR-014"
+      ]
+    },
+    {
+      "event_type": "QualityTrendThresholdExceeded",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-012",
+      "aggregate_type": "quality_metric_snapshot",
+      "payload": {
+        "$ref": "#/$defs/QualityTrendThresholdExceededPayload"
+      },
+      "x-requirement-ids": [
+        "MET-FR-017"
+      ]
+    },
+    {
+      "event_type": "QualitySignalAssessmentOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-012",
+      "aggregate_type": "quality_metric_snapshot",
+      "payload": {
+        "$ref": "#/$defs/QualitySignalAssessmentOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "MET-FR-017"
+      ]
+    },
+    {
+      "event_type": "EffectivenessCheckDue",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-012",
+      "aggregate_type": "effectiveness_check",
+      "payload": {
+        "$ref": "#/$defs/EffectivenessCheckDuePayload"
+      },
+      "x-requirement-ids": [
+        "MET-FR-018"
+      ]
+    },
+    {
+      "event_type": "EffectivenessCheckPassed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-012",
+      "aggregate_type": "effectiveness_check",
+      "payload": {
+        "$ref": "#/$defs/EffectivenessCheckResultPayload"
+      },
+      "x-requirement-ids": [
+        "MET-FR-018"
+      ]
+    },
+    {
+      "event_type": "EffectivenessCheckFailed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-012",
+      "aggregate_type": "effectiveness_check",
+      "payload": {
+        "$ref": "#/$defs/EffectivenessCheckResultPayload"
+      },
+      "x-requirement-ids": [
+        "MET-FR-018",
+        "MET-FR-019"
+      ]
+    },
+    {
+      "event_type": "ManagementReviewPackageFrozen",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-012",
+      "aggregate_type": "quality_metric_snapshot",
+      "payload": {
+        "$ref": "#/$defs/ManagementReviewPackageFrozenPayload"
+      },
+      "x-requirement-ids": [
+        "MET-FR-016"
+      ]
+    }
+  ]
+}

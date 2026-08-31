@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-sec-004.json",
+  "title": "SPEC-SEC-004 — Application, API, UI & Secure Runtime Engineering Events",
+  "description": "Document 113 event contract for WP-10 Document 64 (app/modules/security/appsec*). The 6 security-telemetry events Document 64 # 9 declares (APIAccessDenied, RateLimitTriggered, SSRFBlocked, MaliciousUploadDetected, WebhookReplayDetected, DeprecatedAPIUsed) are written to the transactional outbox SEPARATELY from any GxP audit row (MUT-FR-031: monitoring events about a control that refused something, not a regulated mutation) via appsec.emit_security_event(). DeprecatedAPIUsed is emitted for real by GET /security/v1/api-inventory when a deprecated endpoint is still reachable. The other 5 telemetry events have their emit helper and stable error codes (ACCESS_DENIED / RATE_LIMITED / SSRF_DESTINATION_BLOCKED / MALWARE_DETECTED / REPLAY_DETECTED / WEBHOOK_AUTH_FAILED) in place, but their cross-cutting call sites (an outbound HTTP client, a webhook-ingest endpoint, rate-limit middleware) are not built this pass -- same 'mechanism present, infra call site deferred' shape as Document 63's NOT_STARTED requirements. Plus the 2 Mutation Gateway outbox events the two registry write commands actually emit today: OutboundDestinationRegistered, WebhookProfileRegistered.",
+  "x-requirement-ids": [
+    "APPSEC-FR-001",
+    "APPSEC-FR-011",
+    "APPSEC-FR-012",
+    "APPSEC-FR-014",
+    "APPSEC-FR-020",
+    "APPSEC-FR-027",
+    "EVT-FR-001",
+    "MUT-FR-031"
+  ],
+  "$defs": {
+    "ApiAccessDeniedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "reason"],
+      "properties": {
+        "action": { "type": "string" },
+        "reason": { "type": "string", "enum": ["BFLA", "BOLA", "TENANT_SCOPE", "SITE_SCOPE", "PROPERTY"] },
+        "subject_ref": { "type": ["string", "null"] }
+      },
+      "x-requirement-ids": ["APPSEC-FR-001", "APPSEC-FR-002", "APPSEC-FR-003"]
+    },
+    "RateLimitTriggeredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bucket", "limit", "window_seconds"],
+      "properties": {
+        "bucket": { "type": "string" },
+        "limit": { "type": "integer" },
+        "window_seconds": { "type": "integer" },
+        "retry_after_seconds": { "type": ["integer", "null"] }
+      },
+      "x-requirement-ids": ["APPSEC-FR-014", "APPSEC-FR-015"]
+    },
+    "SsrfBlockedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason"],
+      "properties": {
+        "host": { "type": ["string", "null"] },
+        "purpose": { "type": ["string", "null"] },
+        "reason": { "type": "string" }
+      },
+      "x-requirement-ids": ["APPSEC-FR-011", "APPSEC-FR-019"]
+    },
+    "MaliciousUploadDetectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome"],
+      "properties": {
+        "filename": { "type": ["string", "null"] },
+        "declared_type": { "type": ["string", "null"] },
+        "outcome": { "type": "string", "enum": ["MALWARE_DETECTED", "FILE_TYPE_BLOCKED"] },
+        "sha256": { "type": ["string", "null"] }
+      },
+      "x-requirement-ids": ["APPSEC-FR-012"]
+    },
+    "WebhookReplayDetectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "reason"],
+      "properties": {
+        "provider": { "type": "string" },
+        "delivery_id": { "type": ["string", "null"] },
+        "reason": { "type": "string", "enum": ["DUPLICATE_DELIVERY", "OUTSIDE_REPLAY_WINDOW"] }
+      },
+      "x-requirement-ids": ["APPSEC-FR-020"]
+    },
+    "DeprecatedApiUsedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deprecated_operations", "count", "detected_via"],
+      "properties": {
+        "deprecated_operations": { "type": "array", "items": { "type": ["string", "null"] } },
+        "count": { "type": "integer" },
+        "detected_via": { "type": "string" }
+      },
+      "x-requirement-ids": ["APPSEC-FR-016", "APPSEC-FR-027"]
+    },
+    "OutboundDestinationRegisteredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["destination_id", "service_id"],
+      "properties": {
+        "destination_id": { "type": "string", "format": "uuid" },
+        "service_id": { "type": "string" },
+        "hosts": { "type": "array", "items": { "type": "string" } },
+        "redirect_policy": { "type": "string" }
+      },
+      "x-requirement-ids": ["APPSEC-FR-011"]
+    },
+    "WebhookProfileRegisteredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_id", "provider"],
+      "properties": {
+        "profile_id": { "type": "string", "format": "uuid" },
+        "provider": { "type": "string" },
+        "auth_mechanism": { "type": "string" }
+      },
+      "x-requirement-ids": ["APPSEC-FR-020"]
+    }
+  },
+  "events": [
+    {
+      "event_type": "APIAccessDenied",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-004",
+      "aggregate_type": "security_event",
+      "dedupe_key": "event_id",
+      "payload": { "$ref": "#/$defs/ApiAccessDeniedPayload" },
+      "x-requirement-ids": ["APPSEC-FR-001"]
+    },
+    {
+      "event_type": "RateLimitTriggered",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-004",
+      "aggregate_type": "security_event",
+      "dedupe_key": "event_id",
+      "payload": { "$ref": "#/$defs/RateLimitTriggeredPayload" },
+      "x-requirement-ids": ["APPSEC-FR-014"]
+    },
+    {
+      "event_type": "SSRFBlocked",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-004",
+      "aggregate_type": "security_event",
+      "dedupe_key": "event_id",
+      "payload": { "$ref": "#/$defs/SsrfBlockedPayload" },
+      "x-requirement-ids": ["APPSEC-FR-011"]
+    },
+    {
+      "event_type": "MaliciousUploadDetected",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-004",
+      "aggregate_type": "security_event",
+      "dedupe_key": "event_id",
+      "payload": { "$ref": "#/$defs/MaliciousUploadDetectedPayload" },
+      "x-requirement-ids": ["APPSEC-FR-012"]
+    },
+    {
+      "event_type": "WebhookReplayDetected",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-004",
+      "aggregate_type": "security_event",
+      "dedupe_key": "event_id",
+      "payload": { "$ref": "#/$defs/WebhookReplayDetectedPayload" },
+      "x-requirement-ids": ["APPSEC-FR-020"]
+    },
+    {
+      "event_type": "DeprecatedAPIUsed",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-004",
+      "aggregate_type": "security_event",
+      "dedupe_key": "event_id",
+      "payload": { "$ref": "#/$defs/DeprecatedApiUsedPayload" },
+      "x-requirement-ids": ["APPSEC-FR-027"]
+    },
+    {
+      "event_type": "OutboundDestinationRegistered",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-004",
+      "aggregate_type": "outbound_destination",
+      "dedupe_key": "event_id",
+      "payload": { "$ref": "#/$defs/OutboundDestinationRegisteredPayload" },
+      "x-requirement-ids": ["APPSEC-FR-011"]
+    },
+    {
+      "event_type": "WebhookProfileRegistered",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-004",
+      "aggregate_type": "webhook_profile",
+      "dedupe_key": "event_id",
+      "payload": { "$ref": "#/$defs/WebhookProfileRegisteredPayload" },
+      "x-requirement-ids": ["APPSEC-FR-020"]
+    }
+  ]
+}

@@ -1,0 +1,302 @@
+openapi: 3.1.0
+info:
+  title: SPEC-SEC-002 — Identity Federation, SSO, MFA, Sessions & Service Identities
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-10 Document 62 (`services/gxp-api/app/modules/security/identity_*`). 3
+    owned entities per the approved data-model catalogue: `identity_provider_config`,
+    `application_session`, `service_identity`.
+
+
+    `GET /auth/login` / `GET /auth/callback` (a real OIDC/SAML authorization-code redirect flow) are NOT
+    built this pass — no live external IdP is reachable from this environment to exchange a code against
+    (same class of limitation as `DEMO_ERP_INSTANCE`, SG-125). What IS real: `POST /auth/token` (see
+    `spec-iam-001.yaml`) now creates a genuine `application_session` and `POST /auth/logout` revokes it;
+    `mapExternalIdentity()`, `evaluateMFARequirement()` and `requireFreshAuthentication()` are named
+    functions with their own events/errors in Document 62's contract catalogue but missing from its terse
+    6-op `# 7` list — contracted here as extra operations under their owning aggregate's path, same
+    precedent Document 54/58/61 used for their own extra operations.
+
+
+    `service_identity` here is Document 62's broader service-identity REGISTRY, distinct from the
+    pre-existing `iam.service_identities` (Document 43, edge-only bearer-credential store) — see
+    `app/modules/security/identity_models.py` module docstring. `validateServiceToken()` is contracted as
+    a registry/authorization-scope check layered on top of upstream authentication (mTLS termination or a
+    real external IdP-issued token this environment cannot independently re-verify), not a bearer-secret
+    verifier of its own.
+tags:
+  - name: security-identity
+
+paths:
+  /security/v1/identity-providers:
+    post:
+      operationId: postCreateIdentityProviderConfig
+      tags: [security-identity]
+      summary: Register an identity provider config (IAMSEC-FR-001/002/005/024)
+      x-requirement-ids: [IAMSEC-FR-001, IAMSEC-FR-002, IAMSEC-FR-005, IAMSEC-FR-024, IAMSEC-FR-026, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateIdentityProviderConfigCommand' } } }
+      responses:
+        '200': { description: Created., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/identity-providers/{identity_provider_config_id}/mappings:
+    post:
+      operationId: postMapExternalIdentity
+      tags: [security-identity]
+      summary: Map an external issuer/subject to an internal user (IAMSEC-FR-011/026)
+      description: Writes onto iam.users.external_issuer/external_subject; rejects binding the same (issuer, subject) to two different users.
+      x-requirement-ids: [IAMSEC-FR-011, IAMSEC-FR-026, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: identity_provider_config_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MapExternalIdentityCommand' } } }
+      responses:
+        '200': { description: Mapped., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: VALIDATION_FAILED (bad issuer or a collision with a different user)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/identity-providers/{identity_provider_config_id}/tokens:validate:
+    post:
+      operationId: postValidateIdentityToken
+      tags: [security-identity]
+      summary: Validate a federated identity token's issuer/audience/signature/expiry (IAMSEC-FR-005/024)
+      x-requirement-ids: [IAMSEC-FR-005, IAMSEC-FR-024, MUT-FR-005]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: identity_provider_config_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ValidateIdentityTokenCommand' } } }
+      responses:
+        '200': { description: Valid — normalized claims returned., content: { application/json: { schema: { $ref: '#/components/schemas/AuthContext' } } } }
+        '401': { description: "TOKEN_INVALID (wrong issuer/audience/signature/expired/clock-skew-out-of-bounds).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /security/v1/mfa-requirement:
+    get:
+      operationId: getMfaRequirement
+      tags: [security-identity]
+      summary: Evaluate MFA requirement for a user/role/risk context (IAMSEC-FR-003/004)
+      description: Read-only decision function — returns the required auth strength/allowed methods, does not perform an MFA ceremony.
+      x-requirement-ids: [IAMSEC-FR-003, IAMSEC-FR-004]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: site_id, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: MFA requirement., content: { application/json: { schema: { $ref: '#/components/schemas/MfaRequirement' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+  /security/v1/sessions/{session_id}/revoke:
+    post:
+      operationId: postRevokeSession
+      tags: [security-identity]
+      summary: Revoke one application session (IAMSEC-FR-010/022)
+      x-requirement-ids: [IAMSEC-FR-010, IAMSEC-FR-022, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: session_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RevokeSessionCommand' } } }
+      responses:
+        '200': { description: Revoked., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: INVALID_TRANSITION (already revoked/expired/logged out)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/sessions:revoke-all:
+    post:
+      operationId: postRevokeUserSessions
+      tags: [security-identity]
+      summary: Revoke every active session for a subject (IAMSEC-FR-010/013)
+      description: revokeUserSessions() — also called internally by iam.commands.deactivate_user().
+      x-requirement-ids: [IAMSEC-FR-010, IAMSEC-FR-013, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RevokeUserSessionsCommand' } } }
+      responses:
+        '200': { description: Revoked., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /security/v1/sessions/{session_id}/freshness:
+    get:
+      operationId: getSessionFreshness
+      tags: [security-identity]
+      summary: Check whether a session's authentication is fresh enough for a sensitive operation (IAMSEC-FR-008/009)
+      description: requireFreshAuthentication() — independent of, and never a substitute for, Part 11 signing (IAMSEC-FR-009).
+      x-requirement-ids: [IAMSEC-FR-008, IAMSEC-FR-009]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: required_age_seconds, in: query, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Fresh., content: { application/json: { schema: { $ref: '#/components/schemas/FreshAuthResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '428': { description: FRESH_AUTH_REQUIRED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/service-identities:
+    post:
+      operationId: postProvisionServiceIdentity
+      tags: [security-identity]
+      summary: Provision a service/workload identity (IAMSEC-FR-014/015/016)
+      x-requirement-ids: [IAMSEC-FR-014, IAMSEC-FR-015, IAMSEC-FR-016, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ProvisionServiceIdentityCommand' } } }
+      responses:
+        '200': { description: Provisioned., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: "VALIDATION_FAILED (bad auth_method or duplicate service_name).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/service-identities/{service_identity_id}/revoke:
+    post:
+      operationId: postRevokeServiceIdentity
+      tags: [security-identity]
+      summary: Revoke a service/workload identity (IAMSEC-FR-014)
+      x-requirement-ids: [IAMSEC-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: service_identity_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RevokeServiceIdentityCommand' } } }
+      responses:
+        '200': { description: Revoked., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION or INVALID_TRANSITION (already revoked).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  schemas:
+    CreateIdentityProviderConfigCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [IAMSEC-FR-001, IAMSEC-FR-002, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, deployment_label, issuer, protocol, trust_metadata, claim_mapping_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        deployment_label: { type: string }
+        issuer: { type: string }
+        protocol: { type: string, enum: [OIDC, SAML, LOCAL] }
+        trust_metadata: { type: object }
+        claim_mapping_version: { type: string }
+        claim_mapping: { type: [object, "null"] }
+        effective_from: { type: [string, "null"], format: date-time }
+        effective_to: { type: [string, "null"], format: date-time }
+        reason: { type: [string, "null"] }
+
+    MapExternalIdentityCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [IAMSEC-FR-011, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, identity_provider_config_id, user_id, issuer, subject]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        identity_provider_config_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        issuer: { type: string }
+        subject: { type: string }
+        claims: { type: object }
+        reason: { type: [string, "null"] }
+
+    ValidateIdentityTokenCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [IAMSEC-FR-005, MUT-FR-005]
+      required: [idempotency_key, identity_provider_config_id, token, expected_audience]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        identity_provider_config_id: { type: string, format: uuid }
+        token: { type: string }
+        expected_audience: { type: string }
+
+    AuthContext:
+      type: object
+      x-requirement-ids: [IAMSEC-FR-005, IAMSEC-FR-023]
+      properties:
+        identity_provider_config_id: { type: string, format: uuid }
+        issuer: { type: string }
+        audience: { type: string }
+        subject: { type: [string, "null"] }
+        claims: { type: object }
+
+    MfaRequirement:
+      type: object
+      x-requirement-ids: [IAMSEC-FR-003, IAMSEC-FR-004]
+      properties:
+        mfa_required: { type: boolean }
+        allowed_methods: { type: array, items: { type: string, enum: [WEBAUTHN, TOTP, IDP_MFA] } }
+        reason: { type: string }
+
+    RevokeSessionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [IAMSEC-FR-010, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, session_id, reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        session_id: { type: string, format: uuid }
+        reason: { type: string }
+
+    RevokeUserSessionsCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [IAMSEC-FR-010, IAMSEC-FR-013, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, subject_id, reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        subject_id: { type: string, format: uuid }
+        reason: { type: string }
+
+    FreshAuthResult:
+      type: object
+      x-requirement-ids: [IAMSEC-FR-008]
+      properties:
+        fresh: { type: boolean }
+        auth_time: { type: string, format: date-time }
+        age_seconds: { type: number }
+
+    ProvisionServiceIdentityCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [IAMSEC-FR-014, IAMSEC-FR-015, IAMSEC-FR-016, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, service_name, auth_method, credential_ref]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        service_name: { type: string }
+        auth_method: { type: string, enum: [CLIENT_CREDENTIALS, MTLS, API_KEY] }
+        credential_ref: { type: string }
+        site_id: { type: [string, "null"], format: uuid }
+        allowed_audiences: { type: array, items: { type: string } }
+        allowed_scopes: { type: array, items: { type: string } }
+        reason: { type: [string, "null"] }
+
+    RevokeServiceIdentityCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [IAMSEC-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, service_identity_id, expected_version, reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        service_identity_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }

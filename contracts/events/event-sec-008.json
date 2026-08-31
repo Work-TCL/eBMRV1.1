@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-sec-008.json",
+  "title": "SPEC-SEC-008 — Secure SDLC, Supply Chain, SBOM, Vulnerability & Release Security Events",
+  "description": "Document 113 event contract for WP-10 Document 68 (app/modules/security/supplychain*). VulnerabilityRegistered and VulnerabilityAssessed are emitted for real by the Mutation Gateway command handlers (one outbox row per committed mutation). ReleaseSBOMGenerated / SecurityReleaseBlocked / ReleaseArtifactSigned / SecurityAdvisoryPublished are CI-pipeline events: generateReleaseSBOM() / evaluateSecurityReleaseGate() / signReleaseArtifact() are the app/modules/security/supplychain.py library used by CI, which writes release_security_evidence and emits these via the emit helper when it runs in-process; a standalone CI runner logs them. VulnerabilityExceptionApproved is contracted but currently unreachable: Document 106 row 141's signer role is unresolvable (SG-165), so approve_vulnerability_exception() fails closed with SIGNATURE_POLICY_UNRESOLVED and never commits.",
+  "x-requirement-ids": ["SDLC-FR-009", "SDLC-FR-011", "SDLC-FR-018", "SDLC-FR-019", "SDLC-FR-021", "SDLC-FR-030", "EVT-FR-001", "MUT-FR-031"],
+  "$defs": {
+    "ReleaseSBOMGeneratedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release_id", "artifact_digest", "sbom_digest"],
+      "properties": {
+        "release_id": { "type": "string" },
+        "artifact_digest": { "type": "string" },
+        "sbom_digest": { "type": "string" },
+        "component_count": { "type": "integer" }
+      },
+      "x-requirement-ids": ["SDLC-FR-009"]
+    },
+    "VulnerabilityRegisteredPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["record_id", "vulnerability_id", "source"],
+      "properties": {
+        "record_id": { "type": "string", "format": "uuid" },
+        "vulnerability_id": { "type": "string" },
+        "source": { "type": "string" }
+      },
+      "x-requirement-ids": ["SDLC-FR-018"]
+    },
+    "VulnerabilityAssessedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["record_id", "severity", "kev_status"],
+      "properties": {
+        "record_id": { "type": "string", "format": "uuid" },
+        "severity": { "type": "string" },
+        "kev_status": { "type": "boolean" },
+        "remediation_due": { "type": "string", "format": "date-time" }
+      },
+      "x-requirement-ids": ["SDLC-FR-019", "SDLC-FR-020"]
+    },
+    "SecurityReleaseBlockedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release_id", "blocking_findings"],
+      "properties": {
+        "release_id": { "type": "string" },
+        "blocking_findings": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+      },
+      "x-requirement-ids": ["SDLC-FR-030"]
+    },
+    "ReleaseArtifactSignedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release_id", "artifact_digest"],
+      "properties": {
+        "release_id": { "type": "string" },
+        "artifact_digest": { "type": "string" },
+        "signature_ref": { "type": "string" }
+      },
+      "x-requirement-ids": ["SDLC-FR-011"]
+    },
+    "SecurityAdvisoryPublishedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["advisory_id"],
+      "properties": {
+        "advisory_id": { "type": "string" },
+        "affected_versions": { "type": "array", "items": { "type": "string" } },
+        "fixed_versions": { "type": "array", "items": { "type": "string" } },
+        "cve_refs": { "type": "array", "items": { "type": "string" } }
+      },
+      "x-requirement-ids": ["SDLC-FR-022", "SDLC-FR-023"]
+    },
+    "VulnerabilityExceptionApprovedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["record_id", "expiry"],
+      "properties": {
+        "record_id": { "type": "string", "format": "uuid" },
+        "expiry": { "type": "string", "format": "date-time" }
+      },
+      "x-requirement-ids": ["SDLC-FR-021"]
+    }
+  },
+  "events": [
+    { "event_type": "ReleaseSBOMGenerated", "schema_version": "1.0", "producer": "SPEC-SEC-008", "aggregate_type": "release_security_evidence", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ReleaseSBOMGeneratedPayload" }, "x-requirement-ids": ["SDLC-FR-009"] },
+    { "event_type": "VulnerabilityRegistered", "schema_version": "1.0", "producer": "SPEC-SEC-008", "aggregate_type": "vulnerability_record", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/VulnerabilityRegisteredPayload" }, "x-requirement-ids": ["SDLC-FR-018"] },
+    { "event_type": "VulnerabilityAssessed", "schema_version": "1.0", "producer": "SPEC-SEC-008", "aggregate_type": "vulnerability_record", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/VulnerabilityAssessedPayload" }, "x-requirement-ids": ["SDLC-FR-019"] },
+    { "event_type": "SecurityReleaseBlocked", "schema_version": "1.0", "producer": "SPEC-SEC-008", "aggregate_type": "security_event", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/SecurityReleaseBlockedPayload" }, "x-requirement-ids": ["SDLC-FR-030"] },
+    { "event_type": "ReleaseArtifactSigned", "schema_version": "1.0", "producer": "SPEC-SEC-008", "aggregate_type": "release_security_evidence", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ReleaseArtifactSignedPayload" }, "x-requirement-ids": ["SDLC-FR-011"] },
+    { "event_type": "SecurityAdvisoryPublished", "schema_version": "1.0", "producer": "SPEC-SEC-008", "aggregate_type": "security_event", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/SecurityAdvisoryPublishedPayload" }, "x-requirement-ids": ["SDLC-FR-022"] },
+    { "event_type": "VulnerabilityExceptionApproved", "schema_version": "1.0", "producer": "SPEC-SEC-008", "aggregate_type": "vulnerability_record", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/VulnerabilityExceptionApprovedPayload" }, "x-requirement-ids": ["SDLC-FR-021"] }
+  ]
+}

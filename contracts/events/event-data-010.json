@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-data-010.json",
+  "title": "SPEC-DATA-010 — Performance, Capacity, Observability, SLOs & SRE Operations Events",
+  "description": "Document 113 event contract for WP-11 Document 78 (services/gxp-api/app/modules/sre/*). 5 events are producer SPEC-DATA-010, emitted transactionally (monitor.py/commands.py -- each is a real recorded operational decision, not a background poll): OperationalAlertRaised, PerformanceRegressionDetected, CapacityThresholdForecasted, DatabaseSaturationDetected, GracefulDegradationVerified. Document 78 # 9 also names ProjectionLagExceeded and OutboxLagExceeded, but those are already Document 75's (event-data-007.json, producer SPEC-DATA-007) and Document 70's (event-data-002.json, producer SPEC-DATA-002) own events -- reused, not reinvented (CTRC-FR-008 single-producer rule, same discipline event-data-003.json / Document 71 already applied).",
+  "x-requirement-ids": ["SRE-FR-001", "SRE-FR-007", "SRE-FR-013", "SRE-FR-022", "SRE-FR-028", "SRE-FR-033", "SRE-FR-035", "EVT-FR-001"],
+  "$defs": {
+    "OperationalAlertRaisedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["metric_name", "percentile", "value_ms", "target_ms", "breached"],
+      "properties": {
+        "metric_name": { "type": "string" },
+        "percentile": { "type": "string" },
+        "value_ms": { "type": "integer" },
+        "target_ms": { "type": "integer" },
+        "breached": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["SRE-FR-007", "SRE-FR-028"]
+    },
+    "PerformanceRegressionDetectedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operation_class", "baseline_p99_ms", "candidate_p99_ms", "delta_pct_bp", "allowed_regression_pct_bp", "regressed"],
+      "properties": {
+        "operation_class": { "type": "string" },
+        "baseline_p99_ms": { "type": "integer" },
+        "candidate_p99_ms": { "type": "integer" },
+        "delta_pct_bp": { "type": "integer" },
+        "allowed_regression_pct_bp": { "type": "integer" },
+        "regressed": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["SRE-FR-035"]
+    },
+    "CapacityThresholdForecastedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["dimension", "reference_value", "forecasted_value"],
+      "properties": {
+        "dimension": { "type": "string" },
+        "reference_value": { "type": "integer" },
+        "current_value": { "type": ["integer", "null"] },
+        "forecasted_value": { "type": ["integer", "null"] },
+        "horizon_days": { "type": ["integer", "null"] }
+      },
+      "x-requirement-ids": ["SRE-FR-005", "SRE-FR-033"]
+    },
+    "DatabaseSaturationDetectedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["active_connections", "max_connections", "saturation_pct_bp", "saturated"],
+      "properties": {
+        "active_connections": { "type": "integer" },
+        "max_connections": { "type": "integer" },
+        "saturation_pct_bp": { "type": "integer" },
+        "saturated": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["SRE-FR-013"]
+    },
+    "GracefulDegradationVerifiedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["failed_dependency", "violations", "verified"],
+      "properties": {
+        "failed_dependency": { "type": "string" },
+        "violations": { "type": "array", "items": { "type": "string" } },
+        "verified": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["SRE-FR-022"]
+    },
+    "ServiceLevelObjectiveDefinedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operation_class", "sli_name", "p95_target_ms", "p99_target_ms"],
+      "properties": {
+        "operation_class": { "type": "string" },
+        "sli_name": { "type": "string" },
+        "p95_target_ms": { "type": "integer" },
+        "p99_target_ms": { "type": "integer" }
+      },
+      "x-requirement-ids": ["SRE-FR-001"]
+    }
+  },
+  "events": [
+    { "event_type": "OperationalAlertRaised", "schema_version": "1.0", "producer": "SPEC-DATA-010", "aggregate_type": "sre", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/OperationalAlertRaisedPayload" }, "x-requirement-ids": ["SRE-FR-028"] },
+    { "event_type": "PerformanceRegressionDetected", "schema_version": "1.0", "producer": "SPEC-DATA-010", "aggregate_type": "sre", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/PerformanceRegressionDetectedPayload" }, "x-requirement-ids": ["SRE-FR-035"] },
+    { "event_type": "CapacityThresholdForecasted", "schema_version": "1.0", "producer": "SPEC-DATA-010", "aggregate_type": "capacity_forecast", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/CapacityThresholdForecastedPayload" }, "x-requirement-ids": ["SRE-FR-033"] },
+    { "event_type": "DatabaseSaturationDetected", "schema_version": "1.0", "producer": "SPEC-DATA-010", "aggregate_type": "sre", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/DatabaseSaturationDetectedPayload" }, "x-requirement-ids": ["SRE-FR-013"] },
+    { "event_type": "GracefulDegradationVerified", "schema_version": "1.0", "producer": "SPEC-DATA-010", "aggregate_type": "sre", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/GracefulDegradationVerifiedPayload" }, "x-requirement-ids": ["SRE-FR-022"] },
+    { "event_type": "ServiceLevelObjectiveDefined", "schema_version": "1.0", "producer": "SPEC-DATA-010", "aggregate_type": "slo_definition", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ServiceLevelObjectiveDefinedPayload" }, "x-requirement-ids": ["SRE-FR-001"] }
+  ]
+}

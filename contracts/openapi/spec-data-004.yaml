@@ -1,0 +1,222 @@
+openapi: 3.1.0
+info:
+  title: SPEC-DATA-004 — Immutable Evidence, Object Storage, WORM, Archive & File Lifecycle
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-11 Document 72 (`services/gxp-api/app/modules/evidence/*`).
+    2 owned entities per the approved data-model catalogue: `evidence_object` (16 fields),
+    `evidence_manifest` (5). Authoritative store is split — raw bytes in object storage (Phase-1
+    `LocalEvidenceStore`, content-addressed), metadata / hash / ownership / retention / legal-hold in
+    PostgreSQL (`evidence` schema).
+
+
+    Signature: only `POST /evidence/v1/{id}/legal-holds` is signed — Document 106 row 142 (`Performed`,
+    "Authorized holder (Production / QA)", 1 signature, independence None, reason required). That signer
+    class is a role *pair*, so the seeded policy row uses `required_role_id=None` with the RBAC
+    `evidence.legal_hold` permission defining "authorized holder" (exact precedent = Document 106 row
+    108, `equipment_asset/hold`). Every other operation is RBAC-gated + audit-only. Purge is a
+    controlled state change to PURGED, never a row/object delete (OBJ-FR-019); the app role has no
+    `DELETE` grant on the `evidence.*` tables.
+tags:
+  - name: evidence
+
+paths:
+  /evidence/v1/uploads:
+    post:
+      operationId: postStageEvidenceUpload
+      tags: [evidence]
+      summary: Stage an evidence upload (STAGED) — OBJ-FR-003/015/025
+      x-requirement-ids: [OBJ-FR-003, OBJ-FR-015, OBJ-FR-025, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/StageEvidenceUploadCommand' } } }
+      responses:
+        '200': { description: Staged; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { description: "EVIDENCE_UPLOAD_DENIED (MIME/size policy).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /evidence/v1/{evidence_id}:finalize:
+    post:
+      operationId: postFinalizeEvidenceUpload
+      tags: [evidence]
+      summary: Finalize a staged upload after whole-object hash verification (FINALIZED) — OBJ-FR-002/004/016
+      x-requirement-ids: [OBJ-FR-002, OBJ-FR-004, OBJ-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: evidence_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/FinalizeEvidenceUploadCommand' } } }
+      responses:
+        '200': { description: Finalized; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "EVIDENCE_HASH_MISMATCH (object quarantined) / STALE_VERSION / EVIDENCE_NOT_FINALIZED / IDEMPOTENCY_CONFLICT.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /evidence/v1/{evidence_id}/download:
+    get:
+      operationId: getEvidenceDownload
+      tags: [evidence]
+      summary: Authorized download of a finalized evidence object — OBJ-FR-011/012/030
+      x-requirement-ids: [OBJ-FR-011, OBJ-FR-012, OBJ-FR-030]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: evidence_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: purpose, in: query, required: false, schema: { type: string, default: inspection } }
+      responses:
+        '200': { description: The evidence bytes (Content-Type = stored MIME)., content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { description: "EVIDENCE_ACCESS_DENIED (not authorized / not downloadable state).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "EVIDENCE_MISSING (backing object gone).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /evidence/v1/manifests:
+    post:
+      operationId: postCreateEvidenceManifest
+      tags: [evidence]
+      summary: Create an immutable evidence manifest for a record/release/export — OBJ-FR-008/027
+      x-requirement-ids: [OBJ-FR-008, OBJ-FR-027, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateEvidenceManifestCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "EVIDENCE_NOT_FINALIZED / IDEMPOTENCY_CONFLICT.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /evidence/v1/{evidence_id}/legal-holds:
+    post:
+      operationId: postApplyEvidenceLegalHold
+      tags: [evidence]
+      summary: Apply a legal hold (signed — Document 106 row 142) — OBJ-FR-018
+      description: >
+        Part 11 signed: `Performed` by an "Authorized holder (Production / QA)" (RBAC
+        `evidence.legal_hold`), independence None, reason required. Fresh step-up ceremony bound to the
+        evidence record id/version/hash.
+      x-requirement-ids: [OBJ-FR-018, SIG-FR-004, SIG-FR-005, SIG-FR-010, MUT-FR-009, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: evidence_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApplyEvidenceLegalHoldCommand' } } }
+      responses:
+        '200': { description: Hold applied; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION / EVIDENCE_NOT_FINALIZED / SIGNATURE_CHALLENGE_INVALID / IDEMPOTENCY_CONFLICT.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: "MISSING_SIGNATURE (step-up not completed).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /evidence/v1/integrity-checks:
+    post:
+      operationId: postEvidenceIntegrityCheck
+      tags: [evidence]
+      summary: Run an evidence integrity check over a scope — OBJ-FR-016/023
+      x-requirement-ids: [OBJ-FR-016, OBJ-FR-023, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VerifyEvidenceIntegrityCommand' } } }
+      responses:
+        '200': { description: IntegrityReport (all objects healthy)., content: { application/json: { schema: { $ref: '#/components/schemas/EvidenceIntegrityReport' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: "EVIDENCE_MISSING / EVIDENCE_HASH_MISMATCH (report attached in details).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    StageEvidenceUploadCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, owner_type, owner_id, filename, mime_type, reason]
+      x-requirement-ids: [OBJ-FR-003, OBJ-FR-015, MUT-FR-005, MUT-FR-010]
+      properties:
+        idempotency_key: { type: string }
+        owner_type: { type: string }
+        owner_id: { type: string, format: uuid }
+        owner_version: { type: [integer, 'null'] }
+        site_id: { type: [string, 'null'], format: uuid }
+        filename: { type: string }
+        mime_type: { type: string }
+        declared_size_bytes: { type: [integer, 'null'], minimum: 0 }
+        expected_hash: { type: [string, 'null'] }
+        provenance: { type: object, additionalProperties: true }
+        reason: { type: string }
+
+    FinalizeEvidenceUploadCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, evidence_id, expected_version, content_base64, reason]
+      x-requirement-ids: [OBJ-FR-002, OBJ-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      properties:
+        idempotency_key: { type: string }
+        evidence_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        content_base64: { type: string, description: "Phase-1 direct upload; a provider integration replaces this with {provider_version_id, calculated_hash, size}." }
+        reason: { type: string }
+
+    CreateEvidenceManifestCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, owner_type, owner_id, manifest_type, evidence_ids, reason]
+      x-requirement-ids: [OBJ-FR-008, OBJ-FR-027, MUT-FR-005, MUT-FR-010]
+      properties:
+        idempotency_key: { type: string }
+        owner_type: { type: string }
+        owner_id: { type: string, format: uuid }
+        owner_version: { type: [integer, 'null'] }
+        manifest_type: { type: string, enum: [RELEASE, EXPORT, BATCH_ISSUE, RENDITION] }
+        evidence_ids: { type: array, items: { type: string, format: uuid }, minItems: 1 }
+        renderer_version: { type: [string, 'null'] }
+        reason: { type: string }
+
+    ApplyEvidenceLegalHoldCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, evidence_id, expected_version, hold_ref, reason]
+      x-requirement-ids: [OBJ-FR-018, SIG-FR-005, SIG-FR-010, MUT-FR-009, MUT-FR-012, MUT-FR-013]
+      properties:
+        idempotency_key: { type: string }
+        evidence_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        hold_ref: { type: string }
+        reason: { type: string }
+        challenge_id: { type: [string, 'null'], format: uuid }
+        reauth_password: { type: [string, 'null'] }
+
+    VerifyEvidenceIntegrityCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, reason]
+      x-requirement-ids: [OBJ-FR-016, OBJ-FR-023]
+      properties:
+        idempotency_key: { type: string }
+        evidence_ids: { type: [array, 'null'], items: { type: string, format: uuid } }
+        owner_type: { type: [string, 'null'] }
+        owner_id: { type: [string, 'null'], format: uuid }
+        mode: { type: string, enum: [sample, full], default: full }
+        reason: { type: string }
+
+    EvidenceIntegrityReport:
+      type: object
+      additionalProperties: false
+      required: [mode, checked, missing, mismatched, healthy, checked_at]
+      x-requirement-ids: [OBJ-FR-016, OBJ-FR-023]
+      properties:
+        mode: { type: string }
+        checked: { type: integer }
+        missing: { type: array, items: { type: string } }
+        mismatched: { type: array, items: { type: string } }
+        healthy: { type: boolean }
+        checked_at: { type: string, format: date-time }

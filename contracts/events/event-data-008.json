@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-data-008.json",
+  "title": "SPEC-DATA-008 — Backup, Restore, PITR & Disaster Recovery Events",
+  "description": "Document 113 event contract for WP-11 Document 76 (services/gxp-api/app/modules/disaster_recovery/*). RecoveryObjectiveConfigured, BackupRecorded and PostgresRestoreTestCompleted/RestoreTestFailed are emitted transactionally through the Mutation Gateway outbox (commands.py). EvidenceRestoreMismatch, PlatformRecoveryValidated/RecoveryValidationFailed and RecoveryDataLossDetected are emitted transactionally by recovery.py (each is a real recorded outcome, not a background signal). DatabaseFailoverCompleted is emitted transactionally by failover.py. BackupRPOAtRisk is the one best-effort monitoring signal (signals.py, aggregate_type disaster_recovery).",
+  "x-requirement-ids": ["DR-FR-001", "DR-FR-015", "DR-FR-016", "DR-FR-019", "DR-FR-022", "DR-FR-024", "DR-FR-025", "DR-FR-026", "EVT-FR-001", "EVT-FR-002"],
+  "$defs": {
+    "BackupRPOAtRiskPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["component", "at_risk"],
+      "properties": {
+        "component": { "type": "string" },
+        "tier": { "type": ["string", "null"] },
+        "rpo_seconds": { "type": ["integer", "null"] },
+        "backup_age_seconds": { "type": ["number", "null"] },
+        "at_risk": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["DR-FR-015"]
+    },
+    "RestoreTestFailedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["restore_test_id", "backup_id", "result"],
+      "properties": {
+        "restore_test_id": { "type": "string", "format": "uuid" },
+        "backup_id": { "type": "string", "format": "uuid" },
+        "result": { "type": "string" },
+        "rpo_achieved_seconds": { "type": ["integer", "null"] },
+        "rto_achieved_seconds": { "type": ["integer", "null"] },
+        "target_environment": { "type": "string" }
+      },
+      "x-requirement-ids": ["DR-FR-016", "DR-FR-030"]
+    },
+    "DatabaseFailoverCompletedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["incident_ref", "previous_primary", "new_primary"],
+      "properties": {
+        "incident_ref": { "type": "string" },
+        "previous_primary": { "type": "string" },
+        "new_primary": { "type": "string" }
+      },
+      "x-requirement-ids": ["DR-FR-022", "DR-FR-024"]
+    },
+    "EvidenceRestoreMismatchPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["owner_type", "owner_id"],
+      "properties": {
+        "owner_type": { "type": "string" },
+        "owner_id": { "type": "string" },
+        "detail": { "type": "object", "additionalProperties": true }
+      },
+      "x-requirement-ids": ["DR-FR-019"]
+    },
+    "PlatformRecoveryValidatedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["checks", "failed", "healthy"],
+      "properties": {
+        "checks": { "type": "object", "additionalProperties": { "type": "boolean" } },
+        "failed": { "type": "array", "items": { "type": "string" } },
+        "healthy": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["DR-FR-025"]
+    },
+    "RecoveryValidationFailedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["checks", "failed", "healthy"],
+      "properties": {
+        "checks": { "type": "object", "additionalProperties": { "type": "boolean" } },
+        "failed": { "type": "array", "items": { "type": "string" } },
+        "healthy": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["DR-FR-025"]
+    },
+    "RecoveryDataLossDetectedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["restore_point", "expected_latest", "gap_seconds", "missing_scope"],
+      "properties": {
+        "restore_point": { "type": "string", "format": "date-time" },
+        "expected_latest": { "type": "string", "format": "date-time" },
+        "gap_seconds": { "type": "integer" },
+        "missing_scope": { "type": "string" }
+      },
+      "x-requirement-ids": ["DR-FR-026"]
+    },
+    "RecoveryObjectiveConfiguredPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["component", "tier", "rto_seconds", "approved_by"],
+      "properties": {
+        "component": { "type": "string" },
+        "tier": { "type": "string" },
+        "rpo_seconds": { "type": ["integer", "null"] },
+        "rto_seconds": { "type": "integer" },
+        "approved_by": { "type": "string" }
+      },
+      "x-requirement-ids": ["DR-FR-001", "DR-FR-002"]
+    },
+    "BackupRecordedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["backup_id", "component", "backup_type", "status", "encrypted"],
+      "properties": {
+        "backup_id": { "type": "string", "format": "uuid" },
+        "component": { "type": "string" },
+        "backup_type": { "type": "string" },
+        "status": { "type": "string" },
+        "encrypted": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["DR-FR-005", "DR-FR-013"]
+    },
+    "PostgresRestoreTestCompletedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["restore_test_id", "backup_id", "result"],
+      "properties": {
+        "restore_test_id": { "type": "string", "format": "uuid" },
+        "backup_id": { "type": "string", "format": "uuid" },
+        "result": { "type": "string" },
+        "rpo_achieved_seconds": { "type": ["integer", "null"] },
+        "rto_achieved_seconds": { "type": ["integer", "null"] },
+        "target_environment": { "type": "string" }
+      },
+      "x-requirement-ids": ["DR-FR-016", "DR-FR-017", "DR-FR-030"]
+    }
+  },
+  "events": [
+    { "event_type": "BackupRPOAtRisk", "schema_version": "1.0", "producer": "SPEC-DATA-008", "aggregate_type": "disaster_recovery", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/BackupRPOAtRiskPayload" }, "x-requirement-ids": ["DR-FR-015"] },
+    { "event_type": "RestoreTestFailed", "schema_version": "1.0", "producer": "SPEC-DATA-008", "aggregate_type": "restore_test", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/RestoreTestFailedPayload" }, "x-requirement-ids": ["DR-FR-016"] },
+    { "event_type": "DatabaseFailoverCompleted", "schema_version": "1.0", "producer": "SPEC-DATA-008", "aggregate_type": "disaster_recovery", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/DatabaseFailoverCompletedPayload" }, "x-requirement-ids": ["DR-FR-022"] },
+    { "event_type": "EvidenceRestoreMismatch", "schema_version": "1.0", "producer": "SPEC-DATA-008", "aggregate_type": "disaster_recovery", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EvidenceRestoreMismatchPayload" }, "x-requirement-ids": ["DR-FR-019"] },
+    { "event_type": "PlatformRecoveryValidated", "schema_version": "1.0", "producer": "SPEC-DATA-008", "aggregate_type": "disaster_recovery", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/PlatformRecoveryValidatedPayload" }, "x-requirement-ids": ["DR-FR-025"] },
+    { "event_type": "RecoveryValidationFailed", "schema_version": "1.0", "producer": "SPEC-DATA-008", "aggregate_type": "disaster_recovery", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/RecoveryValidationFailedPayload" }, "x-requirement-ids": ["DR-FR-025"] },
+    { "event_type": "RecoveryDataLossDetected", "schema_version": "1.0", "producer": "SPEC-DATA-008", "aggregate_type": "disaster_recovery", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/RecoveryDataLossDetectedPayload" }, "x-requirement-ids": ["DR-FR-026"] },
+    { "event_type": "RecoveryObjectiveConfigured", "schema_version": "1.0", "producer": "SPEC-DATA-008", "aggregate_type": "recovery_objective_profile", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/RecoveryObjectiveConfiguredPayload" }, "x-requirement-ids": ["DR-FR-001"] },
+    { "event_type": "BackupRecorded", "schema_version": "1.0", "producer": "SPEC-DATA-008", "aggregate_type": "backup_inventory", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/BackupRecordedPayload" }, "x-requirement-ids": ["DR-FR-005"] },
+    { "event_type": "PostgresRestoreTestCompleted", "schema_version": "1.0", "producer": "SPEC-DATA-008", "aggregate_type": "restore_test", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/PostgresRestoreTestCompletedPayload" }, "x-requirement-ids": ["DR-FR-016"] }
+  ]
+}

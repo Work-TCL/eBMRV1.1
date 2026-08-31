@@ -1,0 +1,520 @@
+openapi: 3.1.0
+info:
+  title: SPEC-PM-001 — Postmarket Surveillance, Safety Case & Signal Management
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-09 Document 58 (`services/gxp-api/app/modules/postmarket/`). 4 owned
+    entities per the approved data-model catalogue: `postmarket_source`, `safety_case`,
+    `safety_case_followup`, `safety_signal`.
+
+
+    `findProbableDuplicates()`, `calculateSurveillanceMetric()` and `evaluateSignalRules()` are named
+    functions with their own events in Document 58's contract catalogue but are missing from its terse
+    11-op `# 9. APIs` list — contracted here as extra read/analytics operations (same precedent
+    Document 54 used for its genealogy/review-summary endpoints).
+
+
+    `calculateSurveillanceMetric()` and `buildPeriodicSafetyDataset()` persist their immutable snapshots
+    through the Vault (`vault_service.release_master`) rather than a dedicated table — no
+    `surveillance_metric_snapshot`/periodic-dataset entity exists in the approved schema baseline (see
+    docs/generated/18_SPEC_GAPS.md SG-155 for the related signal-rule-formula gap). `safety_signal`
+    open/assess/escalate have no seeded signature policy — Document 106 rows 120-122 name signer class as
+    "Per policy lookup" with no further resolution (SG-156); these three endpoints correctly return
+    `SIGNATURE_POLICY_UNRESOLVED` in this baseline. `escalateSignalToQMSOrRegulatory`'s `REPORTABILITY_TRACK`
+    target requires Document 59 (SPEC-PM-002), not yet built in this deployment.
+tags:
+  - name: postmarket
+
+paths:
+  /postmarket/v1/sources:
+    post:
+      operationId: postRegisterPostmarketSource
+      tags: [postmarket]
+      summary: Register a postmarket source channel (PMS-FR-001)
+      x-requirement-ids: [PMS-FR-001, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RegisterPostmarketSourceCommand' } } }
+      responses:
+        '200': { description: Registered., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: "PMS_SOURCE_INVALID.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/safety-cases:
+    post:
+      operationId: postCreateSafetyCase
+      tags: [postmarket]
+      summary: Link a new safety case to its source QMS/service record (PMS-FR-002)
+      description: Never copies the source record into a second editable truth (PMS-FR-002).
+      x-requirement-ids: [PMS-FR-002, PMS-FR-003, PMS-FR-006, PMS-FR-007, PMS-FR-026, PMS-FR-027, PMS-FR-029, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateSafetyCaseLinkCommand' } } }
+      responses:
+        '200': { description: Created, state RECEIVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: PMS_CASE_DUPLICATE_SOURCE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/safety-cases/{case_id}/resolve-product:
+    post:
+      operationId: postResolveMarketedProduct
+      tags: [postmarket]
+      summary: Resolve or defer the marketed product/lot/serial for a safety case (PMS-FR-004/005)
+      description: Unknown identity is an open data-quality task and is never discarded (PMS-FR-005).
+      x-requirement-ids: [PMS-FR-004, PMS-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: case_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ResolveMarketedProductCommand' } } }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_SAFETY_CASE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: PRODUCT_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/safety-cases/{case_id}/classifications:
+    post:
+      operationId: postClassifySafetyCase
+      tags: [postmarket]
+      summary: Record a versioned classification of a safety case (PMS-FR-007..012/016/017)
+      description: Classification is not reportability. Every call appends the prior classification onto history (no judgment is ever destroyed).
+      x-requirement-ids: [PMS-FR-007, PMS-FR-008, PMS-FR-009, PMS-FR-010, PMS-FR-012, PMS-FR-016, PMS-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: case_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ClassifySafetyCaseCommand' } } }
+      responses:
+        '200': { description: Classified., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_SAFETY_CASE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "SAFETY_CLASSIFICATION_INCOMPLETE or EXPECTEDNESS_REFERENCE_REQUIRED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/safety-cases/{case_id}/followups:
+    post:
+      operationId: postAddSafetyCaseFollowup
+      tags: [postmarket]
+      summary: Record an immutable safety case follow-up version (PMS-FR-016)
+      description: A follow-up received during review forces the reviewer to refresh (case version bumps).
+      x-requirement-ids: [PMS-FR-016, PMS-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: case_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AddSafetyCaseFollowupCommand' } } }
+      responses:
+        '200': { description: Follow-up recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_SAFETY_CASE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/safety-cases/{case_id}/duplicate-candidates:
+    get:
+      operationId: getSafetyCaseDuplicateCandidates
+      tags: [postmarket]
+      summary: Advisory probable-duplicate candidates for a safety case (PMS-FR-014)
+      description: Read-only; calculates match features, no merge write. AI/heuristic advisory only (PMS-FR-028) — the human decision is linkDuplicateCases.
+      x-requirement-ids: [PMS-FR-014, PMS-FR-028]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: case_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Candidate list., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/DuplicateCandidate' } } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /postmarket/v1/safety-cases/{case_id}/duplicate-links:
+    post:
+      operationId: postLinkDuplicateSafetyCases
+      tags: [postmarket]
+      summary: Link probable-duplicate safety cases to a canonical case without destructive merge (PMS-FR-015)
+      x-requirement-ids: [PMS-FR-015, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: case_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LinkDuplicateCasesCommand' } } }
+      responses:
+        '200': { description: Linked., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/surveillance-metrics:calculate:
+    post:
+      operationId: postCalculateSurveillanceMetric
+      tags: [postmarket]
+      summary: Calculate and freeze an immutable surveillance metric snapshot (PMS-FR-018/019)
+      description: Persisted via Vault (postmarket_surveillance_metric_snapshot) so replaying the same key reproduces the same stored snapshot (SG-155).
+      x-requirement-ids: [PMS-FR-018, PMS-FR-019, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CalculateSurveillanceMetricCommand' } } }
+      responses:
+        '200': { description: Snapshot frozen., content: { application/json: { schema: { $ref: '#/components/schemas/SurveillanceMetricSnapshot' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /postmarket/v1/signal-rules:evaluate:
+    post:
+      operationId: postEvaluateSignalRules
+      tags: [postmarket]
+      summary: Evaluate signal-detection rules and return triggers/evidence only (PMS-FR-020)
+      description: No owned entity, no side effect. Only same-source-record-type recurrence is implemented honestly this pass — see docs/generated/18_SPEC_GAPS.md SG-155.
+      x-requirement-ids: [PMS-FR-020]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EvaluateSignalRulesCommand' } } }
+      responses:
+        '200': { description: Trigger list., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/SignalRuleResult' } } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /postmarket/v1/signals:
+    post:
+      operationId: postOpenSafetySignal
+      tags: [postmarket]
+      summary: Open a safety signal with a frozen case/evidence snapshot (PMS-FR-021)
+      description: Signature policy currently unresolved for this action (SG-156) — returns SIGNATURE_POLICY_UNRESOLVED.
+      x-requirement-ids: [PMS-FR-021, PMS-FR-025, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OpenSafetySignalCommand' } } }
+      responses:
+        '200': { description: Opened, state DETECTED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: "SIGNAL_SCOPE_INVALID or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/signals/{signal_id}/assessments:
+    post:
+      operationId: postAssessSafetySignal
+      tags: [postmarket]
+      summary: Record a versioned multidisciplinary signal assessment (PMS-FR-022/023)
+      description: State machine DETECTED->TRIAGE->ASSESSMENT->REFUTED/MONITORING/CONFIRMED->ACTION->CLOSED (PMS-FR-023). Signature policy currently unresolved (SG-156).
+      x-requirement-ids: [PMS-FR-022, PMS-FR-023, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: signal_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AssessSafetySignalCommand' } } }
+      responses:
+        '200': { description: Assessed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_SAFETY_CASE_VERSION or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/signals/{signal_id}/escalations:
+    post:
+      operationId: postEscalateSafetySignal
+      tags: [postmarket]
+      summary: Escalate a confirmed signal to CAPA/Change Control/Risk Review/Field Action (PMS-FR-024)
+      description: Dispatches to the target module's own real creation command and stores the returned cross-link. REPORTABILITY_TRACK requires Document 59, not yet built. Signature policy currently unresolved (SG-156).
+      x-requirement-ids: [PMS-FR-024, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: signal_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EscalateSignalCommand' } } }
+      responses:
+        '200': { description: Escalated., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_SAFETY_CASE_VERSION or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (unrecognized/not-yet-implemented target_module) or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/periodic-datasets:freeze:
+    post:
+      operationId: postFreezePeriodicSafetyDataset
+      tags: [postmarket]
+      summary: Build an immutable periodic safety dataset of qualifying cases (PMS-FR-032)
+      description: Persisted via Vault (postmarket_periodic_safety_dataset).
+      x-requirement-ids: [PMS-FR-032, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/BuildPeriodicSafetyDatasetCommand' } } }
+      responses:
+        '200': { description: Dataset frozen., content: { application/json: { schema: { $ref: '#/components/schemas/PeriodicSafetyDataset' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /postmarket/v1/dashboard:
+    get:
+      operationId: getPostmarketDashboard
+      tags: [postmarket]
+      summary: Serious cases, reportability-pending, signal aging and follow-up backlog (PMS-FR-033)
+      description: Read-only, non-authoritative (AG-11) — never a regulated decision source.
+      x-requirement-ids: [PMS-FR-033]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: site_id, in: query, required: false, schema: { type: [string, "null"], format: uuid } }]
+      responses:
+        '200': { description: Dashboard summary., content: { application/json: { schema: { $ref: '#/components/schemas/PostmarketDashboard' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    RegisterPostmarketSourceCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMS-FR-001, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, source_type, organization_or_system, channel, owner_subject_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        source_type: { type: string, enum: [COMPLAINT, SERVICE, REPAIR, LITERATURE, REGULATOR, DISTRIBUTOR, FIELD_ACTION, MANUFACTURING, QC, STUDY] }
+        organization_or_system: { type: string }
+        channel: { type: string }
+        owner_subject_id: { type: string, format: uuid }
+        ingestion_profile_id: { type: [string, "null"], format: uuid }
+        reason: { type: [string, "null"] }
+
+    CreateSafetyCaseLinkCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMS-FR-002, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, safety_case_number, source_record_type, source_record_id, source_record_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        safety_case_number: { type: string }
+        source_record_type: { type: string }
+        source_record_id: { type: string, format: uuid }
+        source_record_version: { type: integer }
+        source_receipt_at: { type: [string, "null"], format: date-time }
+        company_initial_receipt_at: { type: [string, "null"], format: date-time }
+        regulatory_clock_candidate_at: { type: [string, "null"], format: date-time }
+        reporter_details: { type: [object, "null"] }
+        citation: { type: [object, "null"] }
+        external_reference: { type: [string, "null"] }
+        seriousness_attributes: { type: [object, "null"] }
+        reason: { type: [string, "null"] }
+
+    ResolveMarketedProductCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMS-FR-004, PMS-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, case_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        case_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        marketed_product_id: { type: [string, "null"], format: uuid }
+        application_profile_id: { type: [string, "null"], format: uuid }
+        product_resolution: { type: [object, "null"] }
+        mark_resolved: { type: boolean, default: false }
+        reason: { type: [string, "null"] }
+
+    ClassifySafetyCaseCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMS-FR-016, PMS-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, case_id, expected_version, classification, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        case_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        classification: { type: object }
+        constituent_attribution: { type: [string, "null"], enum: [DRUG, BIOLOGIC, DEVICE, INTERFACE, PACKAGING_LABEL, USER_INTERACTION, UNKNOWN, null] }
+        expectedness_reference: { type: [object, "null"] }
+        rationale: { type: string }
+
+    AddSafetyCaseFollowupCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMS-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, case_id, expected_version, followup_receipt_at, source_reference, new_information]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        case_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        followup_receipt_at: { type: string, format: date-time }
+        source_reference: { type: object }
+        new_information: { type: object }
+        reassessment_flags: { type: object, default: {} }
+        reason: { type: [string, "null"] }
+
+    LinkDuplicateCasesCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMS-FR-015, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, canonical_case_id, duplicate_case_ids, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        canonical_case_id: { type: string, format: uuid }
+        duplicate_case_ids: { type: array, items: { type: string, format: uuid } }
+        rationale: { type: string }
+
+    CalculateSurveillanceMetricCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMS-FR-018, PMS-FR-019, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, metric_definition_version, scope, period, source_cutoff]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        metric_definition_version: { type: string }
+        scope: { type: object }
+        period: { type: object }
+        source_cutoff: { type: string, format: date-time }
+        exposure_denominator: { type: [object, "null"] }
+        denominator_uncertain: { type: boolean, default: false }
+
+    EvaluateSignalRulesCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMS-FR-020, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, signal_rule_versions]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        signal_rule_versions: { type: array, items: { type: string } }
+        case_scope: { type: object, default: {} }
+
+    OpenSafetySignalCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMS-FR-021, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, site_id, signal_code, detection_source, trigger_refs, population_definition, case_ids_for_snapshot, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        signal_code: { type: string }
+        detection_source: { type: string, enum: [RULE, REVIEWER] }
+        trigger_refs: { type: array, items: { type: object } }
+        population_definition: { type: object }
+        case_ids_for_snapshot: { type: array, items: { type: string, format: uuid } }
+        rationale: { type: string }
+        rule_version: { type: [string, "null"] }
+        exposure_denominator: { type: [object, "null"] }
+        denominator_uncertain: { type: boolean, default: false }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    AssessSafetySignalCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMS-FR-022, PMS-FR-023, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, signal_id, expected_version, assessment, next_state]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        signal_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        assessment: { type: object }
+        next_state: { type: string, enum: [TRIAGE, ASSESSMENT, REFUTED, MONITORING, CONFIRMED, ACTION, CLOSED] }
+        recommended_actions: { type: array, items: { type: string }, default: [] }
+        reason: { type: [string, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    EscalateSignalCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMS-FR-024, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, signal_id, expected_version, target_module, target_command, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        signal_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        target_module: { type: string, enum: [CAPA, CHANGE_CONTROL, RISK_REVIEW, FIELD_ACTION, REPORTABILITY_TRACK] }
+        target_command: { type: object }
+        rationale: { type: string }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    BuildPeriodicSafetyDatasetCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMS-FR-032, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, application_id, interval_start, interval_end, report_type, cutoff]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        application_id: { type: string }
+        interval_start: { type: string, format: date-time }
+        interval_end: { type: string, format: date-time }
+        report_type: { type: string }
+        cutoff: { type: string, format: date-time }
+        site_id: { type: [string, "null"], format: uuid }
+
+    DuplicateCandidate:
+      type: object
+      x-requirement-ids: [PMS-FR-014]
+      properties:
+        case_id: { type: string, format: uuid }
+        safety_case_number: { type: string }
+        match_basis: { type: string }
+
+    SurveillanceMetricSnapshot:
+      type: object
+      x-requirement-ids: [PMS-FR-018, PMS-FR-019]
+      properties:
+        vault_object_id: { type: string, format: uuid }
+        internal_version: { type: integer }
+        metric_definition_version: { type: string }
+        scope: { type: object }
+        period: { type: object }
+        numerator: { type: integer }
+        exposure_denominator: { type: [object, "null"] }
+        denominator_uncertain: { type: boolean }
+
+    SignalRuleResult:
+      type: object
+      x-requirement-ids: [PMS-FR-020]
+      properties:
+        rule_version: { type: string }
+        trigger_type: { type: string }
+        source_record_type: { type: string }
+        case_ids: { type: array, items: { type: string, format: uuid } }
+
+    PeriodicSafetyDataset:
+      type: object
+      x-requirement-ids: [PMS-FR-032]
+      properties:
+        vault_object_id: { type: string, format: uuid }
+        internal_version: { type: integer }
+        application_id: { type: string }
+        report_type: { type: string }
+        case_refs: { type: array, items: { type: object } }
+
+    PostmarketDashboard:
+      type: object
+      x-requirement-ids: [PMS-FR-033]
+      properties:
+        open_cases: { type: integer }
+        reportability_pending: { type: integer }
+        followup_backlog: { type: integer }
+        unknown_identity_queue: { type: integer }
+        open_signals: { type: integer }
+        signal_aging_days_max: { type: integer }

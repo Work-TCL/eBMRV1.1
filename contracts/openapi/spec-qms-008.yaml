@@ -1,0 +1,408 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QMS-008 — Risk Management
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-05 Document 33 slice actually built
+    (`services/gxp-api/app/modules/qms/risk_*.py`): create risk -> initial assessment -> controls ->
+    residual assessment -> accept -> review (still_current / reassessment_required -> new cycle),
+    matching the module's own 6-op API list exactly, plus the `signature-challenges`
+    ceremony-entry-point endpoint (SG-138 engineering half, not in Document 33's own list — contracted
+    because the router implements it).
+
+
+    RSK-FR-007's risk-tiered authority escalation and RSK-FR-009/010/014's cross-module auto-trigger
+    wiring (deviation/OOS/complaint/audit/change automatically opening a risk review) are deliberately
+    not built — see docs/generated/18_SPEC_GAPS.md SG-099/SG-100. Only `review` is signed
+    (RISK_SIGNATURE_ACTIONS = `("review",)`) and returns `SIGNATURE_POLICY_UNRESOLVED` today (SG-138's
+    policy-data half is still open).
+tags:
+  - name: qms-risk
+
+paths:
+  /qms/v1/risks:
+    post:
+      operationId: postCreateRisk
+      tags: [qms-risk]
+      summary: Register a risk (RSK-FR-001/003/011)
+      description: Requires `risk.create`. `risk_type` must be one of Document 33's six types. `methodology_id`, if given, is resolved against a released rules-module RiskDefinition.
+      x-requirement-ids: [RSK-FR-001, RSK-FR-003, RSK-FR-011, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateRiskCommand' } } }
+      responses:
+        '200': { description: Created, state DRAFT. `aggregate_id` is the risk id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (unrecognized risk_type, duplicate risk_number) or RISK_INPUT_INCOMPLETE (missing hazard_problem/potential_effect) or RISK_METHOD_NOT_RELEASED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+    get:
+      operationId: getRisks
+      tags: [qms-risk]
+      summary: Paginated, filterable risk list (non-authoritative read, AG-11)
+      x-requirement-ids: [RSK-FR-001, RSK-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+        - { name: site_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: state, in: query, required: false, schema: { $ref: '#/components/schemas/RiskState' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/RiskListResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /qms/v1/risks/dashboard:
+    get:
+      operationId: getRiskDashboard
+      tags: [qms-risk]
+      summary: Heatmap/trends/overdue mitigations for a site (RSK-FR-017)
+      description: A rebuildable, non-authoritative read (AG-11) — the underlying risk_record/risk_assessment_version rows remain the authority for any decision.
+      x-requirement-ids: [RSK-FR-017]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: site_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/RiskDashboardResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /qms/v1/risks/{risk_id}:
+    parameters:
+      - { name: risk_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getRiskDetail
+      tags: [qms-risk]
+      summary: One risk with full detail and every assessment cycle (RSK-FR-004/005/006/012)
+      x-requirement-ids: [RSK-FR-004, RSK-FR-005, RSK-FR-006, RSK-FR-012]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/RiskDetail' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /qms/v1/risks/{risk_id}/assessments:
+    parameters:
+      - { name: risk_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAddAssessment
+      tags: [qms-risk]
+      summary: Record an initial or residual assessment (RSK-FR-004/006/012)
+      description: Requires `risk.assessment.add`. DRAFT/NEW_VERSION -> INITIAL_ASSESSMENT (initial, requires `methodology_id`); CONTROLS_MITIGATION -> RESIDUAL_ASSESSMENT (residual).
+      x-requirement-ids: [RSK-FR-004, RSK-FR-006, RSK-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AddAssessmentCommand' } } }
+      responses:
+        '200': { description: Recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or RISK_METHOD_NOT_RELEASED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "RISK_INPUT_INCOMPLETE (missing scoring_inputs/score) or risk_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/risks/{risk_id}/controls:
+    parameters:
+      - { name: risk_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAddControls
+      tags: [qms-risk]
+      summary: Attach preventive/detective controls and mitigation actions (RSK-FR-005/008)
+      description: Requires `risk.controls.add`. INITIAL_ASSESSMENT -> CONTROLS_MITIGATION only.
+      x-requirement-ids: [RSK-FR-005, RSK-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AddControlsCommand' } } }
+      responses:
+        '200': { description: Attached., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "RISK_INPUT_INCOMPLETE (empty controls) or risk_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/risks/{risk_id}/accept:
+    parameters:
+      - { name: risk_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAcceptRisk
+      tags: [qms-risk]
+      summary: Accept the residual risk with role/rationale (RSK-FR-007/016)
+      description: Requires `risk.accept`. RESIDUAL_ASSESSMENT -> ACCEPTED only. AI may suggest supporting evidence but cannot accept risk itself (RSK-FR-016) — this is always a human command.
+      x-requirement-ids: [RSK-FR-007, RSK-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AcceptRiskCommand' } } }
+      responses:
+        '200': { description: Accepted., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or RESIDUAL_RISK_REVIEW_REQUIRED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "RISK_ACCEPTANCE_NOT_AUTHORIZED (missing accepted_role/rationale) or risk_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/risks/{risk_id}/signature-challenges:
+    parameters:
+      - { name: risk_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRiskSignatureChallenge
+      tags: [qms-risk]
+      summary: Create the Part 11 signature challenge for review (SG-138 engineering half)
+      description: >
+        Not in Document 33's own 6-op API list; contracted because the router implements it. Resolves
+        the `risk_record`/`review` Document 106 policy and binds a challenge to the current risk's
+        id/version/hash. Returns `SIGNATURE_POLICY_UNRESOLVED` today (SG-138's policy-data half is still
+        open).
+      x-requirement-ids: [RSK-FR-013, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RiskSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not review.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/risks/{risk_id}/review:
+    parameters:
+      - { name: risk_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReviewRisk
+      tags: [qms-risk]
+      summary: Periodic or triggered review — signed per Document 106 (RSK-FR-013/014)
+      description: Requires `risk.review`. ACCEPTED only. `outcome=still_current` stays ACCEPTED (optionally setting `next_review_due_at`); `outcome=reassessment_required` moves to NEW_VERSION, starting a new assessment cycle. Resolves the `risk_record`/`review` Document 106 policy.
+      x-requirement-ids: [RSK-FR-013, RSK-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReviewRiskCommand' } } }
+      responses:
+        '200': { description: Reviewed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION (not ACCEPTED), or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (bad trigger_type/outcome, missing rationale) or risk_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    RiskState:
+      type: string
+      description: "`RISK_RECORD_STATES` in `app/modules/qms/risk_models.py`. No `ALLOWED_TRANSITIONS` table exists — transitions are enforced inline per command."
+      x-requirement-ids: [RSK-FR-001, CTR-FR-017]
+      enum: [DRAFT, INITIAL_ASSESSMENT, CONTROLS_MITIGATION, RESIDUAL_ASSESSMENT, ACCEPTED, NEW_VERSION]
+
+    RiskType:
+      type: string
+      description: "`RISK_TYPES` — the six risk categories Document 33 itself enumerates (RSK-FR-001)."
+      x-requirement-ids: [RSK-FR-001]
+      enum: [product, process, system, supplier, equipment, software]
+
+    ReviewTriggerType:
+      type: string
+      description: "`REVIEW_TRIGGER_TYPES` (RSK-FR-013/014)."
+      x-requirement-ids: [RSK-FR-013, RSK-FR-014]
+      enum: [periodic, triggered]
+
+    RiskAssessmentVersion:
+      type: object
+      description: One assessment cycle, as returned inline by getRiskDetail.
+      x-requirement-ids: [RSK-FR-004, RSK-FR-005, RSK-FR-006, RSK-FR-012]
+      required: [id, cycle_number, review_history, is_current]
+      properties:
+        id: { type: string, format: uuid }
+        cycle_number: { type: integer, minimum: 1 }
+        methodology_version: { type: [string, "null"] }
+        scoring_inputs: { type: [object, "null"] }
+        initial_score: { type: [object, "null"] }
+        controls: { type: [array, "null"], items: { type: object } }
+        mitigation_actions: { type: [array, "null"], items: { type: object } }
+        residual_inputs: { type: [object, "null"] }
+        residual_score: { type: [object, "null"] }
+        acceptance_criteria: { type: [object, "null"] }
+        acceptance: { type: [object, "null"] }
+        review_history: { type: array, items: { type: object } }
+        is_current: { type: boolean }
+        created_at: { type: [string, "null"], format: date-time }
+        closed_at: { type: [string, "null"], format: date-time }
+
+    Risk:
+      type: object
+      description: One risk record (`app/modules/qms/risk_router.py:_risk_dict`). A response schema, so not closed.
+      x-requirement-ids: [RSK-FR-001, RSK-FR-003]
+      required: [id, site_id, quality_event_id, risk_number, risk_type, hazard_problem, potential_effect, owner_subject_id, state, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        quality_event_id: { type: string, format: uuid }
+        risk_number: { type: string }
+        risk_type: { $ref: '#/components/schemas/RiskType' }
+        hazard_problem: { type: string }
+        potential_effect: { type: string }
+        owner_subject_id: { type: string, format: uuid }
+        next_review_due_at: { type: [string, "null"], format: date-time }
+        state: { $ref: '#/components/schemas/RiskState' }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        created_at: { type: [string, "null"], format: date-time }
+
+    RiskDetail:
+      type: object
+      description: getRiskDetail's response — Risk plus methodology_id, context and every assessment cycle.
+      x-requirement-ids: [RSK-FR-002, RSK-FR-011, RSK-FR-012]
+      allOf:
+        - $ref: '#/components/schemas/Risk'
+        - type: object
+          required: [assessment_versions]
+          properties:
+            methodology_id: { type: [string, "null"], format: uuid }
+            context: { type: [object, "null"], description: RSK-FR-011 object mapping (product/recipe step/equipment/supplier/software). }
+            assessment_versions: { type: array, items: { $ref: '#/components/schemas/RiskAssessmentVersion' } }
+
+    RiskListResult:
+      type: object
+      description: getRisks's response — the shared page envelope plus items.
+      x-requirement-ids: [RSK-FR-001, CTR-FR-012]
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/Risk' } } }
+
+    RiskDashboardRow:
+      type: object
+      description: One risk's row in getRiskDashboard's response.
+      x-requirement-ids: [RSK-FR-017]
+      required: [id, risk_number, risk_type, state, is_overdue]
+      properties:
+        id: { type: string, format: uuid }
+        risk_number: { type: string }
+        risk_type: { $ref: '#/components/schemas/RiskType' }
+        state: { $ref: '#/components/schemas/RiskState' }
+        next_review_due_at: { type: [string, "null"], format: date-time }
+        is_overdue: { type: boolean, description: "next_review_due_at is set, in the past, and state is ACCEPTED." }
+        initial_score: { type: [object, "null"] }
+        residual_score: { type: [object, "null"] }
+
+    RiskDashboardResult:
+      type: object
+      description: getRiskDashboard's response — computed, non-persisted (AG-11).
+      x-requirement-ids: [RSK-FR-017]
+      required: [site_id, risks, by_state, by_type, overdue_count]
+      properties:
+        site_id: { type: string, format: uuid }
+        risks: { type: array, items: { $ref: '#/components/schemas/RiskDashboardRow' } }
+        by_state: { type: object, additionalProperties: { type: integer } }
+        by_type: { type: object, additionalProperties: { type: integer } }
+        overdue_count: { type: integer, minimum: 0 }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postRiskSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    RiskSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [review] }
+
+    CreateRiskCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RSK-FR-001, RSK-FR-003, RSK-FR-011, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, risk_number, risk_type, hazard_problem, potential_effect, owner_subject_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        risk_number: { type: string }
+        risk_type: { $ref: '#/components/schemas/RiskType' }
+        hazard_problem: { type: string }
+        potential_effect: { type: string }
+        owner_subject_id: { type: string, format: uuid }
+        context: { type: [object, "null"], description: RSK-FR-011 object mapping. }
+        methodology_id: { type: [string, "null"], format: uuid, description: If given, must resolve to a released rules-module RiskDefinition. }
+
+    AddAssessmentCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RSK-FR-004, RSK-FR-006, RSK-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, risk_id, expected_version, scoring_inputs, score]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        risk_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        scoring_inputs: { type: object }
+        score: { type: object }
+        methodology_id: { type: [string, "null"], format: uuid, description: Required (and used) only when starting a new cycle; ignored for a residual assessment. }
+        reason: { type: [string, "null"] }
+
+    AddControlsCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RSK-FR-005, RSK-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, risk_id, expected_version, controls]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        risk_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        controls: { type: array, minItems: 1, items: { type: object } }
+        mitigation_actions: { type: [array, "null"], items: { type: object }, description: RSK-FR-008 links to CAPA/change/tasks. }
+        reason: { type: [string, "null"] }
+
+    AcceptRiskCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RSK-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, risk_id, expected_version, accepted_role, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        risk_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        accepted_role: { type: string }
+        rationale: { type: string }
+        next_review_due_at: { type: [string, "null"], format: date-time, description: RSK-FR-013. }
+
+    ReviewRiskCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RSK-FR-013, RSK-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, risk_id, expected_version, trigger_type, outcome, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        risk_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        trigger_type: { $ref: '#/components/schemas/ReviewTriggerType' }
+        outcome: { type: string, enum: [still_current, reassessment_required] }
+        rationale: { type: string }
+        trigger_source_ref: { type: [object, "null"], description: "RSK-FR-009/010/014 — the quality-event/change that prompted the review, when applicable." }
+        next_review_due_at: { type: [string, "null"], format: date-time, description: Only applied when outcome is still_current. }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

@@ -1,0 +1,194 @@
+openapi: 3.1.0
+info:
+  title: SPEC-SEC-007 — Security Logging, Monitoring, Incident Response & Forensic Evidence
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-10 Document 67 (`services/gxp-api/app/modules/security/incident*`).
+    2 owned entities per the approved data-model catalogue: `security_incident`, `forensic_evidence`.
+    `security_event` is NOT an owned table — security telemetry is the transactional outbox, kept
+    distinct from the GxP audit ledger (MON-FR-002).
+
+
+    Signature: only `POST /security/v1/incidents/{id}/close` carries a Part 11 signature — Document 106
+    row 140 (`Approved`, "QA Approver for the record class", MUST be independent of the
+    investigator/owner, Reason: yes) → resolved to the existing **QA Releaser** role, the same
+    non-QMS mapping as Document 63's privileged_session.close (row 136). `open` / `containment` /
+    `evidence` / `gxp-impact` are RBAC-gated + mandatory reason, no signature. Closure is blocked until
+    the GxP-impact assessment is recorded (Document 67 # 14) and at least one containment action exists.
+tags:
+  - name: security-incident
+
+paths:
+  /security/v1/incidents:
+    post:
+      operationId: postOpenSecurityIncident
+      tags: [security-incident]
+      summary: Open a security incident (MON-FR-012/013)
+      x-requirement-ids: [MON-FR-012, MON-FR-013, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OpenSecurityIncidentCommand' } } }
+      responses:
+        '200': { description: Opened (state OPEN)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/incidents/{incident_id}/containment:
+    post:
+      operationId: postExecuteIncidentContainment
+      tags: [security-incident]
+      summary: Execute an allowlisted containment action (MON-FR-015)
+      x-requirement-ids: [MON-FR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: incident_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ExecuteIncidentContainmentCommand' } } }
+      responses:
+        '200': { description: Applied., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION / INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "INCIDENT_CONTAINMENT_NOT_ALLOWED (command not on allowlist).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/incidents/{incident_id}/evidence:
+    post:
+      operationId: postPreserveForensicEvidence
+      tags: [security-incident]
+      summary: Preserve a forensic evidence item with chain-of-custody (MON-FR-014)
+      x-requirement-ids: [MON-FR-014, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: incident_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PreserveForensicEvidenceCommand' } } }
+      responses:
+        '200': { description: Preserved., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: INVALID_TRANSITION (incident closed)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/incidents/{incident_id}/gxp-impact:
+    post:
+      operationId: postAssessGxpIncidentImpact
+      tags: [security-incident]
+      summary: Record the GxP-impact assessment (MON-FR-016)
+      x-requirement-ids: [MON-FR-016, MON-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: incident_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AssessGxpIncidentImpactCommand' } } }
+      responses:
+        '200': { description: Assessed (state GXP_IMPACT_ASSESSED)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (missing qms_reference when impact confirmed).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/incidents/{incident_id}/close:
+    post:
+      operationId: postCloseSecurityIncident
+      tags: [security-incident]
+      summary: Close a security incident (Document 106 row 140 — Approved, independent QA Releaser)
+      x-requirement-ids: [MON-FR-021, MON-FR-029, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: incident_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CloseSecurityIncidentCommand' } } }
+      responses:
+        '200': { description: Closed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION / GXP_IMPACT_ASSESSMENT_REQUIRED / INCIDENT_EVIDENCE_REQUIRED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (closer is the incident owner).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    OpenSecurityIncidentCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, title, severity, detected_at, reason]
+      x-requirement-ids: [MON-FR-012]
+      properties:
+        idempotency_key: { type: string, minLength: 1 }
+        title: { type: string, minLength: 1, maxLength: 300 }
+        severity: { type: string, enum: [LOW, MEDIUM, HIGH, CRITICAL] }
+        detected_at: { type: string, format: date-time }
+        affected_scope: { type: object, additionalProperties: true }
+        alert_refs: { type: array, items: { type: string } }
+        reason: { type: string, minLength: 1 }
+
+    ExecuteIncidentContainmentCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, incident_id, expected_version, containment_command, target, reason]
+      x-requirement-ids: [MON-FR-015]
+      properties:
+        idempotency_key: { type: string, minLength: 1 }
+        incident_id: { type: string, format: uuid }
+        expected_version: { type: integer, minimum: 1 }
+        containment_command:
+          type: string
+          enum: [REVOKE_SESSIONS, REVOKE_CERTIFICATE, ROTATE_SECRET, ISOLATE_SERVICE, BLOCK_INTEGRATION, FREEZE_ACCOUNT, DISABLE_FEATURE]
+        target: { type: object, additionalProperties: true }
+        reason: { type: string, minLength: 1 }
+        outcome: { type: string, default: APPLIED }
+
+    PreserveForensicEvidenceCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, incident_id, source, acquisition_at, digest, custody_note, reason]
+      x-requirement-ids: [MON-FR-014]
+      properties:
+        idempotency_key: { type: string, minLength: 1 }
+        incident_id: { type: string, format: uuid }
+        source: { type: string, minLength: 1, maxLength: 300 }
+        acquisition_at: { type: string, format: date-time }
+        hash_algorithm: { type: string, enum: [SHA-256, SHA-384, SHA-512], default: SHA-256 }
+        digest: { type: string, minLength: 1, maxLength: 128 }
+        object_ref: { type: [string, "null"], maxLength: 300 }
+        custody_note: { type: string, minLength: 1 }
+        reason: { type: string, minLength: 1 }
+
+    AssessGxpIncidentImpactCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, incident_id, expected_version, impact_state, assessment, reason]
+      x-requirement-ids: [MON-FR-016]
+      properties:
+        idempotency_key: { type: string, minLength: 1 }
+        incident_id: { type: string, format: uuid }
+        expected_version: { type: integer, minimum: 1 }
+        impact_state: { type: string, enum: [NO_IMPACT, IMPACT_CONFIRMED] }
+        assessment: { type: object, additionalProperties: true }
+        qms_reference: { type: [string, "null"], maxLength: 120 }
+        reason: { type: string, minLength: 1 }
+
+    CloseSecurityIncidentCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, incident_id, expected_version, root_cause, corrective_actions, residual_risk, reason]
+      x-requirement-ids: [MON-FR-021]
+      properties:
+        idempotency_key: { type: string, minLength: 1 }
+        incident_id: { type: string, format: uuid }
+        expected_version: { type: integer, minimum: 1 }
+        root_cause: { type: string, minLength: 1 }
+        corrective_actions: { type: array, items: { type: object, additionalProperties: true } }
+        residual_risk: { type: string, minLength: 1, maxLength: 200 }
+        reason: { type: string, minLength: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }

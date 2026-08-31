@@ -1,0 +1,1008 @@
+openapi: 3.1.0
+info:
+  title: SPEC-DDCP-001 — Prefilled Syringe & Injectable DDCP Manufacturing Profile
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 54 (`services/gxp-api/app/modules/ddcp/router.py` + `commands.py` +
+    `models.py`) — the first WP-08 module. Unlike most of this codebase's contracts, this one is authored
+    alongside the implementation rather than purely retrofitted onto pre-existing code, per WP-08's own
+    "contracts committed before implementation" precondition (Document 113 §"contract-first"); the data
+    model itself is Document 112's own approved DDL (SG-148 records the two deliberate deviations: `site_id`
+    added, `tenant_id` dropped, both per ADR-0006/Document 70's universal aggregate baseline).
+
+
+    SG-148 (`docs/generated/18_SPEC_GAPS.md`) records two scope decisions this contract reflects: (1) no
+    `ebmr.batches -> ddcp_profile_version` linkage column exists, so `profile_version_id` is an explicit
+    input on every function that needs it, never derived; (2) `recordFillIPCResult()` evaluates its
+    caller-supplied released rule directly through the rules engine (`rules.RuleEvaluation` is the durable
+    evidence record) rather than the full QC Sample/TestOrder/TestRun pipeline, which no source document
+    describes for a high-frequency in-process check.
+
+
+    Contracted from the 15 operations the router actually implements — Document 54 §4's own function
+    catalogue names 10 functions; `record_constituent_handoff`/`decide_constituent_handoff` (the entity has
+    no creator function named at all in §4) and `record_device_assembly_step`/`verify_device_assembly_step`
+    (same gap for `device_assembly_record`) are derived per the task's own "every function derived from the
+    API list" instruction — see the module docstring in `app/modules/ddcp/commands.py`.
+tags:
+  - name: ddcp-prefilled-syringe
+
+paths:
+  /ddcp/v1/prefilled-syringe/profiles:
+    post:
+      operationId: postCreateInjectableProfileVersion
+      tags: [ddcp-prefilled-syringe]
+      summary: Author an injectable DDCP profile draft (PFS-FR-001/002)
+      description: Unsigned — no Document 106 row for authoring (SG-148).
+      x-requirement-ids: [PFS-FR-001, PFS-FR-002, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInjectableProfileVersionCommand' }
+      responses:
+        '200':
+          description: Created at state DRAFT.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422':
+          description: "PROFILE_SCHEMA_INVALID — unrecognized subtype/constituent_type, or a requirement missing component_role."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/profiles/{profile_id}/release:
+    parameters:
+      - { name: profile_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReleaseInjectableProfileVersion
+      tags: [ddcp-prefilled-syringe]
+      summary: Release a draft injectable DDCP profile version (PFS-FR-001/028/029)
+      description: >
+        Only valid from state DRAFT; requires at least one constituent_requirement. Released versions are
+        immutable (enforced here, not a DB trigger); supersedes the previously-released version of the
+        same profile_code, if any. Signature is conditional on the current Document 106 policy row for
+        ddcp_profile_version/release (SG-148: currently unsigned).
+      x-requirement-ids: [PFS-FR-001, PFS-FR-028, PFS-FR-029, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseInjectableProfileVersionCommand' }
+      responses:
+        '200':
+          description: Released — state RELEASED.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — only a draft profile version can be released."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "PROFILE_RELEASE_BLOCKED — a profile version needs at least one constituent requirement before release; or VALIDATION_FAILED (profile_id mismatch)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/profiles/{profile_id}:
+    parameters:
+      - { name: profile_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getInjectableProfileVersion
+      tags: [ddcp-prefilled-syringe]
+      summary: Injectable profile version detail
+      x-requirement-ids: [PFS-FR-001]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/DdcpProfileVersion' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/prefilled-syringe/constituent-handoffs:
+    post:
+      operationId: postRecordConstituentHandoff
+      tags: [ddcp-prefilled-syringe]
+      summary: Record a pending constituent handoff for a batch (PFS-FR-003, §8)
+      description: >
+        Unsigned. `to_constituent` uses the receiving `constituent_requirement.component_role` vocabulary
+        (SG-148 — an ordinary engineering decision to join these two tables, not a regulated-behaviour
+        guess). Application-level uniqueness on (batch_id, from_constituent, to_constituent, source key) --
+        Document 112's own JSONB-expression UNIQUE index, enforced in `commands.py` (see models.py).
+      x-requirement-ids: [PFS-FR-003, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordConstituentHandoffCommand' }
+      responses:
+        '200':
+          description: Created at state PENDING.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: "VALIDATION_FAILED — unrecognized from_constituent, or a handoff for this batch/constituent/source already exists."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/constituent-handoffs/{handoff_id}/decide:
+    parameters:
+      - { name: handoff_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postDecideConstituentHandoff
+      tags: [ddcp-prefilled-syringe]
+      summary: Accept or reject a pending constituent handoff (PFS-FR-003/004)
+      description: >
+        Only valid from state PENDING. ACCEPTED requires the referenced source to actually be released:
+        a DRUG/BIOLOGIC source must resolve to an `ebmr.batches` row in status `released`
+        (BULK_NOT_RELEASED otherwise); any other constituent type must resolve to a `materials.
+        material_lots` row in status `released` (PRIMARY_COMPONENT_NOT_RELEASED otherwise) — PFS-FR-004
+        "no unapproved component" enforced here, not merely captured. Signature is conditional on the
+        current Document 106 policy row for constituent_handoff/decide (SG-148: currently unsigned).
+      x-requirement-ids: [PFS-FR-003, PFS-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecideConstituentHandoffCommand' }
+      responses:
+        '200':
+          description: Decided — state ACCEPTED or REJECTED.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — only a pending handoff can be decided."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "BULK_NOT_RELEASED / PRIMARY_COMPONENT_NOT_RELEASED, or VALIDATION_FAILED (handoff_id mismatch, decision not ACCEPTED/REJECTED, or rejection_reason missing on REJECTED)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/batches/{batch_id}/readiness:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: profile_version_id, in: query, required: true, schema: { type: string, format: uuid } }
+      - { name: line_id, in: query, required: false, schema: { type: string, format: uuid } }
+      - { name: filler_equipment_id, in: query, required: false, schema: { type: string, format: uuid } }
+    get:
+      operationId: getInjectableBatchReadiness
+      tags: [ddcp-prefilled-syringe]
+      summary: Batch readiness composition, without transitioning state (PFS-FR-006/007/008)
+      description: >
+        Reuses the exact cross-module read functions `equipment.aseptic_commands._compute_readiness`
+        composes for the same purpose (EM area readiness, line clearance, equipment eligibility) and adds
+        the constituent-handoff completeness check on top (BULK_NOT_RELEASED / PRIMARY_COMPONENT_NOT_
+        RELEASED per missing mandatory `constituent_requirement`). Never mutates state.
+      x-requirement-ids: [PFS-FR-006, PFS-FR-007, PFS-FR-008]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/InjectableBatchReadiness' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/prefilled-syringe/fill-operations:
+    post:
+      operationId: postStartFillingStage
+      tags: [ddcp-prefilled-syringe]
+      summary: Start a PFS filling stage after a full readiness check (PFS-FR-006..011)
+      description: >
+        Recomputes the full readiness composition and refuses to start on the first blocker found
+        (PFS_PROFILE_NOT_EFFECTIVE / BULK_NOT_RELEASED / PRIMARY_COMPONENT_NOT_RELEASED / LINE_NOT_READY).
+        Refuses if the batch already has an active (SETUP/EXECUTION/HOLD) fill operation. Signature is
+        conditional on the current Document 106 policy row for fill_operation/start (SG-148: currently
+        unsigned).
+      x-requirement-ids: [PFS-FR-006, PFS-FR-007, PFS-FR-008, PFS-FR-009, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, DATA-FR-019]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartFillingStageCommand' }
+      responses:
+        '200':
+          description: Started — state EXECUTION.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "LINE_NOT_READY, or INVALID_TRANSITION — batch already has an active filling stage."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "PFS_PROFILE_NOT_EFFECTIVE, BULK_NOT_RELEASED or PRIMARY_COMPONENT_NOT_RELEASED."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/fill-operations/{fill_operation_id}/ipc-results:
+    parameters:
+      - { name: fill_operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordFillIpcResult
+      tags: [ddcp-prefilled-syringe]
+      summary: Record a fill-weight/volume in-process control result (PFS-FR-011)
+      description: >
+        SG-148: evaluated via the rules engine directly (`rules.commands.evaluate_rule` against the
+        caller-supplied `acceptance_rule_id`), not the full QC sample/test-order pipeline. Never raises on
+        a FAIL outcome — recording a valid measurement is not a rejected action, same posture as
+        `qc.commands.record_result`; a FAIL result holds the fill operation (`requires_deviation=True`)
+        instead, which `completeFillingStage` refuses to proceed past.
+      x-requirement-ids: [PFS-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordFillIpcResultCommand' }
+      responses:
+        '200':
+          description: Recorded — event PFSFillIPCRecorded or FillIPCOutOfSpec.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — fill IPC can only be recorded while a fill operation is executing."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/production-counts:
+    post:
+      operationId: postRecordSyringeUnitOrCount
+      tags: [ddcp-prefilled-syringe]
+      summary: Record a syringe unit/count ledger entry (PFS-FR-010/015/022)
+      description: >
+        Append-only. `source_event_id` (when supplied) is a replay guard independent of the standard
+        `idempotency_key` mechanism — a machine/edge source retrying the exact same physical count event
+        under a different idempotency_key must never double-count (DUPLICATE_SOURCE_EVENT).
+      x-requirement-ids: [PFS-FR-010, PFS-FR-015, PFS-FR-022, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018, MUT-FR-025]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordSyringeUnitOrCountCommand' }
+      responses:
+        '200':
+          description: Recorded.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: DUPLICATE_SOURCE_EVENT — this source_event_id was already recorded for this batch.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/fill-operations/{fill_operation_id}/interventions:
+    parameters:
+      - { name: fill_operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordAsepticInterventionForFill
+      tags: [ddcp-prefilled-syringe]
+      summary: Link an aseptic intervention into a fill operation's timeline (PFS-FR-010)
+      description: >
+        Caller is the aseptic module (Document 40); this never creates a new `AsepticIntervention` row,
+        only appends a reference into `fill_operation.interventions` for genealogy/unit-exclusion purposes.
+      x-requirement-ids: [PFS-FR-010, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordAsepticInterventionForFillCommand' }
+      responses:
+        '200':
+          description: Recorded.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — interventions can only be linked while a fill operation is executing."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/fill-operations/{fill_operation_id}/complete:
+    parameters:
+      - { name: fill_operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCompleteFillingStage
+      tags: [ddcp-prefilled-syringe]
+      summary: Complete an in-execution PFS filling stage (PFS-FR-024)
+      description: >
+        Refuses while a HOLD is unresolved (FILL_STAGE_INCOMPLETE). Checks structural reconciliation
+        completeness only — at least one FILLED count exists (PFS_RECONCILIATION_FAILED otherwise); no
+        numeric reconciliation tolerance is baselined anywhere in Documents 106-115 (SG-148, same class of
+        gap as SG-123/124), so this never invents a variance tolerance. Signature is conditional on the
+        current Document 106 policy row for fill_operation/complete (SG-148: currently unsigned).
+      x-requirement-ids: [PFS-FR-022, PFS-FR-024, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteFillingStageCommand' }
+      responses:
+        '200':
+          description: Completed — state COMPLETE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — only an executing fill operation can be completed."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "FILL_STAGE_INCOMPLETE — unresolved hold; PFS_RECONCILIATION_FAILED — no FILLED units recorded; or VALIDATION_FAILED (referenced sterile filter use not eligible)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/device-assembly:
+    post:
+      operationId: postRecordDeviceAssemblyStep
+      tags: [ddcp-prefilled-syringe]
+      summary: Record a device assembly step (PFS-FR-012/013/018)
+      description: >
+        Not named as a function in Document 54 §4 (only the `device_assembly_record` entity is declared) —
+        derived per the task's own "every function derived from the API list" instruction (SG-148).
+      x-requirement-ids: [PFS-FR-012, PFS-FR-013, PFS-FR-018, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordDeviceAssemblyStepCommand' }
+      responses:
+        '200':
+          description: Recorded.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: "VALIDATION_FAILED — unrecognized assembly_step or result."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/device-assembly/{record_id}/verify:
+    parameters:
+      - { name: record_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postVerifyDeviceAssemblyStep
+      tags: [ddcp-prefilled-syringe]
+      summary: Independently verify a device assembly step (Document 112's IND-001)
+      description: >
+        `verified_by` must differ from `performed_by` (Document 112's own CHECK constraint, enforced here
+        as a friendly SOD_CONFLICT error before the DB constraint would otherwise reject it).
+      x-requirement-ids: [PFS-FR-013, PFS-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyDeviceAssemblyStepCommand' }
+      responses:
+        '200':
+          description: Verified.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "SOD_CONFLICT — the performer of an assembly step cannot also verify it; STALE_VERSION; or INVALID_TRANSITION (already verified)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/functional-tests:
+    post:
+      operationId: postRecordPfsFunctionalTest
+      tags: [ddcp-prefilled-syringe]
+      summary: Link a device/CCI functional test result to a batch (PFS-FR-014/017)
+      description: >
+        `qc_record_reference` is the owning `qc.qc_result` id+version — this table never stores a raw test
+        value (Document 112's own comment). Never raises on a FAIL/OOS result_state — a failed test is
+        evidence (CLAUDE.md §5) and is always persisted; `blocks_release` is set automatically from
+        result_state and read by `evaluatePFSReleaseReadiness`.
+      x-requirement-ids: [PFS-FR-014, PFS-FR-017, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordPfsFunctionalTestCommand' }
+      responses:
+        '200':
+          description: Recorded — event PFSFunctionalTestRecorded or DeviceTestFailed.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: "VALIDATION_FAILED — test_type missing, unrecognized result_state, or this qc_record_reference already linked for this batch/test_type."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/batches/{batch_id}/release-readiness:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postEvaluatePfsReleaseReadiness
+      tags: [ddcp-prefilled-syringe]
+      summary: Evaluate and persist DRUG_CONSTITUENT/DEVICE_CONSTITUENT/COMBINED_PRODUCT checkpoints (PFS-FR-023/024)
+      description: >
+        Upserts the batch's three `ddcp_release_checkpoint` rows from a live composition of accepted
+        constituent handoffs, functional test results and fill-operation holds — final combined-product
+        release requires all three SATISFIED (Document 112's own comment). SG-148: does not check open
+        QMS deviations/CAPAs referencing this batch — no indexed batch-scoped deviation query exists in
+        `app.modules.qms` yet.
+      x-requirement-ids: [PFS-FR-023, PFS-FR-024, MUT-FR-005, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/PfsReleaseReadiness' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/prefilled-syringe/batches/{batch_id}/evidence-package:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCreatePfsBatchEvidencePackage
+      tags: [ddcp-prefilled-syringe]
+      summary: Generate a reproducible PFS batch evidence package (PFS-FR-025/030)
+      description: >
+        Gathers id+version references (never copies) to every constituent handoff, fill operation, device
+        assembly record, functional test link and release checkpoint for the batch, digests the set and
+        inserts a new, immutable (`state=FROZEN`) `batch_evidence_manifest` row.
+      x-requirement-ids: [PFS-FR-025, PFS-FR-030, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePfsBatchEvidencePackageCommand' }
+      responses:
+        '200':
+          description: Created — a new manifest_version, state FROZEN.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — batch_id in path and body must match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/prefilled-syringe/batches/{batch_id}/genealogy:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getPfsBatchGenealogy
+      tags: [ddcp-prefilled-syringe]
+      summary: Unit/lot genealogy composition for a batch (PFS-FR-021)
+      description: >
+        Drug bulk / component-lot handoffs, production counts, device-assembly chain, functional test
+        links and any frozen evidence manifests for the batch, in one read composition. Never mutates
+        state and never writes to the generic `app.modules.genealogy` graph (GenealogyNode/Edge) — this
+        module does not populate that graph; see SG-148.
+      x-requirement-ids: [PFS-FR-021]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/PfsBatchGenealogy' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/prefilled-syringe/batches/{batch_id}/review-summary:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getPfsBatchReviewSummary
+      tags: [ddcp-prefilled-syringe]
+      summary: Batch review-by-exception package (PFS-FR-025)
+      description: >
+        Composes aseptic timeline (fill-operation interventions), fill IPC rule-evaluation results,
+        production-count defect totals, device-assembly/functional-test exceptions, release checkpoints,
+        `qms.DeviationRecord` rows referencing the batch (direct `source_type='batch'` match plus a
+        `cross_batch_ids` JSONB containment match) and the same genealogy composition as the `/genealogy`
+        endpoint above, with an `exception_summary` surfacing counts first. Never mutates state. No
+        dedicated filtration section — `complete_filling_stage`'s optional filter-integrity check
+        (PFS-FR-008) is never persisted onto `FillOperation`, so there is nothing to read back; see SG-148.
+      x-requirement-ids: [PFS-FR-025]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/PfsBatchReviewSummary' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/prefilled-syringe/stability-retain-samples:
+    post:
+      operationId: postRecordStabilityRetainReference
+      tags: [ddcp-prefilled-syringe]
+      summary: Record a stability/retain sample reference for a batch (PFS-FR-026)
+      description: >
+        No dedicated stability/retain-plan entity exists anywhere in Document 112's approved schema
+        (SG-148) -- reuses `production_count_ledger` with `count_type=SAMPLED` (Document 112's own
+        declared value for this concept), carrying the plan/sample-plan reference as a logical JSONB
+        reference in `device_reference`, never a duplicated entity.
+      x-requirement-ids: [PFS-FR-026, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordStabilityRetainReferenceCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/prefilled-syringe/batches/{batch_id}/serialization-compliance:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: profile_version_id, in: query, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getPfsSerializationCompliance
+      tags: [ddcp-prefilled-syringe]
+      summary: Serialization/UDI presence compliance for a batch (PFS-FR-019)
+      description: >
+        Reporting-only, pure read, never a release gate (PFS-FR-024's own release-blocker list does not
+        name serialization). Checks `DeviceAssemblyRecord.unit_identifier` presence only when the
+        profile's own `required_controls.serialization.required` is true -- no UDI format (GS1 DI, HIBC,
+        ...) is baselined anywhere in Documents 106-115, so no format/regex is invented or validated.
+      x-requirement-ids: [PFS-FR-019]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/PfsSerializationCompliance' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/prefilled-syringe/change-linkage:
+    parameters:
+      - { name: object_type, in: query, required: true, schema: { type: string } }
+      - { name: object_id, in: query, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getDdcpChangeLinkage
+      tags: [ddcp-prefilled-syringe]
+      summary: Change Control linkage for a DDCP object (PFS-FR-029)
+      description: >
+        Pure read composition over `qms.change_affected_object`/`qms.change_control` -- the write path is
+        `qms.change_commands.assess_impact()`'s existing generic `affected_objects` list (AG-05/AG-06:
+        DDCP does not own and does not write to Change Control tables directly). Confirms the linkage for
+        a given DDCP object_type/object_id (e.g. `ddcp_profile_version`).
+      x-requirement-ids: [PFS-FR-029]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/DdcpChangeLinkage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    DdcpProfileState:
+      type: string
+      x-requirement-ids: [PFS-FR-001, CTR-FR-017]
+      enum: [DRAFT, RELEASED, SUPERSEDED]
+
+    InjectableSubtype:
+      type: string
+      description: "`INJECTABLE_SUBTYPES` in `app/modules/ddcp/models.py` -- this document's own subtype vocabulary only."
+      x-requirement-ids: [PFS-FR-001]
+      enum: [PREFILLED_SYRINGE, CARTRIDGE, VIAL_DEVICE_COPACK, OTHER_INJECTABLE]
+
+    ConstituentType:
+      type: string
+      x-requirement-ids: [PFS-FR-002]
+      enum: [DRUG, BIOLOGIC, DEVICE, PACKAGING, LABEL]
+
+    HandoffState:
+      type: string
+      x-requirement-ids: [PFS-FR-003]
+      enum: [PENDING, ACCEPTED, REJECTED]
+
+    FillOperationState:
+      type: string
+      x-requirement-ids: [PFS-FR-006]
+      enum: [SETUP, EXECUTION, HOLD, COMPLETE]
+
+    AssemblyStep:
+      type: string
+      x-requirement-ids: [PFS-FR-013]
+      enum: [NEEDLE_INSTALL, SHIELD, TIP_CAP, SAFETY_DEVICE, PLUNGER]
+
+    AssemblyResult:
+      type: string
+      x-requirement-ids: [PFS-FR-013]
+      enum: [PASS, FAIL, REWORK]
+
+    TestResultState:
+      type: string
+      x-requirement-ids: [PFS-FR-014]
+      enum: [PENDING, PASS, FAIL, OOS]
+
+    ReleaseCheckpointCode:
+      type: string
+      x-requirement-ids: [PFS-FR-023]
+      enum: [DRUG_CONSTITUENT, DEVICE_CONSTITUENT, COMBINED_PRODUCT]
+
+    ReleaseCheckpointState:
+      type: string
+      x-requirement-ids: [PFS-FR-023, PFS-FR-024]
+      enum: [OPEN, SATISFIED, BLOCKED, WAIVED_BY_APPROVAL]
+
+    DdcpProfileVersion:
+      type: object
+      x-requirement-ids: [PFS-FR-001]
+      required: [id, profile_code, version, state]
+      properties:
+        id: { type: string, format: uuid }
+        profile_code: { type: string }
+        subtype: { type: [string, "null"] }
+        version: { type: integer, minimum: 1 }
+        state: { $ref: '#/components/schemas/DdcpProfileState' }
+
+    Blocker:
+      type: object
+      x-requirement-ids: [PFS-FR-006, PFS-FR-024]
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        reasons: { type: array, items: { type: object } }
+
+    InjectableBatchReadiness:
+      type: object
+      description: "`evaluate_injectable_batch_readiness` in `app/modules/ddcp/commands.py`."
+      x-requirement-ids: [PFS-FR-006, PFS-FR-007, PFS-FR-008]
+      required: [batch_id, profile_version_id, ready, blockers]
+      properties:
+        batch_id: { type: string, format: uuid }
+        profile_version_id: { type: string, format: uuid }
+        ready: { type: boolean }
+        blockers: { type: array, items: { $ref: '#/components/schemas/Blocker' } }
+        em_readiness: { type: [object, "null"] }
+        line_clearance: { type: [object, "null"] }
+        equipment_check: { type: [object, "null"] }
+
+    PfsReleaseReadiness:
+      type: object
+      description: "`evaluate_pfs_release_readiness` in `app/modules/ddcp/commands.py` -- also the writer of the batch's three `ddcp_release_checkpoint` rows."
+      x-requirement-ids: [PFS-FR-023, PFS-FR-024]
+      required: [batch_id, ready, checkpoints]
+      properties:
+        batch_id: { type: string, format: uuid }
+        ready: { type: boolean }
+        checkpoints:
+          type: object
+          properties:
+            DRUG_CONSTITUENT: { type: object, properties: { state: { $ref: '#/components/schemas/ReleaseCheckpointState' }, blockers: { type: array, items: { $ref: '#/components/schemas/Blocker' } } } }
+            DEVICE_CONSTITUENT: { type: object, properties: { state: { $ref: '#/components/schemas/ReleaseCheckpointState' }, blockers: { type: array, items: { $ref: '#/components/schemas/Blocker' } } } }
+            COMBINED_PRODUCT: { type: object, properties: { state: { $ref: '#/components/schemas/ReleaseCheckpointState' }, blockers: { type: array, items: { $ref: '#/components/schemas/Blocker' } } } }
+
+    PfsBatchGenealogy:
+      type: object
+      description: "`get_pfs_batch_genealogy` in `app/modules/ddcp/commands.py` — pure read, no writes."
+      x-requirement-ids: [PFS-FR-021]
+      required: [batch_id, incoming_constituents, production_counts, device_assembly_chain, functional_test_links, evidence_manifests]
+      properties:
+        batch_id: { type: string, format: uuid }
+        incoming_constituents: { type: array, items: { type: object } }
+        production_counts: { type: array, items: { type: object } }
+        device_assembly_chain: { type: array, items: { type: object } }
+        functional_test_links: { type: array, items: { type: object } }
+        evidence_manifests: { type: array, items: { type: object } }
+
+    PfsBatchReviewSummary:
+      type: object
+      description: "`get_pfs_batch_review_summary` in `app/modules/ddcp/commands.py` — pure read, no writes; review-by-exception (PFS-FR-025)."
+      x-requirement-ids: [PFS-FR-025]
+      required: [batch_id, exception_summary, aseptic_timeline, fill_ipc_results, defect_counts, device_assembly_exceptions, device_test_exceptions, release_checkpoints, deviations, genealogy]
+      properties:
+        batch_id: { type: string, format: uuid }
+        exception_summary:
+          type: object
+          properties:
+            fill_operations_on_hold: { type: integer }
+            unresolved_interventions: { type: integer }
+            fill_ipc_oos_count: { type: integer }
+            device_assembly_exceptions: { type: integer }
+            device_test_exceptions: { type: integer }
+            open_deviations: { type: integer }
+            checkpoints_blocked: { type: integer }
+        aseptic_timeline: { type: array, items: { type: object } }
+        fill_ipc_results: { type: array, items: { type: object } }
+        defect_counts: { type: object, additionalProperties: { type: integer } }
+        device_assembly_exceptions: { type: array, items: { type: object } }
+        device_test_exceptions: { type: array, items: { type: object } }
+        release_checkpoints: { type: array, items: { type: object } }
+        deviations: { type: array, items: { type: object } }
+        genealogy: { $ref: '#/components/schemas/PfsBatchGenealogy' }
+
+    RecordStabilityRetainReferenceCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PFS-FR-026, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, plan_reference, quantity]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        plan_reference: { type: object, description: "Logical reference to a stability/retain sample plan -- no dedicated plan entity exists to FK to (SG-148)." }
+        quantity: { type: integer, minimum: 0 }
+        occurred_at: { type: [string, "null"], format: date-time }
+
+    PfsSerializationCompliance:
+      type: object
+      description: "`verify_pfs_serialization_compliance` in `app/modules/ddcp/commands.py` — pure read, no writes."
+      x-requirement-ids: [PFS-FR-019]
+      required: [batch_id, profile_version_id, serialization_required, total_device_assembly_records, missing_identifier_count, missing_identifier_record_ids]
+      properties:
+        batch_id: { type: string, format: uuid }
+        profile_version_id: { type: string, format: uuid }
+        serialization_required: { type: boolean }
+        total_device_assembly_records: { type: integer }
+        missing_identifier_count: { type: integer }
+        missing_identifier_record_ids: { type: array, items: { type: string, format: uuid } }
+
+    DdcpChangeLinkage:
+      type: object
+      description: "`get_ddcp_change_linkage` in `app/modules/ddcp/commands.py` — pure read, no writes."
+      x-requirement-ids: [PFS-FR-029]
+      required: [object_type, object_id, changes]
+      properties:
+        object_type: { type: string }
+        object_id: { type: string, format: uuid }
+        changes:
+          type: array
+          items:
+            type: object
+            properties:
+              change_id: { type: string, format: uuid }
+              change_number: { type: string }
+              state: { type: string }
+              impact_category: { type: string }
+              action_required: { type: string }
+
+    CreateInjectableProfileVersionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PFS-FR-001, PFS-FR-002, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, profile_code, constituent_architecture, required_controls]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        profile_code: { type: string }
+        subtype: { anyOf: [{ $ref: '#/components/schemas/InjectableSubtype' }, { type: "null" }] }
+        dosage_form: { type: [string, "null"] }
+        presentation: { type: [string, "null"] }
+        constituent_architecture: { type: object }
+        required_controls: { type: object, description: "Document 54 §6 InjectableDDCPProfile TS shape (sterileProcess, fillControl, requiredDeviceTests, etc.)." }
+        release_checkpoint_set: { type: object }
+        constituent_requirements:
+          type: array
+          default: []
+          items:
+            type: object
+            required: [constituent_type, component_role]
+            properties:
+              constituent_type: { $ref: '#/components/schemas/ConstituentType' }
+              component_role: { type: string }
+              required_state: { type: string, default: RELEASED }
+              material_spec_reference: { type: [object, "null"] }
+              attribute_requirements: { type: [object, "null"] }
+              mandatory: { type: boolean, default: true }
+              sequence_no: { type: integer }
+
+    ReleaseInjectableProfileVersionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are optional -- required only when the current Document 106 policy row for ddcp_profile_version/release demands a signature.
+      x-requirement-ids: [PFS-FR-001, PFS-FR-029, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, profile_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        profile_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        change_ref: { type: [string, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    RecordConstituentHandoffCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PFS-FR-003, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, from_constituent, to_constituent, source_batch_reference]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        from_constituent: { $ref: '#/components/schemas/ConstituentType' }
+        to_constituent: { type: string, description: "The receiving constituent_requirement.component_role, or BATCH." }
+        source_batch_reference: { type: object, description: "{batch_id: ...} for DRUG/BIOLOGIC, or {lot_id: ...} for any other constituent type." }
+        attributes: { type: object, default: {} }
+
+    DecideConstituentHandoffCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are optional -- required only when the current Document 106 policy row for constituent_handoff/decide demands a signature. profile_version_id/sterilization_use_id are optional -- omitting them preserves the original PFS-FR-003/004-only behaviour; supplying profile_version_id additionally checks PFS-FR-005/016/028 against the profile's matching ConstituentRequirement, when one exists for this component_role.
+      x-requirement-ids: [PFS-FR-003, PFS-FR-004, PFS-FR-005, PFS-FR-016, PFS-FR-028, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, handoff_id, expected_version, decision]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        handoff_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        decision: { type: string, enum: [ACCEPTED, REJECTED] }
+        rejection_reason: { type: [string, "null"], description: Required when decision is REJECTED. }
+        profile_version_id: { type: [string, "null"], format: uuid, description: "Optional (SG-148 caller-supplied linkage). When given, enables PFS-FR-005/016/028 checks against the matching ConstituentRequirement." }
+        sterilization_use_id: { type: [string, "null"], format: uuid, description: "An equipment sterilization_load_items/sterile_filter_uses id, checked via Document 42's getSterilizationItemStatus when the matched requirement's required_state is STERILIZED/DEPYROGENATED/READY_TO_USE (PFS-FR-005)." }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    StartFillingStageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). `target_fill` is a decimal string (DATA-FR-019 — never a binary float). challenge_id/reauth_password are optional -- required only when the current Document 106 policy row for fill_operation/start demands a signature. bulk_hold_limit_rule_id is optional -- omitting it means no PFS-FR-007 hold-time check at all.
+      x-requirement-ids: [PFS-FR-006, PFS-FR-007, PFS-FR-009, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004, DATA-FR-019]
+      required: [idempotency_key, batch_id, profile_version_id, line_id, filler_equipment_id, fill_program_id, fill_program_version, product_contact_path, target_fill, target_fill_uom]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        profile_version_id: { type: string, format: uuid }
+        line_id: { type: string, format: uuid, description: An equipment.equipment_areas id. }
+        filler_equipment_id: { type: string, format: uuid }
+        fill_program_id: { type: string }
+        fill_program_version: { type: string }
+        product_contact_path: { type: object }
+        target_fill: { type: string, description: Decimal-as-string. }
+        target_fill_uom: { type: string }
+        cycle_group: { type: [string, "null"] }
+        bulk_hold_limit_rule_id: { type: [string, "null"], description: "PFS-FR-007. A released rules.gxp_rule_definition rule_id (SG-148 pattern, same as RecordFillIpcResultCommand.acceptance_rule_id) evaluated against elapsed hours since the batch's accepted DRUG/BIOLOGIC handoff. No baseline hold-time limit is invented -- the limit lives entirely in the caller's own released rule." }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    RecordFillIpcResultCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PFS-FR-011, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, fill_operation_id, expected_version, sample_id, actual_value, uom, acceptance_rule_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        fill_operation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        sample_id: { type: string }
+        actual_value: { type: string, description: Decimal-as-string. }
+        uom: { type: string }
+        method: { type: [string, "null"] }
+        source: { type: string, default: MANUAL }
+        acceptance_rule_id: { type: string, description: "Business rule_id resolved via rules.get_effective_released_rule -- fails closed (NOT_FOUND) if no effective released version exists." }
+
+    RecordSyringeUnitOrCountCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PFS-FR-010, PFS-FR-015, PFS-FR-022, MUT-FR-005, MUT-FR-010, MUT-FR-025]
+      required: [idempotency_key, batch_id, count_type, source, quantity]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        count_type: { type: string, enum: [FILLED, REJECTED_VISUAL, REJECTED_IPC, SAMPLED, LINE_LOSS, PACKED] }
+        source: { type: string, enum: [MACHINE, MANUAL, RECONCILIATION] }
+        quantity: { type: integer, minimum: 0 }
+        uom: { type: string, default: EA }
+        device_reference: { type: [object, "null"] }
+        reason_code: { type: [string, "null"] }
+        occurred_at: { type: [string, "null"], format: date-time }
+        source_event_id: { type: [string, "null"], description: "Replay guard -- see DUPLICATE_SOURCE_EVENT." }
+
+    RecordAsepticInterventionForFillCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PFS-FR-010, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, fill_operation_id, expected_version, intervention_type]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        fill_operation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        intervention_type: { type: string }
+        started_at: { type: [string, "null"], format: date-time }
+        ended_at: { type: [string, "null"], format: date-time }
+        impacted_unit_scope: { type: [object, "null"] }
+        source_aseptic_intervention_id: { type: [string, "null"], format: uuid, description: The owning equipment.aseptic_interventions id, referenced not duplicated. }
+
+    CompleteFillingStageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are optional -- required only when the current Document 106 policy row for fill_operation/complete demands a signature.
+      x-requirement-ids: [PFS-FR-022, PFS-FR-024, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, fill_operation_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        fill_operation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        machine_count_end: { type: [integer, "null"] }
+        filter_use_id: { type: [string, "null"], format: uuid, description: An equipment.sterile_filter_use id, checked via Document 42's getSterilizationItemStatus. }
+        reason: { type: [string, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    RecordDeviceAssemblyStepCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). rework_procedure_reference is required when result is REWORK (PFS-FR-027 default-disallow) -- REWORK_ROUTE_REQUIRED otherwise.
+      x-requirement-ids: [PFS-FR-012, PFS-FR-013, PFS-FR-018, PFS-FR-027, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, assembly_step, component_lot_reference]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        assembly_step: { $ref: '#/components/schemas/AssemblyStep' }
+        component_lot_reference: { type: object }
+        unit_identifier: { type: [string, "null"] }
+        equipment_id: { type: [string, "null"], format: uuid }
+        process_parameters: { type: [object, "null"] }
+        result: { $ref: '#/components/schemas/AssemblyResult', default: PASS }
+        rework_procedure_reference: { type: [object, "null"], description: "Required when result is REWORK (PFS-FR-027) -- a released-procedure reference, no dedicated procedure entity exists to FK to." }
+        occurred_at: { type: [string, "null"], format: date-time }
+
+    VerifyDeviceAssemblyStepCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PFS-FR-013, PFS-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, record_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        record_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+
+    RecordPfsFunctionalTestCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PFS-FR-014, PFS-FR-017, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, test_type, qc_record_reference, result_state]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        test_type: { type: string, description: "Documented-not-enforced examples in DEVICE_TEST_TYPES (CCI, LEAK, SEAL, BREAK_LOOSE, GLIDE_FORCE, DOSE_DELIVERY, SHIELD_REMOVAL); a released control strategy may name others." }
+        qc_record_reference: { type: object, description: "The owning qc.qc_result id+version. {record_id: ...} enables the duplicate-link check." }
+        result_state: { $ref: '#/components/schemas/TestResultState' }
+        sample_plan_reference: { type: [object, "null"] }
+        method_reference: { type: [object, "null"] }
+        linked_at: { type: [string, "null"], format: date-time }
+
+    CreatePfsBatchEvidencePackageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PFS-FR-025, PFS-FR-030, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }

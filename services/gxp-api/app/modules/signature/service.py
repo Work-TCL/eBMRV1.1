@@ -7,19 +7,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.modules.signature.models import Signature, SignatureChallenge, SignaturePolicy
-from app.mutation.errors import SignatureChallengeInvalidError
+from app.mutation.errors import SignatureChallengeInvalidError, SignaturePolicyUnresolvedError
 
 
-async def resolve_policy(
+async def resolve_signature_requirement(
     session: AsyncSession, *, record_type: str, action: str
-) -> SignaturePolicy | None:
-    """Signature requirement comes from policy data, never a code conditional (AG-07 / SIG-FR-004)."""
+) -> SignaturePolicy:
+    """Signature requirement comes from policy data, never a code conditional (AG-07 / SIG-FR-004).
+
+    Fail-closed resolution (Doc 106 SIGP-FR-004): a regulated action with no policy row is an error,
+    never an implicit permission to commit unsigned. "This action deliberately needs no signature" must
+    be a row with `signature_required=False`, not the absence of a row.
+    """
     result = await session.execute(
         select(SignaturePolicy).where(
             SignaturePolicy.record_type == record_type, SignaturePolicy.action == action
         )
     )
-    return result.scalar_one_or_none()
+    policy = result.scalar_one_or_none()
+    if policy is None:
+        raise SignaturePolicyUnresolvedError(
+            "No signature policy is defined for this regulated action",
+            record_type=record_type,
+            action=action,
+        )
+    return policy
 
 
 async def create_challenge(

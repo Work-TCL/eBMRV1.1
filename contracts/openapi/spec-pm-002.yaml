@@ -1,0 +1,431 @@
+openapi: 3.1.0
+info:
+  title: SPEC-PM-002 — Regulatory Reportability Assessment & Electronic Safety Submission Management
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-09 Document 59 (`services/gxp-api/app/modules/postmarket/
+    reportability_*.py`). 4 owned entities per the approved data-model catalogue: `reportability_track`,
+    `regulatory_report`, `regulatory_submission_attempt`, `regulatory_submission_ack`.
+
+
+    REG-FR-003 ("no hardcoded legal logic"): `calculateRegulatoryDeadline` takes `duration_days` and
+    `calendar_type` as explicit caller inputs rather than hardcoding "30 days"/"5 work days"/"15 days" --
+    no report-type-duration catalogue table exists in the approved schema baseline. WORK_DAY/WORKING_DAY
+    exclude Saturday/Sunday only; no federal holiday calendar is approved anywhere in the baseline
+    (docs/generated/18_SPEC_GAPS.md SG-158).
+
+
+    `evaluateSameEventReportDeduplication` and `freezeReportabilityAuditPackage` are named functions in
+    Document 59's own contract catalogue; the latter has no operation in the terse 10-op `# APIs` list at
+    all — contracted here as an extra endpoint (same precedent used for Document 58's equivalents).
+
+
+    `generateRegulatoryPayload` produces this module's own canonical JSON payload plus digest, not a real
+    FDA-consumable eMDR/E2B XML artifact — no field-level transport mapping specification exists anywhere
+    in the approved baseline (SG-159). `reportability_track.decide` and `regulatory_report.approve` have
+    no Document 106 signature resolution (SG-157) and correctly return `SIGNATURE_POLICY_UNRESOLVED`.
+tags:
+  - name: postmarket-regulatory
+
+paths:
+  /regulatory/v1/cases/{case_id}/reportability-tracks:
+    post:
+      operationId: postCreateReportabilityTracks
+      tags: [postmarket-regulatory]
+      summary: Create one or more independent reportability tracks for a safety case (REG-FR-001/002/003)
+      x-requirement-ids: [REG-FR-001, REG-FR-002, REG-FR-003, REG-FR-013, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: case_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateReportabilityTracksCommand' } } }
+      responses:
+        '200': { description: Created., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: "VALIDATION_FAILED or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /regulatory/v1/tracks/{track_id}/deadline:calculate:
+    post:
+      operationId: postCalculateRegulatoryDeadline
+      tags: [postmarket-regulatory]
+      summary: Calculate a track's regulatory deadline (REG-FR-005/006)
+      description: original_due_at is immutable after first calculation even if a later correction changes due_at.
+      x-requirement-ids: [REG-FR-005, REG-FR-006, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: track_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CalculateRegulatoryDeadlineCommand' } } }
+      responses:
+        '200': { description: Calculated., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (missing duration_days/agency_due_at, unrecognized calendar_type).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /regulatory/v1/tracks/{track_id}/decisions:
+    post:
+      operationId: postDecideReportability
+      tags: [postmarket-regulatory]
+      summary: Record the authorized reviewer's REPORTABLE/NOT_REPORTABLE decision (REG-FR-004)
+      description: No Document 106 signature resolution exists for this action (SG-157) — returns SIGNATURE_POLICY_UNRESOLVED until one is supplied.
+      x-requirement-ids: [REG-FR-004, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: track_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DecideReportabilityCommand' } } }
+      responses:
+        '200': { description: Decided., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /regulatory/v1/tracks/{track_id}/reports:
+    post:
+      operationId: postBuildRegulatoryReport
+      tags: [postmarket-regulatory]
+      summary: Build a versioned regulatory report draft for a REPORTABLE track (REG-FR-014/015/016)
+      x-requirement-ids: [REG-FR-014, REG-FR-015, REG-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: track_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/BuildRegulatoryReportCommand' } } }
+      responses:
+        '200': { description: Built, state DRAFT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (not REPORTABLE, empty content) or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /regulatory/v1/reports/{report_id}/approve:
+    post:
+      operationId: postApproveRegulatoryReport
+      tags: [postmarket-regulatory]
+      summary: Approve a draft regulatory report (REG-FR-017)
+      description: No Document 106 dispatch table exists for "per record class" approver role (SG-157) — returns SIGNATURE_POLICY_UNRESOLVED until one is supplied.
+      x-requirement-ids: [REG-FR-017, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: report_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveRegulatoryReportCommand' } } }
+      responses:
+        '200': { description: Approved., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /regulatory/v1/reports/{report_id}/payloads:generate:
+    post:
+      operationId: postGenerateRegulatoryPayload
+      tags: [postmarket-regulatory]
+      summary: Generate an eMDR/AEMS-family submission payload for an approved report (REG-FR-018/020/021)
+      description: Canonical JSON payload + digest, not a real FDA eMDR/E2B XML artifact (SG-159).
+      x-requirement-ids: [REG-FR-018, REG-FR-020, REG-FR-021, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: report_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GenerateRegulatoryPayloadCommand' } } }
+      responses:
+        '200': { description: Payload generated., content: { application/json: { schema: { $ref: '#/components/schemas/RegulatoryPayloadResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: "VALIDATION_FAILED (report not APPROVED) or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /regulatory/v1/reports/{report_id}/submissions:
+    post:
+      operationId: postSubmitRegulatoryReport
+      tags: [postmarket-regulatory]
+      summary: Submit an approved report (REG-FR-018/022/023/025)
+      description: No real ESG/eMDR/AEMS network client exists (SG-159) — non-MANUAL channels take a caller-supplied transport_result as if a transport layer already ran. Prevents a second initial submission of the same report version (REG-FR-025).
+      x-requirement-ids: [REG-FR-018, REG-FR-022, REG-FR-023, REG-FR-025, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: report_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SubmitRegulatoryReportCommand' } } }
+      responses:
+        '200': { description: Attempt recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: "VALIDATION_FAILED (not APPROVED, missing manual_evidence_id, duplicate initial submission) or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /regulatory/v1/submissions/{attempt_id}/acknowledgements:
+    post:
+      operationId: postIngestSubmissionAcknowledgement
+      tags: [postmarket-regulatory]
+      summary: Ingest a transport/processing/agency-acceptance acknowledgement (REG-FR-019/026)
+      description: Transport success alone never sets AGENCY_ACCEPTANCE.
+      x-requirement-ids: [REG-FR-019, REG-FR-026, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: attempt_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/IngestSubmissionAcknowledgementCommand' } } }
+      responses:
+        '200': { description: Ingested., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: "VALIDATION_FAILED (missing rejection_reason on REJECTED).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /regulatory/v1/reports/{report_id}/followups:
+    post:
+      operationId: postCreateFollowupReportTask
+      tags: [postmarket-regulatory]
+      summary: Create a follow-up report task linked to the original report (REG-FR-013)
+      description: Creates a new ReportabilityTrack (parent_track_id set); the original report/track history is never rewritten.
+      x-requirement-ids: [REG-FR-013, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: report_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateFollowupReportTaskCommand' } } }
+      responses:
+        '200': { description: Follow-up track created., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /regulatory/v1/cases/{case_id}/part4-deduplication:evaluate:
+    post:
+      operationId: postEvaluatePart4Deduplication
+      tags: [postmarket-regulatory]
+      summary: Evaluate whether candidate tracks are eligible for a single Part 4 report (REG-FR-030)
+      description: Read-only assessment; no auto-merge. Reports the one objective condition checkable without a content-equivalence rule this baseline does not supply (deadline/report-type match).
+      x-requirement-ids: [REG-FR-030]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: case_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EvaluateSameEventDeduplicationCommand' } } }
+      responses:
+        '200': { description: Assessment., content: { application/json: { schema: { $ref: '#/components/schemas/DeduplicationAssessment' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /regulatory/v1/audit-packages:freeze:
+    post:
+      operationId: postFreezeReportabilityAuditPackage
+      tags: [postmarket-regulatory]
+      summary: Freeze the complete case->track->report->submission->ack history for inspection (REG-FR-032)
+      description: Persisted via Vault (postmarket_regulatory_evidence_package), same reuse precedent as Document 58's periodic dataset.
+      x-requirement-ids: [REG-FR-032]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/FreezeReportabilityAuditPackageCommand' } } }
+      responses:
+        '200': { description: Package frozen., content: { application/json: { schema: { $ref: '#/components/schemas/RegulatoryEvidencePackage' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateReportabilityTracksCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [REG-FR-001, REG-FR-002, REG-FR-003, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, safety_case_id, tracks]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        safety_case_id: { type: string, format: uuid }
+        tracks: { type: array, items: { type: object }, minItems: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    CalculateRegulatoryDeadlineCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [REG-FR-005, REG-FR-006, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, track_id, expected_version, clock_start_basis, clock_start_at, clock_start_rationale, calendar_type, calendar_version, rule_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        track_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        clock_start_basis: { type: string }
+        clock_start_at: { type: string, format: date-time }
+        clock_start_rationale: { type: string }
+        calendar_type: { type: string, enum: [CALENDAR_DAY, WORK_DAY, WORKING_DAY, AGENCY_SPECIFIED] }
+        calendar_version: { type: string }
+        rule_version: { type: string }
+        duration_days: { type: [integer, "null"] }
+        agency_due_at: { type: [string, "null"], format: date-time }
+
+    DecideReportabilityCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [REG-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, track_id, expected_version, decision, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        track_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        decision: { type: string, enum: [REPORTABLE, NOT_REPORTABLE] }
+        rationale: { type: string }
+        evidence_refs: { type: array, items: { type: object }, default: [] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    BuildRegulatoryReportCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [REG-FR-014, REG-FR-015, REG-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, track_id, expected_version, schema_code, schema_version, content, field_provenance]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        track_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        schema_code: { type: string }
+        schema_version: { type: string }
+        content: { type: object }
+        field_provenance: { type: object }
+        missing_information: { type: array, items: { type: object }, default: [] }
+        narrative_version: { type: [integer, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    ApproveRegulatoryReportCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [REG-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, report_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        report_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    GenerateRegulatoryPayloadCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [REG-FR-018, REG-FR-020, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, report_id, implementation_or_profile_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        report_id: { type: string, format: uuid }
+        implementation_or_profile_version: { type: string }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    SubmitRegulatoryReportCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [REG-FR-018, REG-FR-022, REG-FR-023, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, report_id, channel, payload_version, payload_digest, sender_identity]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        report_id: { type: string, format: uuid }
+        channel: { type: string, enum: [EMDR, ESG_NEXTGEN, SRP, MANUAL] }
+        payload_version: { type: string }
+        payload_digest: { type: string }
+        sender_identity: { type: string }
+        manual_evidence_id: { type: [string, "null"], format: uuid }
+        transport_result: { type: [string, "null"], enum: [SENT, FAILED, TIMEOUT_UNCERTAIN, null] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    IngestSubmissionAcknowledgementCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [REG-FR-019, REG-FR-026, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, submission_attempt_id, ack_level, ack_state]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        submission_attempt_id: { type: string, format: uuid }
+        ack_level: { type: string, enum: [TRANSPORT, PROCESSING, AGENCY_ACCEPTANCE] }
+        ack_state: { type: string, enum: [ACCEPTED, REJECTED, PENDING] }
+        ack_reference: { type: [string, "null"] }
+        ack_payload: { type: [object, "null"] }
+        rejection_reason: { type: [object, "null"] }
+
+    CreateFollowupReportTaskCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [REG-FR-013, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, original_report_id, new_information_receipt, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        original_report_id: { type: string, format: uuid }
+        new_information_receipt: { type: object }
+        rationale: { type: string }
+
+    EvaluateSameEventDeduplicationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [REG-FR-030, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, candidate_track_ids, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        candidate_track_ids: { type: array, items: { type: string, format: uuid }, minItems: 2 }
+        rationale: { type: string }
+
+    FreezeReportabilityAuditPackageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [REG-FR-032, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        safety_case_id: { type: [string, "null"], format: uuid }
+        report_ids: { type: array, items: { type: string, format: uuid }, default: [] }
+        site_id: { type: [string, "null"], format: uuid }
+
+    RegulatoryPayloadResult:
+      type: object
+      x-requirement-ids: [REG-FR-018, REG-FR-020]
+      properties:
+        payload: { type: object }
+        payload_digest: { type: string }
+        signature_id: { type: [string, "null"], format: uuid }
+
+    DeduplicationAssessment:
+      type: object
+      x-requirement-ids: [REG-FR-030]
+      properties:
+        eligible_for_single_report: { type: boolean }
+        same_deadline: { type: boolean }
+        same_report_type: { type: boolean }
+        track_ids: { type: array, items: { type: string, format: uuid } }
+        rationale: { type: string }
+
+    RegulatoryEvidencePackage:
+      type: object
+      x-requirement-ids: [REG-FR-032]
+      properties:
+        vault_object_id: { type: string, format: uuid }
+        internal_version: { type: integer }
+        safety_case_id: { type: [string, "null"], format: uuid }
+        tracks: { type: array, items: { type: object } }
+        reports: { type: array, items: { type: object } }

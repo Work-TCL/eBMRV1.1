@@ -30,7 +30,7 @@ from app.modules.material.commands import IssueMaterialToBatchCommand, issue_mat
 from app.modules.material.models import Material, MaterialIssue, MaterialLot
 from app.modules.product.models import Product
 from app.modules.recipe.models import RecipeStep
-from app.modules.signature.service import create_challenge
+from app.modules.signature.service import create_challenge, resolve_signature_requirement
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
@@ -125,9 +125,16 @@ async def post_signature_challenge(
             if step is None or step.batch_id != batch.id:
                 raise NotFoundError("Batch step not found")
             recipe_step = await session.get(RecipeStep, step.recipe_step_id)
-            if not recipe_step.requires_signature:
+            # A policy-floor requirement can demand a signature even when this recipe step's own flag
+            # is False (REMEDIATION_R1 FIX 1) — the recipe flag can only ever raise the requirement, so
+            # gating challenge creation on the flag alone would make a policy-required step
+            # unsatisfiable. Check the resolved policy too.
+            policy = await resolve_signature_requirement(
+                session, record_type="batch_step", action="complete_step"
+            )
+            if not (policy.signature_required or recipe_step.requires_signature):
                 raise ValidationFailedError("This step does not require a signature")
-            meaning = recipe_step.signature_meaning
+            meaning = recipe_step.signature_meaning or policy.meaning
         elif body.action == "review":
             meaning = "Reviewed"
         elif body.action == "release":

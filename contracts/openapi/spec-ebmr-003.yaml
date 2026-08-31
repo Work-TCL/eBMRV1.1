@@ -1,0 +1,327 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EBMR-003 — Device Production History Record (eDHR)
+  version: 0.1.0
+  description: >
+    Document 113 contract for the Document 12 slice actually built
+    (`services/gxp-api/app/modules/device/`): creating a lot-scope device history record
+    (DHR-FR-001/002/020), bulk-generating serial-scope units under a lot (DHR-FR-003/028), holding a
+    unit, and the two device read views (by-serial lookup, and a partial state-only release-readiness
+    check). No legacy `device` stub existed before this module — unlike `product`/`recipe`/`batch`, there
+    is no "two live implementations" duality to flag here (`app/modules/device` is Document 12's only
+    home).
+
+
+    ONLY 1 OF 5 OWNED ENTITIES IS BUILT: Document 12 names five entities; only `device_unit` is DDL-ready
+    in `docs/generated/04_DATA_MODEL_CATALOGUE.md` today. `device_component_usage`, `device_test_result`,
+    `device_defect` and `device_evidence_inheritance` are prose-only field-name lists with no types
+    (SG-049) and are not implemented — consequently there is no assembly/component-consumption command,
+    no test-result capture, no NCR/defect recording, and no evidence-inheritance mechanism in this
+    contract.
+
+
+    STATE MODEL IS A NARROW SLICE (Document 12 §4): the real model is `CREATED → IN_PROCESS →
+    TEST_PENDING → ACCEPTANCE_PENDING → ACCEPTED → RELEASED`, with alternates `HOLD`, `NONCONFORMING`,
+    `REWORK`, `REJECTED`, `SCRAPPED`. This pass reaches only `created` and a one-way `hold` directly from
+    `created` (`DEVICE_STATES`/`ALLOWED_TRANSITIONS` in `app/modules/device/models.py`) — entry into
+    `IN_PROCESS` depends on `device_component_usage` (SG-049, not built) and everything from
+    `TEST_PENDING` onward depends on `device_test_result` (SG-049, not built). There is also no
+    `scrap`/`resume-from-hold` endpoint in this contract, and none exists in Document 12's own 11-API list
+    either — clearing a hold depends on the gapped accept/rework disposition path (SG-050). There is no
+    release endpoint for a device unit or lot in this contract at all — `getDeviceLotReleaseReadiness` is
+    explicitly a non-authoritative partial check, never a regulated release decision (see its own
+    description below).
+
+
+    NOT BUILT THIS PASS beyond the entity gaps above: component/assembly history, test/inspection
+    results, label/packaging step data, NCR linkage, and DDCP-profile-specific device metadata — see
+    SG-049/SG-050 for the itemised list.
+tags:
+  - name: device
+
+paths:
+  /devices/v1/lots:
+    post:
+      operationId: postCreateDeviceLot
+      tags: [device]
+      summary: Create a lot-scope device history record (DHR-FR-001/002/020)
+      description: >
+        Requires the `device.create` policy action. `product_version_id` must reference a `released`
+        `ProductVersion` — `VALIDATION_FAILED` otherwise (device history, like a batch, is only ever
+        opened against a released product). A lot-scope record has `serial_number = null`; it exists to
+        be the parent `bulkCreateDeviceUnits` bulk-generates serial units under, and to carry lot-level
+        `udi_di`/`udi_pi` inherited by every unit created beneath it.
+      x-requirement-ids: [DHR-FR-001, DHR-FR-002, DHR-FR-020, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDeviceLotCommand' }
+      responses:
+        '200':
+          description: Created, state `created`. `aggregate_id` is the `device_lot_id` (a `DeviceUnit` row with `serial_number = null`).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `product_version_id` does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — the product version is not `released`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /devices/v1/units/bulk-create:
+    post:
+      operationId: postBulkCreateDeviceUnits
+      tags: [device]
+      summary: Bulk-generate serial-scope units under a lot (DHR-FR-003/028)
+      description: >
+        Requires `device.create`, evaluated against the referenced lot's `site_id`. `device_lot_id` must
+        reference a lot-scope record (`serial_number = null`) — `VALIDATION_FAILED` if it already has a
+        serial number. Rejects a request containing a duplicate `serial_number`, and rejects any
+        `serial_number` already in use anywhere at the lot's site (`(site_id, serial_number)` is globally
+        unique, not scoped to the lot). Every created unit inherits `site_id`/`product_version_id`/
+        `batch_id`/`udi_di` from the lot and is individually audited — one `MutationReceipt` per unit is
+        returned, all sharing one `correlation_id`, so this operation is not atomic at the per-unit
+        receipt level even though all inserts share the enclosing PostgreSQL transaction (MUT-FR-015).
+      x-requirement-ids: [DHR-FR-003, DHR-FR-028, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BulkCreateDeviceUnitsCommand' }
+      responses:
+        '200':
+          description: Created — one `MutationReceipt` per unit, in the same order as `units` in the request.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `device_lot_id` does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — `units` is empty, `device_lot_id` is not a lot-scope record, a `serial_number` repeats within the request, or a `serial_number` already exists at this site.
+          content:
+            application/json:
+              schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' }
+
+  /devices/v1/units/{unit_id}/hold:
+    parameters:
+      - name: unit_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postHoldDeviceUnit
+      tags: [device]
+      summary: Hold a device unit or lot record, one-way from `created` (DHR-FR-014)
+      description: >
+        Requires `device.execute`. Only `created` may transition to `hold`
+        (`ALLOWED_TRANSITIONS["created"] = {"hold"}`) — `hold` is terminal in this contract
+        (`ALLOWED_TRANSITIONS["hold"]` is the empty set): there is no resume/release-from-hold endpoint,
+        because clearing a hold depends on the gapped accept/rework disposition path (SG-050). Applies
+        equally to a lot-scope or a serial-scope `DeviceUnit` row. `reason` is optional at the schema
+        level but recorded on the audit event when supplied.
+      x-requirement-ids: [DHR-FR-014, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceUnitTransitionCommand' }
+      responses:
+        '200':
+          description: Held.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: INVALID_TRANSITION — the unit is not `created` (already `hold`), or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `unit_id` in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /devices/v1/units/by-serial/{serial}:
+    parameters:
+      - name: serial
+        in: path
+        required: true
+        schema: { type: string, maxLength: 200 }
+      - name: site_id
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getDeviceUnitBySerial
+      tags: [device]
+      summary: Look up a device unit by its serial number (DHR-FR-003)
+      description: Requires `device.view`. `site_id` is required because `(site_id, serial_number)`, not `serial_number` alone, is the unique key.
+      x-requirement-ids: [DHR-FR-003]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/DeviceUnit' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — no unit exists for this `(site_id, serial)`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /devices/v1/units/{unit_id}/history:
+    parameters:
+      - name: unit_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getDeviceUnitHistory
+      tags: [device]
+      summary: A device unit's current structured record (DHR-FR-026, partial)
+      description: >
+        Requires `device.view`. Despite the name, this returns only the current `DeviceUnit` row — not a
+        history. Component/assembly/test/inspection/label/genealogy history (what DHR-FR-026's "device
+        release package" actually implies) is not built this pass, because it depends on entities
+        SG-049/SG-050 defer (`device_component_usage`, `device_test_result`, `device_defect`,
+        `device_evidence_inheritance`). Documented here rather than silently renamed, because
+        `app/modules/device/router.py:get_unit_history`'s own docstring already flags this as partial.
+      x-requirement-ids: [DHR-FR-026]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/DeviceUnit' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /devices/v1/lots/{lot_id}/release-readiness:
+    parameters:
+      - name: lot_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getDeviceLotReleaseReadiness
+      tags: [device]
+      summary: Non-authoritative, state-only readiness check for a device lot (DHR-FR-021, partial)
+      description: >
+        Requires `device.view`. Checks only what this pass actually tracks — whether the lot itself or
+        any unit under it is `hold`. The real DHR-FR-021 completeness requirement (component/test/label/
+        signature/NCR completeness) is not evaluated, because those entities do not exist yet
+        (SG-049/SG-050); `app/modules/device/service.py:release_readiness` returns an explicit `note`
+        field saying so, and this is never a regulated release decision — there is no release endpoint
+        for a device unit or lot anywhere in this contract (AG-11: not a decision read from a
+        cache/projection either, since it is computed live, but it is also not a *complete* decision).
+      x-requirement-ids: [DHR-FR-021]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/DeviceLotReleaseReadiness' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    DeviceUnitState:
+      type: string
+      description: >
+        `DEVICE_STATES` in `app/modules/device/models.py` — the buildable subset of Document 12 §4's full
+        model (`CREATED → IN_PROCESS → TEST_PENDING → ACCEPTANCE_PENDING → ACCEPTED → RELEASED`, plus
+        `HOLD`/`NONCONFORMING`/`REWORK`/`REJECTED`/`SCRAPPED` alternates). Only `created` and a one-way
+        `hold` from `created` are reached by any endpoint in this contract.
+      x-requirement-ids: [DHR-FR-014, CTR-FR-017]
+      enum: [created, hold]
+
+    DeviceUnit:
+      type: object
+      description: >
+        One device history record, lot-scope (`serial_number = null`) or serial-scope
+        (`app/modules/device/router.py:_unit_dict`). A response schema, so not closed.
+      x-requirement-ids: [DHR-FR-001, DHR-FR-002, DHR-FR-003, DHR-FR-020]
+      required: [unit_id, site_id, product_version_id, state, version, release_status]
+      properties:
+        unit_id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        product_version_id: { type: string, format: uuid, description: Must be released at creation time — not re-checked afterward. }
+        batch_id: { type: [string, "null"], format: uuid, description: Optional link to the manufacturing batch, when device production is tied to one. }
+        device_lot_id: { type: [string, "null"], format: uuid, description: Null on a lot-scope record; set to the parent lot's id on a serial-scope unit. }
+        serial_number: { type: [string, "null"], maxLength: 200, description: Null on a lot-scope record — this is exactly the field that distinguishes lot-scope from serial-scope (DHR-FR-002). }
+        udi_di: { type: [string, "null"], maxLength: 120 }
+        udi_pi: { type: [object, "null"], description: Structured UDI production-identifier data. }
+        state: { $ref: '#/components/schemas/DeviceUnitState' }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        release_status: { type: string, description: "Always \"not_released\" — no endpoint in this contract advances it; the column exists for schema completeness (SG-050)." }
+
+    DeviceLotReleaseReadiness:
+      type: object
+      description: getDeviceLotReleaseReadiness's response (`app/modules/device/service.py:release_readiness`). Explicitly non-authoritative — see the operation description.
+      x-requirement-ids: [DHR-FR-021]
+      required: [lot_id, unit_count, blocked_unit_ids, eligible, note]
+      properties:
+        lot_id: { type: string, format: uuid }
+        unit_count: { type: integer, minimum: 0 }
+        blocked_unit_ids: { type: array, items: { type: string, format: uuid } }
+        eligible: { type: boolean, description: "True only when no unit under the lot (nor the lot record itself) is hold — a necessary, not sufficient, condition for real release readiness." }
+        note: { type: string, description: "Fixed disclosure string explaining what this check does not evaluate. Always present — this is not a decorative field." }
+
+    CreateDeviceLotCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DHR-FR-001, DHR-FR-002, DHR-FR-020, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, product_version_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        product_version_id: { type: string, format: uuid }
+        batch_id: { type: [string, "null"], format: uuid }
+        udi_di: { type: [string, "null"], maxLength: 120 }
+        udi_pi: { type: [object, "null"] }
+
+    UnitInput:
+      type: object
+      additionalProperties: false
+      description: One unit to create under a lot (DHR-FR-003).
+      x-requirement-ids: [DHR-FR-003]
+      required: [serial_number]
+      properties:
+        serial_number: { type: string, maxLength: 200 }
+        udi_pi: { type: [object, "null"] }
+
+    BulkCreateDeviceUnitsCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DHR-FR-003, DHR-FR-028, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, device_lot_id, units]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        device_lot_id: { type: string, format: uuid }
+        units: { type: array, items: { $ref: '#/components/schemas/UnitInput' }, minItems: 1 }
+
+    DeviceUnitTransitionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DHR-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, unit_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        unit_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"], description: Not required at the schema level; recorded on the audit event when supplied. }

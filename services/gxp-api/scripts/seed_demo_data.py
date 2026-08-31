@@ -309,17 +309,18 @@ async def main() -> None:
                 from app.modules.recipe.models import RecipeStep
 
                 recipe_step = await session.get(RecipeStep, step_row.recipe_step_id)
-                challenge_id = None
-                if recipe_step.requires_signature:
-                    challenge_id = await sign(
-                        session,
-                        actor_user_id=operator_id,
-                        record_type="batch",
-                        record_id=batch.id,
-                        record_version=batch.version,
-                        record_hash=batch_record_hash(batch),
-                        meaning=recipe_step.signature_meaning,
-                    )
+                # Document 106's platform floor for batch_step/complete_step is unconditional (Doc 106
+                # SIGP-FR-004, REMEDIATION_R1 FIX 1) — every step completion needs a signature now, not
+                # just the ones the recipe itself flags.
+                challenge_id = await sign(
+                    session,
+                    actor_user_id=operator_id,
+                    record_type="batch",
+                    record_id=batch.id,
+                    record_version=batch.version,
+                    record_hash=batch_record_hash(batch),
+                    meaning=recipe_step.signature_meaning or "Performed",
+                )
                 await complete_step(
                     session,
                     CompleteStepCommand(
@@ -329,7 +330,7 @@ async def main() -> None:
                         batch_step_id=ready.id,
                         data={},
                         challenge_id=challenge_id,
-                        reauth_password=PASSWORD if challenge_id else None,
+                        reauth_password=PASSWORD,
                     ),
                     operator_id,
                     site_id,

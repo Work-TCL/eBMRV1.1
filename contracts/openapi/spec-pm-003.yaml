@@ -1,0 +1,584 @@
+openapi: 3.1.0
+info:
+  title: SPEC-PM-003 — Combination-Product Postmarket Regulatory Coordination, Information Sharing & Regulatory Calendar
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-09 Document 60 (`services/gxp-api/app/modules/postmarket/
+    obligation_*.py`). 5 owned entities: `regulatory_obligation` (Document 60's own 12-field schema,
+    extended with a generic `details` JSONB for Field Alert/BPDR/FDA-request facts -- neither has its own
+    dedicated table in the approved baseline), `applicant_relationship`, `constituent_information_share`,
+    `correction_removal_regulatory_record`, `periodic_reporting_cycle` (all per Document 112).
+
+
+    PMO-FR-004/010/014 state fixed regulatory day-counts directly (5 calendar days, 10 working days, 3
+    working days) rather than framing them as effective-dated configuration the way Document 59's
+    REG-FR-003 required -- these are hardcoded here, deliberately unlike Document 59's caller-supplied-
+    duration design, because Document 60's own text states them as fixed numbers.
+
+
+    `freezePeriodicReportDataset` reuses Document 58's `buildPeriodicSafetyDataset()` directly
+    (PMO-FR-018) -- no second dataset-freezing mechanism exists. `addCorrectionRemovalScopeAmendment`,
+    `placePostmarketLegalHold` and the unified regulatory calendar read are named functions/UI surfaces in
+    Document 60's own contract catalogue but missing from its terse 14-op `# 12. APIs` list — contracted
+    here as extra operations (same precedent used for Documents 58/59).
+
+
+    Most of this module's actions have no Document 106 signature resolution (SG-160); `correction_removal.
+    decide` additionally requires a 2-signature independence ceremony no mechanism in this codebase
+    implements -- these correctly return `SIGNATURE_POLICY_UNRESOLVED`.
+tags:
+  - name: postmarket-obligations
+
+paths:
+  /postmarket/v1/applicant-relationships:
+    post:
+      operationId: postConfigureApplicantRelationship
+      tags: [postmarket-obligations]
+      summary: Configure a combination-product/constituent-part applicant relationship (PMO-FR-001/002)
+      x-requirement-ids: [PMO-FR-001, PMO-FR-002, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ConfigureApplicantRelationshipCommand' } } }
+      responses:
+        '200': { description: Configured., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: APPLICANT_RELATIONSHIP_INVALID., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/cases/{case_id}/part4-sharing:evaluate:
+    post:
+      operationId: postEvaluatePart4Sharing
+      tags: [postmarket-obligations]
+      summary: Evaluate Part 4 constituent information sharing and open the 5-calendar-day clock (PMO-FR-003/004)
+      x-requirement-ids: [PMO-FR-003, PMO-FR-004, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: case_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EvaluatePart4SharingCommand' } } }
+      responses:
+        '200': { description: Created., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { description: "APPLICANT_RELATIONSHIP_MISSING.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/sharing/{share_id}/package:
+    post:
+      operationId: postCreateConstituentSharingPackage
+      tags: [postmarket-obligations]
+      summary: Freeze the exact information to be shared with a constituent applicant (PMO-FR-005)
+      x-requirement-ids: [PMO-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: share_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateConstituentSharingPackageCommand' } } }
+      responses:
+        '200': { description: Package frozen., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/sharing/{share_id}/record-sent:
+    post:
+      operationId: postRecordConstituentInformationShared
+      tags: [postmarket-obligations]
+      summary: Record that a constituent sharing package was sent (PMO-FR-006/007)
+      description: A package must be created before recording sharing (PART4_SHARING_RECIPIENT_MISSING otherwise).
+      x-requirement-ids: [PMO-FR-006, PMO-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: share_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordConstituentInformationSharedCommand' } } }
+      responses:
+        '200': { description: Recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: PART4_SHARING_RECIPIENT_MISSING., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/field-actions/{field_action_id}/correction-removal-assessment:
+    post:
+      operationId: postCreateCorrectionRemovalAssessment
+      tags: [postmarket-obligations]
+      summary: Open a Part 806 correction/removal regulatory assessment from a Document 36 field action (PMO-FR-009/030)
+      x-requirement-ids: [PMO-FR-009, PMO-FR-030, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: field_action_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateCorrectionRemovalAssessmentCommand' } } }
+      responses:
+        '200': { description: Opened., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: CORRECTION_REMOVAL_SCOPE_MISSING., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/correction-removal/{record_id}/decision:
+    post:
+      operationId: postDecideCorrectionRemoval
+      tags: [postmarket-obligations]
+      summary: Decide Part 806 reportability -- reportable creates a 10-working-day 806 obligation, otherwise a controlled 806.20 record (PMO-FR-010/011)
+      description: No Document 106 signature resolution exists (2-signature requirement, SG-160) — returns SIGNATURE_POLICY_UNRESOLVED.
+      x-requirement-ids: [PMO-FR-010, PMO-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: record_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DecideCorrectionRemovalReportabilityCommand' } } }
+      responses:
+        '200': { description: Decided., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_REGULATORY_OBLIGATION_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/correction-removal/{record_id}/scope-amendments:
+    post:
+      operationId: postAmendCorrectionRemovalScope
+      tags: [postmarket-obligations]
+      summary: Append a scope-expansion amendment to a correction/removal record (PMO-FR-012)
+      x-requirement-ids: [PMO-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: record_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AddCorrectionRemovalScopeAmendmentCommand' } } }
+      responses:
+        '200': { description: Amended., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_REGULATORY_OBLIGATION_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/field-alerts:
+    post:
+      operationId: postCreateFieldAlert
+      tags: [postmarket-obligations]
+      summary: Create a Field Alert assessment with a 3-working-day clock (PMO-FR-013/014/015)
+      x-requirement-ids: [PMO-FR-013, PMO-FR-014, PMO-FR-015, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateFieldAlertAssessmentCommand' } } }
+      responses:
+        '200': { description: Opened., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: FIELD_ALERT_APPLICATION_MISMATCH., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/field-alerts/{obligation_id}/decision:
+    post:
+      operationId: postDecideFieldAlert
+      tags: [postmarket-obligations]
+      summary: Record the Field Alert reportability decision (PMO-FR-013)
+      x-requirement-ids: [PMO-FR-013, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: obligation_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DecideFieldAlertReportabilityCommand' } } }
+      responses:
+        '200': { description: Decided., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_REGULATORY_OBLIGATION_VERSION or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/bpdr-tracks:
+    post:
+      operationId: postCreateBPDRTrack
+      tags: [postmarket-obligations]
+      summary: Create a BPDR (biologic product deviation) track (PMO-FR-016)
+      x-requirement-ids: [PMO-FR-016, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateBPDRTrackCommand' } } }
+      responses:
+        '200': { description: Created., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/periodic-cycles:generate:
+    post:
+      operationId: postGeneratePeriodicCycle
+      tags: [postmarket-obligations]
+      summary: Generate a quarterly/annual/FDA-configured periodic reporting cycle without duplicates (PMO-FR-017)
+      x-requirement-ids: [PMO-FR-017, PMO-FR-019, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GeneratePeriodicReportingScheduleCommand' } } }
+      responses:
+        '200': { description: Generated., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: "PERIODIC_REPORT_PROFILE_MISSING (duplicate cycle) or VALIDATION_FAILED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/periodic-cycles/{cycle_id}/dataset:freeze:
+    post:
+      operationId: postFreezePeriodicDataset
+      tags: [postmarket-obligations]
+      summary: Freeze the periodic report's dataset by reusing Document 58's immutable interval dataset (PMO-FR-018)
+      x-requirement-ids: [PMO-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: cycle_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/FreezePeriodicReportDatasetCommand' } } }
+      responses:
+        '200': { description: Frozen., content: { application/json: { schema: { $ref: '#/components/schemas/PeriodicCycleFreezeResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/fda-requests:
+    post:
+      operationId: postCreateFDARequest
+      tags: [postmarket-obligations]
+      summary: Create an FDA information-request task with an explicit agency due date (PMO-FR-020/021)
+      x-requirement-ids: [PMO-FR-020, PMO-FR-021, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateFDAInformationRequestTaskCommand' } } }
+      responses:
+        '200': { description: Opened., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: FDA_REQUEST_DUE_DATE_REQUIRED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/obligations/{obligation_id}/deadline-overrides:
+    post:
+      operationId: postOverrideDeadline
+      tags: [postmarket-obligations]
+      summary: Apply an agency-granted deadline override, preserving the original deadline (PMO-FR-023/024)
+      description: No Document 106 dispatch table exists for "per record class" approver (SG-160) — returns SIGNATURE_POLICY_UNRESOLVED.
+      x-requirement-ids: [PMO-FR-023, PMO-FR-024, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: obligation_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApplyRegulatoryDeadlineOverrideCommand' } } }
+      responses:
+        '200': { description: Overridden., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_REGULATORY_OBLIGATION_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (missing agency_evidence) or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/retention:calculate:
+    post:
+      operationId: postCalculateRetention
+      tags: [postmarket-obligations]
+      summary: Calculate the longest-applicable retention period across regimes (PMO-FR-025/026/027)
+      description: Never a single arbitrary universal value; never silently shortens an already-selected longer duration.
+      x-requirement-ids: [PMO-FR-025, PMO-FR-026, PMO-FR-027, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CalculatePostmarketRetentionPolicyCommand' } } }
+      responses:
+        '200': { description: Calculated., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: RETENTION_RULE_MISSING., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/obligations/{obligation_id}/legal-hold:
+    post:
+      operationId: postPlaceLegalHold
+      tags: [postmarket-obligations]
+      summary: Place a legal/regulatory hold on an obligation (PMO-FR-028)
+      x-requirement-ids: [PMO-FR-028, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: obligation_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlacePostmarketLegalHoldCommand' } } }
+      responses:
+        '200': { description: Placed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /postmarket/v1/regulatory-calendar:
+    get:
+      operationId: getUnifiedRegulatoryCalendar
+      tags: [postmarket-obligations]
+      summary: Unified due/overdue view across all obligation types (PMO-FR-022/032)
+      description: Read-only, non-authoritative (AG-11).
+      x-requirement-ids: [PMO-FR-022, PMO-FR-032]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: site_id, in: query, required: false, schema: { type: [string, "null"], format: uuid } }]
+      responses:
+        '200': { description: Calendar., content: { application/json: { schema: { $ref: '#/components/schemas/UnifiedRegulatoryCalendar' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    ConfigureApplicantRelationshipCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-001, PMO-FR-002, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, product_version_reference, applicant_role, applicant_name, address, contact]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        product_version_reference: { type: object }
+        applicant_role: { type: string, enum: [COMBINATION_PRODUCT_APPLICANT, CONSTITUENT_PART_APPLICANT] }
+        applicant_name: { type: string }
+        address: { type: object }
+        contact: { type: object }
+        application_type: { type: [string, "null"] }
+        application_number: { type: [string, "null"] }
+        sharing_channel: { type: [string, "null"] }
+
+    EvaluatePart4SharingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-003, PMO-FR-004, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, safety_case_id, site_id, applicant_relationship_id, company_receipt_at]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        safety_case_id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        applicant_relationship_id: { type: string, format: uuid }
+        company_receipt_at: { type: string, format: date-time }
+
+    CreateConstituentSharingPackageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, share_id, expected_version, package_content]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        share_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        package_content: { type: object }
+
+    RecordConstituentInformationSharedCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-006, PMO-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, share_id, expected_version, sent_at, channel]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        share_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        sent_at: { type: string, format: date-time }
+        channel: { type: string }
+        delivery_evidence: { type: [object, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    CreateCorrectionRemovalAssessmentCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-009, PMO-FR-030, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, field_action_reference, initiation_at]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        field_action_reference: { type: object }
+        initiation_at: { type: string, format: date-time }
+
+    DecideCorrectionRemovalReportabilityCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-010, PMO-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, record_id, expected_version, reportable, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        record_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reportable: { type: boolean }
+        rationale: { type: string }
+        calendar_version: { type: [string, "null"] }
+        required_facts: { type: object, default: {} }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    AddCorrectionRemovalScopeAmendmentCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, record_id, expected_version, amendment, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        record_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        amendment: { type: object }
+        rationale: { type: string }
+
+    CreateFieldAlertAssessmentCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-013, PMO-FR-014, PMO-FR-015, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, source_type, source_id, application_id, distributed_batches, issue_type, applicant_receipt_at]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        source_type: { type: string }
+        source_id: { type: string, format: uuid }
+        source_version: { type: [integer, "null"] }
+        application_id: { type: string }
+        distributed_batches: { type: array, items: { type: string }, minItems: 1 }
+        issue_type: { type: string }
+        facility: { type: [string, "null"] }
+        applicant_receipt_at: { type: string, format: date-time }
+        owner_subject_id: { type: [string, "null"], format: uuid }
+
+    DecideFieldAlertReportabilityCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-013, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, obligation_id, expected_version, decision, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        obligation_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        decision: { type: string, enum: [REPORTABLE, NOT_REPORTABLE] }
+        rationale: { type: string }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    CreateBPDRTrackCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-016, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, source_type, source_id, application_id, deviation_facts, discovery_at]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        source_type: { type: string }
+        source_id: { type: string, format: uuid }
+        source_version: { type: [integer, "null"] }
+        application_id: { type: string }
+        deviation_facts: { type: object }
+        discovery_at: { type: string, format: date-time }
+        owner_subject_id: { type: [string, "null"], format: uuid }
+
+    GeneratePeriodicReportingScheduleCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-017, PMO-FR-019, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, application_reference, cycle_type, period_start, period_end, inclusion_rules_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        application_reference: { type: string }
+        cycle_type: { type: string, enum: [QUARTERLY, ANNUAL, FDA_CONFIGURED] }
+        period_start: { type: string, format: date-time }
+        period_end: { type: string, format: date-time }
+        inclusion_rules_version: { type: string }
+        part4_augmentation_required: { type: boolean, default: false }
+
+    FreezePeriodicReportDatasetCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, cycle_id, expected_version, source_cutoff]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        cycle_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        source_cutoff: { type: string, format: date-time }
+
+    CreateFDAInformationRequestTaskCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-020, PMO-FR-021, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, application_id, agency_reference, requested_events_or_information, due_at, received_at]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        application_id: { type: string }
+        agency_reference: { type: string }
+        requested_events_or_information: { type: string }
+        due_at: { type: string, format: date-time }
+        received_at: { type: string, format: date-time }
+        owner_subject_id: { type: [string, "null"], format: uuid }
+
+    ApplyRegulatoryDeadlineOverrideCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-023, PMO-FR-024, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, obligation_id, expected_version, new_due_at, agency_evidence, reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        obligation_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        new_due_at: { type: string, format: date-time }
+        agency_evidence: { type: object }
+        reason: { type: string }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    CalculatePostmarketRetentionPolicyCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-025, PMO-FR-026, PMO-FR-027, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, obligation_id, expected_version, applicable_regimes]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        obligation_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        applicable_regimes: { type: array, items: { type: object }, minItems: 1 }
+
+    PlacePostmarketLegalHoldCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-028, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, obligation_id, expected_version, reason, authority]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        obligation_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        authority: { type: string }
+
+    PeriodicCycleFreezeResult:
+      type: object
+      x-requirement-ids: [PMO-FR-018]
+      properties:
+        cycle_id: { type: string, format: uuid }
+        state: { type: string }
+        dataset: { type: object }
+
+    UnifiedRegulatoryCalendar:
+      type: object
+      x-requirement-ids: [PMO-FR-022, PMO-FR-032]
+      properties:
+        items: { type: array, items: { type: object } }
+        overdue_count: { type: integer }

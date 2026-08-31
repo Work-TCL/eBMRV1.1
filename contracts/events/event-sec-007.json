@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-sec-007.json",
+  "title": "SPEC-SEC-007 — Security Logging, Monitoring, Incident Response & Forensics Events",
+  "description": "Document 113 event contract for WP-10 Document 67 (app/modules/security/incident*). All 6 declared Document 67 # 9 events except SecurityAlertRaised are emitted for real by the Mutation Gateway command handlers (one outbox row per committed incident mutation): SecurityIncidentOpened, IncidentContainmentExecuted, ForensicEvidencePreserved, SecurityGxPImpactAssessed, SecurityIncidentClosed. SecurityAlertRaised is SIEM/detection-worker output (evaluateDetectionRules() — MON-FR-008/026), not produced by this GxP module; it is contracted here for the consumer side with its emit helper (incident emit_security_event -> outbox) available for a detection worker that runs in-process.",
+  "x-requirement-ids": ["MON-FR-008", "MON-FR-012", "MON-FR-014", "MON-FR-015", "MON-FR-016", "MON-FR-021", "EVT-FR-001", "MUT-FR-031"],
+  "$defs": {
+    "SecurityAlertRaisedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rule_id", "severity"],
+      "properties": {
+        "rule_id": { "type": "string" },
+        "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+        "event_refs": { "type": "array", "items": { "type": "string" } },
+        "deduped": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["MON-FR-008", "MON-FR-026"]
+    },
+    "SecurityIncidentOpenedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["incident_id", "incident_number", "severity"],
+      "properties": {
+        "incident_id": { "type": "string", "format": "uuid" },
+        "incident_number": { "type": "string" },
+        "severity": { "type": "string" }
+      },
+      "x-requirement-ids": ["MON-FR-012"]
+    },
+    "IncidentContainmentExecutedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["incident_id", "command", "outcome"],
+      "properties": {
+        "incident_id": { "type": "string", "format": "uuid" },
+        "command": { "type": "string" },
+        "outcome": { "type": "string" }
+      },
+      "x-requirement-ids": ["MON-FR-015"]
+    },
+    "ForensicEvidencePreservedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidence_id", "incident_id", "hash_algorithm", "digest"],
+      "properties": {
+        "evidence_id": { "type": "string", "format": "uuid" },
+        "incident_id": { "type": "string", "format": "uuid" },
+        "hash_algorithm": { "type": "string" },
+        "digest": { "type": "string" }
+      },
+      "x-requirement-ids": ["MON-FR-014"]
+    },
+    "SecurityGxPImpactAssessedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["incident_id", "impact_state"],
+      "properties": {
+        "incident_id": { "type": "string", "format": "uuid" },
+        "impact_state": { "type": "string", "enum": ["NO_IMPACT", "IMPACT_CONFIRMED"] },
+        "qms_reference": { "type": ["string", "null"] }
+      },
+      "x-requirement-ids": ["MON-FR-016"]
+    },
+    "SecurityIncidentClosedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["incident_id", "residual_risk"],
+      "properties": {
+        "incident_id": { "type": "string", "format": "uuid" },
+        "residual_risk": { "type": "string" }
+      },
+      "x-requirement-ids": ["MON-FR-021", "MON-FR-029"]
+    }
+  },
+  "events": [
+    { "event_type": "SecurityAlertRaised", "schema_version": "1.0", "producer": "SPEC-SEC-007", "aggregate_type": "security_event", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/SecurityAlertRaisedPayload" }, "x-requirement-ids": ["MON-FR-008"] },
+    { "event_type": "SecurityIncidentOpened", "schema_version": "1.0", "producer": "SPEC-SEC-007", "aggregate_type": "security_incident", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/SecurityIncidentOpenedPayload" }, "x-requirement-ids": ["MON-FR-012"] },
+    { "event_type": "IncidentContainmentExecuted", "schema_version": "1.0", "producer": "SPEC-SEC-007", "aggregate_type": "security_incident", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/IncidentContainmentExecutedPayload" }, "x-requirement-ids": ["MON-FR-015"] },
+    { "event_type": "ForensicEvidencePreserved", "schema_version": "1.0", "producer": "SPEC-SEC-007", "aggregate_type": "forensic_evidence", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ForensicEvidencePreservedPayload" }, "x-requirement-ids": ["MON-FR-014"] },
+    { "event_type": "SecurityGxPImpactAssessed", "schema_version": "1.0", "producer": "SPEC-SEC-007", "aggregate_type": "security_incident", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/SecurityGxPImpactAssessedPayload" }, "x-requirement-ids": ["MON-FR-016"] },
+    { "event_type": "SecurityIncidentClosed", "schema_version": "1.0", "producer": "SPEC-SEC-007", "aggregate_type": "security_incident", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/SecurityIncidentClosedPayload" }, "x-requirement-ids": ["MON-FR-021"] }
+  ]
+}

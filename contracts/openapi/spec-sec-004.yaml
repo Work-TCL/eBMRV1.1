@@ -1,0 +1,165 @@
+openapi: 3.1.0
+info:
+  title: SPEC-SEC-004 — Application, API, UI & Secure Runtime Engineering
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-10 Document 64 (`services/gxp-api/app/modules/security/appsec*`).
+    APPSEC-FR-001..030 are overwhelmingly cross-cutting hardening of the whole app (server-side
+    authorization, strict input schemas, injection/SSRF/XSS/CSRF defence, safe file handling, rate
+    limiting, security headers, safe error responses) implemented as the 9 library functions of
+    Document 64 # 4 (`app/modules/security/appsec.py`) plus the security-headers / safe-error
+    middleware in `app/main.py` — not as endpoints.
+
+
+    Only the 3 operations Document 64 # 7 lists have a REST surface: register an `outbound_destination`
+    (the SSRF allowlist), register a `webhook_profile` (inbound webhook trust config), and read the
+    live API inventory. The two writes are RBAC-gated to the existing **Security Admin** role (the
+    Document 62 actor for security-infrastructure config — reused, not duplicated) and carry **no
+    signature**: Document 106 has zero rows for any SPEC-SEC-004 action (checked the full register,
+    rows 133-141) and the spec's own API table shows `Signature: —` for all three.
+
+
+    Numeric limits (`replay_window_seconds`, `max_body_bytes`, per-operation rate limits) are integers,
+    never binary float, and are customer configuration — there is no approved default baseline for
+    them anywhere in Documents 106-115 (SG-164, non-blocking, same shape as SG-163's session-timeout
+    gap).
+tags:
+  - name: security-appsec
+
+paths:
+  /security/v1/outbound-destinations:
+    post:
+      operationId: postRegisterOutboundDestination
+      tags: [security-appsec]
+      summary: Register an outbound destination on the SSRF allowlist (APPSEC-FR-011)
+      description: >
+        Deny-by-default: `validateOutboundDestination()` refuses any outbound URL that does not match
+        an ACTIVE row here (and always refuses private / loopback / link-local / cloud-metadata
+        addresses regardless of the allowlist). No signature (no Document 106 row for SPEC-SEC-004).
+      x-requirement-ids: [APPSEC-FR-011, APPSEC-FR-019, APPSEC-FR-024, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RegisterOutboundDestinationCommand' } } }
+      responses:
+        '200': { description: Registered., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: "IDEMPOTENCY_CONFLICT (same key, different payload).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED / REQUEST_SCHEMA_INVALID.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/webhook-profiles:
+    post:
+      operationId: postRegisterWebhookProfile
+      tags: [security-appsec]
+      summary: Register an inbound webhook trust profile (APPSEC-FR-020)
+      description: >
+        `verifyWebhook()` checks every inbound delivery against the named provider's ACTIVE profile:
+        body-size cap, HMAC-SHA256 signature (constant-time compare), signed-timestamp replay window
+        and delivery-id de-dupe. No signature (no Document 106 row for SPEC-SEC-004).
+      x-requirement-ids: [APPSEC-FR-020, APPSEC-FR-015, APPSEC-FR-024, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RegisterWebhookProfileCommand' } } }
+      responses:
+        '200': { description: Registered., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (bad auth_mechanism / out-of-bounds replay window or body cap).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/api-inventory:
+    get:
+      operationId: getApiInventory
+      tags: [security-appsec]
+      summary: Read the live API security inventory (APPSEC-FR-016/027)
+      description: >
+        Built from the running app's generated OpenAPI document so it can never drift from what is
+        deployed: method, path, operationId, declared security scheme and deprecation flag for every
+        endpoint, plus any `api_security_policy` override.
+      x-requirement-ids: [APPSEC-FR-016, APPSEC-FR-017, APPSEC-FR-027]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Inventory., content: { application/json: { schema: { $ref: '#/components/schemas/ApiInventory' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    RegisterOutboundDestinationCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, service_id, schemes_hosts_ports, purpose]
+      x-requirement-ids: [APPSEC-FR-011]
+      properties:
+        idempotency_key: { type: string, minLength: 1 }
+        service_id: { type: string, minLength: 1, maxLength: 120 }
+        schemes_hosts_ports:
+          type: object
+          description: "e.g. {\"schemes\":[\"https\"],\"hosts\":[\"erp.example.com\"],\"ports\":[443]}"
+          properties:
+            schemes: { type: array, items: { type: string, enum: [http, https] } }
+            hosts: { type: array, items: { type: string }, minItems: 1 }
+            ports: { type: array, items: { type: integer, minimum: 1, maximum: 65535 } }
+        ip_range_rules:
+          type: object
+          description: "Optional per-service deny CIDRs layered on the always-on private-range block."
+          properties:
+            deny_cidrs: { type: array, items: { type: string } }
+        redirect_policy: { type: string, enum: [BLOCK, SAME_HOST, ALLOWLIST], default: BLOCK }
+        auth_secret_ref:
+          type: [string, "null"]
+          maxLength: 200
+          description: "Opaque reference only — never a credential value (APPSEC-FR-024)."
+        purpose: { type: string, minLength: 1 }
+
+    RegisterWebhookProfileCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, provider]
+      x-requirement-ids: [APPSEC-FR-020]
+      properties:
+        idempotency_key: { type: string, minLength: 1 }
+        provider: { type: string, minLength: 1, maxLength: 120 }
+        auth_mechanism: { type: string, enum: [HMAC_SHA256, MTLS, BEARER_TOKEN], default: HMAC_SHA256 }
+        replay_window_seconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          default: 300
+          description: "Integer seconds. Customer configuration — no approved default baseline (SG-164)."
+        schema_version: { type: string, default: "1.0", maxLength: 20 }
+        max_body_bytes: { type: integer, minimum: 1, maximum: 67108864, default: 1048576 }
+        signing_secret_ref: { type: [string, "null"], maxLength: 200 }
+
+    ApiInventory:
+      type: object
+      additionalProperties: false
+      required: [generated_from, endpoint_count, deprecated_count, endpoints]
+      x-requirement-ids: [APPSEC-FR-016, APPSEC-FR-027]
+      properties:
+        generated_from: { type: string }
+        openapi_version: { type: [string, "null"] }
+        endpoint_count: { type: integer }
+        deprecated_count: { type: integer }
+        endpoints:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              method: { type: string }
+              path: { type: string }
+              operation_id: { type: [string, "null"] }
+              authenticated: { type: boolean }
+              security_schemes: { type: array, items: { type: string } }
+              deprecated: { type: boolean }
+              auth_mode: { type: [string, "null"] }
+              deprecation: { type: [object, "null"], additionalProperties: true }

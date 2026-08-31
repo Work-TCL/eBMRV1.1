@@ -1,0 +1,670 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EQP-001 — Equipment, Calibration, Qualification & Maintenance
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 38 (`services/gxp-api/app/modules/equipment/router.py` +
+    `commands.py` + `models.py`) — the first WP-06 module. Frozen 4-entity data model
+    (`equipment_asset`, `equipment_calibration`, `maintenance_work_order`, `equipment_use_log`); no 5th
+    table. `equipment_class_id`/`location_id`/`standard_reference`/CMMS-identity fields are captured,
+    unenforced references — no dedicated master entity exists for any of them in this codebase (same
+    "captured, not enforced" precedent as `material.MaterialLot.material_spec_version_id`). Contracted
+    from the 12 operations the router actually exposes, not the specification's own declared 9-operation
+    catalogue: the code adds `GET /assets` (list), `GET /assets/{asset_id}` (detail) and
+    `POST /{asset_id}/signature-challenges`, none of which the spec's §6 API table names, following this
+    project's "contract the code that exists" discipline (see spec-mat-002a.yaml and others). Retirement
+    (EQP-FR-027) has no reachable endpoint at all — RETIRED is reachable only via direct migration/repair
+    today, not a guessed 13th operation; raised as a SPEC_GAP, not contracted.
+
+
+    STATE-BYPASS DISCIPLINE (EQP-FR-030): `QUALIFIED_AVAILABLE` is written in exactly one place —
+    `postReturnToService`, which re-runs the same `_ineligibility_reasons` predicate
+    `getAssetEligibility` uses, so the two can never disagree. Every other completion path
+    (`postRecordQualification` with `qualified: true`, a passing `postRecordCalibration`, a verified
+    `postRecordMaintenance`) moves the asset to the intermediate `VERIFICATION` state, never straight to
+    `QUALIFIED_AVAILABLE`.
+
+
+    ONE SIGNED OPERATION: `postHoldEquipment` is the only command in this module that resolves a
+    Document 106 policy row (`record_type="equipment_asset", action="hold"`); every other mutating
+    command is RBAC-gated only — the "no Document 106 row = unsigned" precedent used throughout this
+    codebase (see SG-084/SG-087 and others). `challenge_id`/`reauth_password` are always required fields
+    on `HoldEquipmentCommand` regardless of whether a policy row currently exists, matching the
+    established pattern of leaving the mutation-path shape fixed while the policy decision stays
+    data-driven.
+
+
+    NOT BUILT YET, CAPTURED AS UNENFORCED FIELDS ONLY: Document 39 cleaning/sanitization status
+    (`cleanliness_status`, EQP-FR-025 — contracted separately as spec-eqp-002.yaml once that module
+    exists), Edge/device-sourced runtime counters (EQP-FR-017, manual entry only today), and the
+    cross-module "evaluate affected in-process/recent batches" half of breakdown handling (EQP-FR-012,
+    no equipment reference exists yet on `batch_execution.BatchStep` — see SG-048). None of these are
+    guessed into this contract.
+tags:
+  - name: equipment
+
+paths:
+  /equipment/v1/assets:
+    post:
+      operationId: postCreateEquipmentAsset
+      tags: [equipment]
+      summary: Register a new equipment asset (EQP-FR-001/002/003/014/018/019/023)
+      description: >
+        No dedicated "install" operation exists — creation enters directly at `INSTALLED`
+        (`EquipmentInstalled` event) since no command ever moves an asset out of `PLANNED` otherwise.
+        `equipment_code` must be unique platform-wide.
+      x-requirement-ids: [EQP-FR-001, EQP-FR-002, EQP-FR-003, EQP-FR-014, EQP-FR-018, EQP-FR-019, EQP-FR-023, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateEquipmentAssetCommand' }
+      responses:
+        '200':
+          description: Created at state INSTALLED.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422':
+          description: "VALIDATION_FAILED — empty equipment_code, or equipment_code already in use."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+    get:
+      operationId: listEquipmentAssets
+      tags: [equipment]
+      summary: List/search equipment assets
+      description: Not in the spec's declared API table; contracted because the router implements it. `q` free-text searches `equipment_code` only; genuinely paginates (`app/core/pagination.py`).
+      x-requirement-ids: [EQP-FR-001, EQP-FR-028, CTR-FR-012]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/EquipmentState' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/EquipmentAssetPage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+  /equipment/v1/assets/{asset_id}:
+    parameters:
+      - { name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getEquipmentAsset
+      tags: [equipment]
+      summary: Equipment asset detail
+      description: Not in the spec's declared API table; contracted because the router implements it.
+      x-requirement-ids: [EQP-FR-001]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/EquipmentAsset' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /equipment/v1/{asset_id}/qualifications:
+    parameters:
+      - { name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordQualification
+      tags: [equipment]
+      summary: Record qualification progress or completion (EQP-FR-004)
+      description: >
+        `qualified: true` is the terminal "qualification complete" event and moves an `INSTALLED` /
+        `QUALIFICATION_PENDING` / `SUSPENDED` / `OUT_OF_SERVICE` asset to `VERIFICATION` (never directly
+        to `QUALIFIED_AVAILABLE` — see EQP-FR-030 note above). `qualified: false` records progress only
+        and moves `INSTALLED` to `QUALIFICATION_PENDING`. IQ/OQ/PQ reference is free text in
+        `qualification_scope`, not a controlled code list.
+      x-requirement-ids: [EQP-FR-004, EQP-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordQualificationCommand' }
+      responses:
+        '200':
+          description: Recorded.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION — expected_version does not match the asset's current version, or INVALID_TRANSITION — the asset is retired."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — asset_id in path and body must match, or empty qualification_status."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /equipment/v1/{asset_id}/calibrations:
+    parameters:
+      - { name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordCalibration
+      tags: [equipment]
+      summary: Record a calibration plan+execution+result in one call (EQP-FR-005/006/007/008)
+      description: >
+        One POST captures plan and execution atomically — the spec declares one calibration operation,
+        not separate plan/execute endpoints, so a row is created with `state="completed"` directly.
+        `result: fail|oot` automatically holds the asset (`hold_source="calibration"`, state
+        `OUT_OF_SERVICE`, `CalibrationOutOfTolerance` event) and sets `impact_assessment_required` for a
+        human to act on — this module never auto-creates a deviation/CAPA (the spec says calibration OOT
+        "may trigger deviation/CAPA", not "shall"; `deviation_reference_id` is a captured, unenforced
+        field a human populates after separately calling the QMS deviation command). A passing/current
+        result clears a calibration-sourced hold and moves `CALIBRATION_DUE`/`OUT_OF_SERVICE`/`SUSPENDED`
+        to `VERIFICATION`.
+      x-requirement-ids: [EQP-FR-005, EQP-FR-006, EQP-FR-007, EQP-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordCalibrationCommand' }
+      responses:
+        '200':
+          description: Recorded.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — the asset is retired."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — asset_id mismatch, or result not one of pass/fail/oot."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /equipment/v1/{asset_id}/maintenance:
+    parameters:
+      - { name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordMaintenance
+      tags: [equipment]
+      summary: Create, continue or verify a maintenance work order (EQP-FR-009/010/011/012/021/022)
+      description: >
+        `work_order_id: null` creates a new work order: `type="corrective"` immediately holds the asset
+        (`hold_source="maintenance"`, state `OUT_OF_SERVICE`, breakdown per EQP-FR-012); `type="planned"`
+        moves a `QUALIFIED_AVAILABLE`/`CALIBRATION_DUE` asset to `MAINTENANCE_DUE`. A provided
+        `work_order_id` continues (`verified: false`) or verifies (`verified: true`) an existing open
+        order — `verified: true` is post-maintenance verification (EQP-FR-011): the asset only clears a
+        maintenance-sourced hold and moves to `VERIFICATION` once verified, never on work-performed alone.
+        `critical_modification: true` requires `change_classification` and creates a real Change Control
+        record via `qms.change_commands.create_change` (never writes QMS tables directly — AG-05/AG-06),
+        linking `asset.change_control_id` (EQP-FR-022). Re-verifying an already-`verified` work order is
+        rejected.
+      x-requirement-ids: [EQP-FR-009, EQP-FR-010, EQP-FR-011, EQP-FR-012, EQP-FR-021, EQP-FR-022, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordMaintenanceCommand' }
+      responses:
+        '200':
+          description: Recorded.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: "Equipment asset not found, or (continuing/verifying) the referenced work_order_id does not belong to this asset."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: "STALE_VERSION, INVALID_TRANSITION — the asset is retired or the work order is already verified."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — asset_id mismatch, unrecognized type on a new work order, or critical_modification without a valid change_classification."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /equipment/v1/{asset_id}/signature-challenges:
+    parameters:
+      - { name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postEquipmentSignatureChallenge
+      tags: [equipment]
+      summary: Create the signature challenge for postHoldEquipment
+      description: >
+        Not in the spec's declared API table; contracted because the router implements it (same
+        "signature-challenge helper endpoint" pattern used throughout this codebase). `action` is
+        currently only ever `"hold"` (meaning `"Performed"`) — any other value is rejected.
+      x-requirement-ids: [SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EquipmentSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: "VALIDATION_FAILED — action is not \"hold\"."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /equipment/v1/{asset_id}/hold:
+    parameters:
+      - { name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postHoldEquipment
+      tags: [equipment]
+      summary: Manually hold (suspend) an equipment asset — the module's one signed operation
+      description: >
+        Resolves the Document 106 policy row (`record_type="equipment_asset", action="hold"`); if
+        `signature_required` is true, requires a fresh step-up password re-authentication plus a valid
+        unexpired challenge bound to the asset's current version/hash before committing. `reason` is
+        always required regardless of the signature outcome. Moves the asset to `SUSPENDED` with
+        `hold_source="manual"` — only a subsequent `postReturnToService` call can clear a manual hold
+        (a calibration- or maintenance-sourced hold instead self-clears once the underlying condition
+        resolves, in `postRecordCalibration`/`postRecordMaintenance`).
+      x-requirement-ids: [EQP-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, SIG-FR-005, SIG-FR-006, SIG-FR-009, SIG-FR-010, SIG-FR-011, SIG-FR-012, SIG-FR-013]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HoldEquipmentCommand' }
+      responses:
+        '200':
+          description: Held.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — the asset is retired."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — asset_id mismatch, or empty reason."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE — fresh step-up (password re-authentication) failed while the policy requires a signature.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /equipment/v1/{asset_id}/return-to-service:
+    parameters:
+      - { name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReturnToService
+      tags: [equipment]
+      summary: Return an asset to QUALIFIED_AVAILABLE (EQP-FR-011/030)
+      description: >
+        Unsigned — RBAC-gated only (no Document 106 row for this action). The single place
+        `QUALIFIED_AVAILABLE` is ever written: only reachable from `SUSPENDED`/`OUT_OF_SERVICE`/
+        `VERIFICATION`/`MAINTENANCE_DUE`/`CALIBRATION_DUE`, and only once the shared eligibility
+        predicate (the same one `getAssetEligibility` uses) reports zero ineligibility reasons — the
+        first outstanding reason is returned as a distinct, stable error code so a caller always knows
+        exactly what is still blocking return to service.
+      x-requirement-ids: [EQP-FR-011, EQP-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReturnToServiceCommand' }
+      responses:
+        '200':
+          description: Returned to service.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403':
+          description: "EQUIPMENT_NOT_QUALIFIED (Forbidden-class) — no current qualification record, or qualification has expired."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION; INVALID_TRANSITION — not in a returnable state; CALIBRATION_OOT_IMPACT_REQUIRED; CALIBRATION_EXPIRED; POST_MAINTENANCE_VERIFICATION_REQUIRED; or CLEANING_REQUIRED (EQP-FR-025 — Document 39 is the sole writer of cleanliness_status; a non-clean/ready value blocks return to service) — exactly one of these five is returned, whichever ineligibility reason is most specific."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — asset_id mismatch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /equipment/v1/{asset_id}/eligibility:
+    parameters:
+      - { name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getAssetEligibility
+      tags: [equipment]
+      summary: Current pre-use eligibility (EQP-FR-015)
+      description: Returns every outstanding ineligibility reason (not just the first), using the same predicate postReturnToService enforces — the two can never disagree.
+      x-requirement-ids: [EQP-FR-015, EQP-FR-030]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/EquipmentEligibility' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /equipment/v1/{asset_id}/history:
+    parameters:
+      - { name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getEquipmentHistory
+      tags: [equipment]
+      summary: Complete calibration/maintenance/use history (EQP-FR-013/029)
+      description: Use log is capped to the 200 most recent rows, newest first. Calibration and work-order lists are complete and unbounded.
+      x-requirement-ids: [EQP-FR-013, EQP-FR-029]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/EquipmentHistory' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /equipment/v1/dashboard:
+    get:
+      operationId: getEquipmentDashboard
+      tags: [equipment]
+      summary: Due calibration/maintenance counts and the out-of-service list for a site (EQP-FR-028, partial)
+      description: >
+        Partial implementation of EQP-FR-028: due-calibration count, due-maintenance count and the
+        out-of-service asset list only. Utilization and recurring-failure analytics need a time-series/
+        analytics engine this codebase does not have yet — not attempted, not guessed.
+      x-requirement-ids: [EQP-FR-028]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: site_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/EquipmentDashboard' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '422':
+          description: VALIDATION_FAILED — site_id is required.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    EquipmentState:
+      type: string
+      description: "`EQUIPMENT_STATES` in `app/modules/equipment/models.py`. `VERIFICATION` is the explicit post-calibration/maintenance-verification-pending substate the workflow diagram implies but Document 38's own state list doesn't name."
+      x-requirement-ids: [EQP-FR-003, CTR-FR-017]
+      enum: [PLANNED, INSTALLED, QUALIFICATION_PENDING, QUALIFIED_AVAILABLE, CALIBRATION_DUE, MAINTENANCE_DUE, OUT_OF_SERVICE, SUSPENDED, VERIFICATION, RETIRED]
+
+    CalibrationResult:
+      type: string
+      x-requirement-ids: [EQP-FR-006]
+      enum: [pass, fail, oot]
+
+    MaintenanceType:
+      type: string
+      x-requirement-ids: [EQP-FR-009, EQP-FR-012]
+      enum: [planned, corrective]
+
+    EquipmentAsset:
+      type: object
+      description: "`_asset_dict` in `app/modules/equipment/router.py`."
+      x-requirement-ids: [EQP-FR-001, EQP-FR-002, EQP-FR-003, EQP-FR-004]
+      required: [id, site_id, equipment_code, state, hold_flag, dedicated, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        equipment_code: { type: string }
+        equipment_class_id: { type: [string, "null"], format: uuid, description: Captured, unenforced reference — no equipment_class entity exists. }
+        manufacturer: { type: [string, "null"] }
+        model: { type: [string, "null"] }
+        serial_no: { type: [string, "null"] }
+        state: { $ref: '#/components/schemas/EquipmentState' }
+        qualification_status: { type: [string, "null"] }
+        calibration_status: { type: [string, "null"] }
+        next_calibration_due_date: { type: [string, "null"], format: date }
+        maintenance_status: { type: [string, "null"] }
+        next_maintenance_due_date: { type: [string, "null"], format: date }
+        cleanliness_status: { type: [string, "null"], description: "Captured, unenforced — Document 39 (cleaning) is not built in this codebase." }
+        hold_flag: { type: boolean }
+        hold_reason: { type: [string, "null"] }
+        hold_source: { type: [string, "null"], enum: [manual, calibration, maintenance, null] }
+        dedicated: { type: boolean }
+        firmware_version: { type: [string, "null"] }
+        change_control_id: { type: [string, "null"], format: uuid, description: "Real FK into qms.ChangeControl, set only via a critical_modification maintenance record." }
+        version: { type: integer, minimum: 1 }
+
+    EquipmentAssetPage:
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/EquipmentAsset' } }
+      description: listEquipmentAssets's response.
+      x-requirement-ids: [EQP-FR-001, CTR-FR-012]
+
+    EquipmentEligibility:
+      type: object
+      description: "`get_eligibility` in `app/modules/equipment/commands.py`."
+      x-requirement-ids: [EQP-FR-015, EQP-FR-025, EQP-FR-030]
+      required: [asset_id, state, eligible, reasons]
+      properties:
+        asset_id: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/EquipmentState' }
+        eligible: { type: boolean }
+        reasons:
+          type: array
+          description: Every outstanding ineligibility reason, most-specific-first. Empty when eligible.
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string, enum: [EQUIPMENT_NOT_QUALIFIED, CALIBRATION_OOT_IMPACT_REQUIRED, CALIBRATION_EXPIRED, POST_MAINTENANCE_VERIFICATION_REQUIRED, EQUIPMENT_OUT_OF_SERVICE, CLEANING_REQUIRED] }
+              message: { type: string }
+
+    EquipmentHistory:
+      type: object
+      description: "`get_equipment_history` in `app/modules/equipment/commands.py`. Use log capped to the 200 most recent rows."
+      x-requirement-ids: [EQP-FR-013, EQP-FR-029]
+      required: [asset_id, calibrations, maintenance_work_orders, use_log]
+      properties:
+        asset_id: { type: string, format: uuid }
+        calibrations:
+          type: array
+          items:
+            type: object
+            required: [id, due_date, result]
+            properties:
+              id: { type: string, format: uuid }
+              due_date: { type: string, format: date }
+              performed_date: { type: [string, "null"], format: date }
+              result: { type: [string, "null"] }
+              standard_reference: { type: [string, "null"] }
+              standard_calibration_status: { type: [string, "null"] }
+              standard_expiry_date: { type: [string, "null"], format: date }
+              as_found: { type: [object, "null"] }
+              adjustments: { type: [object, "null"] }
+              as_left: { type: [object, "null"] }
+              impact_assessment_required: { type: boolean }
+              performer_user_id: { type: [string, "null"], format: uuid }
+        maintenance_work_orders:
+          type: array
+          items:
+            type: object
+            required: [id, type, state, started_at, technician_user_id]
+            properties:
+              id: { type: string, format: uuid }
+              type: { $ref: '#/components/schemas/MaintenanceType' }
+              state: { type: string, enum: [open, in_progress, completed, verified] }
+              started_at: { type: string, format: date-time }
+              fault_description: { type: [string, "null"] }
+              diagnosis: { type: [string, "null"] }
+              work_performed: { type: [string, "null"] }
+              parts_used: { type: [object, "null"] }
+              procedure_version: { type: [string, "null"] }
+              frequency_days: { type: [integer, "null"] }
+              next_due_date: { type: [string, "null"], format: date }
+              expected_downtime_hours: { type: [string, "null"], description: Decimal string. }
+              post_maintenance_verification_required: { type: boolean }
+              verified_at: { type: [string, "null"], format: date-time }
+              technician_user_id: { type: string, format: uuid }
+        use_log:
+          type: array
+          items:
+            type: object
+            required: [id, log_type, occurred_at]
+            properties:
+              id: { type: string, format: uuid }
+              log_type: { type: string, enum: [use, reservation, calibration, maintenance, hold] }
+              occurred_at: { type: string, format: date-time }
+
+    EquipmentDashboard:
+      type: object
+      description: "`get_dashboard` in `app/modules/equipment/commands.py` — partial EQP-FR-028."
+      x-requirement-ids: [EQP-FR-028]
+      required: [site_id, due_calibration_count, due_maintenance_count, out_of_service]
+      properties:
+        site_id: { type: string, format: uuid }
+        due_calibration_count: { type: integer, minimum: 0 }
+        due_maintenance_count: { type: integer, minimum: 0 }
+        out_of_service:
+          type: array
+          items:
+            type: object
+            required: [id, equipment_code, state]
+            properties:
+              id: { type: string, format: uuid }
+              equipment_code: { type: string }
+              state: { $ref: '#/components/schemas/EquipmentState' }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postEquipmentSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    EquipmentSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [hold] }
+
+    CreateEquipmentAssetCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [EQP-FR-001, EQP-FR-002, EQP-FR-014, EQP-FR-018, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, equipment_code]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        equipment_code: { type: string, minLength: 1 }
+        equipment_class_id: { type: [string, "null"], format: uuid }
+        manufacturer: { type: [string, "null"] }
+        model: { type: [string, "null"] }
+        serial_no: { type: [string, "null"] }
+        location_id: { type: [string, "null"], format: uuid }
+        dedicated: { type: boolean, default: false }
+        firmware_version: { type: [string, "null"] }
+
+    RecordQualificationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [EQP-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, asset_id, expected_version, qualification_status]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        asset_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        qualification_status: { type: string, minLength: 1 }
+        qualification_scope: { type: [object, "null"] }
+        effective_date: { type: [string, "null"], format: date }
+        expiry_date: { type: [string, "null"], format: date }
+        qualified: { type: boolean, default: false }
+        reason: { type: [string, "null"] }
+
+    RecordCalibrationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [EQP-FR-005, EQP-FR-006, EQP-FR-007, EQP-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, asset_id, expected_version, due_date, performed_date, result]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        asset_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        due_date: { type: string, format: date }
+        performed_date: { type: string, format: date }
+        result: { $ref: '#/components/schemas/CalibrationResult' }
+        calibration_plan_ref: { type: [string, "null"] }
+        procedure_version: { type: [string, "null"] }
+        frequency_days: { type: [integer, "null"] }
+        tolerance: { type: [object, "null"] }
+        as_found: { type: [object, "null"] }
+        adjustments: { type: [object, "null"] }
+        as_left: { type: [object, "null"] }
+        standard_reference: { type: [string, "null"] }
+        standard_calibration_status: { type: [string, "null"] }
+        standard_expiry_date: { type: [string, "null"], format: date }
+        reviewer_user_id: { type: [string, "null"], format: uuid }
+        reason: { type: [string, "null"] }
+
+    RecordMaintenanceCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [EQP-FR-009, EQP-FR-010, EQP-FR-011, EQP-FR-012, EQP-FR-021, EQP-FR-022, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, asset_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        asset_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        work_order_id: { type: [string, "null"], format: uuid, description: Omit/null to create a new work order; supply to continue or verify an existing one. }
+        type: { $ref: '#/components/schemas/MaintenanceType', description: Required when work_order_id is omitted. }
+        fault_description: { type: [string, "null"] }
+        diagnosis: { type: [string, "null"] }
+        work_performed: { type: [string, "null"] }
+        parts_used: { type: [object, "null"], description: "EQP-FR-021 spare parts — no parts master entity exists." }
+        procedure_version: { type: [string, "null"] }
+        frequency_days: { type: [integer, "null"] }
+        next_due_date: { type: [string, "null"], format: date }
+        expected_downtime_hours: { type: [string, "null"], description: Decimal string. }
+        post_maintenance_verification_required: { type: boolean, default: true }
+        verified: { type: boolean, default: false, description: Set true to record post-maintenance verification (EQP-FR-011) when continuing an existing work_order_id. }
+        reason: { type: [string, "null"] }
+        critical_modification: { type: boolean, default: false }
+        change_classification: { type: [string, "null"], description: Required when critical_modification is true — same controlled classification list as qms.ChangeControl. }
+        change_reason: { type: [string, "null"] }
+        owner_subject_id: { type: [string, "null"], format: uuid }
+
+    HoldEquipmentCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are always required, whether or not the current Document 106 policy row makes this action signature-required.
+      x-requirement-ids: [EQP-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, asset_id, expected_version, reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        asset_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1 }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    ReturnToServiceCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [EQP-FR-011, EQP-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, asset_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        asset_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"] }

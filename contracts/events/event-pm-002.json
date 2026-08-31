@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-pm-002.json",
+  "title": "SPEC-PM-002 — Regulatory Reportability Assessment & Electronic Safety Submission Management Events",
+  "description": "Document 59 # 'EVENTS (0)' declares no events at all, even though its own function catalogue names one per function. AG-09 makes an outbox event mandatory for every regulated mutation regardless of what a document's own terse events section enumerates -- every command in reportability_commands.py still writes one, using the function-catalogue names since those are the only ones the spec actually supplies. generateRegulatoryPayload() and evaluateSameEventReportDeduplication() are read/computation-only (no owned-entity mutation) and freezeReportabilityAuditPackage() reuses the generic Vault release path -- none of the three emit a module-specific event type here.",
+  "x-requirement-ids": [
+    "REG-FR-001",
+    "REG-FR-004",
+    "REG-FR-005",
+    "REG-FR-013",
+    "REG-FR-014",
+    "REG-FR-017",
+    "REG-FR-018",
+    "REG-FR-019",
+    "REG-FR-026",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "ReportabilityTracksCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["safety_case_id", "track_ids"],
+      "properties": {
+        "safety_case_id": { "type": "string", "format": "uuid" },
+        "track_ids": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+      },
+      "x-requirement-ids": ["REG-FR-001"]
+    },
+    "RegulatoryDeadlineCalculatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["track_id", "due_at", "original_due_at"],
+      "properties": {
+        "track_id": { "type": "string", "format": "uuid" },
+        "due_at": { "type": "string", "format": "date-time" },
+        "original_due_at": { "type": "string", "format": "date-time" }
+      },
+      "x-requirement-ids": ["REG-FR-005"]
+    },
+    "ReportabilityDecidedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["track_id", "decision"],
+      "properties": {
+        "track_id": { "type": "string", "format": "uuid" },
+        "decision": { "type": "string", "enum": ["REPORTABLE", "NOT_REPORTABLE"] }
+      },
+      "x-requirement-ids": ["REG-FR-004"]
+    },
+    "RegulatoryReportBuiltPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["report_id", "track_id", "report_version"],
+      "properties": {
+        "report_id": { "type": "string", "format": "uuid" },
+        "track_id": { "type": "string", "format": "uuid" },
+        "report_version": { "type": "integer" }
+      },
+      "x-requirement-ids": ["REG-FR-014"]
+    },
+    "RegulatoryReportApprovedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["report_id"],
+      "properties": {
+        "report_id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["REG-FR-017"]
+    },
+    "RegulatoryReportSubmittedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt_id", "report_id", "transport_result"],
+      "properties": {
+        "attempt_id": { "type": "string", "format": "uuid" },
+        "report_id": { "type": "string", "format": "uuid" },
+        "transport_result": { "type": "string", "enum": ["SENT", "FAILED", "TIMEOUT_UNCERTAIN"] }
+      },
+      "x-requirement-ids": ["REG-FR-018", "REG-FR-023"]
+    },
+    "SubmissionAcknowledgementReceivedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ack_id", "attempt_id", "ack_level", "ack_state"],
+      "properties": {
+        "ack_id": { "type": "string", "format": "uuid" },
+        "attempt_id": { "type": "string", "format": "uuid" },
+        "ack_level": { "type": "string", "enum": ["TRANSPORT", "PROCESSING", "AGENCY_ACCEPTANCE"] },
+        "ack_state": { "type": "string", "enum": ["ACCEPTED", "REJECTED", "PENDING"] }
+      },
+      "x-requirement-ids": ["REG-FR-019"]
+    },
+    "RegulatorySubmissionRejectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ack_id", "attempt_id", "ack_level", "ack_state"],
+      "properties": {
+        "ack_id": { "type": "string", "format": "uuid" },
+        "attempt_id": { "type": "string", "format": "uuid" },
+        "ack_level": { "type": "string", "enum": ["TRANSPORT", "PROCESSING", "AGENCY_ACCEPTANCE"] },
+        "ack_state": { "type": "string", "const": "REJECTED" }
+      },
+      "x-requirement-ids": ["REG-FR-026"]
+    },
+    "RegulatoryFollowupRequiredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["followup_track_id", "original_report_id"],
+      "properties": {
+        "followup_track_id": { "type": "string", "format": "uuid" },
+        "original_report_id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["REG-FR-013"]
+    }
+  },
+  "events": [
+    {
+      "event_type": "ReportabilityTracksCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-002",
+      "aggregate_type": "reportability_track",
+      "payload": { "$ref": "#/$defs/ReportabilityTracksCreatedPayload" },
+      "x-requirement-ids": ["REG-FR-001"]
+    },
+    {
+      "event_type": "RegulatoryDeadlineCalculated",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-002",
+      "aggregate_type": "reportability_track",
+      "payload": { "$ref": "#/$defs/RegulatoryDeadlineCalculatedPayload" },
+      "x-requirement-ids": ["REG-FR-005"]
+    },
+    {
+      "event_type": "ReportabilityDecided",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-002",
+      "aggregate_type": "reportability_track",
+      "payload": { "$ref": "#/$defs/ReportabilityDecidedPayload" },
+      "x-requirement-ids": ["REG-FR-004"]
+    },
+    {
+      "event_type": "RegulatoryReportBuilt",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-002",
+      "aggregate_type": "regulatory_report",
+      "payload": { "$ref": "#/$defs/RegulatoryReportBuiltPayload" },
+      "x-requirement-ids": ["REG-FR-014"]
+    },
+    {
+      "event_type": "RegulatoryReportApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-002",
+      "aggregate_type": "regulatory_report",
+      "payload": { "$ref": "#/$defs/RegulatoryReportApprovedPayload" },
+      "x-requirement-ids": ["REG-FR-017"]
+    },
+    {
+      "event_type": "RegulatoryReportSubmitted",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-002",
+      "aggregate_type": "regulatory_submission_attempt",
+      "payload": { "$ref": "#/$defs/RegulatoryReportSubmittedPayload" },
+      "x-requirement-ids": ["REG-FR-018", "REG-FR-023"]
+    },
+    {
+      "event_type": "SubmissionAcknowledgementReceived",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-002",
+      "aggregate_type": "regulatory_submission_ack",
+      "payload": { "$ref": "#/$defs/SubmissionAcknowledgementReceivedPayload" },
+      "x-requirement-ids": ["REG-FR-019"]
+    },
+    {
+      "event_type": "RegulatorySubmissionRejected",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-002",
+      "aggregate_type": "regulatory_submission_ack",
+      "payload": { "$ref": "#/$defs/RegulatorySubmissionRejectedPayload" },
+      "x-requirement-ids": ["REG-FR-026"]
+    },
+    {
+      "event_type": "RegulatoryFollowupRequired",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-002",
+      "aggregate_type": "reportability_track",
+      "payload": { "$ref": "#/$defs/RegulatoryFollowupRequiredPayload" },
+      "x-requirement-ids": ["REG-FR-013"]
+    }
+  ]
+}

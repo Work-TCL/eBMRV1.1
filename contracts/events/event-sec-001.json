@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-sec-001.json",
+  "title": "SPEC-SEC-001 — Security Architecture, Threat Model & Control Framework Events",
+  "description": "Document 113 event contract for the 6 event types Document 61's own module (app/modules/security/commands.py) actually emits. All 6 declared Document 61 # 9 events are implemented -- no divergence for this module. generateSecurityControlMatrix() is a read-only join and emits no event of its own.",
+  "x-requirement-ids": [
+    "SEC-THR-001",
+    "SEC-THR-002",
+    "SEC-THR-006",
+    "SEC-THR-013",
+    "SEC-THR-014",
+    "SEC-THR-015",
+    "SEC-THR-023",
+    "SEC-THR-024",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "ThreatModelDraftCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["threat_model_version_id", "deployment_profile"],
+      "properties": {
+        "threat_model_version_id": { "type": "string", "format": "uuid" },
+        "deployment_profile": { "type": "string", "enum": ["CLOUD", "PRIVATE_CLOUD", "ON_PREM"] }
+      },
+      "x-requirement-ids": ["SEC-THR-001", "SEC-THR-025"]
+    },
+    "ThreatRegisteredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["threat_id", "threat_model_version_id", "threat_type"],
+      "properties": {
+        "threat_id": { "type": "string", "format": "uuid" },
+        "threat_model_version_id": { "type": "string", "format": "uuid" },
+        "threat_type": { "type": "string" }
+      },
+      "x-requirement-ids": ["SEC-THR-003", "SEC-THR-006"]
+    },
+    "SecurityControlMappedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["threat_id", "control_code", "mapping_type"],
+      "properties": {
+        "threat_id": { "type": "string", "format": "uuid" },
+        "control_code": { "type": "string" },
+        "mapping_type": { "type": "string", "enum": ["PREVENTIVE", "DETECTIVE", "RECOVERY"] }
+      },
+      "x-requirement-ids": ["SEC-THR-013"]
+    },
+    "ResidualSecurityRiskAcceptedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["threat_id", "state"],
+      "properties": {
+        "threat_id": { "type": "string", "format": "uuid" },
+        "state": { "type": "string" }
+      },
+      "x-requirement-ids": ["SEC-THR-015"]
+    },
+    "SecurityExceptionOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exception_id", "control_or_requirement"],
+      "properties": {
+        "exception_id": { "type": "string", "format": "uuid" },
+        "control_or_requirement": { "type": "string" }
+      },
+      "x-requirement-ids": ["SEC-THR-023"]
+    },
+    "ThreatModelReviewRequiredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["threat_model_version_id", "change_id", "trigger_type"],
+      "properties": {
+        "threat_model_version_id": { "type": "string", "format": "uuid" },
+        "change_id": { "type": "string" },
+        "trigger_type": { "type": "string" }
+      },
+      "x-requirement-ids": ["SEC-THR-002", "SEC-THR-024"]
+    }
+  },
+  "events": [
+    {
+      "event_type": "ThreatModelDraftCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-001",
+      "aggregate_type": "security_threat_model_version",
+      "payload": { "$ref": "#/$defs/ThreatModelDraftCreatedPayload" },
+      "x-requirement-ids": ["SEC-THR-001"]
+    },
+    {
+      "event_type": "ThreatRegistered",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-001",
+      "aggregate_type": "security_threat",
+      "payload": { "$ref": "#/$defs/ThreatRegisteredPayload" },
+      "x-requirement-ids": ["SEC-THR-003"]
+    },
+    {
+      "event_type": "SecurityControlMapped",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-001",
+      "aggregate_type": "security_threat",
+      "payload": { "$ref": "#/$defs/SecurityControlMappedPayload" },
+      "x-requirement-ids": ["SEC-THR-013"]
+    },
+    {
+      "event_type": "ResidualSecurityRiskAccepted",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-001",
+      "aggregate_type": "security_threat",
+      "payload": { "$ref": "#/$defs/ResidualSecurityRiskAcceptedPayload" },
+      "x-requirement-ids": ["SEC-THR-015"]
+    },
+    {
+      "event_type": "SecurityExceptionOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-001",
+      "aggregate_type": "security_exception",
+      "payload": { "$ref": "#/$defs/SecurityExceptionOpenedPayload" },
+      "x-requirement-ids": ["SEC-THR-023"]
+    },
+    {
+      "event_type": "ThreatModelReviewRequired",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-001",
+      "aggregate_type": "security_threat_model_version",
+      "payload": { "$ref": "#/$defs/ThreatModelReviewRequiredPayload" },
+      "x-requirement-ids": ["SEC-THR-002", "SEC-THR-024"]
+    }
+  ]
+}

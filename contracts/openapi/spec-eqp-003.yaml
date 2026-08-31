@@ -1,0 +1,480 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EQP-003 — Sterile / Aseptic Manufacturing Operations
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 40 (`services/gxp-api/app/modules/equipment/aseptic_router.py` +
+    `aseptic_commands.py` + `aseptic_models.py`) — same `equipment` module/schema (AG-05). Built LAST in
+    the WP-06 pass (build order 39 → 41 → 42 → 40) so its readiness composition could call the real
+    functions those documents already built: `em_commands.get_area_readiness` (Document 41),
+    `cleaning_commands.get_area_line_clearance_status` (Document 39, an internal helper with no route of
+    its own), `equipment_commands.get_eligibility` (Document 38) and `sterilization_commands.get_item_status`
+    (Document 42) — real cross-module reads, not stubs or forward-dependency SPEC_GAPs, for this
+    document's own most central requirements (ASP-FR-005/006/007/008). Contracted from the 9 operations
+    the router actually exposes, not the specification's own declared 7-operation catalogue: the code adds
+    `GET /aseptic/v1/operations/{operation_id}` (detail) and `POST .../signature-challenges`.
+
+
+    TWO DELIBERATE DEVIATIONS FROM THE SPEC'S LITERAL §5 DATA MODEL, same restraint discipline as every
+    prior document's substitutions: `aseptic_operation.recipe_stage_id` → `batch_step_id` (real FK to
+    `ebmr.batch_steps`, the actual execution-time anchor other modules already use — no "recipe stage"
+    concept exists anywhere in `batch_execution`/`recipe_master`); `aseptic_operation.environment_
+    snapshot_ref uuid` → `readiness_snapshot JSONB` (the full computed readiness result captured at
+    `postStartOperation`, not a dangling FK to a table this document never declares).
+
+
+    THE SPEC'S 4-STATE PREPARATION/AREA_READY/ASEPTIC_SETUP/EXECUTION PROGRESSION COLLAPSES onto
+    PREPARATION → EXECUTION at `postStartOperation` — there is no dedicated "area-ready"/"setup"
+    transition endpoint (same restraint as Document 42 collapsing declared sub-states onto the
+    transitions its own API actually exposes). `postStartOperation` performs the FULL readiness
+    composition in one step and refuses to transition if not ready — never lets an operator start
+    against failed area readiness (ASP-FR-005/006/007/008). `postCompleteOperation` symmetrically refuses
+    while `requires_deviation` is unresolved (ASP-FR-026) — an unplanned intervention or a critical event
+    permanently blocks completion of that operation until a human resolves the underlying condition (no
+    endpoint clears `requires_deviation` in this document).
+
+
+    `sterile_input_refs`/`equipment_ids` ARE CAPTURED JSONB LISTS set once at creation and only read
+    thereafter (`{item_id, item_kind}` / equipment_asset id lists) — no dedicated API operation manages
+    them as separate rows (the spec's own 7-op list has no such endpoint), same "captured, not a separate
+    CRUD surface" precedent as `SterilizationLoadItem`'s creation-time-only list.
+tags:
+  - name: aseptic
+
+paths:
+  /aseptic/v1/operations:
+    post:
+      operationId: postCreateAsepticOperation
+      tags: [aseptic]
+      summary: Create an aseptic operation at state PREPARATION (ASP-FR-004/009)
+      description: Unsigned — no Document 106 row for creation.
+      x-requirement-ids: [ASP-FR-004, ASP-FR-009, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAsepticOperationCommand' }
+      responses:
+        '200':
+          description: Created at state PREPARATION.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: The referenced profile_version_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /aseptic/v1/operations/{operation_id}:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getAsepticOperation
+      tags: [aseptic]
+      summary: Aseptic operation detail
+      description: Not in the spec's declared API table; contracted because the router implements it.
+      x-requirement-ids: [ASP-FR-004]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/AsepticOperation' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /aseptic/v1/operations/{operation_id}/signature-challenges:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAsepticOperationSignatureChallenge
+      tags: [aseptic]
+      summary: Create the signature challenge for postStartOperation or postCompleteOperation
+      description: Not in the spec's declared API table; contracted because the router implements it. `action` selects the meaning — both `start` and `complete` currently map to `"Performed"`.
+      x-requirement-ids: [SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OperationSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: "VALIDATION_FAILED — action is not start/complete."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /aseptic/v1/operations/{operation_id}/start:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postStartOperation
+      tags: [aseptic]
+      summary: Start an aseptic operation after a full readiness check (Document 106 row 113)
+      description: >
+        Only valid from state PREPARATION. Recomputes the full readiness composition (EM area readiness,
+        line clearance, equipment eligibility for every listed equipment id, sterile-input eligibility for
+        every listed input ref) and refuses to start on the first blocker found — `STERILE_COMPONENT_
+        INELIGIBLE` (422) if a sterile input is the cause, `ASEPTIC_AREA_NOT_READY` (409) otherwise. The
+        full computed readiness result is captured onto `readiness_snapshot` regardless of outcome. No
+        independence requirement. Signature is conditional on the current Document 106 policy row for
+        aseptic_operation/start.
+      x-requirement-ids: [ASP-FR-005, ASP-FR-006, ASP-FR-007, ASP-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartOperationCommand' }
+      responses:
+        '200':
+          description: Started — state EXECUTION.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION; INVALID_TRANSITION — only a preparation-stage operation (state PREPARATION) can be started; or ASEPTIC_AREA_NOT_READY — EM area status, line clearance or equipment eligibility blocks readiness."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — operation_id mismatch; or STERILE_COMPONENT_INELIGIBLE — a listed sterile input is not eligible."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /aseptic/v1/operations/{operation_id}/interventions:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordIntervention
+      tags: [aseptic]
+      summary: Record an intervention during execution (ASP-FR-010/011/012)
+      description: >
+        Unsigned. Only valid from state EXECUTION/HOLD. `planned: false` (an unplanned intervention)
+        always sets `requires_deviation` on both the intervention and the parent operation, and always
+        holds the operation (never hidden) — `reason` is then required. `intervention_type` is
+        constrained to a controlled list, never free text.
+      x-requirement-ids: [ASP-FR-010, ASP-FR-011, ASP-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordInterventionCommand' }
+      responses:
+        '200':
+          description: Recorded.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — interventions can only be recorded during execution (state EXECUTION/HOLD)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — unrecognized intervention_type, or reason missing on an unplanned intervention."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /aseptic/v1/operations/{operation_id}/events:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordEvent
+      tags: [aseptic]
+      summary: Append an event to the operation timeline (ASP-FR-021/022/025)
+      description: >
+        Unsigned, append-only. Only valid from state EXECUTION/HOLD. `severity: critical` (an EM/HVAC
+        excursion or operator/gown breach during execution) holds the operation and sets
+        `requires_deviation` — same treatment as an unplanned intervention.
+      x-requirement-ids: [ASP-FR-021, ASP-FR-022, ASP-FR-025, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordEventCommand' }
+      responses:
+        '200':
+          description: Recorded.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — events can only be recorded during execution (state EXECUTION/HOLD)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — unrecognized severity."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /aseptic/v1/operations/{operation_id}/complete:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCompleteOperation
+      tags: [aseptic]
+      summary: Complete an in-execution aseptic operation (Document 106 row 112)
+      description: >
+        Only valid from state EXECUTION. Refuses to complete while `requires_deviation` is unresolved
+        (ASP-FR-026) — no endpoint in this document clears it; a human must resolve the underlying
+        deviation through the owning QMS flow before this can succeed. `reason` becomes required
+        (application-level) when `critical: true`. `qc_test_order_id`/`qc_result_id`, if supplied, must
+        reference existing records (ASP-FR-019 — existence-checked, not content-validated). No
+        independence requirement. Signature is conditional on the current Document 106 policy row for
+        aseptic_operation/complete.
+      x-requirement-ids: [ASP-FR-019, ASP-FR-026, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteOperationCommand' }
+      responses:
+        '200':
+          description: Completed — state ASEPTIC_COMPLETE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: "Operation not found, or (ASP-FR-019) qc_test_order_id/qc_result_id does not reference an existing record."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — only an in-execution operation (state EXECUTION) can be completed."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — operation_id mismatch, an unresolved deviation is still required (ASP-FR-026), or reason missing while critical."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /aseptic/v1/operations/{operation_id}/readiness:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getOperationReadiness
+      tags: [aseptic]
+      summary: Current readiness composition, without transitioning state (ASP-FR-005/006/007/008)
+      description: Same `_compute_readiness` composition postStartOperation enforces, exposed as a read so a caller can check before attempting to start. Never mutates state or captures a snapshot.
+      x-requirement-ids: [ASP-FR-005, ASP-FR-006, ASP-FR-007, ASP-FR-008]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/AsepticReadiness' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /aseptic/v1/operations/{operation_id}/review-summary:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getOperationReviewSummary
+      tags: [aseptic]
+      summary: QA review-by-exception overlay of interventions and events (ASP-FR-025/027)
+      description: A read composition, not a signed action — no Document 106 row exists for a "QA review" action on this document.
+      x-requirement-ids: [ASP-FR-025, ASP-FR-027]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/AsepticReviewSummary' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    AsepticOperationState:
+      type: string
+      description: "`OPERATION_STATES` in `app/modules/equipment/aseptic_models.py`. The spec's 4-state PREPARATION/AREA_READY/ASEPTIC_SETUP/EXECUTION progression collapses onto PREPARATION -> EXECUTION here."
+      x-requirement-ids: [ASP-FR-004, CTR-FR-017]
+      enum: [PREPARATION, EXECUTION, ASEPTIC_COMPLETE, HOLD]
+
+    InterventionType:
+      type: string
+      description: "`INTERVENTION_TYPES` — a controlled list, never free text."
+      x-requirement-ids: [ASP-FR-010]
+      enum: [inherent, routine, corrective, non_routine]
+
+    EventSeverity:
+      type: string
+      x-requirement-ids: [ASP-FR-021]
+      enum: [info, warning, critical]
+
+    AsepticOperation:
+      type: object
+      description: "`_operation_dict` in `app/modules/equipment/aseptic_router.py`."
+      x-requirement-ids: [ASP-FR-004, ASP-FR-018, ASP-FR-019]
+      required: [id, site_id, area_id, state, requires_deviation, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        area_id: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/AsepticOperationState' }
+        media_fill_reference: { type: [object, "null"], description: "ASP-FR-018 — captured reference only, not validated against the referenced record's own state." }
+        qc_test_order_id: { type: [string, "null"], format: uuid, description: "ASP-FR-019 — existence-checked at complete, not content-validated." }
+        qc_result_id: { type: [string, "null"], format: uuid, description: "ASP-FR-019 — existence-checked at complete, not content-validated." }
+        requires_deviation: { type: boolean }
+        version: { type: integer, minimum: 1 }
+
+    AsepticReadiness:
+      type: object
+      description: "`_compute_readiness` in `app/modules/equipment/aseptic_commands.py` — the real cross-module composition, not a stub."
+      x-requirement-ids: [ASP-FR-005, ASP-FR-006, ASP-FR-007, ASP-FR-008]
+      required: [operation_id, area_id, ready, blockers]
+      properties:
+        operation_id: { type: string, format: uuid }
+        area_id: { type: string, format: uuid }
+        ready: { type: boolean }
+        blockers:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string, enum: [ASEPTIC_AREA_NOT_READY, STERILIZATION_STATUS_INVALID, STERILE_COMPONENT_INELIGIBLE] }
+              message: { type: string }
+              reasons: { type: array, items: { type: object } }
+        em_readiness: { type: object, description: Result of Document 41's getEmAreaReadiness. }
+        line_clearance: { type: object, description: "Result of Document 39's internal get_area_line_clearance_status helper." }
+        equipment_checks: { type: array, items: { type: object }, description: One Document 38 getAssetEligibility result per listed equipment id. }
+        sterile_input_checks: { type: array, items: { type: object }, description: One Document 42 getSterilizationItemStatus result per listed sterile input ref. }
+
+    AsepticReviewSummary:
+      type: object
+      description: "`get_review_summary` in `app/modules/equipment/aseptic_commands.py`."
+      x-requirement-ids: [ASP-FR-025, ASP-FR-027]
+      required: [operation_id, state, requires_deviation, unplanned_intervention_count, critical_event_count, interventions, events]
+      properties:
+        operation_id: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/AsepticOperationState' }
+        requires_deviation: { type: boolean }
+        unplanned_intervention_count: { type: integer, minimum: 0 }
+        critical_event_count: { type: integer, minimum: 0 }
+        interventions:
+          type: array
+          items:
+            type: object
+            required: [id, intervention_type, planned, requires_deviation]
+            properties:
+              id: { type: string, format: uuid }
+              intervention_type: { $ref: '#/components/schemas/InterventionType' }
+              planned: { type: boolean }
+              requires_deviation: { type: boolean }
+        events:
+          type: array
+          items:
+            type: object
+            required: [id, event_type, severity, occurred_at]
+            properties:
+              id: { type: string, format: uuid }
+              event_type: { type: string }
+              severity: { $ref: '#/components/schemas/EventSeverity' }
+              occurred_at: { type: string, format: date-time }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postAsepticOperationSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    OperationSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [start, complete] }
+
+    CreateAsepticOperationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [ASP-FR-004, ASP-FR-009, ASP-FR-018, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, area_id, profile_version_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        area_id: { type: string, format: uuid }
+        profile_version_id: { type: string, format: uuid }
+        batch_id: { type: [string, "null"], format: uuid }
+        batch_step_id: { type: [string, "null"], format: uuid, description: "Real FK to ebmr.batch_steps — replaces the spec's recipe_stage_id (no such concept exists in this codebase)." }
+        sterile_input_refs: { type: array, items: { type: object }, default: [], description: "Captured {item_id, item_kind} list, read by the readiness composition against Document 42's item status." }
+        equipment_ids: { type: array, items: { type: string, format: uuid }, default: [], description: Captured equipment_asset id list, read by the readiness composition against Document 38's eligibility. }
+        media_fill_reference: { type: [object, "null"], description: "ASP-FR-018 — captured reference only, not validated against the referenced record's own state." }
+
+    StartOperationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are optional — required only when the current Document 106 policy row for aseptic_operation/start demands a signature.
+      x-requirement-ids: [ASP-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, operation_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        operation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    RecordInterventionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [ASP-FR-010, ASP-FR-011, ASP-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, operation_id, expected_version, intervention_type]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        operation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        intervention_type: { $ref: '#/components/schemas/InterventionType' }
+        planned: { type: boolean, default: true }
+        started_at: { type: [string, "null"], format: date-time }
+        ended_at: { type: [string, "null"], format: date-time }
+        location: { type: [string, "null"] }
+        reason: { type: [string, "null"], description: Required when planned is false. }
+        impacted_unit_scope: { type: [object, "null"] }
+        evidence_ref: { type: [object, "null"] }
+
+    RecordEventCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [ASP-FR-021, ASP-FR-022, ASP-FR-025, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, operation_id, expected_version, event_type]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        operation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        event_type: { type: string }
+        source: { type: [string, "null"] }
+        severity: { $ref: '#/components/schemas/EventSeverity', default: info }
+        payload: { type: [object, "null"] }
+
+    CompleteOperationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are optional — required only when the current Document 106 policy row for aseptic_operation/complete demands a signature.
+      x-requirement-ids: [ASP-FR-019, ASP-FR-026, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, operation_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        operation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        critical: { type: boolean, default: false }
+        reason: { type: [string, "null"], description: Required when critical is true. }
+        qc_test_order_id: { type: [string, "null"], format: uuid, description: "ASP-FR-019 — existence-checked, not content-validated." }
+        qc_result_id: { type: [string, "null"], format: uuid, description: "ASP-FR-019 — existence-checked, not content-validated." }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

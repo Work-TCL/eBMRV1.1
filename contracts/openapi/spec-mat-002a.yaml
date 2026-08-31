@@ -1,0 +1,899 @@
+openapi: 3.1.0
+info:
+  title: SPEC-MAT-002A — Material Receipt, Quarantine & Quality Status
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 19 (`services/gxp-api/app/modules/material/`, base `router` +
+    `lots_router` + the Document-19-labelled slice of `v1_router`/`sampling_orders_router`): the material
+    master (create/list/update/delete — no dedicated Document 19-22 requirement owns this entity; cited
+    against C-013 "Raw Material Master", Document 02), lot receipt into automatic quarantine, the
+    receipt→examine→lot/container-creation flow with a discrepancy-hold branch, sampling order + collect
+    (delegating sample creation to Document 23's `qc` module), release/reject/retest disposition, and the
+    two read-only quality-status/release-readiness views.
+
+
+    TWO PARALLEL LOT-DISPOSITION PATHS, BOTH LIVE: `postDispositionMaterialLot` is an older, narrower
+    endpoint (`MaterialLotDisposition` table, only `quarantine`→`released`/`rejected`, citing MAT-011 —
+    Document 02's architecture-level "QC Disposition" concept, predating Document 19) that stays fully
+    functional and signature-gated. Document 19's own `postReleaseMaterialLot`/`postRejectMaterialLot`
+    (`MaterialQualityDisposition` table, RCV-FR-026/027) act from any of `PRE_DISPOSITION_LOT_STATES`
+    (`quarantine`/`sampling`/`testing`/`qc_disposition_pending`/`retest_due`), support partial
+    container-level disposition (RCV-FR-030), and enforce a real independence check (the signer may not
+    be the receipt's receiver nor any sampling order's assigned sampler for this lot, SIG-FR-018). Both
+    paths share one `postLotSignatureChallenge` endpoint distinguished by `action`
+    (`disposition`|`release`|`reject`) and both resolve their own independent Document 106 policy row
+    (`record_type="material_lot"`, `action="disposition"|"release"|"reject"`).
+
+
+    RELEASE-GATE HOOK IS A REAL, DOCUMENTED NO-OP TODAY: releasing a lot (either path) calls
+    `rules_commands.evaluate_release_gate` at `rule_id="material-lot-release-eligibility:{material_id}"`
+    — a genuine extension point, not a guessed decision, but it does nothing until a deployment authors
+    and releases a rule at that id. RCV-FR-023/024/025's "material-scoped required QC evidence" gate has
+    no material-specific QC specification entity to enforce against (`approved_supplier_material` doesn't
+    exist yet, SG-057/058) — `getLotReleaseReadiness`'s `qc_sample_ids` is advisory information only, not
+    an enforced precondition.
+
+
+    SG-146 (UOM expand step, resolved 2026-08-27): `Material.uom`, `MaterialLot.uom`,
+    `MaterialReceipt.uom`, `MaterialContainer.uom` are all validated best-effort against the Document 110
+    §3 controlled UOM master at write time — see each schema's `*_uom_id` field.
+tags:
+  - name: material
+
+paths:
+  /materials:
+    post:
+      operationId: postCreateMaterial
+      tags: [material]
+      summary: Create a material master record (C-013)
+      description: No dedicated Document 19-22 requirement owns material-master creation — cited against C-013 (Document 02, "Raw Material Master"), the entity a receipt/lot is created against.
+      x-requirement-ids: [C-013, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMaterialCommand' }
+      responses:
+        '200':
+          description: Created, status `active`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+
+    get:
+      operationId: getMaterials
+      tags: [material]
+      summary: Paginated, filterable, sortable material list (C-013)
+      description: >
+        No policy check — same undocumented-exposure pattern this session has already flagged in
+        `spec-ebmr-008.yaml` (`getBatchSummary`). `q` free-text searches `code`/`name`. Genuinely
+        paginated (`app/core/pagination.py`).
+      x-requirement-ids: [C-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/MaterialPage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+  /materials/{material_id}:
+    parameters:
+      - { name: material_id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      operationId: patchMaterial
+      tags: [material]
+      summary: Update a material's name/status — code, site_id and uom are immutable once created (C-013)
+      description: "uom is immutable because changing it would corrupt existing lot quantity semantics — a wholesale field replace of name/status only, no expected_version (no concurrency check on this entity)."
+      x-requirement-ids: [C-013, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMaterialCommand' }
+      responses:
+        '200':
+          description: Updated.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — material_id in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+    delete:
+      operationId: deleteMaterial
+      tags: [material]
+      summary: Delete a material master record, blocked while any lot references it (C-013)
+      description: Requires the `platform.administer` policy action. A real referential-integrity check (`find_blocking_reference` against `MaterialLot.material_id`) — never a cascading delete.
+      x-requirement-ids: [C-013, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteMaterialCommand' }
+      responses:
+        '200':
+          description: Deleted.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — material_id in path and body do not match, or the material is still referenced by a material lot.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /materials/{material_id}/lots:
+    parameters:
+      - { name: material_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReceiveMaterialLot
+      tags: [material]
+      summary: Receive a material lot directly into automatic quarantine (MAT-007/MAT-009)
+      description: >
+        No policy check, no signature — the simpler of two receipt paths in this codebase (the other is
+        `postCreateMaterialReceipt` → `postExamineReceipt`'s full receipt/exam/discrepancy flow below).
+        `received_quantity` must be positive. Every received lot starts `status="quarantine"`
+        unconditionally — quarantine is never optional or bypassable at receipt (MAT-009).
+      x-requirement-ids: [MAT-007, MAT-009, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReceiveMaterialLotCommand' }
+      responses:
+        '200':
+          description: Received, status `quarantine`. `aggregate_id` is the `lot_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — material_id in path and body do not match, or received_quantity is not positive.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /material-lots:
+    get:
+      operationId: getMaterialLots
+      tags: [material]
+      summary: Paginated, filterable, sortable material-lot list, joined to the owning material (MAT-009/011)
+      description: No policy check. `q` free-text searches `internal_lot`/material `code`/`name`; `status` optionally narrows to one `MaterialLotState`.
+      x-requirement-ids: [MAT-009, MAT-011]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/MaterialLotState' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/MaterialLotPage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+  /material-lots/{lot_id}:
+    parameters:
+      - { name: lot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getMaterialLotDetail
+      tags: [material]
+      summary: One material lot, joined to the owning material's code/name
+      description: No policy check.
+      x-requirement-ids: [MAT-009, MAT-011]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/MaterialLot' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /material-lots/{lot_id}/signature-challenges:
+    parameters:
+      - { name: lot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postLotSignatureChallenge
+      tags: [material]
+      summary: Create the signature challenge for the legacy disposition path or either Document 19 release/reject decision
+      description: >
+        No policy check of its own. `action` selects which of three independent Document 106 policy rows
+        this challenge is for: `disposition` (legacy, meaning `"Disposition"`), `release` (meaning
+        `"Released"`), `reject` (meaning `"Rejected"`) — `VALIDATION_FAILED` for any other value.
+      x-requirement-ids: [MAT-011, RCV-FR-026, RCV-FR-027, SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LotSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — action is not one of disposition/release/reject.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /material-lots/{lot_id}/disposition:
+    parameters:
+      - { name: lot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postDispositionMaterialLot
+      tags: [material]
+      summary: "Legacy QC release/reject — narrower than Document 19's own release/reject below (MAT-011)"
+      description: >
+        Only `quarantine` may be dispositioned (`InvalidTransitionError` otherwise) — narrower than
+        `postReleaseMaterialLot`/`postRejectMaterialLot`'s full `PRE_DISPOSITION_LOT_STATES` set, and no
+        independence check or partial-container support. Resolves its own Document 106 policy row
+        (`record_type="material_lot", action="disposition"`) independently of the release/reject rows.
+        Releases the lot's canonical form into the Vault (`object_type="material_lot"`) regardless of
+        decision — a rejection is also vaulted, not only a release.
+      x-requirement-ids: [MAT-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, VLT-FR-001]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DispositionMaterialLotCommand' }
+      responses:
+        '200':
+          description: Dispositioned.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — the lot is not in quarantine, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — lot_id in path and body do not match, or decision is neither released nor rejected.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /materials/v1/receipts:
+    post:
+      operationId: postCreateMaterialReceipt
+      tags: [material]
+      summary: Create a material receipt transaction (RCV-FR-001/002/006/007/010/011/012/014)
+      description: >
+        `received_gross_quantity` must be positive. `po_reference` is free text — no PO/transfer-
+        expectation entity exists to validate it against (RCV-FR-001 partial, SG-057/058). Supplying
+        `coa_document_hash` releases a `material_coa` Vault object with a one-entry evidence manifest
+        (RCV-FR-012) — the COA itself stays manually-authored evidence; no autonomous AI extraction is
+        performed (RCV-FR-013, a documented no-op is compliant here, not a gap).
+      x-requirement-ids: [RCV-FR-001, RCV-FR-002, RCV-FR-006, RCV-FR-007, RCV-FR-010, RCV-FR-011, RCV-FR-012, RCV-FR-014, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMaterialReceiptCommand' }
+      responses:
+        '200':
+          description: Created, state `received`. `aggregate_id` is the `receipt_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — material_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — received_gross_quantity is not positive.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /materials/v1/receipts/{receipt_id}:
+    parameters:
+      - { name: receipt_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getMaterialReceipt
+      tags: [material]
+      summary: One material receipt
+      description: No policy check.
+      x-requirement-ids: [RCV-FR-002]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/MaterialReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /materials/v1/receipts/{receipt_id}/examine:
+    parameters:
+      - { name: receipt_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postExamineReceipt
+      tags: [material]
+      summary: Visual examination — a clean result creates the MaterialLot + MaterialContainer rows; a discrepancy holds the receipt (RCV-FR-003/004/005/008/009/014/015/016/017/031)
+      description: >
+        Requires the `material_receipt.examine` policy action. Only a `received` receipt may be
+        examined. `discrepancy_type` is derived server-side, checked in this priority order:
+        `identity_mismatch` (`identity_confirmed=false`, requires `discrepancy_reason`) →
+        `damaged`/`seal_broken`/`contamination` (the corresponding boolean) → `source_not_approved`
+        (`Supplier.status != "approved"`, RCV-FR-005's coarse eligibility check — a material-specific
+        approved-source matrix needs `approved_supplier_material`, which doesn't exist yet, SG-057). No
+        discrepancy found → state `examined`: the `MaterialLot` is created in `quarantine`
+        (RCV-FR-008/015/016) and split into `container_count` `MaterialContainer` rows
+        (RCV-FR-009/017) whose quantities are computed with exact `Numeric(18,6)` division, the
+        remainder folded into the last container so nothing is lost to rounding. A discrepancy found →
+        state `discrepancy_hold` (RCV-FR-004/031) and no lot/container rows are created at all.
+      x-requirement-ids: [RCV-FR-003, RCV-FR-004, RCV-FR-005, RCV-FR-008, RCV-FR-009, RCV-FR-014, RCV-FR-015, RCV-FR-016, RCV-FR-017, RCV-FR-031, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExamineReceiptCommand' }
+      responses:
+        '200':
+          description: Examined — resulting state examined or discrepancy_hold, both at 200. aggregate_id stays the receipt_id even when a lot is created; the new lot_id is only in the outbox event payload, not this receipt.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: IDEMPOTENCY_CONFLICT, INVALID_TRANSITION — the receipt is not received, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — receipt_id in path and body do not match, container_count is below 1, or an identity mismatch was found with no discrepancy_reason supplied.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /materials/v1/lots/{lot_id}/sampling-orders:
+    parameters:
+      - { name: lot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCreateSamplingOrder
+      tags: [material]
+      summary: Request sampling of one or more containers within a lot (RCV-FR-018/019)
+      description: Requires the `material_lot.sampling_order` policy action. `selected_container_ids` must be non-empty and every id must belong to this lot. Only `quarantine` or already-`sampling` lots may have another sampling order requested; the lot moves to (or stays) `sampling`.
+      x-requirement-ids: [RCV-FR-018, RCV-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSamplingOrderCommand' }
+      responses:
+        '200':
+          description: Requested. aggregate_id is the sampling_order_id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — lot_id does not exist, or a selected container does not belong to this lot.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: IDEMPOTENCY_CONFLICT, INVALID_TRANSITION — the lot is not quarantine/sampling, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — lot_id in path and body do not match, or selected_container_ids is empty.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /sampling-orders/{sampling_order_id}/collect:
+    parameters:
+      - { name: sampling_order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCollectSample
+      tags: [material]
+      summary: Collect a sample, creating a Document 23 qc_sample and moving the lot to testing (RCV-FR-020/021/022)
+      description: >
+        Requires `material_lot.collect_sample`. Only a `requested` sampling order may be collected.
+        Delegates sample creation to Document 23's own `qc.commands.create_sample`
+        (`source_type="material_lot"`, already supported there — this call needed no QC-side change) —
+        AG-06, the owning module's command, not a direct write into `qc` tables. Every container
+        referenced by `selected_container_ids` is marked `sampled=true`. `aseptic_evidence_ref`
+        (RCV-FR-021) is a captured, unenforced reference — no sterile-equipment qualification check
+        exists yet (WP-06 Equipment not built).
+      x-requirement-ids: [RCV-FR-020, RCV-FR-021, RCV-FR-022, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CollectSampleCommand' }
+      responses:
+        '200':
+          description: Collected, lot moves to testing. aggregate_id is the sampling_order_id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — sampling_order_id or its material lot does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: IDEMPOTENCY_CONFLICT, INVALID_TRANSITION — the order is not requested, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — sampling_order_id in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /materials/v1/lots/{lot_id}/release:
+    parameters:
+      - { name: lot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReleaseMaterialLot
+      tags: [material]
+      summary: Release a lot (whole or by container), signed and independence-checked (RCV-FR-023/024/025/026/030)
+      description: >
+        Requires the `material_lot.release` policy action. Acts from any `PRE_DISPOSITION_LOT_STATES`
+        value. `MISSING_SIGNATURE`-adjacent `VALIDATION_FAILED` if the signer is the receipt's own
+        receiver or any sampling order's assigned sampler for this lot (SIG-FR-018 independence).
+        Supplying `container_ids` disposits only those containers
+        (`MaterialContainer.quality_status_override`, RCV-FR-030 partial disposition) and leaves the
+        lot's own `status` unchanged; omitting it disposits the whole lot. Calls the
+        `material-lot-release-eligibility:{material_id}` release-gate hook (a real, currently-no-op
+        extension point — RCV-FR-023/024/025's material-scoped required-test enforcement is a documented
+        SPEC_GAP, not guessed here). Releases the lot's canonical form into the Vault regardless.
+      x-requirement-ids: [RCV-FR-023, RCV-FR-024, RCV-FR-025, RCV-FR-026, RCV-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-014, MUT-FR-015, MUT-FR-018, SIG-FR-004, SIG-FR-018, VLT-FR-001]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseMaterialLotCommand' }
+      responses:
+        '200':
+          description: Released.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — lot_id does not exist, or a selected container does not belong to this lot.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — the lot is not in a pre-disposition state, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — lot_id in path and body do not match, or the signer is not independent of the receiver/sampler.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /materials/v1/lots/{lot_id}/reject:
+    parameters:
+      - { name: lot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRejectMaterialLot
+      tags: [material]
+      summary: Reject a lot (whole or by container), signed and independence-checked (RCV-FR-023/024/025/027/030)
+      description: Identical mechanics to `postReleaseMaterialLot` — same independence check, same partial-container support, same Vault release — except `reason` is mandatory and no release-gate rule is evaluated (only a release calls the eligibility hook).
+      x-requirement-ids: [RCV-FR-023, RCV-FR-024, RCV-FR-025, RCV-FR-027, RCV-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, SIG-FR-018, VLT-FR-001]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectMaterialLotCommand' }
+      responses:
+        '200':
+          description: Rejected.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — lot_id does not exist, or a selected container does not belong to this lot.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — lot_id in path and body do not match, reason is missing, or the signer is not independent.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /materials/v1/lots/{lot_id}/retest:
+    parameters:
+      - { name: lot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRetestMaterialLot
+      tags: [material]
+      summary: Place a lot on retest-due (RCV-FR-029)
+      description: Requires `material_lot.retest`. Unsigned — Document 106 has no row for this action (only release/reject do), matching this codebase's "no Document 106 row = unsigned" precedent. reason is mandatory. Acts from any PRE_DISPOSITION_LOT_STATES value.
+      x-requirement-ids: [RCV-FR-029, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RetestMaterialLotCommand' }
+      responses:
+        '200':
+          description: Placed on retest-due.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — reason is missing.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /materials/v1/lots/{lot_id}/quality-status:
+    parameters:
+      - { name: lot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getLotQualityStatus
+      tags: [material]
+      summary: Computed quality status — never just raw status text (RCV-FR-025 read side)
+      description: No policy check. Computed live from status/expiry_date/retest_date plus the most recent MaterialQualityDisposition — never a cached/stored decision (AG-11).
+      x-requirement-ids: [RCV-FR-025]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/LotQualityStatus' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /materials/v1/lots/{lot_id}/release-readiness:
+    parameters:
+      - { name: lot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getLotReleaseReadiness
+      tags: [material]
+      summary: Computed release readiness — advisory, not an enforced release gate (RCV-FR-023/025)
+      description: >
+        No policy check. `qc_sample_ids` is advisory information only — whether required QC evidence
+        exists cannot be enforced as a rule because no material-scoped QC specification entity exists
+        yet (SG-057/SG-063); this endpoint surfaces the sample ids for a human to check, it does not
+        decide eligibility from them.
+      x-requirement-ids: [RCV-FR-023, RCV-FR-025]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/LotReleaseReadiness' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    MaterialLotState:
+      type: string
+      description: "`LOT_STATES` in `app/modules/material/models.py`. `PRE_DISPOSITION_LOT_STATES` (quarantine/sampling/testing/qc_disposition_pending/retest_due) is the set release/reject/retest may act from; the legacy disposition endpoint acts only from quarantine."
+      x-requirement-ids: [MAT-009, MAT-011, CTR-FR-017]
+      enum: [quarantine, sampling, testing, qc_disposition_pending, retest_due, released, rejected, consumed, expired]
+
+    MaterialReceiptState:
+      type: string
+      description: "`RECEIPT_STATES` in `app/modules/material/models.py`."
+      x-requirement-ids: [RCV-FR-002, RCV-FR-004, CTR-FR-017]
+      enum: [received, examined, discrepancy_hold]
+
+    SamplingOrderState:
+      type: string
+      description: "`SAMPLING_ORDER_STATES` in `app/modules/material/models.py`."
+      x-requirement-ids: [RCV-FR-018, CTR-FR-017]
+      enum: [requested, collected, cancelled]
+
+    Material:
+      type: object
+      description: One material master record (`app/modules/material/router.py:list_materials`'s inline dict). A response schema, so not closed.
+      x-requirement-ids: [C-013]
+      required: [id, site_id, code, name, uom, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        code: { type: string, maxLength: 50 }
+        name: { type: string, maxLength: 200 }
+        uom: { type: string, maxLength: 20 }
+        status: { type: string, description: "\"active\" at creation; postPatchMaterial can set any string, not a closed enum in the approved baseline (SG-013)." }
+        version: { type: integer, minimum: 1 }
+
+    MaterialPage:
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/Material' } }
+      description: getMaterials's response.
+      x-requirement-ids: [C-013, CTR-FR-012]
+
+    MaterialLot:
+      type: object
+      description: One material lot (`app/modules/material/router.py:_lot_dict`), joined to its material's code/name. A response schema, so not closed.
+      x-requirement-ids: [MAT-009, MAT-011, RCV-FR-006, RCV-FR-007, RCV-FR-010, RCV-FR-011]
+      required: [id, material_id, material_code, material_name, internal_lot, received_quantity, available_quantity, uom, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        material_id: { type: string, format: uuid }
+        material_code: { type: string }
+        material_name: { type: string }
+        internal_lot: { type: string, maxLength: 100 }
+        supplier_lot: { type: [string, "null"], maxLength: 100 }
+        manufacturer_lot: { type: [string, "null"], maxLength: 100 }
+        received_quantity: { type: string, description: Decimal string. }
+        available_quantity: { type: string, description: Decimal string. }
+        uom: { type: string, maxLength: 20 }
+        status: { $ref: '#/components/schemas/MaterialLotState' }
+        expiry_date: { type: [string, "null"], format: date }
+        retest_date: { type: [string, "null"], format: date }
+        version: { type: integer, minimum: 1 }
+
+    MaterialLotPage:
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/MaterialLot' } }
+      description: getMaterialLots's response.
+      x-requirement-ids: [MAT-009, MAT-011, CTR-FR-012]
+
+    MaterialReceipt:
+      type: object
+      description: One material receipt (`app/modules/material/router.py:_receipt_dict`). A response schema, so not closed.
+      x-requirement-ids: [RCV-FR-002, RCV-FR-006, RCV-FR-007, RCV-FR-010, RCV-FR-014]
+      required: [id, site_id, receipt_number, material_id, received_gross_quantity, uom, state, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        receipt_number: { type: string, maxLength: 120 }
+        po_reference: { type: [string, "null"], maxLength: 160 }
+        material_id: { type: string, format: uuid }
+        supplier_id: { type: [string, "null"], format: uuid }
+        manufacturer_id: { type: [string, "null"], format: uuid }
+        supplier_lot: { type: [string, "null"], maxLength: 200 }
+        manufacturer_lot: { type: [string, "null"], maxLength: 200 }
+        received_gross_quantity: { type: string, description: Decimal string. }
+        received_net_quantity: { type: [string, "null"], description: Decimal string. }
+        accepted_quantity: { type: [string, "null"], description: Decimal string. }
+        uom: { type: string, maxLength: 20 }
+        shipment_condition_status: { type: [string, "null"], maxLength: 40 }
+        state: { $ref: '#/components/schemas/MaterialReceiptState' }
+        discrepancy_type: { type: [string, "null"], description: "identity_mismatch | source_not_approved | damaged | seal_broken | contamination — captured, not a closed enum (no controlled code list beyond prose)." }
+        discrepancy_reason: { type: [string, "null"], maxLength: 2000 }
+        version: { type: integer, minimum: 1 }
+
+    LotQualityStatus:
+      type: object
+      description: getLotQualityStatus's response.
+      x-requirement-ids: [RCV-FR-025]
+      required: [lot_id, status, version, expired, retest_overdue, eligible_for_use]
+      properties:
+        lot_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/MaterialLotState' }
+        version: { type: integer, minimum: 1 }
+        expired: { type: boolean }
+        retest_overdue: { type: boolean, description: "True only when retest_date has passed and status is not rejected/consumed." }
+        eligible_for_use: { type: boolean, description: "True exactly when status == released and not expired." }
+        latest_disposition_decision: { type: [string, "null"] }
+        latest_disposition_reason: { type: [string, "null"] }
+
+    LotReleaseReadiness:
+      type: object
+      description: getLotReleaseReadiness's response.
+      x-requirement-ids: [RCV-FR-023, RCV-FR-025]
+      required: [lot_id, status, version, eligible_state, receipt_discrepancy_clear, not_expired, qc_sample_ids]
+      properties:
+        lot_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/MaterialLotState' }
+        version: { type: integer, minimum: 1 }
+        eligible_state: { type: boolean, description: "True when status is in PRE_DISPOSITION_LOT_STATES." }
+        receipt_discrepancy_clear: { type: boolean }
+        sampling_complete: { type: [boolean, "null"], description: "Null when no sampling order has ever been requested for this lot." }
+        not_expired: { type: boolean }
+        qc_sample_ids: { type: array, items: { type: string, format: uuid }, description: Advisory only — see the operation description. }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postLotSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    LotSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [disposition, release, reject] }
+
+    CreateMaterialCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [C-013, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, code, name, uom]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        code: { type: string, maxLength: 50 }
+        name: { type: string, maxLength: 200 }
+        uom: { type: string, maxLength: 20 }
+
+    UpdateMaterialCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [C-013, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, material_id, name, status]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        material_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        name: { type: string, maxLength: 200 }
+        status: { type: string }
+
+    DeleteMaterialCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [C-013, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, material_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        material_id: { type: string, format: uuid, description: Must equal the path parameter. }
+
+    ReceiveMaterialLotCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MAT-007, MAT-009, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, material_id, site_id, internal_lot, received_quantity, uom]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        material_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        site_id: { type: string, format: uuid }
+        internal_lot: { type: string, maxLength: 100 }
+        supplier_lot: { type: [string, "null"], maxLength: 100 }
+        manufacturer_lot: { type: [string, "null"], maxLength: 100 }
+        received_quantity: { type: string, description: "Decimal string. Must be positive." }
+        uom: { type: string, maxLength: 20 }
+        expiry_date: { type: [string, "null"], format: date }
+        retest_date: { type: [string, "null"], format: date }
+
+    DispositionMaterialLotCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MAT-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, lot_id, expected_version, decision, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        lot_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        decision: { type: string, enum: [released, rejected] }
+        reason: { type: [string, "null"], maxLength: 1000 }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    CreateMaterialReceiptCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RCV-FR-001, RCV-FR-002, RCV-FR-006, RCV-FR-007, RCV-FR-010, RCV-FR-011, RCV-FR-012, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, receipt_number, material_id, received_gross_quantity, uom]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        receipt_number: { type: string, maxLength: 120 }
+        material_id: { type: string, format: uuid }
+        po_reference: { type: [string, "null"], maxLength: 160 }
+        supplier_id: { type: [string, "null"], format: uuid }
+        manufacturer_id: { type: [string, "null"], format: uuid }
+        supplier_lot: { type: [string, "null"], maxLength: 200 }
+        manufacturer_lot: { type: [string, "null"], maxLength: 200 }
+        carrier_reference: { type: [string, "null"], maxLength: 160 }
+        received_gross_quantity: { type: string, description: "Decimal string. Must be positive." }
+        received_net_quantity: { type: [string, "null"] }
+        accepted_quantity: { type: [string, "null"] }
+        uom: { type: string, maxLength: 20 }
+        manufacture_date: { type: [string, "null"], format: date }
+        expiry_date: { type: [string, "null"], format: date }
+        retest_date: { type: [string, "null"], format: date }
+        shipment_condition_status: { type: [string, "null"], maxLength: 40 }
+        coa_document_hash: { type: [string, "null"], description: Supplying this releases a material_coa Vault object (RCV-FR-012). }
+
+    ExamineReceiptCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RCV-FR-003, RCV-FR-004, RCV-FR-005, RCV-FR-009, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, receipt_id, expected_version, labeling_ok, damage_observed, seal_broken, contamination_observed, identity_confirmed, internal_lot]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        receipt_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        labeling_ok: { type: boolean }
+        damage_observed: { type: boolean }
+        seal_broken: { type: boolean }
+        contamination_observed: { type: boolean }
+        examination_notes: { type: [string, "null"], maxLength: 2000 }
+        identity_confirmed: { type: boolean }
+        internal_lot: { type: string, maxLength: 100, description: The internal lot number to assign if the examination is clean. }
+        container_count: { type: integer, minimum: 1, default: 1 }
+        discrepancy_reason: { type: [string, "null"], description: Required when identity_confirmed is false. }
+
+    CreateSamplingOrderCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RCV-FR-018, RCV-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, lot_id, expected_version, selected_container_ids, assigned_sampler_user_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        lot_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        sampling_plan_ref: { type: [string, "null"], maxLength: 160 }
+        selected_container_ids: { type: array, items: { type: string, format: uuid }, minItems: 1 }
+        assigned_sampler_user_id: { type: string, format: uuid }
+        aseptic_evidence_ref: { type: [string, "null"], maxLength: 200 }
+
+    CollectSampleCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RCV-FR-020, RCV-FR-022, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, sampling_order_id, expected_version, sample_quantity, sample_uom]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        sampling_order_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        sample_quantity: { type: string, description: Decimal string. }
+        sample_uom: { type: string }
+
+    ReleaseMaterialLotCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RCV-FR-026, RCV-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-018]
+      required: [idempotency_key, lot_id, expected_version, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        lot_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"] }
+        container_ids: { type: [array, "null"], items: { type: string, format: uuid }, description: "Omit for a whole-lot decision; supply to disposition only these containers (RCV-FR-030)." }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    RejectMaterialLotCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RCV-FR-027, RCV-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, SIG-FR-004, SIG-FR-018]
+      required: [idempotency_key, lot_id, expected_version, reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        lot_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1 }
+        container_ids: { type: [array, "null"], items: { type: string, format: uuid } }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    RetestMaterialLotCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RCV-FR-029, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, lot_id, expected_version, reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        lot_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1 }

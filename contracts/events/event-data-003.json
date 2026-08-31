@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-data-003.json",
+  "title": "SPEC-DATA-003 — Frappe / MariaDB Operational Database, Projection & UI Data Architecture Events",
+  "description": "Document 113 event contract for WP-11 Document 71. Document 71 declares 0 owned entities and 1 read-only API; its 4 named events are Frappe-side (a projection worker inside apps/ebmr_frappe applying/rebuilding a DocType projection, and a server hook rejecting a direct field edit). apps/ebmr_frappe does not exist yet (ADR-0008 point 4: scaffolded module-by-module starting with WP-01 Document 04, not in bulk here) -- these payload shapes are committed ahead of implementation (Document 113 contract-first) using the shared app/modules/frappeproj/contract.py::PROJECTION_BASELINE_FIELDS envelope, same 'mechanism/contract present, runtime feed deferred' precedent as Document 66's zero-trust functions. Only 3 of the 4 are declared here: 'ProjectionStaleDetected' is Document 69's event (event-data-001.json, producer SPEC-DATA-001) -- a Frappe projection reports the identical staleness signal every other projection consumer already reports, so it reuses that single producer rather than registering a second one for the same event_type (CTRC-FR-008 / AG-05's 'no dual anything' spirit extended to events).",
+  "x-requirement-ids": ["MDB-FR-003", "MDB-FR-004", "MDB-FR-005", "MDB-FR-015", "MDB-FR-023", "EVT-FR-001"],
+  "$defs": {
+    "FrappeProjectionAppliedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["doctype", "gxp_source_type", "gxp_source_id", "gxp_source_version"],
+      "properties": {
+        "doctype": { "type": "string" },
+        "gxp_source_type": { "type": "string" },
+        "gxp_source_id": { "type": "string" },
+        "gxp_source_version": { "type": "integer" }
+      },
+      "x-requirement-ids": ["MDB-FR-003", "MDB-FR-004"]
+    },
+    "FrappeProjectionRebuiltPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["doctype", "documents_rebuilt"],
+      "properties": {
+        "doctype": { "type": "string" },
+        "documents_rebuilt": { "type": "integer" },
+        "source_cutoff": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "x-requirement-ids": ["MDB-FR-015"]
+    },
+    "DirectProjectionMutationDeniedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["doctype", "field", "user"],
+      "properties": {
+        "doctype": { "type": "string" },
+        "field": { "type": "string" },
+        "user": { "type": "string" }
+      },
+      "x-requirement-ids": ["MDB-FR-005", "MDB-FR-011"]
+    }
+  },
+  "events": [
+    { "event_type": "FrappeProjectionApplied", "schema_version": "1.0", "producer": "SPEC-DATA-003", "aggregate_type": "frappe_projection", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/FrappeProjectionAppliedPayload" }, "x-requirement-ids": ["MDB-FR-004"] },
+    { "event_type": "FrappeProjectionRebuilt", "schema_version": "1.0", "producer": "SPEC-DATA-003", "aggregate_type": "frappe_projection", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/FrappeProjectionRebuiltPayload" }, "x-requirement-ids": ["MDB-FR-015"] },
+    { "event_type": "DirectProjectionMutationDenied", "schema_version": "1.0", "producer": "SPEC-DATA-003", "aggregate_type": "frappe_projection", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/DirectProjectionMutationDeniedPayload" }, "x-requirement-ids": ["MDB-FR-005"] }
+  ]
+}

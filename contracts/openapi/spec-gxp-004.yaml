@@ -1,0 +1,442 @@
+openapi: 3.1.0
+info:
+  title: SPEC-GXP-004 — Record Version Vault, Locking, Amendment & Correction
+  version: 0.1.0
+  description: >
+    Document 113 contract for the Document 06 slice actually built
+    (`services/gxp-api/app/modules/vault/`): immutable released versions with a canonical payload and a
+    SHA-256 digest, an evidence manifest, supersession chaining, version history by business id,
+    on-demand integrity verification, and the two-step request/complete correction ceremony.
+
+
+    All six operations the catalogue declares for SPEC-GXP-004 are implemented; there is no divergence in
+    the operation set.
+
+
+    TWO ENTRY PATHS, ONE STORE. `vault_service.release_master()` is the reusable internal that domain
+    modules call directly inside their own transaction after running their own Document 106 signature
+    ceremony (batch release, material-lot disposition, rule release, document release). The endpoints
+    below are the *generic* surface for object types that have no owning domain command. Both write the
+    same `vault_objects` rows through the same code — there is no second authoritative store (AG-05).
+
+
+    FAILS CLOSED TODAY: Document 106's approved floor has no policy row for `(vault_object, release)` or
+    `(record_correction, complete)`, so `postReleaseVaultMaster` and `postCompleteCorrection` return
+    `SIGNATURE_POLICY_UNRESOLVED` (409) on every call. That is correct fail-closed behaviour under
+    SIGP-FR-004 — the generic surface will not release or correct an immutable record unsigned because
+    policy data is missing. The domain modules that run their own ceremony are unaffected. See SG-029.
+
+
+    NOT BUILT THIS PASS: effective-dating lifecycle transitions and obsolete-version selection guards
+    (VLT-FR-008 — `effective_from`/`effective_to` are stored and returned but no endpoint transitions
+    them); batch-issue snapshot dependency closure as a vault operation (VLT-FR-006/007, owned by the
+    batch module); retention-class assignment and legal-hold (VLT-FR-023/024, Document 108); and
+    WORM/object-store evidence storage (OBJ-FR-*, Document 72) — evidence here is a manifest of ids and
+    digests, not the bytes. See SG-013.
+
+
+    IMMUTABILITY: `vault_objects` has no UPDATE or DELETE path. A correction never edits a released
+    version — it releases a new one carrying `corrected_from_object_id` back to the original, which
+    remains readable forever (VLT-FR-009/010, AG-08).
+tags:
+  - name: vault
+
+paths:
+  /vault/v1/masters/{object_type}/{business_id}/release:
+    parameters:
+      - name: object_type
+        in: path
+        required: true
+        description: Stable object-type discriminator (e.g. `rule`, `product`, `recipe`, `document`).
+        schema: { type: string, maxLength: 100 }
+      - name: business_id
+        in: path
+        required: true
+        description: >
+          The object's declared business identifier (VLT-FR-004). Not a row-order integer
+          (Document 113 §3 F4). `(object_type, business_id, internal_version)` is UNIQUE in the database.
+        schema: { type: string, maxLength: 160 }
+    post:
+      operationId: postReleaseVaultMaster
+      tags: [vault]
+      summary: Release an immutable vault version of a master object (VLT-FR-001/002/003)
+      description: >
+        Requires the `vault.correct` policy action. Computes the next `internal_version` for this
+        `(object_type, business_id)`, canonicalizes the payload, stores its SHA-256 digest, links
+        `supersedes_object_id` to the prior version, and records the evidence manifest — all inside the
+        one transaction that also writes the audit event, the outbox event and the command receipt.
+
+
+        `object_type` and `business_id` must match the body; a mismatch is `VALIDATION_FAILED` rather than
+        a silent preference for one source. Two concurrent releases that compute the same
+        `internal_version` are rejected by the UNIQUE constraint and surface as `CONCURRENT_VAULT_RELEASE`
+        (409) — a retryable conflict, never a silent overwrite (VLT-FR-012/023).
+      x-requirement-ids: [VLT-FR-001, VLT-FR-002, VLT-FR-003, VLT-FR-004, VLT-FR-005, VLT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018, MUT-FR-019]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateVaultReleaseCommand' }
+      responses:
+        '200':
+          description: Released. `aggregate_id` is the new `object_id`; `resulting_version` is `internal_version`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409':
+          description: >
+            SIGNATURE_POLICY_UNRESOLVED (no Document 106 row — the current behaviour of this endpoint),
+            IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or CONCURRENT_VAULT_RELEASE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422': { $ref: 'spec-gxp-001.yaml#/components/responses/ValidationFailed' }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /vault/v1/objects/{object_id}:
+    parameters:
+      - name: object_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getVaultObject
+      tags: [vault]
+      summary: Read one immutable vault version including its canonical payload and digest (VLT-FR-002/003)
+      description: Requires the `vault.review` policy action.
+      x-requirement-ids: [VLT-FR-001, VLT-FR-002, VLT-FR-003, VLT-FR-004, VLT-FR-016, VLT-FR-028]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/VaultObject' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /vault/v1/objects/{object_id}/integrity:
+    parameters:
+      - name: object_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getVaultObjectIntegrity
+      tags: [vault]
+      summary: Verify a vault version's digest and its supersession link (VLT-FR-003)
+      description: >
+        Recomputes the digest from the stored canonical payload (detects content tampering) and confirms
+        `supersedes_object_id` still points at a real prior version of the same
+        `(object_type, business_id)` with a lower `internal_version` (detects relinking or deletion). The
+        vault-object counterpart of the audit module's `verify_chain`. Requires `vault.review`.
+      x-requirement-ids: [VLT-FR-003, VLT-FR-009, VLT-FR-029]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/VaultIntegrityReport' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /vault/v1/business/{object_type}/{business_id}/versions:
+    parameters:
+      - name: object_type
+        in: path
+        required: true
+        schema: { type: string, maxLength: 100 }
+      - name: business_id
+        in: path
+        required: true
+        schema: { type: string, maxLength: 160 }
+    get:
+      operationId: getVaultVersionsForBusinessId
+      tags: [vault]
+      summary: The full version history for one business object (VLT-FR-009)
+      description: >
+        Every released version, superseded ones included — supersession never deletes a prior version or
+        its historical references. Requires `vault.review`. Returns a plain array rather than the shared
+        page envelope: version history for a single business id is bounded by construction, so it is not
+        paginated. This is a deliberate deviation from CTR-FR-012 for this operation only.
+      x-requirement-ids: [VLT-FR-009, VLT-FR-016, VLT-FR-023]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK — ordered version history.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VaultObject' }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /vault/v1/objects/{object_id}/corrections:
+    parameters:
+      - name: object_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postRequestVaultCorrection
+      tags: [vault]
+      summary: Step 1 of the correction ceremony — request a correction with a mandatory reason (VLT-FR-010)
+      description: >
+        Requires the `vault.correct` policy action. Creates a `record_correction` in state `requested`
+        carrying the reason. `reason_text` is required by the schema, not merely by policy — a correction
+        to an immutable released record has no valid unreasoned form (MUT-FR-011, AUD-FR-008).
+
+
+        Step 2 is `POST /vault/v1/corrections/{correction_id}/complete`, necessarily a separate operation:
+        one HTTP request carries one authenticated identity, and the requester and completer are
+        different people wherever policy requires an independent signer (SIG-FR-018).
+
+
+        Unsigned by design at this step — the signature belongs to the completion, which is what actually
+        creates a new immutable version.
+      x-requirement-ids: [VLT-FR-010, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequestCorrectionCommand' }
+      responses:
+        '200':
+          description: Correction requested. `aggregate_id` is the `correction_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'spec-gxp-001.yaml#/components/responses/ValidationFailed' }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /vault/v1/corrections/{correction_id}/complete:
+    parameters:
+      - name: correction_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postCompleteVaultCorrection
+      tags: [vault]
+      summary: Step 2 — sign and release the corrected superseding version (VLT-FR-010)
+      description: >
+        Requires the `vault.correct` policy action and a correction in state `requested`; any other state
+        is `VALIDATION_FAILED`. Releases a **new** vault version carrying `corrected_from_object_id`
+        pointing at the original, marks the correction `completed`, and records the signature ids against
+        it. The original version is not touched (VLT-FR-009/010, AG-08).
+      x-requirement-ids: [VLT-FR-009, VLT-FR-010, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteCorrectionCommand' }
+      responses:
+        '200':
+          description: Corrected. `aggregate_id` is the `correction_id`; the new version's id is in the audit event.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: >
+            SIGNATURE_POLICY_UNRESOLVED (no Document 106 row — the current behaviour of this endpoint),
+            IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or CONCURRENT_VAULT_RELEASE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — the correction is not awaiting completion.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    VaultObject:
+      type: object
+      description: >
+        One immutable released version (`app/modules/vault/router.py:_object_dict`). A response schema,
+        so not closed — Document 113 §3 F6 closes command payloads.
+      x-requirement-ids: [VLT-FR-001, VLT-FR-002, VLT-FR-003, VLT-FR-004, VLT-FR-008, VLT-FR-009]
+      required: [object_id, object_type, business_id, internal_version, status, digest_algorithm, digest, canonical_payload, released_at]
+      properties:
+        object_id: { type: string, format: uuid }
+        site_id: { type: [string, "null"], format: uuid }
+        object_type: { type: string, maxLength: 100 }
+        business_id: { type: string, maxLength: 160 }
+        internal_version:
+          type: integer
+          minimum: 1
+          description: >
+            Monotonic per `(object_type, business_id)`, assigned server-side. UNIQUE in the database — the
+            constraint, not application logic, is what prevents a duplicate or overwritten version.
+        business_version_label:
+          type: [string, "null"]
+          maxLength: 80
+          description: The human-facing version label (e.g. a semantic version). Never used for ordering.
+        status:
+          type: string
+          maxLength: 40
+          description: >
+            Vault object lifecycle state. Every row written by the current code is `released`; the column
+            exists for the effective-dating lifecycle (VLT-FR-008) that is not built. Not declared as a
+            closed enum because no other value is produced yet and inventing the rest of the lifecycle
+            would be guessing regulated behaviour (AG-15).
+          examples: [released]
+        digest_algorithm:
+          type: string
+          enum: [sha256]
+          description: >
+            Closed enum with one member: SHA-256 is the only algorithm this build computes. Adding an
+            algorithm is a minor version (Document 113 §3 F7).
+        digest:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: SHA-256 over the canonical payload (VLT-FR-003).
+        canonical_payload:
+          type: object
+          description: >
+            The canonical structured representation, sufficient to reproduce content and meaning
+            independently of any mutable master (VLT-FR-002).
+        effective_from: { type: [string, "null"], format: date-time }
+        effective_to:
+          type: [string, "null"]
+          format: date-time
+          description: >
+            Stored and returned but never transitioned by any endpoint — the effective-dating lifecycle
+            (VLT-FR-008) is not built. See SG-013.
+        supersedes_object_id:
+          type: [string, "null"]
+          format: uuid
+          description: The prior version this one supersedes for future use. Never a deletion (VLT-FR-009).
+        corrected_from_object_id:
+          type: [string, "null"]
+          format: uuid
+          description: Set when this version was produced by a correction ceremony (VLT-FR-010).
+        retention_class:
+          type: [string, "null"]
+          maxLength: 80
+          description: Null on every row today — retention-class assignment (VLT-FR-019, Document 108) is not built. See SG-013.
+        released_at: { type: string, format: date-time }
+        created_by_subject: { type: [string, "null"], format: uuid }
+
+    VaultIntegrityReport:
+      type: object
+      description: The result of recomputing a vault version's digest and re-checking its supersession link.
+      x-requirement-ids: [VLT-FR-003, VLT-FR-009]
+      required: [digest_valid, link_valid]
+      properties:
+        digest_valid:
+          type: boolean
+          description: The recomputed digest of `canonical_payload` matches the stored `digest`.
+        link_valid:
+          type: boolean
+          description: >
+            `supersedes_object_id` resolves to a real prior version of the same
+            `(object_type, business_id)` with a lower `internal_version`. True when there is no
+            predecessor.
+
+    EvidenceItem:
+      type: object
+      additionalProperties: false
+      description: >
+        One entry in the evidence manifest (VLT-FR-005). Evidence is carried by controlled reference and
+        hash, never embedded bytes (CTR-FR-019).
+      x-requirement-ids: [VLT-FR-005, CTR-FR-019]
+      required: [evidence_id, evidence_sha256]
+      properties:
+        evidence_id: { type: string, format: uuid }
+        evidence_sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        media_type: { type: [string, "null"], maxLength: 120 }
+        sequence: { type: [integer, "null"], description: Ordering within the manifest. }
+
+    CreateVaultReleaseCommand:
+      type: object
+      additionalProperties: false
+      description: >
+        Closed command payload (MUT-FR-005 / Document 113 §3 F6). No `expected_version`: a release creates
+        a new immutable version rather than transitioning an existing aggregate, and the next
+        `internal_version` is computed server-side under a UNIQUE constraint — a client-asserted version
+        would be both meaningless and a lost-update risk.
+      x-requirement-ids: [VLT-FR-001, VLT-FR-002, VLT-FR-004, VLT-FR-005, MUT-FR-005, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, object_type, business_id, canonical_payload]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        object_type:
+          type: string
+          maxLength: 100
+          description: Must equal the `object_type` path parameter.
+        business_id:
+          type: string
+          maxLength: 160
+          description: Must equal the `business_id` path parameter.
+        canonical_payload:
+          type: object
+          description: >
+            The content to freeze. Regulated numeric values inside it are decimal strings with an explicit
+            UOM (Document 110 / Document 113 §3 F2) — never JSON numbers, which cannot carry exact decimal
+            precision.
+        business_version_label: { type: [string, "null"], maxLength: 80 }
+        evidence:
+          type: array
+          default: []
+          items: { $ref: '#/components/schemas/EvidenceItem' }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password:
+          type: [string, "null"]
+          format: password
+          writeOnly: true
+
+    RequestCorrectionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [VLT-FR-010, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, record_object_id, reason_text]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        record_object_id:
+          type: string
+          format: uuid
+          description: Must equal the `object_id` path parameter.
+        reason_code:
+          type: [string, "null"]
+          maxLength: 80
+          description: >
+            Structured reason code where the deployment defines one. Not a closed enum: no controlled
+            reason-code vocabulary exists in the baseline for vault corrections, and inventing one would
+            be guessing regulated behaviour (AG-15). See SG-013.
+        reason_text:
+          type: string
+          minLength: 1
+          description: Mandatory reason-for-change, preserved verbatim in the audit event (AUD-FR-008).
+
+    CompleteCorrectionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [VLT-FR-009, VLT-FR-010, MUT-FR-005, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, correction_id, corrected_canonical_payload]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        correction_id:
+          type: string
+          format: uuid
+          description: Must equal the `correction_id` path parameter.
+        corrected_canonical_payload:
+          type: object
+          description: >
+            The corrected content, released as a new version. The original version's payload is never
+            modified.
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password:
+          type: [string, "null"]
+          format: password
+          writeOnly: true

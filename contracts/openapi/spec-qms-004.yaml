@@ -1,0 +1,515 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QMS-004 — Change Control
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-05 Document 29 slice actually built
+    (`services/gxp-api/app/modules/qms/change_*.py`): the linear DRAFT -> IMPACT_ASSESSMENT -> APPROVAL
+    -> IMPLEMENTATION -> VERIFICATION -> EFFECTIVE -> CLOSED pipeline plus an emergency lane (DRAFT/
+    IMPACT_ASSESSMENT -> IMPLEMENTATION directly, with retrospective review via `approve` afterward) and
+    CANCELLED (via `close`'s `cancellation_reason`), matching the module's own 8-op API list exactly,
+    plus the `signature-challenges` ceremony-entry-point endpoint (SG-138 engineering half, not in
+    Document 29's own list — contracted because the router implements it).
+
+
+    CHG-FR-004(partial: affected_objects captured, no downstream propagation)/009(partial:
+    training_impact flag/confirm only, no real training-assignment wiring)/015(partial: task-creation-
+    time evidence only, no dedicated "complete task" endpoint)/019(rollback)/022(software traceability)/
+    023(master linkage)/024(export) are deliberately not built — see docs/generated/18_SPEC_GAPS.md
+    SG-071/SG-072/SG-073. `approve`/`verify`/`close` are all signed (CHANGE_SIGNATURE_ACTIONS); all
+    three return `SIGNATURE_POLICY_UNRESOLVED` today (SG-138's policy-data half is still open).
+tags:
+  - name: qms-change-control
+
+paths:
+  /qms/v1/changes:
+    post:
+      operationId: postCreateChange
+      tags: [qms-change-control]
+      summary: Request a change for any of Document 29's declared object types (CHG-FR-001/002/003/014)
+      description: Requires `change.create`. `change_type` must be one of Document 29's thirteen types; `classification` temporary/permanent. `emergency=true` requires `emergency_reason`.
+      x-requirement-ids: [CHG-FR-001, CHG-FR-002, CHG-FR-003, CHG-FR-014, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateChangeCommand' } } }
+      responses:
+        '200': { description: Created, state DRAFT. `aggregate_id` is the change id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (unrecognized change_type/classification, empty current_state/proposed_state/reason, or emergency without emergency_reason).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+    get:
+      operationId: getChanges
+      tags: [qms-change-control]
+      summary: Paginated, filterable change list (non-authoritative read, AG-11)
+      x-requirement-ids: [CHG-FR-001, CHG-FR-002]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+        - { name: site_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: state, in: query, required: false, schema: { $ref: '#/components/schemas/ChangeState' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChangeListResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /qms/v1/changes/{change_id}:
+    parameters:
+      - { name: change_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getChangeDetail
+      tags: [qms-change-control]
+      summary: One change with full detail, affected objects and tasks (CHG-FR-003/004/012)
+      x-requirement-ids: [CHG-FR-003, CHG-FR-004, CHG-FR-012]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ChangeDetail' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /qms/v1/changes/{change_id}/impact:
+    parameters:
+      - { name: change_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAssessChangeImpact
+      tags: [qms-change-control]
+      summary: Regulatory/quality/validation/training/open-batch/data-migration impact assessment (CHG-FR-004/005/006/007/008/009/010/011)
+      description: Requires `change.impact`. DRAFT/IMPACT_ASSESSMENT -> IMPACT_ASSESSMENT.
+      x-requirement-ids: [CHG-FR-004, CHG-FR-005, CHG-FR-006, CHG-FR-007, CHG-FR-008, CHG-FR-009, CHG-FR-010, CHG-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AssessImpactCommand' } } }
+      responses:
+        '200': { description: Assessed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: change_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/changes/{change_id}/approve:
+    parameters:
+      - { name: change_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postApproveChange
+      tags: [qms-change-control]
+      summary: Pre-approval, or retrospective review for an already-implemented emergency change — signed per Document 106 (CHG-FR-013/014)
+      description: >
+        Requires `change.approve`. Normal path: IMPACT_ASSESSMENT -> APPROVAL, gated on impact
+        completeness. Emergency retrospective path: records `retrospective_findings` with no state
+        transition when `emergency=true` and the change has already moved past DRAFT/IMPACT_ASSESSMENT.
+        Resolves the `change_control`/`approve` Document 106 policy either way.
+      x-requirement-ids: [CHG-FR-013, CHG-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveChangeCommand' } } }
+      responses:
+        '200': { description: Approved, or retrospective review recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, CHANGE_IMPACT_INCOMPLETE, REGULATORY_REVIEW_REQUIRED, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: change_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qms/v1/changes/{change_id}/tasks:
+    parameters:
+      - { name: change_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAddChangeTask
+      tags: [qms-change-control]
+      summary: Add an implementation task with owner, due date and dependency links (CHG-FR-012/015)
+      description: Requires `change.task.add`. IMPLEMENTATION only.
+      x-requirement-ids: [CHG-FR-012, CHG-FR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AddChangeTaskCommand' } } }
+      responses:
+        '200': { description: Added., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (description/due_date required) or change_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/changes/{change_id}/implement:
+    parameters:
+      - { name: change_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postImplementChange
+      tags: [qms-change-control]
+      summary: Begin implementation, normally or via the emergency lane (CHG-FR-013/014)
+      description: Requires `change.implement`. APPROVAL -> IMPLEMENTATION normally; DRAFT/IMPACT_ASSESSMENT -> IMPLEMENTATION directly when `change.emergency` is true.
+      x-requirement-ids: [CHG-FR-013, CHG-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ImplementChangeCommand' } } }
+      responses:
+        '200': { description: Implementation started., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or CHANGE_NOT_APPROVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: change_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/changes/{change_id}/signature-challenges:
+    parameters:
+      - { name: change_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postChangeSignatureChallenge
+      tags: [qms-change-control]
+      summary: Create the Part 11 signature challenge for approve/verify/close (SG-138 engineering half)
+      description: >
+        Not in Document 29's own 8-op API list; contracted because the router implements it. Resolves
+        the `change_control`/`{action}` Document 106 policy and binds a challenge to the current change
+        id/version/hash. Returns `SIGNATURE_POLICY_UNRESOLVED` today for all three actions (SG-138's
+        policy-data half is still open).
+      x-requirement-ids: [CHG-FR-013, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ChangeSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not one of approve/verify/close.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/changes/{change_id}/verify:
+    parameters:
+      - { name: change_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postVerifyChange
+      tags: [qms-change-control]
+      summary: Verify the implemented state — signed per Document 106 (CHG-FR-016)
+      description: Requires `change.verify`. IMPLEMENTATION -> VERIFICATION. `verification_evidence` is required when `validation_impact.required` is truthy.
+      x-requirement-ids: [CHG-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VerifyChangeCommand' } } }
+      responses:
+        '200': { description: Verified., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, VALIDATION_INCOMPLETE, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: change_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qms/v1/changes/{change_id}/make-effective:
+    parameters:
+      - { name: change_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postMakeChangeEffective
+      tags: [qms-change-control]
+      summary: Make the verified change effective (CHG-FR-009/017)
+      description: Requires `change.make_effective`. VERIFICATION -> EFFECTIVE. `effective_at` must not be in the past; `training_confirmed` must be true when `training_impact.required` is truthy.
+      x-requirement-ids: [CHG-FR-009, CHG-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MakeEffectiveCommand' } } }
+      responses:
+        '200': { description: Effective., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, TRAINING_INCOMPLETE, or EFFECTIVE_DATE_BLOCKED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: change_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/changes/{change_id}/close:
+    parameters:
+      - { name: change_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCloseChange
+      tags: [qms-change-control]
+      summary: Post-implementation review and closure, or cancellation — signed per Document 106 (CHG-FR-018/020/021)
+      description: >
+        Requires `change.close`. `cancellation_reason` set instead of `post_implementation_review`
+        cancels (any non-terminal state -> CANCELLED) rather than closing (EFFECTIVE -> CLOSED, requires
+        `post_implementation_review.conclusion`). Resolves the `change_control`/`close` Document 106
+        policy either way.
+      x-requirement-ids: [CHG-FR-018, CHG-FR-020, CHG-FR-021, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CloseChangeCommand' } } }
+      responses:
+        '200': { description: Closed or cancelled., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, EFFECTIVE_DATE_BLOCKED (reused for a missing PIR conclusion), or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: change_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    ChangeState:
+      type: string
+      description: "`CHANGE_STATES` in `app/modules/qms/change_models.py`."
+      x-requirement-ids: [CHG-FR-001, CTR-FR-017]
+      enum: [DRAFT, IMPACT_ASSESSMENT, APPROVAL, IMPLEMENTATION, VERIFICATION, EFFECTIVE, CLOSED, CANCELLED]
+
+    ChangeType:
+      type: string
+      description: "`CHANGE_TYPES` — the thirteen object types Document 29 itself enumerates (CHG-FR-001)."
+      x-requirement-ids: [CHG-FR-001]
+      enum: [product, process, recipe, spec, material, source, equipment, facility, software, document, method, label, supplier]
+
+    ChangeClassification:
+      type: string
+      description: "`CHANGE_CLASSIFICATIONS` (CHG-FR-002)."
+      x-requirement-ids: [CHG-FR-002]
+      enum: [temporary, permanent]
+
+    ChangeTaskStatus:
+      type: string
+      description: "`TASK_STATUSES` (CHG-FR-012)."
+      x-requirement-ids: [CHG-FR-012]
+      enum: [pending, done]
+
+    ChangeAffectedObject:
+      type: object
+      description: One affected-object link, as returned inline by getChangeDetail.
+      x-requirement-ids: [CHG-FR-004]
+      required: [id, object_type, object_id, impact_category, action_required, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        object_type: { type: string }
+        object_id: { type: string, format: uuid }
+        object_version: { type: [integer, "null"] }
+        impact_category: { type: string }
+        action_required: { type: string }
+        created_at: { type: [string, "null"], format: date-time }
+
+    ChangeTask:
+      type: object
+      description: One implementation task, as returned inline by getChangeDetail.
+      x-requirement-ids: [CHG-FR-012, CHG-FR-015]
+      required: [id, description, owner_subject_id, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        description: { type: string }
+        owner_subject_id: { type: string, format: uuid }
+        due_date: { type: [string, "null"], format: date-time }
+        dependency_links: { type: [array, "null"], items: { type: object } }
+        evidence: { type: [object, "null"], description: "CHG-FR-015 execution evidence known at task-creation time only." }
+        status: { $ref: '#/components/schemas/ChangeTaskStatus' }
+        version: { type: integer, minimum: 1 }
+        completed_at: { type: [string, "null"], format: date-time }
+
+    Change:
+      type: object
+      description: One change control record (`app/modules/qms/change_router.py:_change_dict`). A response schema, so not closed.
+      x-requirement-ids: [CHG-FR-001, CHG-FR-002, CHG-FR-003]
+      required: [id, site_id, quality_event_id, change_number, change_type, classification, reason, state, owner_subject_id, emergency, retrospective_review_completed, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        quality_event_id: { type: string, format: uuid }
+        change_number: { type: string }
+        change_type: { $ref: '#/components/schemas/ChangeType' }
+        classification: { $ref: '#/components/schemas/ChangeClassification' }
+        reason: { type: string }
+        state: { $ref: '#/components/schemas/ChangeState' }
+        owner_subject_id: { type: string, format: uuid }
+        emergency: { type: boolean }
+        retrospective_review_completed: { type: boolean }
+        effective_at: { type: [string, "null"], format: date-time }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        created_at: { type: [string, "null"], format: date-time }
+        closed_at: { type: [string, "null"], format: date-time }
+
+    ChangeDetail:
+      type: object
+      description: getChangeDetail's response — Change plus every semi-structured field, affected objects and tasks.
+      x-requirement-ids: [CHG-FR-004, CHG-FR-005, CHG-FR-006, CHG-FR-007, CHG-FR-008, CHG-FR-012, CHG-FR-014, CHG-FR-018, CHG-FR-021]
+      allOf:
+        - $ref: '#/components/schemas/Change'
+        - type: object
+          required: [current_state, proposed_state, closure_history, affected_objects, tasks]
+          properties:
+            current_state: { type: object }
+            proposed_state: { type: object }
+            risk_ref: { type: [string, "null"], format: uuid }
+            regulatory_impact: { type: [object, "null"] }
+            validation_impact: { type: [object, "null"] }
+            training_impact: { type: [object, "null"] }
+            impact_assessment: { type: [object, "null"] }
+            emergency_reason: { type: [string, "null"] }
+            retrospective_review: { type: [object, "null"] }
+            cancel_reason: { type: [string, "null"] }
+            closure_history: { type: array, items: { type: object } }
+            affected_objects: { type: array, items: { $ref: '#/components/schemas/ChangeAffectedObject' } }
+            tasks: { type: array, items: { $ref: '#/components/schemas/ChangeTask' } }
+
+    ChangeListResult:
+      type: object
+      description: getChanges's response — the shared page envelope plus items.
+      x-requirement-ids: [CHG-FR-001, CTR-FR-012]
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/Change' } } }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postChangeSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    ChangeSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [approve, verify, close] }
+
+    CreateChangeCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CHG-FR-001, CHG-FR-002, CHG-FR-003, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, change_number, change_type, classification, current_state, proposed_state, reason, owner_subject_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        change_number: { type: string }
+        change_type: { $ref: '#/components/schemas/ChangeType' }
+        classification: { $ref: '#/components/schemas/ChangeClassification' }
+        current_state: { type: object }
+        proposed_state: { type: object }
+        reason: { type: string }
+        owner_subject_id: { type: string, format: uuid }
+        emergency: { type: boolean, default: false }
+        emergency_reason: { type: [string, "null"], description: Required (non-empty) when emergency is true. }
+
+    AssessImpactCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CHG-FR-004, CHG-FR-005, CHG-FR-006, CHG-FR-007, CHG-FR-008, CHG-FR-009, CHG-FR-010, CHG-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, change_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        change_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        regulatory_impact: { type: [object, "null"] }
+        validation_impact: { type: [object, "null"] }
+        training_impact: { type: [object, "null"] }
+        impact_assessment: { type: [object, "null"], description: Catch-all for quality/open-batch/data-migration impact categories. }
+        risk_ref: { type: [string, "null"], format: uuid }
+        affected_objects: { type: [array, "null"], items: { type: object, required: [object_type, object_id, impact_category, action_required], properties: { object_type: { type: string }, object_id: { type: string, format: uuid }, object_version: { type: [integer, "null"] }, impact_category: { type: string }, action_required: { type: string } } } }
+        reason: { type: [string, "null"] }
+
+    ApproveChangeCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CHG-FR-013, CHG-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, change_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        change_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        approval_notes: { type: [string, "null"] }
+        retrospective_findings: { type: [object, "null"], description: Required for the emergency-retrospective path. }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    AddChangeTaskCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CHG-FR-012, CHG-FR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, change_id, expected_version, description, owner_subject_id, due_date]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        change_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        description: { type: string }
+        owner_subject_id: { type: string, format: uuid }
+        due_date: { type: string, format: date-time }
+        dependency_links: { type: [array, "null"], items: { type: object } }
+        evidence: { type: [object, "null"] }
+        reason: { type: [string, "null"] }
+
+    ImplementChangeCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, change_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        change_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"] }
+
+    VerifyChangeCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CHG-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, change_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        change_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        verification_evidence: { type: [object, "null"], description: Required when validation_impact.required is truthy. }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+        reason: { type: [string, "null"] }
+
+    MakeEffectiveCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CHG-FR-009, CHG-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, change_id, expected_version, effective_at]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        change_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        effective_at: { type: string, format: date-time, description: Must not be in the past. }
+        training_confirmed: { type: boolean, default: false, description: Must be true when training_impact.required is truthy. }
+        reason: { type: [string, "null"] }
+
+    CloseChangeCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). cancellation_reason set instead of post_implementation_review cancels rather than closes.
+      x-requirement-ids: [CHG-FR-018, CHG-FR-020, CHG-FR-021, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, change_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        change_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        post_implementation_review: { type: [object, "null"], description: "Required (non-empty conclusion key) for a normal close." }
+        cancellation_reason: { type: [string, "null"], description: Presence triggers the cancel path instead of close. }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

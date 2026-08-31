@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qms-001.json",
+  "title": "SPEC-QMS-001 \u2014 Deviation & Investigation Management Events",
+  "description": "Document 113 event contract for the 8 event types Document 26's own module (app/modules/qms/commands.py) actually emits via write_outbox_event() -- verified directly against every call site, not against 07_EVENT_CATALOGUE.yaml's declared names (see the divergence-checking methodology note in event-data-005.json). All 8 declared SPEC-QMS-001 events in that catalogue are, in this case, genuinely implemented -- no divergence for this module.\n\nREUSE NOTE: 'DeviationOpened' is emitted from three different transitions -- create_deviation() (payload: id, deviation_number), triage_deviation() (payload: id, state=\"TRIAGE\"), and extend_deviation() (payload: id, new_due_date) -- not just the initial creation its name implies. This is a real, observed characteristic of the built code (app/modules/qms/commands.py:191/233/530), not invented or normalized here; DeviationOpenedPayload's schema is the union of all three shapes with only 'id' required. Recorded for a human reviewer to decide whether triage/extend should get their own event_type in a future revision -- not this contract-authoring pass's call to make (no regulated meaning changes either way).",
+  "x-requirement-ids": [
+    "DEV-FR-001",
+    "DEV-FR-003",
+    "DEV-FR-005",
+    "DEV-FR-007",
+    "DEV-FR-011",
+    "DEV-FR-012",
+    "DEV-FR-013",
+    "DEV-FR-017",
+    "DEV-FR-018",
+    "DEV-FR-020",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "DeviationOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Emitted by create_deviation() (id, deviation_number), triage_deviation() (id, state), and extend_deviation() (id, new_due_date) -- see the module-level reuse note.",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "deviation_number": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "const": "TRIAGE"
+        },
+        "new_due_date": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "x-requirement-ids": [
+        "DEV-FR-001",
+        "DEV-FR-003",
+        "DEV-FR-017"
+      ]
+    },
+    "DeviationContainedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "DEV-FR-005"
+      ]
+    },
+    "DeviationInvestigationStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "DEV-FR-006",
+        "DEV-FR-007"
+      ]
+    },
+    "DeviationImpactAssessedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "DEV-FR-011"
+      ]
+    },
+    "DeviationDispositionApprovedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "disposition_code"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "disposition_code": {
+          "$ref": "../openapi/spec-qms-001.yaml#/components/schemas/DispositionCode"
+        }
+      },
+      "x-requirement-ids": [
+        "DEV-FR-012",
+        "DEV-FR-019"
+      ]
+    },
+    "DeviationCAPARequiredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted only when DispositionCommand.capa_required is true (commands.py:476-480).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "DEV-FR-013"
+      ]
+    },
+    "DeviationClosedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "DEV-FR-018",
+        "DEV-FR-019"
+      ]
+    },
+    "DeviationReopenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "DEV-FR-020"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "DeviationOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-001",
+      "aggregate_type": "deviation_record",
+      "payload": {
+        "$ref": "#/$defs/DeviationOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "DEV-FR-001",
+        "DEV-FR-003",
+        "DEV-FR-017"
+      ]
+    },
+    {
+      "event_type": "DeviationContained",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-001",
+      "aggregate_type": "deviation_record",
+      "payload": {
+        "$ref": "#/$defs/DeviationContainedPayload"
+      },
+      "x-requirement-ids": [
+        "DEV-FR-005"
+      ]
+    },
+    {
+      "event_type": "DeviationInvestigationStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-001",
+      "aggregate_type": "deviation_record",
+      "payload": {
+        "$ref": "#/$defs/DeviationInvestigationStartedPayload"
+      },
+      "x-requirement-ids": [
+        "DEV-FR-006",
+        "DEV-FR-007"
+      ]
+    },
+    {
+      "event_type": "DeviationImpactAssessed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-001",
+      "aggregate_type": "deviation_record",
+      "payload": {
+        "$ref": "#/$defs/DeviationImpactAssessedPayload"
+      },
+      "x-requirement-ids": [
+        "DEV-FR-011"
+      ]
+    },
+    {
+      "event_type": "DeviationDispositionApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-001",
+      "aggregate_type": "deviation_record",
+      "payload": {
+        "$ref": "#/$defs/DeviationDispositionApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "DEV-FR-012",
+        "DEV-FR-019"
+      ]
+    },
+    {
+      "event_type": "DeviationCAPARequired",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-001",
+      "aggregate_type": "deviation_record",
+      "payload": {
+        "$ref": "#/$defs/DeviationCAPARequiredPayload"
+      },
+      "x-requirement-ids": [
+        "DEV-FR-013"
+      ]
+    },
+    {
+      "event_type": "DeviationClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-001",
+      "aggregate_type": "deviation_record",
+      "payload": {
+        "$ref": "#/$defs/DeviationClosedPayload"
+      },
+      "x-requirement-ids": [
+        "DEV-FR-018",
+        "DEV-FR-019"
+      ]
+    },
+    {
+      "event_type": "DeviationReopened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-001",
+      "aggregate_type": "deviation_record",
+      "payload": {
+        "$ref": "#/$defs/DeviationReopenedPayload"
+      },
+      "x-requirement-ids": [
+        "DEV-FR-020"
+      ]
+    }
+  ]
+}

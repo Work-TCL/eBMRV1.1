@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-sec-006.json",
+  "title": "SPEC-SEC-006 — Network, Tenant, Deployment Isolation & Zero-Trust Events",
+  "description": "Document 113 event contract for WP-10 Document 66 (app/modules/security/netzero*). All 4 are security-telemetry events (Document 66 # 9) about a zero-trust control that refused/failed something. The emit helper (netzero.emit_security_event) and the stable error codes (NETWORK_FLOW_NOT_ALLOWED / TENANT_SCOPE_MISMATCH / WORKLOAD_HARDENING_FAILED / SEGMENTATION_CONTROL_FAILED) are in place; the runtime feeds are CI / deploy-admission / periodic-segmentation-test tooling that the library functions serve, not request handlers, so emission is at those tools' discretion (same 'mechanism present, infra feed deferred' shape as Document 63-65). This module has no state-changing endpoint and thus no domain outbox events of its own.",
+  "x-requirement-ids": ["NET-FR-002", "NET-FR-010", "NET-FR-017", "NET-FR-029", "EVT-FR-001", "MUT-FR-031"],
+  "$defs": {
+    "ForbiddenNetworkPathDetectedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source", "destination"],
+      "properties": {
+        "source": { "type": "string" },
+        "destination": { "type": "string" },
+        "protocol": { "type": ["string", "null"] },
+        "port": { "type": ["integer", "null"] },
+        "reachable": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["NET-FR-002", "NET-FR-029"]
+    },
+    "TenantScopeMismatchDetectedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reason"],
+      "properties": {
+        "context_ref": { "type": ["string", "null"] },
+        "reason": { "type": "string" }
+      },
+      "x-requirement-ids": ["NET-FR-010", "NET-FR-011"]
+    },
+    "WorkloadHardeningFailedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["violations"],
+      "properties": {
+        "workload": { "type": ["string", "null"] },
+        "violations": { "type": "array", "items": { "type": "string" } }
+      },
+      "x-requirement-ids": ["NET-FR-017"]
+    },
+    "UnexpectedPublicExposureDetectedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["resource", "detail"],
+      "properties": {
+        "resource": { "type": "string" },
+        "detail": { "type": "string" }
+      },
+      "x-requirement-ids": ["NET-FR-003", "NET-FR-027"]
+    }
+  },
+  "events": [
+    { "event_type": "ForbiddenNetworkPathDetected", "schema_version": "1.0", "producer": "SPEC-SEC-006", "aggregate_type": "security_event", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ForbiddenNetworkPathDetectedPayload" }, "x-requirement-ids": ["NET-FR-029"] },
+    { "event_type": "TenantScopeMismatchDetected", "schema_version": "1.0", "producer": "SPEC-SEC-006", "aggregate_type": "security_event", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/TenantScopeMismatchDetectedPayload" }, "x-requirement-ids": ["NET-FR-010"] },
+    { "event_type": "WorkloadHardeningFailed", "schema_version": "1.0", "producer": "SPEC-SEC-006", "aggregate_type": "security_event", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/WorkloadHardeningFailedPayload" }, "x-requirement-ids": ["NET-FR-017"] },
+    { "event_type": "UnexpectedPublicExposureDetected", "schema_version": "1.0", "producer": "SPEC-SEC-006", "aggregate_type": "security_event", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/UnexpectedPublicExposureDetectedPayload" }, "x-requirement-ids": ["NET-FR-003"] }
+  ]
+}

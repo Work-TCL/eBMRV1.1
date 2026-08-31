@@ -1,0 +1,559 @@
+openapi: 3.1.0
+info:
+  title: SPEC-DDCP-004 — Drug-Eluting / Drug-Coated Device DDCP Manufacturing Profile
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 57 (`services/gxp-api/app/modules/ddcp/coated_device_router.py` +
+    `coated_device_commands.py`). SG-150 (`docs/generated/18_SPEC_GAPS.md`): no Document 112 schema exists
+    for this document -- reuses Document 54's tables/functions per the DDCP Platform Rule, the same
+    strategy `spec-ddcp-002.yaml`/`spec-ddcp-003.yaml` already apply. `ddcp_process_operation`
+    (operation_type=COATING_RUN) and `ddcp_unit_binding` (binding_type=DEVICE_TO_COATING_CONSTITUENT) are
+    reused from Document 55. `drug_coating_usage_ledger` is new this pass -- COAT-FR-009's decimal
+    mass-balance side of the dual reconciliation, distinct from `production_count_ledger`'s integer
+    device-unit counts (DATA-FR-019). RBAC reuses Document 54's already-seeded `ddcp_profile.*`/
+    `ddcp_fill.*`/`ddcp_device.*`/`ddcp_release.*` action codes.
+tags:
+  - name: ddcp-coated-device
+
+paths:
+  /ddcp/v1/coated-device/profiles:
+    post:
+      operationId: postCreateCoatedDeviceProfile
+      tags: [ddcp-coated-device]
+      summary: Author a coated-device DDCP profile draft (COAT-FR-001..008)
+      x-requirement-ids: [COAT-FR-001, COAT-FR-002, COAT-FR-003, COAT-FR-005, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCoatedDeviceProfileVersionCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422':
+          description: PROFILE_SCHEMA_INVALID
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/coated-device/profiles/{profile_id}/release:
+    parameters:
+      - { name: profile_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReleaseCoatedDeviceProfile
+      tags: [ddcp-coated-device]
+      summary: Release a coated-device DDCP profile version (calls Document 54's shared release_injectable_profile_version)
+      x-requirement-ids: [COAT-FR-001, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: 'spec-ddcp-001.yaml#/components/schemas/ReleaseInjectableProfileVersionCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: PROFILE_RELEASE_BLOCKED / VALIDATION_FAILED
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/coated-device/batches/{batch_id}/readiness:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: profile_version_id, in: query, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getCoatingRunReadiness
+      tags: [ddcp-coated-device]
+      summary: Coating run readiness composition, without transitioning state (COAT-FR-002..004/007/008)
+      x-requirement-ids: [COAT-FR-002, COAT-FR-003, COAT-FR-004, COAT-FR-007, COAT-FR-008]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/CoatingReadiness' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '422':
+          description: COATED_DEVICE_PROFILE_NOT_EFFECTIVE
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/coated-device/coating-runs:
+    post:
+      operationId: postStartCoatingRun
+      tags: [ddcp-coated-device]
+      summary: Start a coating run (COAT-FR-005/006/007/008/009)
+      description: Optionally records the initial ISSUED drug/coating solution quantity into drug_coating_usage_ledger.
+      x-requirement-ids: [COAT-FR-005, COAT-FR-006, COAT-FR-007, COAT-FR-008, COAT-FR-009, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartCoatingRunCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409':
+          description: existing active coating run for this batch
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: COATED_DEVICE_PROFILE_NOT_EFFECTIVE / readiness not satisfied
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/coated-device/coating-runs/{operation_id}/process-evidence:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordCoatingProcessEvidence
+      tags: [ddcp-coated-device]
+      summary: Record a coating process parameter reading, optionally rule-evaluated (COAT-FR-006/007)
+      description: >
+        acceptance_rule_id is optional (SG-148/150 pattern) -- when supplied and the rule outcome is FAIL,
+        this puts the coating run on HOLD and raises COATING_PARAMETER_EXCURSION.
+      x-requirement-ids: [COAT-FR-006, COAT-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordCoatingProcessEvidenceCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+
+  /ddcp/v1/coated-device/coating-runs/{operation_id}/complete:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCompleteCoatingRun
+      tags: [ddcp-coated-device]
+      summary: Complete a coating run — dual reconciliation (COAT-FR-009/026)
+      description: >
+        Structural completeness only on both sides of Document 57 §6's dual reconciliation (at least one
+        COATED unit in production_count_ledger, at least one ISSUED usage in drug_coating_usage_ledger) --
+        no numeric variance tolerance is baselined anywhere, same SG-148/150 posture as every other
+        complete_*() function in this module family.
+      x-requirement-ids: [COAT-FR-009, COAT-FR-026, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteCoatingRunCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: COATING_RECONCILIATION_FAILED
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/coated-device/drug-coating-usage:
+    post:
+      operationId: postRecordDrugCoatingUsage
+      tags: [ddcp-coated-device]
+      summary: Record a drug/coating material usage-ledger entry (COAT-FR-009)
+      description: Decimal mass-balance ledger (DATA-FR-019) -- issued/applied/residual/sampled/rejected/recovered/disposed.
+      x-requirement-ids: [COAT-FR-009, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordDrugCoatingUsageCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — unrecognized usage_type
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/coated-device/device-coating-bindings:
+    post:
+      operationId: postBindDeviceToCoatingConstituent
+      tags: [ddcp-coated-device]
+      summary: Bind a device substrate unit to a coating solution/drug lot (COAT-FR-010)
+      description: >
+        Reuses ddcp_unit_binding (binding_type=DEVICE_TO_COATING_CONSTITUENT), the same shared table
+        Document 55's drug-container binding already uses. Application-level uniqueness prevents
+        DEVICE_COATING_BINDING_ALREADY_USED.
+      x-requirement-ids: [COAT-FR-010, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BindDeviceToCoatingConstituentCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: DEVICE_COATING_BINDING_ALREADY_USED
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/coated-device/drug-loading-results:
+    post:
+      operationId: postRecordDrugLoadingResult
+      tags: [ddcp-coated-device]
+      summary: Evaluate a drug-loading/coating-weight result through a released rule (COAT-FR-011/012/014)
+      description: SG-148/150 rules-engine-evaluated pattern; stores via device_functional_test_link.
+      x-requirement-ids: [COAT-FR-011, COAT-FR-012, COAT-FR-014, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordDrugLoadingResultCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/coated-device/post-sterilization-tests:
+    post:
+      operationId: postRecordPostSterilizationTest
+      tags: [ddcp-coated-device]
+      summary: Record a post-sterilization drug/device test result (COAT-FR-018/019/020)
+      description: Carries the sterilization reference inside qc_record_reference -- Document 42 owns sterilization-cycle data, referenced only.
+      x-requirement-ids: [COAT-FR-018, COAT-FR-019, COAT-FR-020, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordPostSterilizationTestCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/coated-device/batches/{batch_id}/release-readiness:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postEvaluateCoatedDeviceReleaseReadiness
+      tags: [ddcp-coated-device]
+      summary: Evaluate DRUG_CONSTITUENT/DEVICE_CONSTITUENT/COMBINED_PRODUCT checkpoints (COAT-FR-027/028)
+      x-requirement-ids: [COAT-FR-027, COAT-FR-028, MUT-FR-005, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-ddcp-001.yaml#/components/schemas/PfsReleaseReadiness' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/coated-device/batches/{batch_id}/evidence-package:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCreateCoatedDeviceBatchEvidencePackage
+      tags: [ddcp-coated-device]
+      summary: Generate a reproducible coated-device batch evidence package (COAT-FR-030)
+      x-requirement-ids: [COAT-FR-030, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCoatedDeviceBatchEvidencePackageCommand' }
+      responses:
+        '200':
+          description: Created — a new manifest_version, state FROZEN.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — batch_id in path and body must match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/coated-device/batches/{batch_id}/complaint-trace:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getCoatedDeviceComplaintTrace
+      tags: [ddcp-coated-device]
+      summary: Trace a coated-device batch's substrate, coating-run and sterilization genealogy (COAT-FR-019/030)
+      x-requirement-ids: [COAT-FR-019, COAT-FR-030]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/CoatedDeviceComplaintTraceGraph' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/coated-device/functional-tests:
+    post:
+      operationId: postRecordDeviceFunctionalTest
+      tags: [ddcp-coated-device]
+      summary: Record a plain (non-rule-evaluated) device/combined-product functional test result (COAT-FR-013/015/016)
+      description: >
+        No dedicated function is named in Document 57's own 9-function catalogue for a plain functional
+        result -- recordDrugLoadingResult() is specifically rule-evaluated and would force an
+        acceptance_rule_id onto every dimensional/release-elution/coating-integrity-inspection reading.
+        Derived the same way Document 54's DeviceAssemblyRecord commands were derived; reuses
+        device_functional_test_link verbatim.
+      x-requirement-ids: [COAT-FR-013, COAT-FR-015, COAT-FR-016, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordDeviceFunctionalTestCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/coated-device/unit-dispositions:
+    post:
+      operationId: postRecordCoatedDeviceDisposition
+      tags: [ddcp-coated-device]
+      summary: Record a final coated-device unit disposition — PASS/REJECT/REWORK (COAT-FR-025)
+      description: >
+        "Recoating/stripping/reprocessing default prohibited unless released validated route explicitly
+        permits and drug/device impact assessed." Same default-disallow discipline as PFS-FR-027/INJ-FR-
+        022, reusing ReworkRouteRequiredError verbatim -- REWORK requires both a rework_procedure_reference
+        and a drug_device_impact_assessment.
+      x-requirement-ids: [COAT-FR-025, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordCoatedDeviceDispositionCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: REWORK_ROUTE_REQUIRED
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — reason required for REJECT/REWORK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateCoatedDeviceProfileVersionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [COAT-FR-001, COAT-FR-002, COAT-FR-003, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, profile_code]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        profile_code: { type: string }
+        coating_route_id: { type: [string, "null"] }
+        sterilization_route_id: { type: [string, "null"] }
+        environment_profile_id: { type: [string, "null"] }
+        constituent_architecture: { type: object, default: {} }
+        required_controls: { type: object, default: {} }
+        release_checkpoint_set: { type: object }
+        constituent_requirements: { type: array, items: { type: object } }
+
+    StartCoatingRunCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [COAT-FR-005, COAT-FR-006, COAT-FR-007, COAT-FR-008, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, profile_version_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        profile_version_id: { type: string, format: uuid }
+        line_id: { type: [string, "null"], format: uuid }
+        equipment_id: { type: [string, "null"], format: uuid }
+        program_id: { type: [string, "null"] }
+        program_version: { type: [string, "null"] }
+        environment_status: { type: [object, "null"] }
+        initial_drug_solution_quantity: { type: [string, "null"], description: Decimal-as-string. }
+        initial_drug_solution_uom: { type: [string, "null"] }
+
+    RecordCoatingProcessEvidenceCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [COAT-FR-006, COAT-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, operation_id, expected_version, parameter_code, value]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        operation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        parameter_code: { type: string }
+        value: { type: string, description: Decimal-as-string. }
+        uom: { type: [string, "null"] }
+        acceptance_rule_id: { type: [string, "null"] }
+
+    CompleteCoatingRunCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [COAT-FR-009, COAT-FR-026, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, operation_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        operation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"] }
+
+    RecordDrugCoatingUsageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [COAT-FR-009, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, usage_type, quantity, uom]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        usage_type: { type: string, enum: [ISSUED, APPLIED, RESIDUAL, SAMPLED, REJECTED, RECOVERED, DISPOSED] }
+        quantity: { type: string, description: Decimal-as-string. }
+        uom: { type: string }
+        reason_code: { type: [string, "null"] }
+        occurred_at: { type: [string, "null"], format: date-time }
+
+    BindDeviceToCoatingConstituentCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [COAT-FR-010, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, device_unit_reference, coating_solution_reference]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        device_unit_reference: { type: object }
+        coating_solution_reference: { type: object }
+
+    RecordDrugLoadingResultCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [COAT-FR-011, COAT-FR-012, COAT-FR-014, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, unit_or_sample_id, measured_value, uom, acceptance_rule_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        unit_or_sample_id: { type: string }
+        measured_value: { type: string, description: Decimal-as-string. }
+        uom: { type: string }
+        acceptance_rule_id: { type: string }
+        test_type: { type: string, default: COATING_INTEGRITY }
+
+    RecordPostSterilizationTestCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [COAT-FR-018, COAT-FR-019, COAT-FR-020, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, sterilization_reference, test_type]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        sterilization_reference: { type: object }
+        test_type: { type: string }
+        qc_record_reference: { type: object, default: {} }
+        result_state: { type: string, enum: [PENDING, PASS, FAIL, OOS], default: PENDING }
+
+    CreateCoatedDeviceBatchEvidencePackageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [COAT-FR-030, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+
+    CoatingReadiness:
+      type: object
+      description: "`evaluate_coating_run_readiness` in `app/modules/ddcp/coated_device_commands.py` — pure read, no writes."
+      x-requirement-ids: [COAT-FR-002, COAT-FR-003, COAT-FR-004, COAT-FR-007, COAT-FR-008]
+      required: [batch_id, profile_version_id, ready, blockers]
+      properties:
+        batch_id: { type: string, format: uuid }
+        profile_version_id: { type: string, format: uuid }
+        ready: { type: boolean }
+        blockers: { type: array, items: { type: object } }
+
+    CoatedDeviceComplaintTraceGraph:
+      type: object
+      description: "`trace_coated_device_complaint` in `app/modules/ddcp/coated_device_commands.py` — pure read, no writes."
+      x-requirement-ids: [COAT-FR-019, COAT-FR-030]
+      required: [batch_id, substrate_and_drug_handoffs, device_to_coating_bindings, functional_test_links, drug_coating_usage]
+      properties:
+        batch_id: { type: string, format: uuid }
+        substrate_and_drug_handoffs: { type: array, items: { type: object } }
+        device_to_coating_bindings: { type: array, items: { type: object } }
+        functional_test_links: { type: array, items: { type: object } }
+        drug_coating_usage: { type: array, items: { type: object } }
+
+    RecordDeviceFunctionalTestCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [COAT-FR-013, COAT-FR-015, COAT-FR-016, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, test_type, qc_record_reference]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        test_type: { type: string }
+        qc_record_reference: { type: object }
+        method_reference: { type: [object, "null"] }
+        result_state: { type: string, enum: [PENDING, PASS, FAIL, OOS], default: PENDING }
+
+    RecordCoatedDeviceDispositionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [COAT-FR-025, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, batch_id, unit_identifier, result]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        unit_identifier: { type: string }
+        result: { type: string, enum: [PASS, REJECT, REWORK] }
+        reason: { type: [string, "null"], description: Required when result is REJECT or REWORK. }
+        drug_device_impact_assessment: { type: [object, "null"], description: Required when result is REWORK. }
+        rework_procedure_reference: { type: [object, "null"], description: Required when result is REWORK. }

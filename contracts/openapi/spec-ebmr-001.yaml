@@ -1,0 +1,721 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EBMR-001 — Master Recipe / Master Manufacturing Record
+  version: 0.1.0
+  description: >
+    Document 113 contract for the Document 10 slice actually built
+    (`services/gxp-api/app/modules/recipe_master/`): the recipe-version lifecycle (draft → under_review →
+    released → suspended/obsolete/superseded), the section/step/parameter/dependency/evidence-requirement
+    authoring graph (RCP-FR-004/005/006/007/013), wholesale graph replace on every draft write
+    (`_replace_graph` deletes and recreates the whole section/step/parameter/dependency/evidence set —
+    never a partial patch), the structural completeness validator (RCP-FR-030: no steps, unsupported
+    step_type, dependency cycle, unreachable step, or a referenced rule with no effective released
+    version), non-mutating simulate (RCP-FR-035) and version compare (RCP-FR-034), and release into the
+    Vault as an immutable version with a Document 106 signature ceremony.
+
+
+    `app/modules/recipe` (an older, unrelated Batch-facing stub) is a *different* module and is not
+    covered by this contract — the same "two live implementations sharing a similar name" pattern noted
+    in `spec-ebmr-000.yaml` for `product`/`product_master`.
+
+
+    FAILS CLOSED TODAY: Document 106's approved floor has no `(recipe_version, release)` policy row
+    (confirmed: no `record_type="recipe_version"` signature-policy seed exists anywhere in this codebase),
+    so `postReleaseRecipeVersion` returns `SIGNATURE_POLICY_UNRESOLVED` (409) on every call rather than
+    transitioning an executable regulated record unsigned. Correct fail-closed behaviour under SIGP-FR-004.
+
+
+    SG-146 (UOM expand step, resolved 2026-08-27): `batch_size_uom` (on the version) and `uom` (on each
+    parameter) are validated against the Document 110 §3 controlled UOM master best-effort at
+    draft-create/update time — an unresolved code does not fail the request (the free-text column stays
+    authoritative). `RecipeVersion.batch_size_uom_id` is exposed in the response
+    (`app/modules/recipe_master/router.py:_version_dict`); `RecipeParameter.uom_id` exists on the model
+    (migration e7b3f9a2c6d4) but `_parameter_dict` does not currently return it — `RecipeParameter` below
+    documents the response as the router actually builds it, not the full model. Reading it back requires
+    a direct row query today; not a defect this contract can silently correct (SG-013).
+
+
+    NOT BUILT THIS PASS: conditional branches (RCP-FR-008), material/equipment/personnel/area requirements
+    (RCP-FR-009/010/011/012), IPC/QC point and timer/hold-time step-metadata structure beyond the generic
+    `step_type` string (RCP-FR-017/018), sterile-specific and device-assembly step metadata
+    (RCP-FR-024/025), packaging/label step (RCP-FR-026), expected-yield points (RCP-FR-027), independent
+    master review as a distinct signed step from release (RCP-FR-031), rework/reprocess routing
+    (RCP-FR-029), and template reuse / clone-from-existing (RCP-FR-036) are not implemented — see SG-046
+    for the dependency-graph cycle/repeat-structure gap specifically, and SG-013 for the general built vs.
+    approved-baseline gap register.
+tags:
+  - name: recipe_master
+
+paths:
+  /recipes/v2/drafts:
+    post:
+      operationId: postCreateRecipeDraft
+      tags: [recipe_master]
+      summary: Author a new recipe version in `draft`, creating its family if needed (RCP-FR-001/002/004/005)
+      description: >
+        Requires the `recipe.author` policy action. `recipe_code` identifies the family; a first use
+        creates it, a repeat use with a different `product_business_id` than the existing family is
+        `VALIDATION_FAILED`. Rejects a `(recipe_family, version_no)` that already exists in any state — a
+        version identifier is never reused. `sections`/`steps`/`dependencies` (each step carrying its own
+        `parameters`/`evidence_requirements`) are supplied inline and wholesale-written as the version's
+        full graph, not individually addressable, at this and every later draft-editing step
+        (`_replace_graph`).
+      x-requirement-ids: [RCP-FR-001, RCP-FR-002, RCP-FR-004, RCP-FR-005, RCP-FR-006, RCP-FR-007, RCP-FR-013, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRecipeDraftCommand' }
+      responses:
+        '200':
+          description: Draft created. `aggregate_id` is the `recipe_version_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — a version already exists at this `(recipe_family, version_no)`, `recipe_code` is already bound to a different `product_business_id`, or the graph references an unknown `section_code`/`step_code`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /recipes/v2/drafts/{recipe_version_id}:
+    parameters:
+      - name: recipe_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      operationId: putUpdateRecipeDraft
+      tags: [recipe_master]
+      summary: Wholesale field and graph replace of a draft (RCP-FR-004/005/007)
+      description: >
+        Requires `recipe.author`. Only a `draft` may be edited — `VALIDATION_FAILED` otherwise. The full
+        `sections`/`steps`/`dependencies` graph is replaced wholesale on each call
+        (`_replace_graph` deletes every existing section/step/parameter/dependency/evidence-requirement
+        row for this version first); `recipe_version_id` is immutable and not accepted in the body except
+        to confirm it matches the path.
+      x-requirement-ids: [RCP-FR-004, RCP-FR-005, RCP-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateRecipeDraftCommand' }
+      responses:
+        '200':
+          description: Updated.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — `recipe_version_id` in path and body do not match, the version is not `draft`, or the graph references an unknown `section_code`/`step_code`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /recipes/v2/drafts/{recipe_version_id}/validate:
+    parameters:
+      - name: recipe_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postValidateRecipeDraft
+      tags: [recipe_master]
+      summary: Audit-logged structural completeness check (RCP-FR-030)
+      description: >
+        Requires `recipe.author`. Non-lifecycle-affecting (the version's `lifecycle_state` does not
+        change) but still an auditable inspection action — an audit event and outbox row (
+        `RecipeValidationFailed`/`RecipeVersionValidated`) are written recording the findings either way,
+        and this is a Mutation Gateway command (idempotency key, receipt) even though it mutates no
+        domain field. Checks: at least one step exists; every `step_type` is in the controlled set; the
+        dependency graph has no cycle; every step is reachable from a root step; every referenced
+        `rule_id` has an effective released version. Findings are not part of this receipt — read them
+        back via `getRecipeIssueEligibility` or `postSimulateRecipeDraft`, or from the audit event this
+        call writes.
+      x-requirement-ids: [RCP-FR-030, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ValidateRecipeDraftCommand' }
+      responses:
+        '200':
+          description: Checked.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — `recipe_version_id` in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /recipes/v2/drafts/{recipe_version_id}/simulate:
+    parameters:
+      - name: recipe_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postSimulateRecipeDraft
+      tags: [recipe_master]
+      summary: Non-mutating dry-run of the completeness check (RCP-FR-035)
+      description: >
+        Requires `recipe.author`. Deliberately outside the Mutation Gateway (`app/modules/recipe_master/
+        router.py:post_simulate_draft` calls `simulate_draft()` with no request body, no idempotency key
+        and no audit/outbox write — it mirrors `rules.commands.simulate_rule`'s "never writes regulated
+        state" pattern) because it produces no regulatory record of its own; contrast with
+        `postValidateRecipeDraft`, which runs the identical completeness check but is audited. Requires
+        `lifecycle_state` in `draft` or `under_review` — `VALIDATION_FAILED` otherwise.
+      x-requirement-ids: [RCP-FR-030, RCP-FR-035]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SimulationResult' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — the version is not `draft` or `under_review`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /recipes/v2/drafts/{recipe_version_id}/submit:
+    parameters:
+      - name: recipe_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postSubmitRecipeDraft
+      tags: [recipe_master]
+      summary: Move a draft to `under_review` (RCP-FR-002)
+      description: Requires `recipe.author`. Only a `draft` may be submitted, per the declared lifecycle transition table (`ALLOWED_TRANSITIONS` in `app/modules/recipe_master/models.py`).
+      x-requirement-ids: [RCP-FR-002, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitRecipeDraftCommand' }
+      responses:
+        '200':
+          description: Submitted.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: INVALID_TRANSITION — the version is not in a state `under_review` can be entered from, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `recipe_version_id` in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /recipes/v2/drafts/{recipe_version_id}/release:
+    parameters:
+      - name: recipe_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postReleaseRecipeVersion
+      tags: [recipe_master]
+      summary: Sign and release an under-review version, freezing it into the Vault (RCP-FR-002/030)
+      description: >
+        Requires `recipe.release` — a different policy action from `recipe.author` (Document 107 SoD).
+        Only `under_review` may be released. Runs the same completeness check `postValidateRecipeDraft`
+        exposes (RCP-FR-030) and fails closed with `VALIDATION_FAILED` if any finding is present — release
+        is never partial. On success the recipe's canonical form (family/version/product/batch-size and a
+        section/step/dependency skeleton — see `app/modules/recipe_master/commands.py:release_recipe_
+        version`'s `canonical_payload`) is released as an immutable Vault version
+        (`object_type="recipe_version"`).
+      x-requirement-ids: [RCP-FR-002, RCP-FR-030, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, VLT-FR-001]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseRecipeVersionCommand' }
+      responses:
+        '200':
+          description: Released.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — completeness findings block release (`details.findings`), or `recipe_version_id` in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /recipes/v2/{recipe_family_id}/versions:
+    parameters:
+      - name: recipe_family_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getRecipeVersions
+      tags: [recipe_master]
+      summary: Every version of one recipe family, in any state (RCP-FR-001/002)
+      description: >
+        Requires `recipe.view`. Returns a plain array ordered by `version_no`: the version history of one
+        family is bounded by construction and is not paginated (the same deliberate CTR-FR-012 deviation
+        as `getProductVersions`/`getRuleVersions`/`getUomVersions`).
+      x-requirement-ids: [RCP-FR-001, RCP-FR-002]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/RecipeVersion' } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /recipes/v2/versions/{recipe_version_id}:
+    parameters:
+      - name: recipe_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getRecipeVersionDetail
+      tags: [recipe_master]
+      summary: One recipe version with its full authoring graph (RCP-FR-001/004/005/007/013)
+      description: >
+        Requires `recipe.view`. Returns the version plus `sections`, `steps`, `dependencies` and
+        `parameters` as flat sibling arrays (not nested under their parent step) — the same shape
+        `app/modules/recipe_master/router.py:get_version_detail` returns, matching
+        `recipe_master_service.get_graph`'s flat structure. `evidence_requirements` are fetched by
+        `get_graph` but not included in this response (`get_version_detail` does not add them to the
+        body) — a read-side gap, not a data gap; the rows exist and are covered by
+        `evidence: get_graph_evidence` in `traceability/TRACEABILITY_MASTER.csv` today via direct query
+        only.
+      x-requirement-ids: [RCP-FR-001, RCP-FR-004, RCP-FR-005, RCP-FR-007, RCP-FR-013]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/RecipeVersionDetail' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /recipes/v2/versions/{recipe_version_id}/compare/{other_version_id}:
+    parameters:
+      - name: recipe_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: other_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getRecipeVersionCompare
+      tags: [recipe_master]
+      summary: Semantic diff of two recipe versions by stable code (RCP-FR-034)
+      description: >
+        Requires `recipe.view`. Diffs `sections` and `steps` (not `dependencies` or `parameters` —
+        `recipe_master_service.compare_versions` covers only these two entity types today, see SG-013)
+        keyed by `stable_section_code`/`stable_step_code`, the identifiers guaranteed to survive a
+        wholesale graph replace across versions. `changed` entries list only the fields
+        `compare_versions`'s `diff_map` actually tracks: `name`/`sequence` for sections,
+        `step_type`/`instruction_text`/`is_critical`/`required_role_code` for steps.
+      x-requirement-ids: [RCP-FR-034]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/RecipeCompareResult' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /recipes/v2/versions/{recipe_version_id}/issue-eligibility:
+    parameters:
+      - name: recipe_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: site
+        in: query
+        required: false
+        description: Reserved for future site-scoped eligibility; not currently consulted by the implementation (`app/modules/recipe_master/router.py:get_issue_eligibility` accepts but ignores it).
+        schema: { type: string, format: uuid }
+      - name: date
+        in: query
+        required: false
+        description: Reserved for future effective-date-scoped eligibility; not currently consulted by the implementation.
+        schema: { type: string, format: date }
+    get:
+      operationId: getRecipeIssueEligibility
+      tags: [recipe_master]
+      summary: Whether a batch may currently be issued against this recipe version (RCP-FR-002/030)
+      description: >
+        Requires `recipe.view`. Computed from the version's `lifecycle_state` (must be `released`) and
+        the same completeness findings `postValidateRecipeDraft`/`postReleaseRecipeVersion` compute —
+        never a stored/cached decision (AG-11).
+      x-requirement-ids: [RCP-FR-002, RCP-FR-030]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/RecipeIssueEligibility' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    RecipeLifecycleState:
+      type: string
+      description: >
+        The recipe-version lifecycle (RCP-FR-002). Closed enum — these are the only six values the code
+        writes, and `ALLOWED_TRANSITIONS` in `app/modules/recipe_master/models.py` is the only transition
+        table any endpoint uses: draft→under_review; under_review→draft|released;
+        released→suspended|obsolete|superseded; suspended→released; obsolete/superseded are terminal. No
+        endpoint in this contract currently drives suspend/reinstate/obsolete/supersede for a recipe
+        version — the transition table permits them, but no command exists yet to invoke them (SG-013).
+      x-requirement-ids: [RCP-FR-002, CTR-FR-017]
+      enum: [draft, under_review, released, suspended, obsolete, superseded]
+
+    ParameterInput:
+      type: object
+      additionalProperties: false
+      description: One step parameter (RCP-FR-013/014/015/016). Not independently addressable — always supplied inline under its owning step in the full graph replace.
+      x-requirement-ids: [RCP-FR-013, RCP-FR-014, RCP-FR-015, RCP-FR-016]
+      required: [parameter_code, data_type, source_type]
+      properties:
+        parameter_code: { type: string, maxLength: 80 }
+        data_type: { type: string, maxLength: 40 }
+        uom: { type: [string, "null"], maxLength: 40, description: "Free text, still authoritative (SG-146). Validated best-effort against the Document 110 §3 controlled UOM master." }
+        source_type: { type: string, maxLength: 40, description: "e.g. manual, calculated, scanned — not a closed enum in the approved baseline (SG-013)." }
+        target_value: { type: [string, "null"], description: Decimal string (Document 110 N1 — never a binary float). }
+        min_value: { type: [string, "null"] }
+        max_value: { type: [string, "null"] }
+        precision_digits: { type: [integer, "null"] }
+        required: { type: boolean, default: true }
+        rule_id: { type: [string, "null"], maxLength: 160, description: "RCP-FR-016. Checked at completeness-validation time for an effective released version." }
+        rule_version: { type: [string, "null"], maxLength: 40 }
+        manual_fallback_policy: { type: [string, "null"], maxLength: 40, description: RCP-FR-015. }
+
+    EvidenceRequirementInput:
+      type: object
+      additionalProperties: false
+      description: One evidence requirement attached to a step (RCP-FR-021).
+      x-requirement-ids: [RCP-FR-021]
+      required: [evidence_type]
+      properties:
+        evidence_type: { type: string, maxLength: 80 }
+        required_count: { type: integer, minimum: 1, default: 1 }
+        allowed_mime_types: { type: [string, "null"], maxLength: 255 }
+        retention_class: { type: [string, "null"], maxLength: 80 }
+
+    StepInput:
+      type: object
+      additionalProperties: false
+      description: One recipe step (RCP-FR-005/006). References its section by `section_code`, resolved against the `sections` supplied in the same request.
+      x-requirement-ids: [RCP-FR-005, RCP-FR-006]
+      required: [stable_step_code, section_code, step_type, sequence_hint]
+      properties:
+        stable_step_code: { type: string, maxLength: 80, description: Survives a wholesale graph replace across versions — the identifier `getRecipeVersionCompare` diffs on. }
+        section_code: { type: string, maxLength: 80, description: Must match a `stable_section_code` in this request's `sections`. }
+        step_type:
+          type: string
+          maxLength: 60
+          description: >
+            Closed set (`STEP_TYPES` in `app/modules/recipe_master/models.py`, RCP-FR-006): instruction,
+            data_entry, scan, weigh, equipment_check, calculation, ipc_qc, signature, verification, timer,
+            hold_point, material_consume, assembly, test, packaging, custom_approved_type. Enforced only
+            at completeness-validation time (RCP-FR-030), not at write time.
+          enum: [instruction, data_entry, scan, weigh, equipment_check, calculation, ipc_qc, signature, verification, timer, hold_point, material_consume, assembly, test, packaging, custom_approved_type]
+        instruction_text: { type: [string, "null"], maxLength: 4000 }
+        sequence_hint: { type: integer }
+        required_role_code: { type: [string, "null"], maxLength: 80 }
+        qualification_policy_id: { type: [string, "null"], format: uuid }
+        signature_policy_id: { type: [string, "null"], format: uuid }
+        exception_policy_id: { type: [string, "null"], format: uuid, description: RCP-FR-028. }
+        is_critical: { type: boolean, default: false }
+        parameters: { type: array, items: { $ref: '#/components/schemas/ParameterInput' }, default: [] }
+        evidence_requirements: { type: array, items: { $ref: '#/components/schemas/EvidenceRequirementInput' }, default: [] }
+
+    SectionInput:
+      type: object
+      additionalProperties: false
+      description: One ordered recipe section/stage (RCP-FR-004).
+      x-requirement-ids: [RCP-FR-004]
+      required: [stable_section_code, name, sequence]
+      properties:
+        stable_section_code: { type: string, maxLength: 80, description: Survives a wholesale graph replace across versions — the identifier `getRecipeVersionCompare` diffs on. }
+        name: { type: string, maxLength: 255 }
+        sequence: { type: integer }
+        area_requirement_id: { type: [string, "null"], format: uuid, description: RCP-FR-012. Referenced only — no independent area-requirement authoring endpoint exists (SG-013). }
+        parallel_group: { type: [string, "null"], maxLength: 40 }
+        expected_duration_minutes: { type: [integer, "null"] }
+
+    DependencyInput:
+      type: object
+      additionalProperties: false
+      description: One directed edge in the step dependency graph (RCP-FR-007), referencing steps by `stable_step_code` within the same request.
+      x-requirement-ids: [RCP-FR-007]
+      required: [predecessor_step_code, successor_step_code]
+      properties:
+        predecessor_step_code: { type: string, maxLength: 80 }
+        successor_step_code: { type: string, maxLength: 80 }
+        condition_rule_id: { type: [string, "null"], maxLength: 160, description: RCP-FR-008. Checked at completeness-validation time for an effective released version. }
+        condition_rule_version: { type: [string, "null"], maxLength: 40 }
+
+    RecipeVersion:
+      type: object
+      description: One recipe version (`app/modules/recipe_master/router.py:_version_dict`). A response schema, so not closed.
+      x-requirement-ids: [RCP-FR-001, RCP-FR-002, RCP-FR-003]
+      required: [recipe_version_id, recipe_family_id, version_no, product_version_id, site_id, lifecycle_state, graph_version, version]
+      properties:
+        recipe_version_id: { type: string, format: uuid }
+        recipe_family_id: { type: string, format: uuid }
+        version_no: { type: integer, minimum: 1, description: Unique together with recipe_family_id. }
+        product_version_id: { type: string, format: uuid, description: The exact governing product_master version (RCP-FR-001). }
+        site_id: { type: string, format: uuid }
+        batch_size_value: { type: [string, "null"], description: Decimal string (Document 110 N1). RCP-FR-003. }
+        batch_size_uom: { type: [string, "null"], maxLength: 40, description: "Free text, still authoritative (SG-146). See batch_size_uom_id." }
+        batch_size_uom_id:
+          type: [string, "null"]
+          format: uuid
+          description: >
+            SG-146 (MIG-FR-004 expand step) — resolves to a released `rules.gxp_uom` row when
+            `batch_size_uom` is a controlled code; null otherwise (no released UOM master data is seeded
+            anywhere in this baseline, so this is null for every value in a fresh environment).
+        lifecycle_state: { $ref: '#/components/schemas/RecipeLifecycleState' }
+        effective_from: { type: [string, "null"], format: date-time }
+        effective_to: { type: [string, "null"], format: date-time }
+        graph_version: { type: string, description: "Currently always \"1\" — no endpoint in this contract advances it (SG-013)." }
+        released_vault_object_id: { type: [string, "null"], format: uuid }
+        version_hash: { type: [string, "null"], description: The Vault digest, set at release. }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009) — distinct from version_no. }
+
+    RecipeSection:
+      type: object
+      description: One section as returned by `getRecipeVersionDetail`/`getRecipeVersions` (`_section_dict`).
+      x-requirement-ids: [RCP-FR-004]
+      required: [id, stable_section_code, name, sequence]
+      properties:
+        id: { type: string, format: uuid }
+        stable_section_code: { type: string }
+        name: { type: string }
+        sequence: { type: integer }
+        parallel_group: { type: [string, "null"] }
+        expected_duration_minutes: { type: [integer, "null"] }
+
+    RecipeStep:
+      type: object
+      description: One step as returned by `getRecipeVersionDetail` (`_step_dict`).
+      x-requirement-ids: [RCP-FR-005, RCP-FR-006]
+      required: [id, stable_step_code, section_id, step_type, sequence_hint, is_critical]
+      properties:
+        id: { type: string, format: uuid }
+        stable_step_code: { type: string }
+        section_id: { type: string, format: uuid }
+        step_type: { type: string }
+        instruction_text: { type: [string, "null"] }
+        sequence_hint: { type: integer }
+        required_role_code: { type: [string, "null"] }
+        is_critical: { type: boolean }
+
+    RecipeStepDependency:
+      type: object
+      description: One dependency edge as returned by `getRecipeVersionDetail` (`_dependency_dict`).
+      x-requirement-ids: [RCP-FR-007]
+      required: [id, predecessor_step_id, successor_step_id]
+      properties:
+        id: { type: string, format: uuid }
+        predecessor_step_id: { type: string, format: uuid }
+        successor_step_id: { type: string, format: uuid }
+        condition_rule_id: { type: [string, "null"] }
+        condition_rule_version: { type: [string, "null"] }
+
+    RecipeParameter:
+      type: object
+      description: >
+        One parameter as returned by `getRecipeVersionDetail` (`_parameter_dict`). Does NOT include
+        `uom_id` even though `RecipeParameter.uom_id` exists on the model (SG-146, migration
+        e7b3f9a2c6d4) — the router's response dict predates that column and was not updated to return it;
+        documented as a known read-side gap (SG-013), not corrected by this contract.
+      x-requirement-ids: [RCP-FR-013, RCP-FR-014]
+      required: [id, step_id, parameter_code, data_type, source_type, required]
+      properties:
+        id: { type: string, format: uuid }
+        step_id: { type: string, format: uuid }
+        parameter_code: { type: string }
+        data_type: { type: string }
+        uom: { type: [string, "null"] }
+        source_type: { type: string }
+        target_value: { type: [string, "null"] }
+        min_value: { type: [string, "null"] }
+        max_value: { type: [string, "null"] }
+        required: { type: boolean }
+        rule_id: { type: [string, "null"] }
+        rule_version: { type: [string, "null"] }
+
+    RecipeVersionDetail:
+      type: object
+      description: getRecipeVersionDetail's response — RecipeVersion plus its flat section/step/dependency/parameter graph.
+      x-requirement-ids: [RCP-FR-001, RCP-FR-004, RCP-FR-005, RCP-FR-007, RCP-FR-013]
+      allOf:
+        - $ref: '#/components/schemas/RecipeVersion'
+        - type: object
+          required: [sections, steps, dependencies, parameters]
+          properties:
+            sections: { type: array, items: { $ref: '#/components/schemas/RecipeSection' } }
+            steps: { type: array, items: { $ref: '#/components/schemas/RecipeStep' } }
+            dependencies: { type: array, items: { $ref: '#/components/schemas/RecipeStepDependency' } }
+            parameters: { type: array, items: { $ref: '#/components/schemas/RecipeParameter' } }
+
+    RecipeFieldDelta:
+      type: object
+      description: One changed field in a `RecipeCompareResult` entry (`app/modules/recipe_master/service.py:compare_versions`'s `diff_map`).
+      x-requirement-ids: [RCP-FR-034]
+      required: [from, to]
+      properties:
+        from: { type: [string, "null"] }
+        to: { type: [string, "null"] }
+
+    RecipeChangedEntry:
+      type: object
+      description: One code present in both compared versions with at least one tracked-field difference.
+      x-requirement-ids: [RCP-FR-034]
+      required: [code, changes]
+      properties:
+        code: { type: string, description: stable_section_code or stable_step_code. }
+        changes:
+          type: object
+          description: Map of changed field name to its from/to delta.
+          additionalProperties: { $ref: '#/components/schemas/RecipeFieldDelta' }
+
+    RecipeDiffBlock:
+      type: object
+      description: One entity type's diff block (`added`/`removed` by stable code, `changed` with field-level deltas).
+      x-requirement-ids: [RCP-FR-034]
+      required: [added, removed, changed]
+      properties:
+        added: { type: array, items: { type: string } }
+        removed: { type: array, items: { type: string } }
+        changed: { type: array, items: { $ref: '#/components/schemas/RecipeChangedEntry' } }
+
+    RecipeCompareResult:
+      type: object
+      description: getRecipeVersionCompare's response. Covers sections and steps only — not dependencies or parameters (SG-013).
+      x-requirement-ids: [RCP-FR-034]
+      required: [sections, steps]
+      properties:
+        sections: { $ref: '#/components/schemas/RecipeDiffBlock' }
+        steps: { $ref: '#/components/schemas/RecipeDiffBlock' }
+
+    SimulationResult:
+      type: object
+      description: postSimulateRecipeDraft's response (`app/modules/recipe_master/commands.py:simulate_draft`).
+      x-requirement-ids: [RCP-FR-030, RCP-FR-035]
+      required: [recipe_version_id, complete, findings, simulated]
+      properties:
+        recipe_version_id: { type: string, format: uuid }
+        complete: { type: boolean }
+        findings: { type: array, items: { type: string }, description: "Human-readable structural findings, e.g. \"step 'X' has an unsupported step_type\", \"dependency graph contains a cycle: A -> B -> A\"." }
+        simulated: { type: boolean, description: Always true — distinguishes this payload shape from a MutationReceipt at the type level for a caller inspecting the raw response. }
+
+    RecipeIssueEligibility:
+      type: object
+      description: getRecipeIssueEligibility's response (`recipe_master_service.check_issue_eligibility`).
+      x-requirement-ids: [RCP-FR-002, RCP-FR-030]
+      required: [eligible, checks]
+      properties:
+        eligible: { type: boolean }
+        checks:
+          type: object
+          required: [lifecycle_state, lifecycle_ok, completeness_findings]
+          properties:
+            lifecycle_state: { $ref: '#/components/schemas/RecipeLifecycleState' }
+            lifecycle_ok: { type: boolean, description: "True only when lifecycle_state == released." }
+            completeness_findings: { type: array, items: { type: string } }
+
+    CreateRecipeDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RCP-FR-001, RCP-FR-002, RCP-FR-004, RCP-FR-005, RCP-FR-007, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, product_business_id, recipe_code, version_no, product_version_id, site_id, manufacturing_profile_code]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        product_business_id: { type: string, maxLength: 120 }
+        recipe_code: { type: string, maxLength: 120 }
+        version_no: { type: integer, minimum: 1 }
+        product_version_id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        manufacturing_profile_code: { type: string, maxLength: 80 }
+        batch_size_value: { type: [string, "null"] }
+        batch_size_uom: { type: [string, "null"], maxLength: 40 }
+        sections: { type: array, items: { $ref: '#/components/schemas/SectionInput' }, default: [] }
+        steps: { type: array, items: { $ref: '#/components/schemas/StepInput' }, default: [] }
+        dependencies: { type: array, items: { $ref: '#/components/schemas/DependencyInput' }, default: [] }
+
+    UpdateRecipeDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Wholesale field + graph replace, draft state only.
+      x-requirement-ids: [RCP-FR-004, RCP-FR-005, RCP-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, recipe_version_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        recipe_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        batch_size_value: { type: [string, "null"] }
+        batch_size_uom: { type: [string, "null"], maxLength: 40 }
+        sections: { type: array, items: { $ref: '#/components/schemas/SectionInput' }, default: [] }
+        steps: { type: array, items: { $ref: '#/components/schemas/StepInput' }, default: [] }
+        dependencies: { type: array, items: { $ref: '#/components/schemas/DependencyInput' }, default: [] }
+
+    ValidateRecipeDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). No expected_version — a non-lifecycle-affecting inspection action.
+      x-requirement-ids: [RCP-FR-030, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, recipe_version_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        recipe_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+
+    SubmitRecipeDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RCP-FR-002, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, recipe_version_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        recipe_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+
+    ReleaseRecipeVersionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RCP-FR-002, RCP-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, recipe_version_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        recipe_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        effective_from: { type: [string, "null"], format: date-time, description: RFC 3339 UTC. Defaults to the release instant when omitted. }
+        effective_to: { type: [string, "null"], format: date-time }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

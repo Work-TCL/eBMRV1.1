@@ -1,0 +1,627 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EBMR-000 — Product, Constituent & Regulatory Profile Master
+  version: 0.1.0
+  description: >
+    Document 113 contract for the Document 09 slice actually built
+    (`services/gxp-api/app/modules/product_master/`): the product-version lifecycle
+    (draft → under_review → released → suspended/obsolete/superseded), constituent authoring
+    (drug/device/biologic/HCT-P/other, PRD-FR-004/005), release into the Vault as an immutable version
+    with constituent compatibility versions released alongside it (PRD-FR-016), pre-release completeness
+    validation (PRD-FR-031), and suspend/reinstate with independent Document 106 signature policy rows.
+
+
+    `app/modules/product` (an older, unrelated Batch/Recipe-facing stub) is a *different* module and
+    is not covered by this contract — see `spec-ebmr-002.yaml`'s note on the equivalent `batch`/
+    `batch_execution` duality for the general pattern (two live implementations sharing a similar name is
+    not unique to this module).
+
+
+    FAILS CLOSED TODAY: Document 106's approved floor has no `(product_version, release)` /
+    `(product_version, suspend)` / `(product_version, reinstate)` policy row, so all three signed
+    operations return `SIGNATURE_POLICY_UNRESOLVED` (409) on every call rather than transitioning an
+    executable regulated record unsigned. Correct fail-closed behaviour under SIGP-FR-004.
+
+
+    SG-146 (UOM expand step, resolved 2026-08-27): `strength_uom` is validated against the Document 110
+    §3 controlled UOM master best-effort at draft-creation time — an unresolved code does not fail the
+    request (the free-text column stays authoritative); see `strength_uom_id` on `ProductVersion` below.
+
+
+    NOT BUILT THIS PASS: `product_family_id`/`sterile_profile_id` are stored but the entities they
+    reference (`ProductFamily` beyond a bare row, a sterile-process-profile master) are not independently
+    authored through this contract; clone-from-template (PRD-FR-026), inspection export (PRD-FR-030) and
+    search/filter (PRD-FR-027, beyond `getVersions`) are not implemented. See SG-013.
+tags:
+  - name: product_master
+
+paths:
+  /products/v1/drafts:
+    post:
+      operationId: postCreateProductDraft
+      tags: [product_master]
+      summary: Author a new product version in `draft` (PRD-FR-001/002/004)
+      description: >
+        Requires the `product.author` policy action. Rejects a `(product_business_id, version_no)` that
+        already exists in any state — a version identifier is never reused. Constituents
+        (PRD-FR-004/005) are supplied inline and replace-written as a whole set, not individually
+        addressable, at this and every later draft-editing step.
+      x-requirement-ids: [PRD-FR-001, PRD-FR-002, PRD-FR-004, PRD-FR-005, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProductDraftCommand' }
+      responses:
+        '200':
+          description: Draft created. `aggregate_id` is the `product_version_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — a draft or released version already exists at this `(product_business_id, version_no)`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /products/v1/drafts/{product_version_id}:
+    parameters:
+      - name: product_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      operationId: putUpdateProductDraft
+      tags: [product_master]
+      summary: Wholesale field and constituent replace of a draft (PRD-FR-001/004)
+      description: >
+        Requires `product.author`. Only a `draft` may be edited — `VALIDATION_FAILED` otherwise. Every
+        editable field and the full constituent set are replaced wholesale on each call, not merged;
+        `product_business_id`/`product_code`/`version_no` are immutable identifiers and not accepted
+        here (create a new draft version instead, PRD-FR-003).
+      x-requirement-ids: [PRD-FR-001, PRD-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProductDraftCommand' }
+      responses:
+        '200':
+          description: Updated.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — `product_version_id` in path and body do not match, or the version is not `draft`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /products/v1/drafts/{product_version_id}/submit:
+    parameters:
+      - name: product_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postSubmitProductDraft
+      tags: [product_master]
+      summary: Move a draft to `under_review` (PRD-FR-002)
+      description: Requires `product.author`. Only a `draft` may be submitted, per the declared lifecycle transition table.
+      x-requirement-ids: [PRD-FR-002, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitProductDraftCommand' }
+      responses:
+        '200':
+          description: Submitted.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: INVALID_TRANSITION — the version is not in a state `under_review` can be entered from, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /products/v1/drafts/{product_version_id}/release:
+    parameters:
+      - name: product_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postReleaseProductVersion
+      tags: [product_master]
+      summary: Sign and release an under-review version, freezing it into the Vault (PRD-FR-002/003/016)
+      description: >
+        Requires `product.release` — a different policy action from `product.author` (Document 107 SoD).
+        Only `under_review` may be released. Runs the same completeness check `postValidateCompleteness`
+        exposes (PRD-FR-031) and fails closed with `VALIDATION_FAILED` if any mandatory field for the
+        declared `manufacturing_profile_code` is missing — release is never partial. On success the
+        product's canonical form is released as an immutable Vault version
+        (`object_type="product_version"`) and any `compatibility_versions` supplied are released
+        alongside it (PRD-FR-016) — this contract declares no independent create/release endpoint for a
+        `ConstituentCompatibilityVersion`.
+      x-requirement-ids: [PRD-FR-002, PRD-FR-003, PRD-FR-016, PRD-FR-031, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, VLT-FR-001]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseProductVersionCommand' }
+      responses:
+        '200':
+          description: Released.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, CONCURRENT_VAULT_RELEASE, or INVALID_TRANSITION.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — completeness findings block release (`details.findings`).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /products/v1/{product_version_id}/suspend:
+    parameters:
+      - name: product_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postSuspendProductVersion
+      tags: [product_master]
+      summary: Suspend a released version, blocking future issue (PRD-FR-029)
+      description: >
+        Requires `product.suspend`. Only `released` may be suspended. `reason` is required and preserved
+        in the audit event (AUD-FR-008). Does not affect any already-issued/in-process batch's own
+        status — suspension blocks *future* issue only.
+      x-requirement-ids: [PRD-FR-029, MUT-FR-005, MUT-FR-010, MUT-FR-011, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuspendProductVersionCommand' }
+      responses:
+        '200':
+          description: Suspended.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /products/v1/{product_version_id}/reinstate:
+    parameters:
+      - name: product_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postReinstateProductVersion
+      tags: [product_master]
+      summary: Reinstate a suspended version back to `released` (PRD-FR-002/029)
+      description: Requires `product.suspend` (the same policy action governs both directions of this transition). Only `suspended` may be reinstated. `reason` is required.
+      x-requirement-ids: [PRD-FR-002, PRD-FR-029, MUT-FR-005, MUT-FR-010, MUT-FR-011, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReinstateProductVersionCommand' }
+      responses:
+        '200':
+          description: Reinstated.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /products/v1/{product_business_id}/versions:
+    parameters:
+      - name: product_business_id
+        in: path
+        required: true
+        schema: { type: string, maxLength: 120 }
+    get:
+      operationId: getProductVersions
+      tags: [product_master]
+      summary: Every version of one product, in any state (PRD-FR-003)
+      description: >
+        Requires `product.view`. Returns a plain array: the version history of one business product is
+        bounded by construction and is not paginated (a deliberate deviation from CTR-FR-012, same as
+        `getRuleVersions`/`getUomVersions`).
+      x-requirement-ids: [PRD-FR-003]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ProductVersion' } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /products/v1/{product_version_id}:
+    parameters:
+      - name: product_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getProductVersionDetail
+      tags: [product_master]
+      summary: One product version with its constituents (PRD-FR-001/004/005)
+      description: Requires `product.view`. Returns the version plus its full constituent list inline (`constituents`).
+      x-requirement-ids: [PRD-FR-001, PRD-FR-004, PRD-FR-005]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/ProductVersionDetail' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /products/v1/{product_version_id}/validate-completeness:
+    parameters:
+      - name: product_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postValidateProductCompleteness
+      tags: [product_master]
+      summary: Check mandatory-field completeness for the declared manufacturing profile (PRD-FR-031)
+      description: >
+        Requires `product.author`. Non-lifecycle-affecting (the version's `lifecycle_state` does not
+        change) but still an auditable inspection action — an audit event and outbox row are written
+        recording the findings either way, and this is a Mutation Gateway command (idempotency key,
+        receipt) even though it mutates no domain field. The same check `postReleaseProductVersion` runs
+        internally before allowing release.
+      x-requirement-ids: [PRD-FR-031, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ValidateCompletenessCommand' }
+      responses:
+        '200':
+          description: Checked. Findings are not part of this receipt — read them back via `getIssueEligibility` or the audit event this call writes.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+
+  /products/v1/{product_version_id}/compatibility:
+    parameters:
+      - name: product_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getProductConstituentCompatibility
+      tags: [product_master]
+      summary: Released constituent-compatibility versions naming this product version (PRD-FR-016)
+      description: >
+        Requires `product.view`. Returns every `ConstituentCompatibilityVersion` where this
+        `product_version_id` is named as either the drug or the device constituent side — released only
+        by `postReleaseProductVersion`, never independently.
+      x-requirement-ids: [PRD-FR-016]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ConstituentCompatibilityVersion' } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /products/v1/{product_version_id}/issue-eligibility:
+    parameters:
+      - name: product_version_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: site
+        in: query
+        required: false
+        description: Reserved for future site-scoped eligibility (PRD-FR-023); not currently consulted by the implementation.
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getProductIssueEligibility
+      tags: [product_master]
+      summary: Whether a batch may currently be issued against this product version (PRD-FR-002/031)
+      description: >
+        Requires `product.view`. Computed from the version's `lifecycle_state` (must be `released`) and
+        the same completeness findings `postValidateCompleteness`/`postReleaseProductVersion` compute —
+        never a stored/cached decision (AG-11).
+      x-requirement-ids: [PRD-FR-002, PRD-FR-031]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/IssueEligibility' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    ProductLifecycleState:
+      type: string
+      description: >
+        The product-version lifecycle (PRD-FR-002). Closed enum — these are the only six values the
+        code writes, and `ALLOWED_TRANSITIONS` in `app/modules/product_master/models.py` is the only
+        transition table any endpoint uses: draft→under_review; under_review→draft|released;
+        released→suspended|obsolete|superseded; suspended→released; obsolete/superseded are terminal.
+      x-requirement-ids: [PRD-FR-002, CTR-FR-017]
+      enum: [draft, under_review, released, suspended, obsolete, superseded]
+
+    ConstituentInput:
+      type: object
+      additionalProperties: false
+      description: One drug/device/biologic/HCT-P/other constituent (PRD-FR-004/005). Not independently addressable — always supplied as part of the full constituent set on a draft create/update.
+      x-requirement-ids: [PRD-FR-004, PRD-FR-005]
+      required: [constituent_type, constituent_business_id, constituent_version_id]
+      properties:
+        constituent_type: { type: string, maxLength: 40, description: "e.g. drug, device, biologic, hct_p, other — not a closed enum in the approved baseline (SG-013)." }
+        role_code: { type: [string, "null"], maxLength: 40 }
+        constituent_business_id: { type: string, maxLength: 160, description: "The referenced product's own business ID — the exact-version FK is constituent_version_id." }
+        constituent_version_id: { type: string, format: uuid }
+        source_site_id: { type: [string, "null"], format: uuid }
+        tracking_strategy: { type: [string, "null"], maxLength: 40 }
+        sequence_no: { type: [integer, "null"] }
+
+    Constituent:
+      type: object
+      description: One constituent as returned by `getProductVersionDetail` (`app/modules/product_master/router.py:_constituent_dict`).
+      x-requirement-ids: [PRD-FR-004, PRD-FR-005]
+      required: [id, constituent_type, constituent_business_id, constituent_version_id]
+      properties:
+        id: { type: string, format: uuid }
+        constituent_type: { type: string }
+        role_code: { type: [string, "null"] }
+        constituent_business_id: { type: string }
+        constituent_version_id: { type: string, format: uuid }
+        source_site_id: { type: [string, "null"], format: uuid }
+        tracking_strategy: { type: [string, "null"] }
+        sequence_no: { type: [integer, "null"] }
+
+    ProductVersion:
+      type: object
+      description: One product version (`app/modules/product_master/router.py:_version_dict`). A response schema, so not closed.
+      x-requirement-ids: [PRD-FR-001, PRD-FR-002, PRD-FR-003, PRD-FR-006, PRD-FR-007, PRD-FR-008, PRD-FR-009, PRD-FR-010, PRD-FR-011, PRD-FR-012, PRD-FR-014, PRD-FR-015]
+      required: [product_version_id, product_business_id, version_no, product_code, name, lifecycle_state, manufacturing_profile_code, version, site_id]
+      properties:
+        product_version_id: { type: string, format: uuid }
+        product_business_id: { type: string, maxLength: 120, description: Stable across versions. }
+        version_no: { type: integer, minimum: 1, description: Unique together with product_business_id. }
+        product_code: { type: string, maxLength: 120 }
+        name: { type: string, maxLength: 255 }
+        product_family_id: { type: [string, "null"], format: uuid }
+        lifecycle_state: { $ref: '#/components/schemas/ProductLifecycleState' }
+        manufacturing_profile_code: { type: string, maxLength: 80, description: "e.g. injectable_ddcp, inhalation_ddcp, drug_eluting_device, device, pharma — not a closed enum (SG-013)." }
+        combination_product_type: { type: [string, "null"], maxLength: 40, description: "single_entity | co_packaged | cross_labeled — not a closed enum (SG-013)." }
+        pmoa_reference: { type: [string, "null"], maxLength: 255, description: Captured reference only — software never infers PMOA (PRD-FR-007). }
+        part4_profile_code: { type: [string, "null"], maxLength: 80 }
+        sterile_profile_id: { type: [string, "null"], format: uuid, description: Referenced, not independently authored through this contract (SG-013). }
+        finished_tracking_strategy: { type: [string, "null"], maxLength: 40 }
+        udi_applicable: { type: [boolean, "null"] }
+        strength_value: { type: [string, "null"], description: Decimal string (Document 110 N1 — never a binary float). }
+        strength_uom:
+          type: [string, "null"]
+          maxLength: 40
+          description: >
+            Free text, still authoritative (SG-146). Validated best-effort against the Document 110 §3
+            controlled UOM master at draft-creation time — see `strength_uom_id`.
+        strength_uom_id:
+          type: [string, "null"]
+          format: uuid
+          description: >
+            SG-146 (MIG-FR-004 expand step) — resolves to a released `rules.gxp_uom` row when
+            `strength_uom` is a controlled code; null otherwise (no released UOM master data is seeded
+            anywhere in this baseline, so this is null for every value in a fresh environment).
+        device_model_code: { type: [string, "null"], maxLength: 120 }
+        effective_from: { type: [string, "null"], format: date-time }
+        effective_to: { type: [string, "null"], format: date-time }
+        released_vault_object_id: { type: [string, "null"], format: uuid }
+        version_hash: { type: [string, "null"], description: The Vault digest, set at release. }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009) — distinct from version_no. }
+        site_id: { type: string, format: uuid }
+
+    ProductVersionDetail:
+      type: object
+      description: getProductVersionDetail's response — ProductVersion plus its full constituent list.
+      x-requirement-ids: [PRD-FR-001, PRD-FR-004, PRD-FR-005]
+      allOf:
+        - $ref: '#/components/schemas/ProductVersion'
+        - type: object
+          required: [constituents]
+          properties:
+            constituents: { type: array, items: { $ref: '#/components/schemas/Constituent' } }
+
+    ConstituentCompatibilityVersion:
+      type: object
+      description: One released compatibility version (`app/modules/product_master/router.py:_compatibility_dict`), PRD-FR-016.
+      x-requirement-ids: [PRD-FR-016]
+      required: [id, compatibility_code, version_no, drug_constituent_version_id, device_constituent_version_id, status]
+      properties:
+        id: { type: string, format: uuid }
+        compatibility_code: { type: string }
+        version_no: { type: integer }
+        drug_constituent_version_id: { type: string, format: uuid }
+        device_constituent_version_id: { type: string, format: uuid }
+        interface_constraints: { type: [object, "null"] }
+        status: { type: string, description: Always "released" — this contract declares no independent draft/release lifecycle for a compatibility version. }
+        effective_from: { type: [string, "null"], format: date-time }
+        effective_to: { type: [string, "null"], format: date-time }
+        vault_object_id: { type: [string, "null"], format: uuid }
+
+    CompatibilityInput:
+      type: object
+      additionalProperties: false
+      description: One compatibility version to release alongside the parent product version's own release (PRD-FR-016).
+      x-requirement-ids: [PRD-FR-016]
+      required: [compatibility_code, version_no, drug_constituent_version_id, device_constituent_version_id]
+      properties:
+        compatibility_code: { type: string, maxLength: 160 }
+        version_no: { type: integer, minimum: 1 }
+        drug_constituent_version_id: { type: string, format: uuid }
+        device_constituent_version_id: { type: string, format: uuid }
+        interface_constraints: { type: [object, "null"] }
+
+    CompletenessFinding:
+      type: object
+      description: One entry in the `findings` array a blocked release/`getIssueEligibility` reports.
+      x-requirement-ids: [PRD-FR-031]
+      required: [field, message]
+      properties:
+        field: { type: string }
+        message: { type: string }
+
+    IssueEligibility:
+      type: object
+      description: getProductIssueEligibility's response.
+      x-requirement-ids: [PRD-FR-002, PRD-FR-031]
+      required: [eligible]
+      properties:
+        eligible: { type: boolean }
+        findings: { type: array, items: { $ref: '#/components/schemas/CompletenessFinding' } }
+
+    CreateProductDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PRD-FR-001, PRD-FR-002, PRD-FR-004, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, product_business_id, product_code, name, version_no, site_id, manufacturing_profile_code]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        product_business_id: { type: string, maxLength: 120 }
+        product_code: { type: string, maxLength: 120 }
+        name: { type: string, maxLength: 255 }
+        version_no: { type: integer, minimum: 1 }
+        site_id: { type: string, format: uuid }
+        manufacturing_profile_code: { type: string, maxLength: 80 }
+        product_family_id: { type: [string, "null"], format: uuid }
+        combination_product_type: { type: [string, "null"], maxLength: 40 }
+        pmoa_reference: { type: [string, "null"], maxLength: 255 }
+        part4_profile_code: { type: [string, "null"], maxLength: 80 }
+        sterile_profile_id: { type: [string, "null"], format: uuid }
+        finished_tracking_strategy: { type: [string, "null"], maxLength: 40 }
+        udi_applicable: { type: [boolean, "null"] }
+        strength_value: { type: [string, "null"] }
+        strength_uom: { type: [string, "null"], maxLength: 40 }
+        device_model_code: { type: [string, "null"], maxLength: 120 }
+        constituents: { type: array, items: { $ref: '#/components/schemas/ConstituentInput' }, default: [] }
+
+    UpdateProductDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Wholesale field + constituent replace, draft state only.
+      x-requirement-ids: [PRD-FR-001, PRD-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, product_version_id, expected_version, name, manufacturing_profile_code]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        product_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        name: { type: string, maxLength: 255 }
+        manufacturing_profile_code: { type: string, maxLength: 80 }
+        product_family_id: { type: [string, "null"], format: uuid }
+        combination_product_type: { type: [string, "null"], maxLength: 40 }
+        pmoa_reference: { type: [string, "null"], maxLength: 255 }
+        part4_profile_code: { type: [string, "null"], maxLength: 80 }
+        sterile_profile_id: { type: [string, "null"], format: uuid }
+        finished_tracking_strategy: { type: [string, "null"], maxLength: 40 }
+        udi_applicable: { type: [boolean, "null"] }
+        strength_value: { type: [string, "null"] }
+        strength_uom: { type: [string, "null"], maxLength: 40 }
+        device_model_code: { type: [string, "null"], maxLength: 120 }
+        constituents: { type: array, items: { $ref: '#/components/schemas/ConstituentInput' }, default: [] }
+
+    SubmitProductDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PRD-FR-002, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, product_version_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        product_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+
+    ValidateCompletenessCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). No expected_version — a non-lifecycle-affecting inspection action.
+      x-requirement-ids: [PRD-FR-031, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, product_version_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        product_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+
+    ReleaseProductVersionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PRD-FR-002, PRD-FR-003, PRD-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, product_version_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        product_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        effective_from: { type: [string, "null"], format: date-time, description: RFC 3339 UTC. Defaults to the release instant when omitted. }
+        effective_to: { type: [string, "null"], format: date-time }
+        compatibility_versions: { type: array, items: { $ref: '#/components/schemas/CompatibilityInput' }, default: [] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    SuspendProductVersionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PRD-FR-029, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, product_version_id, expected_version, reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        product_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    ReinstateProductVersionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PRD-FR-002, PRD-FR-029, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, product_version_id, expected_version, reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        product_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

@@ -1,0 +1,522 @@
+openapi: 3.1.0
+info:
+  title: SPEC-MAT-002B — Inventory, Lot/Container & Warehouse
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 20 (`services/gxp-api/app/modules/material/`, `inventory_v1_router`,
+    the Document-20-labelled slice): FEFO-ordered availability, server-selected FEFO reservation, the
+    one Document 20 signed action (releasing a reservation), a same-site transfer/put-away endpoint that
+    doubles as the first ledger entry for a container (no dedicated "receive into a location" operation
+    exists in Document 20's own 8-op API list), quantity-conserving container split/merge, unsigned cycle
+    counting, and the two read views (ledger, GxP-only ERP reconciliation stub).
+
+
+    `warehouse_location` HAS NO CRUD API: Document 20's own API list declares none — it is seed/reference
+    data, the same treatment as `iam.Site`/`iam.Organization` (SG-081). No operation in this contract
+    creates, updates or lists a `WarehouseLocation`.
+
+
+    ONLY THE RESERVATION-RELEASE ACTION IS SIGNED: Document 106 row 46 is Document 20's only signature
+    row (`record_type="inventory_reservation"`, `action="release"`, meaning `"Released"` — "giving the
+    reservation back", not approving material use; no Vault snapshot, since Document 20 never references
+    Document 06). Reservation *creation* is deliberately unsigned/server-driven (FEFO selection is
+    automatic, no deviation-override path exists yet, SG-083); cycle counting is unsigned/RBAC-gated
+    only despite the spec's own prose implying an approval, because no Document 106 row resolves one
+    (SG-084, this codebase's hard "no Document 106 row = unsigned" precedent, not a guess).
+
+
+    SAME-SITE TRANSFER ONLY: true inter-site transfer with destination-site container re-identification
+    is not built this pass (SG-085) — the destination location must be at the source lot's own site, or
+    `postCreateInventoryTransfer` fails `VALIDATION_FAILED`.
+
+
+    ERP RECONCILIATION IS A GXP-ONLY STUB: no ERP integration exists in this codebase (WP-07 not built,
+    SG-082) — `getErpReconciliation`'s `erp_on_hand`/`mismatch_flagged` are always `null`, never a
+    fabricated comparison value.
+
+
+    SG-146 (UOM expand step, resolved 2026-08-27): every quantity-carrying command here validates its
+    `uom` best-effort against the Document 110 §3 controlled UOM master — see `*_uom_id` on the response
+    schemas that carry one.
+tags:
+  - name: inventory
+
+paths:
+  /inventory/v1/availability:
+    get:
+      operationId: getInventoryAvailability
+      tags: [inventory]
+      summary: FEFO-ordered available inventory for a material at a site (INV-FR-002/013/014/015/016)
+      description: >
+        No policy check. Returns only containers that are `active`, have `available > 0`, and are
+        currently eligible (`status == "released"` — checking the container's own
+        `quality_status_override` first, falling back to the lot's `status` — not expired, not
+        retest-due). Ordered soonest-expiry-first, then oldest-received (FEFO). A quality hold or a
+        recall block is expressed purely through `MaterialLot.status`/
+        `MaterialContainer.quality_status_override` — there is no separate hold entity.
+      x-requirement-ids: [INV-FR-002, INV-FR-013, INV-FR-014, INV-FR-015, INV-FR-016]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: material_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: site_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/AvailabilityResult' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+  /inventory/v1/reservations:
+    post:
+      operationId: postCreateInventoryReservation
+      tags: [inventory]
+      summary: Create a batch material reservation via server-side FEFO selection (INV-FR-010/012)
+      description: >
+        Requires the `inventory_reservation.create` policy action. Unsigned — no Document 106 row for
+        creation. `quantity` must be positive. The server selects the first eligible (released,
+        non-expired, non-retest-due, `available >= quantity`) lot/container in FEFO order — the caller
+        never names a specific lot/container. `VALIDATION_FAILED` if no eligible candidate has
+        sufficient available quantity; a real optimistic re-check after selection also fails
+        `VALIDATION_FAILED` if availability changed between selection and lock (concurrent reservation
+        race), asking the caller to resubmit rather than silently reserving a smaller amount.
+      x-requirement-ids: [INV-FR-010, INV-FR-012, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInventoryReservationCommand' }
+      responses:
+        '200':
+          description: Reserved, status active. aggregate_id is the reservation_id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — batch_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — quantity is not positive, no eligible lot/container has sufficient quantity, or availability changed since selection.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /inventory/v1/reservations/{reservation_id}/signature-challenges:
+    parameters:
+      - { name: reservation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReservationSignatureChallenge
+      tags: [inventory]
+      summary: Create the signature challenge for releasing a reservation — Document 20's only signed action
+      description: No policy check of its own. action must be "release" (the only value; the router default) — VALIDATION_FAILED for any other value.
+      x-requirement-ids: [INV-FR-011, SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReservationSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — action is not "release".
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /inventory/v1/reservations/{reservation_id}/release:
+    parameters:
+      - { name: reservation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReleaseInventoryReservation
+      tags: [inventory]
+      summary: Release a reservation, returning its quantity to available stock — signed (Document 106 row 46, INV-FR-011)
+      description: >
+        Requires `inventory_reservation.release`. Only an `active` reservation may be released.
+        `VALIDATION_FAILED` if the signer is the reservation's own requester (independence — mirrors
+        `batch.commands.release_batch`'s independence-check pattern). `reason` is required exactly when
+        the resolved Document 106 policy row says so (`policy.reason_required`, AUD-FR-008) — not
+        unconditionally mandatory in the schema. Reverses the balance (`reserved` down, `available` up)
+        with an `UNRESERVE` ledger transaction. No Vault snapshot — deliberately out of Document 06's
+        scope for this action.
+      x-requirement-ids: [INV-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, SIG-FR-004, SIG-FR-018, AUD-FR-008]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseInventoryReservationCommand' }
+      responses:
+        '200':
+          description: Released.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — the reservation is not active, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — reservation_id in path and body do not match, the signer is the requester, or reason is required by policy but missing.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /inventory/v1/transfers:
+    post:
+      operationId: postCreateInventoryTransfer
+      tags: [inventory]
+      summary: Transfer a container between locations, or put it away for the first time (INV-FR-008/009)
+      description: >
+        Requires the `inventory_transaction.transfer` policy action, evaluated against the lot's own
+        site. `quantity` must be positive; the container must be `active`. Omitting `from_location_id`
+        means this is the container's first ledger entry (put-away after Document 19 quarantine — no
+        dedicated "record receipt into a location" endpoint exists, so this operation deliberately
+        carries a dual RECEIPT/TRANSFER role, recorded as `transaction_type="RECEIPT"`): the container
+        must have no existing ledger presence anywhere, and `quantity` must equal the container's full
+        `current_quantity` exactly. Supplying `from_location_id` records `transaction_type="TRANSFER"`
+        and requires sufficient `on_hand` at the source. The destination zone must be compatible with
+        the container's effective quality status (`_ZONE_STATUS_COMPAT`: released→released,
+        rejected→rejected, every pre-disposition status→quarantine) — `INVALID_TRANSITION` otherwise.
+        True cross-site transfer with destination-site container re-identification is not built this
+        pass (SG-085) — the destination location must be at the lot's own site.
+      x-requirement-ids: [INV-FR-008, INV-FR-009, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInventoryTransferCommand' }
+      responses:
+        '200':
+          description: Transferred. aggregate_id is the destination InventoryBalanceProjection's id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — material_lot_id, container_id (for this lot), the destination location, or the source location does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — quantity is not positive, the container is not active, destination is at a different site, insufficient on-hand at source, an initial-assignment already exists or its quantity does not match the full current_quantity, or the destination zone is incompatible with the container's quality status (INVALID_TRANSITION).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /inventory/v1/containers/{container_id}/split:
+    parameters:
+      - { name: container_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postSplitContainer
+      tags: [inventory]
+      summary: Split an active container into two or more child containers, exactly conserving quantity (INV-FR-023/025)
+      description: >
+        Requires the `material_container.split` policy action, evaluated against the lot's site.
+        `split_quantities` needs at least two positive values summing exactly to the container's
+        `current_quantity` — `VALIDATION_FAILED` otherwise. The container must be `active` with no
+        active reservation, and must have ledger presence at no more than one location (a multi-location
+        container must be consolidated via transfer first). Each child inherits the parent's
+        `uom`/`location_zone`/`quality_status_override`; the source balance is split proportionally by
+        child quantity with `Numeric(24,8)` exact division, the rounding remainder folded into the last
+        child so the total is conserved exactly. The parent container becomes `container_status="split"`
+        with `current_quantity=0` — retired, never deleted (AG-08).
+      x-requirement-ids: [INV-FR-023, INV-FR-025, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SplitContainerCommand' }
+      responses:
+        '200':
+          description: Split.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: IDEMPOTENCY_CONFLICT, INVALID_TRANSITION — the container is not active, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — container_id in path and body do not match, fewer than two split quantities, a non-positive quantity, quantities do not conserve the total, an active reservation blocks the split, or the container has ledger presence at more than one location.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /inventory/v1/containers/merge:
+    post:
+      operationId: postMergeContainers
+      tags: [inventory]
+      summary: Merge two or more active, same-lot, same-effective-status containers (INV-FR-024)
+      description: >
+        Requires `material_container.merge`, evaluated against the lot's site (resolved from the first
+        source container). At least two `source_container_ids`; every source must belong to the same
+        material lot (an ordinary-engineering reading of the spec's "material/spec/lot/status
+        compatibility rules" — a `MaterialContainer`'s material identity is fixed by its lot FK, so
+        cross-lot merge is not modelled), be `active`, share the same effective quality status
+        (`quality_status_override` falling back to the lot's own `status`), and have no active
+        reservation. The new merged container's ledger balances sum every source's balances per
+        location; every source becomes `container_status="merged"` with `current_quantity=0` — retired,
+        never deleted (AG-08).
+      x-requirement-ids: [INV-FR-024, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MergeContainersCommand' }
+      responses:
+        '200':
+          description: Merged. aggregate_id is the new merged container's id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — a source container does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — fewer than two source containers, a source is not active, sources span more than one lot, quality statuses differ, or a source has an active reservation (INVALID_TRANSITION on the not-active case).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /inventory/v1/cycle-counts:
+    post:
+      operationId: postCreateCycleCount
+      tags: [inventory]
+      summary: Record a physical count, adjusting the balance to match — unsigned (INV-FR-020/022)
+      description: >
+        Requires `inventory_cycle_count.execute`, evaluated against the lot's site. `counted_quantity`
+        cannot be negative. Deliberately unsigned/RBAC-gated only despite the spec's own prose implying
+        an approval — no Document 106 row resolves one for this action (SG-084). Computes
+        `delta = counted_quantity - on_hand`; a non-zero delta writes an `ADJUST_POSITIVE`/
+        `ADJUST_NEGATIVE` ledger transaction and updates the balance. `VALIDATION_FAILED` if the count
+        would drive `available` negative (i.e. below what's currently reserved at that location).
+      x-requirement-ids: [INV-FR-020, INV-FR-022, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCycleCountCommand' }
+      responses:
+        '200':
+          description: Counted (and adjusted, if the count differed from on_hand). aggregate_id is the InventoryBalanceProjection's id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — material_lot_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — counted_quantity is negative, or the count would drive available below zero.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /inventory/v1/lots/{lot_id}/ledger:
+    parameters:
+      - { name: lot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getLotLedger
+      tags: [inventory]
+      summary: Paginated inventory transaction ledger for a lot (INV-FR-029/030)
+      description: No policy check. The immutable ledger — every InventoryTransaction row for this material_lot_id, oldest first. Genuinely paginated.
+      x-requirement-ids: [INV-FR-029, INV-FR-030]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/InventoryTransactionPage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+  /inventory/v1/reconciliation/erp:
+    get:
+      operationId: getErpReconciliation
+      tags: [inventory]
+      summary: GxP-side-only ERP reconciliation stub (INV-FR-028)
+      description: No policy check. No ERP integration exists in this codebase yet (WP-07 not built, SG-082) — erp_source_configured is always false and erp_on_hand/mismatch_flagged are always null, never a fabricated comparison value. A real mismatch, once ERP integration exists, is meant to be flagged, never silently used to overwrite the GxP ledger.
+      x-requirement-ids: [INV-FR-028]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: lot_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErpReconciliationResult' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    InventoryReservationState:
+      type: string
+      description: "`RESERVATION_STATES` in `app/modules/material/models.py`. Only active→released is ever driven by a command in this contract; consumed/expired/cancelled are named states this pass never writes."
+      x-requirement-ids: [INV-FR-010, INV-FR-011, CTR-FR-017]
+      enum: [active, released, consumed, expired, cancelled]
+
+    ContainerStatus:
+      type: string
+      description: "`CONTAINER_STATUSES` in `app/modules/material/models.py`."
+      x-requirement-ids: [INV-FR-023, INV-FR-024, CTR-FR-017]
+      enum: [active, split, merged, destroyed]
+
+    InventoryTransactionType:
+      type: string
+      description: "`INVENTORY_TRANSACTION_TYPES` in `app/modules/material/models.py` — captured documentation only, never a DB CHECK constraint or validated enum anywhere in commands.py; only a subset is actually written by operations in this contract (RECEIPT/TRANSFER/RESERVE/UNRESERVE/ADJUST_POSITIVE/ADJUST_NEGATIVE)."
+      x-requirement-ids: [INV-FR-006, INV-FR-007]
+      enum: [RECEIPT, TRANSFER, RESERVE, UNRESERVE, ISSUE, DISPENSE, CONSUME, RETURN, SAMPLE, REJECT, DESTROY, ADJUST_POSITIVE, ADJUST_NEGATIVE, INTERSITE_SHIP, INTERSITE_RECEIVE, SPILL, APPROVED_LOSS]
+
+    AvailabilityLine:
+      type: object
+      description: One entry in getInventoryAvailability's response.
+      x-requirement-ids: [INV-FR-002]
+      required: [material_lot_id, internal_lot, container_id, location_id, location_code, available, uom]
+      properties:
+        material_lot_id: { type: string, format: uuid }
+        internal_lot: { type: string }
+        container_id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        location_code: { type: string }
+        available: { type: string, description: Decimal string. }
+        uom: { type: string }
+        expiry_date: { type: [string, "null"], format: date }
+
+    AvailabilityResult:
+      type: object
+      description: getInventoryAvailability's response.
+      x-requirement-ids: [INV-FR-002]
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AvailabilityLine' }, description: FEFO order — soonest expiry first, then oldest received. }
+
+    InventoryTransaction:
+      type: object
+      description: One ledger row, as returned by getLotLedger.
+      x-requirement-ids: [INV-FR-006, INV-FR-007, INV-FR-029, INV-FR-030]
+      required: [id, transaction_type, quantity, uom, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        container_id: { type: [string, "null"], format: uuid }
+        transaction_type: { $ref: '#/components/schemas/InventoryTransactionType' }
+        quantity: { type: string, description: "Decimal string, Numeric(24,8)." }
+        uom: { type: string }
+        from_location_id: { type: [string, "null"], format: uuid }
+        to_location_id: { type: [string, "null"], format: uuid }
+        occurred_at: { type: string, format: date-time }
+
+    InventoryTransactionPage:
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/InventoryTransaction' } }
+      description: getLotLedger's response.
+      x-requirement-ids: [INV-FR-029, INV-FR-030, CTR-FR-012]
+
+    ErpReconciliationResult:
+      type: object
+      description: getErpReconciliation's response — a GxP-only stub.
+      x-requirement-ids: [INV-FR-028]
+      required: [material_lot_id, internal_lot, gxp_on_hand, erp_source_configured, erp_on_hand, mismatch_flagged]
+      properties:
+        material_lot_id: { type: string, format: uuid }
+        internal_lot: { type: string }
+        gxp_on_hand: { type: string, description: Decimal string. Sum of every InventoryBalanceProjection.on_hand for this lot. }
+        erp_source_configured: { type: boolean, description: Always false — no ERP integration exists in this codebase yet. }
+        erp_on_hand: { type: "null", description: Always null. }
+        mismatch_flagged: { type: "null", description: Always null. }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postReservationSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    ReservationSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope.
+      x-requirement-ids: [SIG-FR-005]
+      properties:
+        action: { type: string, enum: [release], default: release }
+
+    CreateInventoryReservationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INV-FR-010, INV-FR-012, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, material_id, site_id, quantity, uom]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        material_id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        quantity: { type: string, description: "Decimal string. Must be positive." }
+        uom: { type: string }
+
+    ReleaseInventoryReservationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INV-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, reservation_id, expected_version, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        reservation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"], description: Required only when the resolved Document 106 policy row's reason_required is true. }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    CreateInventoryTransferCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INV-FR-008, INV-FR-009, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, material_lot_id, container_id, to_location_id, quantity]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        material_lot_id: { type: string, format: uuid }
+        container_id: { type: string, format: uuid }
+        from_location_id: { type: [string, "null"], format: uuid, description: Omit for the container's first ledger entry (put-away). }
+        to_location_id: { type: string, format: uuid }
+        quantity: { type: string, description: "Decimal string. Must be positive." }
+
+    SplitContainerCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INV-FR-023, INV-FR-025, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, container_id, expected_version, split_quantities]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        container_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        split_quantities: { type: array, items: { type: string }, minItems: 2, description: "Decimal strings. Must sum exactly to the container's current_quantity." }
+
+    MergeContainersCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INV-FR-024, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, source_container_ids, new_container_code]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        source_container_ids: { type: array, items: { type: string, format: uuid }, minItems: 2 }
+        new_container_code: { type: string, maxLength: 120 }
+
+    CreateCycleCountCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INV-FR-020, INV-FR-022, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, material_lot_id, location_id, counted_quantity]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        material_lot_id: { type: string, format: uuid }
+        container_id: { type: [string, "null"], format: uuid }
+        location_id: { type: string, format: uuid }
+        counted_quantity: { type: string, description: "Decimal string. Cannot be negative." }
+        reason: { type: [string, "null"] }

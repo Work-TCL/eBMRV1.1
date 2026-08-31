@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qms-006.json",
+  "title": "SPEC-QMS-006 \u2014 Training & Personnel Qualification Events",
+  "description": "Document 113 event contract for the WP-05 Document 31 module (app/modules/qms/training_commands.py). 07_EVENT_CATALOGUE.yaml declares 7 SPEC-QMS-006 events; 2 are not implemented -- 'QualificationExpired' and 'RetrainingRequired' have no producing code path (no scheduled expiry/retraining-trigger worker exists anywhere in this codebase, the same infrastructure gap TRN-FR-016/019 and SG-086..090 already document). One event IS implemented but not declared in the catalogue at all: 'TrainingRequirementCreated' (training_commands.py:164, id + title), emitted by create_requirement() -- a real, undeclared event, not invented here; recorded for a human reviewer to add to the catalogue in a future revision.\n\nREUSE NOTES: 'TrainingAssigned' is emitted by both create_assignment() (id, subject_id, requirement_id) and complete_assignment() when the next state is ASSESSMENT_PENDING rather than COMPLETED (id, state) -- an assignment moving toward assessment reuses the 'assigned' event name rather than getting its own. 'TrainingCompleted' is emitted by both complete_assignment() (id, state, no score) and assess_assignment() when passed (id, state, score) -- two different payload shapes under one event_type. Both are real, observed characteristics of the built code (training_commands.py:299/363), not invented here.",
+  "x-requirement-ids": [
+    "TRN-FR-001",
+    "TRN-FR-003",
+    "TRN-FR-006",
+    "TRN-FR-007",
+    "TRN-FR-009",
+    "TRN-FR-015",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "TrainingRequirementCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title"
+      ],
+      "description": "Implemented but not declared in 07_EVENT_CATALOGUE.yaml -- see the module-level note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "TRN-FR-001"
+      ]
+    },
+    "TrainingAssignedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted by create_assignment() (id, subject_id, requirement_id) and complete_assignment() when moving to ASSESSMENT_PENDING (id, state) -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "subject_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "requirement_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string",
+          "const": "ASSESSMENT_PENDING"
+        }
+      },
+      "x-requirement-ids": [
+        "TRN-FR-003"
+      ]
+    },
+    "TrainingCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "description": "Emitted by complete_assignment() (id, state, no score) and assess_assignment() when passed (id, state, score) -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string",
+          "const": "COMPLETED"
+        },
+        "score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "TRN-FR-006",
+        "TRN-FR-007"
+      ]
+    },
+    "TrainingFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string",
+          "const": "FAILED"
+        },
+        "score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "TRN-FR-007"
+      ]
+    },
+    "QualificationIssuedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "subject_id",
+        "qualification_code"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "subject_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "qualification_code": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "TRN-FR-009"
+      ]
+    },
+    "TrainingWaiverApprovedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "subject_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "subject_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "TRN-FR-015"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "TrainingRequirementCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-006",
+      "aggregate_type": "training_requirement",
+      "payload": {
+        "$ref": "#/$defs/TrainingRequirementCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "TRN-FR-001"
+      ]
+    },
+    {
+      "event_type": "TrainingAssigned",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-006",
+      "aggregate_type": "training_assignment",
+      "payload": {
+        "$ref": "#/$defs/TrainingAssignedPayload"
+      },
+      "x-requirement-ids": [
+        "TRN-FR-003"
+      ]
+    },
+    {
+      "event_type": "TrainingCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-006",
+      "aggregate_type": "training_assignment",
+      "payload": {
+        "$ref": "#/$defs/TrainingCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "TRN-FR-006",
+        "TRN-FR-007"
+      ]
+    },
+    {
+      "event_type": "TrainingFailed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-006",
+      "aggregate_type": "training_assignment",
+      "payload": {
+        "$ref": "#/$defs/TrainingFailedPayload"
+      },
+      "x-requirement-ids": [
+        "TRN-FR-007"
+      ]
+    },
+    {
+      "event_type": "QualificationIssued",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-006",
+      "aggregate_type": "qualification_record",
+      "payload": {
+        "$ref": "#/$defs/QualificationIssuedPayload"
+      },
+      "x-requirement-ids": [
+        "TRN-FR-009"
+      ]
+    },
+    {
+      "event_type": "TrainingWaiverApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-006",
+      "aggregate_type": "training_waiver",
+      "payload": {
+        "$ref": "#/$defs/TrainingWaiverApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "TRN-FR-015"
+      ]
+    }
+  ]
+}

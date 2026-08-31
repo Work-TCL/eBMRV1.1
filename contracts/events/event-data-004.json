@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-data-004.json",
+  "title": "SPEC-DATA-004 — Immutable Evidence, Object Storage, WORM & Lifecycle Events",
+  "description": "Document 113 event contract for WP-11 Document 72 (services/gxp-api/app/modules/evidence/*). All emitted transactionally through the Mutation Gateway outbox (EVT-FR-002) in the same PostgreSQL transaction as the evidence_object / evidence_manifest state change. EvidenceProviderMigrated is emitted by the offline provider-migration tool (migrateEvidenceProvider); the rest by the lifecycle commands.",
+  "x-requirement-ids": ["OBJ-FR-002", "OBJ-FR-003", "OBJ-FR-008", "OBJ-FR-016", "OBJ-FR-018", "OBJ-FR-019", "OBJ-FR-023", "OBJ-FR-029", "EVT-FR-001", "EVT-FR-002"],
+  "$defs": {
+    "EvidenceUploadStagedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidence_id", "owner_type", "owner_id", "state", "mime_type"],
+      "properties": {
+        "evidence_id": { "type": "string", "format": "uuid" },
+        "owner_type": { "type": "string" },
+        "owner_id": { "type": "string", "format": "uuid" },
+        "state": { "type": "string" },
+        "mime_type": { "type": "string" }
+      },
+      "x-requirement-ids": ["OBJ-FR-003"]
+    },
+    "EvidenceFinalizedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidence_id", "state", "content_hash", "size_bytes", "object_key"],
+      "properties": {
+        "evidence_id": { "type": "string", "format": "uuid" },
+        "state": { "type": "string" },
+        "content_hash": { "type": "string" },
+        "size_bytes": { "type": "integer" },
+        "object_key": { "type": "string" }
+      },
+      "x-requirement-ids": ["OBJ-FR-002", "OBJ-FR-004"]
+    },
+    "EvidenceHashMismatchPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["evidence_id"],
+      "properties": {
+        "evidence_id": { "type": "string", "format": "uuid" },
+        "computed_hash": { "type": "string" },
+        "expected_hash": { "type": "string" },
+        "stored_hash": { "type": "string" },
+        "state": { "type": "string" }
+      },
+      "x-requirement-ids": ["OBJ-FR-016"]
+    },
+    "EvidenceMissingPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidence_id", "object_key"],
+      "properties": {
+        "evidence_id": { "type": "string", "format": "uuid" },
+        "object_key": { "type": "string" }
+      },
+      "x-requirement-ids": ["OBJ-FR-023"]
+    },
+    "EvidenceLegalHoldAppliedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidence_id", "legal_hold", "hold_ref"],
+      "properties": {
+        "evidence_id": { "type": "string", "format": "uuid" },
+        "legal_hold": { "type": "boolean" },
+        "hold_ref": { "type": "string" }
+      },
+      "x-requirement-ids": ["OBJ-FR-018"]
+    },
+    "EvidencePurgedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidence_id", "policy_version"],
+      "properties": {
+        "evidence_id": { "type": "string", "format": "uuid" },
+        "policy_version": { "type": "string" }
+      },
+      "x-requirement-ids": ["OBJ-FR-019"]
+    },
+    "EvidenceProviderMigratedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_provider", "target_provider", "objects_copied"],
+      "properties": {
+        "source_provider": { "type": "string" },
+        "target_provider": { "type": "string" },
+        "objects_copied": { "type": "integer" },
+        "hash_reconciled": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["OBJ-FR-029"]
+    },
+    "EvidenceManifestCreatedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["manifest_id", "manifest_type", "manifest_version", "canonical_hash", "item_count"],
+      "properties": {
+        "manifest_id": { "type": "string", "format": "uuid" },
+        "manifest_type": { "type": "string" },
+        "manifest_version": { "type": "integer" },
+        "canonical_hash": { "type": "string" },
+        "item_count": { "type": "integer" }
+      },
+      "x-requirement-ids": ["OBJ-FR-008"]
+    }
+  },
+  "events": [
+    { "event_type": "EvidenceUploadStaged", "schema_version": "1.0", "producer": "SPEC-DATA-004", "aggregate_type": "evidence_object", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EvidenceUploadStagedPayload" }, "x-requirement-ids": ["OBJ-FR-003"] },
+    { "event_type": "EvidenceFinalized", "schema_version": "1.0", "producer": "SPEC-DATA-004", "aggregate_type": "evidence_object", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EvidenceFinalizedPayload" }, "x-requirement-ids": ["OBJ-FR-004"] },
+    { "event_type": "EvidenceHashMismatch", "schema_version": "1.0", "producer": "SPEC-DATA-004", "aggregate_type": "evidence_object", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EvidenceHashMismatchPayload" }, "x-requirement-ids": ["OBJ-FR-016"] },
+    { "event_type": "EvidenceMissing", "schema_version": "1.0", "producer": "SPEC-DATA-004", "aggregate_type": "evidence_object", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EvidenceMissingPayload" }, "x-requirement-ids": ["OBJ-FR-023"] },
+    { "event_type": "EvidenceLegalHoldApplied", "schema_version": "1.0", "producer": "SPEC-DATA-004", "aggregate_type": "evidence_object", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EvidenceLegalHoldAppliedPayload" }, "x-requirement-ids": ["OBJ-FR-018"] },
+    { "event_type": "EvidencePurged", "schema_version": "1.0", "producer": "SPEC-DATA-004", "aggregate_type": "evidence_object", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EvidencePurgedPayload" }, "x-requirement-ids": ["OBJ-FR-019"] },
+    { "event_type": "EvidenceProviderMigrated", "schema_version": "1.0", "producer": "SPEC-DATA-004", "aggregate_type": "evidence_object", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EvidenceProviderMigratedPayload" }, "x-requirement-ids": ["OBJ-FR-029"] },
+    { "event_type": "EvidenceManifestCreated", "schema_version": "1.0", "producer": "SPEC-DATA-004", "aggregate_type": "evidence_manifest", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/EvidenceManifestCreatedPayload" }, "x-requirement-ids": ["OBJ-FR-008"] }
+  ]
+}

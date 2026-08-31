@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-sec-002.json",
+  "title": "SPEC-SEC-002 — Identity Federation, SSO, MFA, Sessions & Service Identities Events",
+  "description": "Document 113 event contract for the event types Document 62's own module (app/modules/security/identity_commands.py) actually emits. All 7 declared Document 62 # 9 events are implemented -- no divergence for this module. AuthenticationFailed is deferred to Document 67 (Security Logging/Monitoring) -- see identity_models.py module docstring; not emitted by this module this pass.",
+  "x-requirement-ids": [
+    "IAMSEC-FR-001",
+    "IAMSEC-FR-006",
+    "IAMSEC-FR-010",
+    "IAMSEC-FR-011",
+    "IAMSEC-FR-013",
+    "IAMSEC-FR-014",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "IdentityProviderConfiguredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity_provider_config_id", "issuer", "protocol"],
+      "properties": {
+        "identity_provider_config_id": { "type": "string", "format": "uuid" },
+        "issuer": { "type": "string" },
+        "protocol": { "type": "string" }
+      },
+      "x-requirement-ids": ["IAMSEC-FR-001", "IAMSEC-FR-002"]
+    },
+    "SessionCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "subject_id"],
+      "properties": {
+        "session_id": { "type": "string", "format": "uuid" },
+        "subject_id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["IAMSEC-FR-006", "IAMSEC-FR-007"]
+    },
+    "SessionRevokedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "subject_id"],
+      "properties": {
+        "session_id": { "type": "string", "format": "uuid" },
+        "subject_id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["IAMSEC-FR-010", "IAMSEC-FR-013", "IAMSEC-FR-022"]
+    },
+    "ExternalIdentityMappedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_id", "identity_provider_config_id", "subject"],
+      "properties": {
+        "user_id": { "type": "string", "format": "uuid" },
+        "identity_provider_config_id": { "type": "string", "format": "uuid" },
+        "subject": { "type": "string" }
+      },
+      "x-requirement-ids": ["IAMSEC-FR-011", "IAMSEC-FR-026"]
+    },
+    "ServiceIdentityProvisionedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service_identity_id", "service_name"],
+      "properties": {
+        "service_identity_id": { "type": "string", "format": "uuid" },
+        "service_name": { "type": "string" }
+      },
+      "x-requirement-ids": ["IAMSEC-FR-014", "IAMSEC-FR-015"]
+    }
+  },
+  "events": [
+    {
+      "event_type": "IdentityProviderConfigured",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-002",
+      "aggregate_type": "identity_provider_config",
+      "payload": { "$ref": "#/$defs/IdentityProviderConfiguredPayload" },
+      "x-requirement-ids": ["IAMSEC-FR-001"]
+    },
+    {
+      "event_type": "SessionCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-002",
+      "aggregate_type": "application_session",
+      "payload": { "$ref": "#/$defs/SessionCreatedPayload" },
+      "x-requirement-ids": ["IAMSEC-FR-006"]
+    },
+    {
+      "event_type": "SessionRevoked",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-002",
+      "aggregate_type": "application_session",
+      "payload": { "$ref": "#/$defs/SessionRevokedPayload" },
+      "x-requirement-ids": ["IAMSEC-FR-010"]
+    },
+    {
+      "event_type": "ExternalIdentityMapped",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-002",
+      "aggregate_type": "user",
+      "payload": { "$ref": "#/$defs/ExternalIdentityMappedPayload" },
+      "x-requirement-ids": ["IAMSEC-FR-011"]
+    },
+    {
+      "event_type": "ServiceIdentityProvisioned",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-002",
+      "aggregate_type": "service_identity",
+      "payload": { "$ref": "#/$defs/ServiceIdentityProvisionedPayload" },
+      "x-requirement-ids": ["IAMSEC-FR-014"]
+    }
+  ]
+}

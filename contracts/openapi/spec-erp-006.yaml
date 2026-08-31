@@ -1,0 +1,1062 @@
+openapi: 3.1.0
+info:
+  title: SPEC-ERP-006 — Integration Gateway Contract Surface (Documents 48-53)
+  version: 0.1.0
+  description: >
+    Document 113 §6: Document 53 owns the only public contract surface for the WP-07 package. Documents
+    48 (architecture/ownership), 49/50/51 (ERPNext/SAP/Oracle Fusion/Dynamics 365/generic adapters) and 52
+    (master-data sync) have "no independent API" — every one of their operations is realized through the
+    endpoints declared here, dispatched internally to the vendor-neutral ERPProvider adapter resolved from
+    each ErpInstance's own `vendor` column (app/modules/erp/commands.py::build_adapter). Entities backing
+    this contract are a provisional schema (SG-121/ADR-0009) pending a human Document 112 amendment.
+tags:
+  - name: instances
+  - name: mappings
+  - name: commands
+  - name: events
+  - name: reconciliation
+
+paths:
+  /integration/v1/instances:
+    post:
+      operationId: registerERPInstance
+      tags: [instances]
+      summary: Register an ERP instance (ERP-ARC-002)
+      x-requirement-ids: [ERP-ARC-002, ERP-ARC-003]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterERPInstanceCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: Unrecognized vendor, or duplicate instance_name (ERP_INSTANCE_INVALID)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/instances/{instance_id}:
+    get:
+      operationId: getERPInstance
+      tags: [instances]
+      summary: Read an ERP instance
+      x-requirement-ids: [ERP-ARC-002]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErpInstanceView' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /integration/v1/instances/{instance_id}/capabilities:
+    get:
+      operationId: getCapabilities
+      tags: [instances]
+      summary: Discover the adapter's declared/reachable capabilities (ERP-ARC-003/030)
+      x-requirement-ids: [ERP-ARC-003, ERP-ARC-030]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ERPCapabilities' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /integration/v1/instances/{instance_id}/validate:
+    post:
+      operationId: validateERPInstance
+      tags: [instances]
+      summary: Certify a GENERIC (custom) connector against an acceptance profile before it may post writes (MULTI-FR-024)
+      description: >
+        WP-07 completion pass. Unsigned (SG-122 precedent). Only meaningful for vendor=GENERIC -- a
+        named-vendor instance's adapter code is its own certification. Fails with 422 if the instance
+        declares a write operation in its endpoint_map with no corresponding read/sync operation
+        (MULTI-FR-022).
+      x-requirement-ids: [MULTI-FR-022, MULTI-FR-024, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ValidateERPInstanceCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: Not a GENERIC instance, or write-capable with no declared read/reconciliation path
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/instances/{instance_id}/sla-metrics:
+    get:
+      operationId: getIntegrationSLAMetrics
+      tags: [instances]
+      summary: Oldest pending/dead-letter/reconciliation ages for this instance (INT-FR-021)
+      description: >
+        WP-07 completion pass. Read/reporting only -- observability metrics, not a regulated decision
+        read from a projection (rule 11 governs decisions, not counts/ages).
+      x-requirement-ids: [INT-FR-021]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationSLAMetrics' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /integration/v1/instances/{instance_id}/data-quality-metrics:
+    get:
+      operationId: getMasterDataQualityMetrics
+      tags: [instances]
+      summary: Unmapped/conflict/stale/failed-sync/duplicate rates for this instance (MDS-FR-026)
+      description: WP-07 completion pass. Read/reporting only, same footing as sla-metrics above.
+      x-requirement-ids: [MDS-FR-026]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MasterDataQualityMetrics' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /integration/v1/mappings:
+    post:
+      operationId: proposeMapping
+      tags: [mappings]
+      summary: Propose an external mapping (MDS-FR-008/009, ERP-ARC-005)
+      x-requirement-ids: [MDS-FR-008, MDS-FR-009, ERP-ARC-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProposeMappingCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: A proposed or active mapping already exists for this external identity (ERP_MAPPING_CONFLICT)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /integration/v1/mappings/{mapping_id}/approve:
+    post:
+      operationId: approveMapping
+      tags: [mappings]
+      summary: Approve a proposed/suspended mapping (MDS-FR-019/020/021)
+      x-requirement-ids: [MDS-FR-019, MDS-FR-020, MDS-FR-021]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApproveMappingCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Stale version, or mapping not in PROPOSED/SUSPENDED state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/mappings/{mapping_id}/external-change:
+    post:
+      operationId: applyERPProjectionUpdate
+      tags: [mappings]
+      summary: Apply an externally-observed field change (MDS-FR-006/007)
+      x-requirement-ids: [MDS-FR-006, MDS-FR-007]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApplyExternalChangeCommand' }
+      responses:
+        '200':
+          description: >
+            OK — ERP-owned field updates the projection (ERPProjectionUpdated); GxP-owned field creates a
+            conflict instead (MasterDataConflictDetected), never an overwrite.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '409':
+          description: Stale version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/mapping-conflicts/{conflict_id}/resolve:
+    post:
+      operationId: resolveMasterConflict
+      tags: [mappings]
+      summary: Resolve a master-data mapping conflict (MDS-FR-018)
+      x-requirement-ids: [MDS-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolveMasterConflictCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: resolution_reason missing, or resolution not one of ACCEPT_PROPOSED/KEEP_CURRENT/REJECT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/sync-checkpoints:
+    post:
+      operationId: advanceSyncCheckpoint
+      tags: [mappings]
+      summary: Advance a master-data sync checkpoint (MDS-FR-022/023)
+      x-requirement-ids: [MDS-FR-022, MDS-FR-023]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdvanceSyncCheckpointCommand' }
+      responses:
+        '200':
+          description: OK — idempotent on a resubmitted idempotency_key/batch_id (crash/restart safe)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+
+  /integration/v1/commands:
+    post:
+      operationId: queueERPCommand
+      tags: [commands]
+      summary: Queue an outbound ERP command (ERP-ARC-021, INT-FR-001/006)
+      x-requirement-ids: [ERP-ARC-021, INT-FR-001, INT-FR-006, INT-FR-007]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QueueERPCommandCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '422':
+          description: Instance not ACTIVE, or command_type not in the adapter's declared capabilities (ERP_CAPABILITY_UNSUPPORTED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Same idempotency_key reused with a different payload (ERP_EXTERNAL_CONFLICT)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/commands/{command_id}:
+    get:
+      operationId: getIntegrationCommand
+      tags: [commands]
+      summary: Read an integration command's ledger state
+      x-requirement-ids: [INT-FR-001]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationCommandView' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /integration/v1/commands/{command_id}/dispatch:
+    post:
+      operationId: dispatchERPCommand
+      tags: [commands]
+      summary: Dispatch a pending/retry-waiting command (ERP-ARC-023/024, INT-FR-003/004/008/012)
+      x-requirement-ids: [ERP-ARC-023, ERP-ARC-024, ERP-ARC-026, INT-FR-003, INT-FR-004, INT-FR-005, INT-FR-008, INT-FR-012, INT-FR-030]
+      security: [{ bearerAuth: [] }]
+      description: >
+        Never reports SUCCEEDED until the real outbound call has been confirmed (INT-FR-030 "no silent
+        success"). Runs as two separate committed transactions around the actual HTTP call — see
+        app/modules/erp/commands.py::dispatch_erp_command's docstring.
+      responses:
+        '200':
+          description: OK — resulting command state is SUCCEEDED, RETRY_WAIT or DEAD_LETTER
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Command not in PENDING/RETRY_WAIT state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429':
+          description: Per-instance/operation circuit breaker is OPEN (INT-FR-022)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/commands/{command_id}/retry:
+    post:
+      operationId: retryERPCommand
+      tags: [commands]
+      summary: Manually retry a failed/dead-lettered/retry-waiting command (INT-FR-013/027)
+      x-requirement-ids: [ERP-ARC-027, INT-FR-013, INT-FR-027]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RetryERPCommandCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '422':
+          description: reason is required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/commands/{command_id}/cancel:
+    post:
+      operationId: cancelPendingERPCommand
+      tags: [commands]
+      summary: Cancel a pending/retry-waiting command before external commit (ERP-ARC-027, INT-FR-015)
+      x-requirement-ids: [ERP-ARC-027, INT-FR-015]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelPendingERPCommandCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '409':
+          description: Command already DISPATCHED/SUCCEEDED — can no longer be cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/commands/{command_id}/correct:
+    post:
+      operationId: createCorrectedCommand
+      tags: [commands]
+      summary: Create a corrected replacement command from a terminal one (INT-FR-014)
+      x-requirement-ids: [INT-FR-014]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCorrectedCommandCommand' }
+      responses:
+        '200':
+          description: OK — a brand-new command linked via correction_of_id; the original is never mutated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+
+  /integration/v1/commands/{command_id}/compensate:
+    post:
+      operationId: createCompensationCommand
+      tags: [commands]
+      summary: Create a new command reversing an already-succeeded one, tied to a GxP correction/disposition (INT-FR-016)
+      description: >
+        WP-07 completion pass. Distinct from /correct: a correction resends the same logical operation
+        after a failure; a compensation reverses an operation that already succeeded externally. Always a
+        brand-new command (never mutates the original), and always carries gxp_authorization_reference --
+        the authorizing GxP correction/disposition record.
+      x-requirement-ids: [INT-FR-016, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCompensationCommandCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Original command has not succeeded -- nothing to reverse
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          description: Missing reason or gxp_authorization_reference
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/commands/{command_id}/reconcile-uncertain:
+    post:
+      operationId: reconcileUncertainCommit
+      tags: [commands]
+      summary: Recover a command stuck DISPATCHED after an uncertain-timeout crash (INT-FR-008)
+      x-requirement-ids: [INT-FR-008]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK — moves to RETRY_WAIT with required_next_action demanding external verification; never blindly resumes as PENDING
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '409':
+          description: Command not in DISPATCHED state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/events:
+    post:
+      operationId: ingestERPEvent
+      tags: [events]
+      summary: Ingest an inbound ERP event (ERP-ARC-022, INT-FR-010/011)
+      x-requirement-ids: [ERP-ARC-022, INT-FR-010, INT-FR-011]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IngestERPEventCommand' }
+      responses:
+        '200':
+          description: OK — a resubmission with the same external_event_id and payload is an idempotent no-op
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '409':
+          description: Same external_event_id reused with a different payload (ERP_EXTERNAL_CONFLICT)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/reconciliation-runs:
+    post:
+      operationId: createReconciliationRun
+      tags: [reconciliation]
+      summary: Start a reconciliation run (ERP-ARC-025, INT-FR-017/018)
+      x-requirement-ids: [ERP-ARC-025, INT-FR-017, INT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateReconciliationRunCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+
+  /integration/v1/reconciliation-runs/{run_id}/differences:
+    post:
+      operationId: recordReconciliationDifference
+      tags: [reconciliation]
+      summary: Record a reconciliation difference (INT-FR-017)
+      x-requirement-ids: [INT-FR-017]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordReconciliationDifferenceCommand' }
+      responses:
+        '200':
+          description: OK — always created resolution_status=OPEN, never auto-resolved (INT-FR-019, SG-124)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+
+  /integration/v1/reconciliation-differences/{difference_id}/resolve:
+    post:
+      operationId: resolveReconciliationDifference
+      tags: [reconciliation]
+      summary: Resolve a reconciliation difference (INT-FR-019/020)
+      x-requirement-ids: [INT-FR-019, INT-FR-020]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolveReconciliationDifferenceCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '422':
+          description: resolution_reason missing, or resolution_status is AUTO_RESOLVED (never accepted — SG-124)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/reconciliation-runs/{run_id}/complete:
+    post:
+      operationId: completeReconciliationRun
+      tags: [reconciliation]
+      summary: Complete a reconciliation run
+      x-requirement-ids: [ERP-ARC-025, INT-FR-017]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteReconciliationRunCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+
+  /integration/v1/bulk-jobs:
+    post:
+      operationId: startBulkJob
+      tags: [bulk-jobs]
+      summary: Start a bulk import/export job with a resumable idempotency handle (INT-FR-023)
+      description: >
+        WP-07 completion pass. idempotency_key doubles as the resume handle -- calling this again with
+        the same key after a crash returns the existing job (with its resume_cursor) rather than starting
+        a second one.
+      x-requirement-ids: [INT-FR-023, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartBulkJobCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: Unrecognized job_type or entity_type
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/bulk-jobs/{job_id}/progress:
+    post:
+      operationId: recordBulkJobProgress
+      tags: [bulk-jobs]
+      summary: Record one processed chunk's successes/failures/resume position (INT-FR-023)
+      description: >
+        WP-07 completion pass. newly_failed_records (this chunk only) is appended, never replaced;
+        successes are only ever counted, never individually retained.
+      x-requirement-ids: [INT-FR-023, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordBulkJobProgressCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Stale version, or job is not RUNNING
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/bulk-jobs/{job_id}/complete:
+    post:
+      operationId: completeBulkJob
+      tags: [bulk-jobs]
+      summary: Complete a bulk job -- COMPLETED if failed_count is zero, COMPLETED_WITH_ERRORS otherwise (INT-FR-023)
+      x-requirement-ids: [INT-FR-023, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteBulkJobCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Stale version, or job is not RUNNING
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /integration/v1/migration-packages:
+    post:
+      operationId: recordMigrationPackage
+      tags: [migration-packages]
+      summary: Record customer onboarding mapping/import package provenance (MDS-FR-028)
+      description: >
+        WP-07 completion pass. No dedicated workflow function exists in Document 52's own catalogue for
+        this -- a provenance record, not a workflow. approved_by_user_id is set only when the caller
+        supplies approval_reference.
+      x-requirement-ids: [MDS-FR-028, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordMigrationPackageCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '422':
+          description: Missing package_name or source_checksum
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: No or invalid bearer token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Authenticated actor's roles do not grant this action (ROLE_MISSING)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ValidationFailed:
+      description: Request failed schema or business validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [CTR-FR-006]
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          examples:
+            [
+              VALIDATION_FAILED, NOT_FOUND, STALE_VERSION, INVALID_TRANSITION, ROLE_MISSING,
+              IDEMPOTENCY_CONFLICT, ERP_INSTANCE_INVALID, ERP_CAPABILITY_UNSUPPORTED,
+              ERP_MAPPING_NOT_FOUND, ERP_MAPPING_AMBIGUOUS, ERP_MAPPING_CONFLICT, ERP_EXTERNAL_CONFLICT,
+              ERP_THROTTLED, ERP_AUTH_FAILED,
+            ]
+        message: { type: string }
+        details: { type: object }
+
+    MutationReceipt:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MUT-FR-019]
+      required: [command_id, aggregate_id, resulting_version, audit_event_id, correlation_id]
+      properties:
+        command_id: { type: string, format: uuid }
+        aggregate_id: { type: string, format: uuid }
+        resulting_version: { type: integer }
+        audit_event_id: { type: string, format: uuid }
+        signature_id: { type: [string, "null"], format: uuid }
+        correlation_id: { type: string, format: uuid }
+
+    ErpInstanceView:
+      type: object
+      x-requirement-ids: [ERP-ARC-002]
+      properties:
+        id: { type: string, format: uuid }
+        instance_name: { type: string }
+        vendor: { type: string, enum: [ERPNEXT, SAP_S4HANA, ORACLE_FUSION, DYNAMICS_365, GENERIC] }
+        environment: { type: string, enum: [PRODUCTION, SANDBOX, TEST] }
+        status: { type: string, enum: [ACTIVE, SUSPENDED, DECOMMISSIONED] }
+        version: { type: integer }
+        validated: { type: boolean, description: "MULTI-FR-024 -- only meaningful for vendor=GENERIC." }
+
+    ERPCapabilities:
+      type: object
+      x-requirement-ids: [ERP-ARC-003, ERP-ARC-030]
+      properties:
+        instance_id: { type: string, format: uuid }
+        vendor: { type: string }
+        contract_version: { type: string }
+        supported_operations: { type: array, items: { type: string } }
+        reachable: { type: boolean }
+
+    IntegrationCommandView:
+      type: object
+      x-requirement-ids: [INT-FR-001]
+      properties:
+        id: { type: string, format: uuid }
+        command_type: { type: string }
+        state: { type: string, enum: [PENDING, DISPATCHED, SUCCEEDED, FAILED, RETRY_WAIT, DEAD_LETTER, CANCELLED] }
+        attempt_count: { type: integer }
+        external_reference: { type: [string, "null"] }
+        last_error_category: { type: [string, "null"] }
+        version: { type: integer }
+
+    RegisterERPInstanceCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [ERP-ARC-002, ERP-ARC-003, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, instance_name, vendor, base_url, auth_method]
+      properties:
+        idempotency_key: { type: string }
+        instance_name: { type: string }
+        vendor: { type: string, enum: [ERPNEXT, SAP_S4HANA, ORACLE_FUSION, DYNAMICS_365, GENERIC] }
+        environment: { type: string, enum: [PRODUCTION, SANDBOX, TEST], default: SANDBOX }
+        base_url: { type: string }
+        auth_method: { type: string, enum: [API_KEY, OAUTH2_CLIENT_CREDENTIALS, BASIC] }
+        auth_secret_ref: { type: [string, "null"] }
+        contract_version: { type: [string, "null"] }
+        site_id: { type: [string, "null"], format: uuid }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    ProposeMappingCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MDS-FR-008, MDS-FR-009, ERP-ARC-005, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, erp_instance_id, entity_type, external_id]
+      properties:
+        idempotency_key: { type: string }
+        erp_instance_id: { type: string, format: uuid }
+        entity_type: { type: string }
+        internal_id: { type: [string, "null"], format: uuid }
+        internal_code: { type: [string, "null"] }
+        external_id: { type: string }
+        external_code: { type: [string, "null"] }
+        field_ownership: { type: string, enum: [GXP, ERP], default: ERP }
+        match_method: { type: string, enum: [EXPLICIT_ID, FUZZY_PROPOSED, MANUAL], default: MANUAL }
+        confidence: { type: [string, "null"] }
+        uom_conversion_factor: { type: [string, "null"] }
+        evidence: { type: [object, "null"] }
+
+    ApproveMappingCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MDS-FR-019, MDS-FR-020, MDS-FR-021, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, mapping_id, expected_version]
+      properties:
+        idempotency_key: { type: string }
+        mapping_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    ApplyExternalChangeCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MDS-FR-006, MDS-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, mapping_id, expected_version, field_name, proposed_value]
+      properties:
+        idempotency_key: { type: string }
+        mapping_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        field_name: { type: string }
+        proposed_value: { type: object }
+
+    ResolveMasterConflictCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MDS-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, conflict_id, expected_version, resolution, resolution_reason]
+      properties:
+        idempotency_key: { type: string }
+        conflict_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        resolution: { type: string, enum: [ACCEPT_PROPOSED, KEEP_CURRENT, REJECT] }
+        resolution_reason: { type: string }
+
+    AdvanceSyncCheckpointCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MDS-FR-022, MDS-FR-023, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, erp_instance_id, entity_type, cursor_value]
+      properties:
+        idempotency_key: { type: string }
+        erp_instance_id: { type: string, format: uuid }
+        entity_type: { type: string }
+        cursor_value: { type: string }
+        last_batch_id: { type: [string, "null"], format: uuid }
+
+    QueueERPCommandCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [ERP-ARC-021, INT-FR-001, INT-FR-006, INT-FR-007, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, erp_instance_id, command_type, payload]
+      properties:
+        idempotency_key: { type: string }
+        erp_instance_id: { type: string, format: uuid }
+        command_type:
+          type: string
+          examples:
+            [
+              SYNC_MATERIAL_ITEM, SYNC_SUPPLIER, SYNC_WAREHOUSE_LOCATION, SYNC_UOM, POST_GOODS_RECEIPT,
+              POST_CONSUMPTION, POST_RETURN, POST_SCRAP_DESTRUCTION, POST_FINISHED_GOODS_RECEIPT,
+              POST_QUALITY_STATUS, GET_PRODUCTION_ORDER_REFERENCE, FETCH_MASTER_DATA_CHANGES,
+            ]
+        source_event_id: { type: [string, "null"], format: uuid }
+        source_aggregate_type: { type: [string, "null"] }
+        source_aggregate_id: { type: [string, "null"], format: uuid }
+        payload: { type: object }
+
+    RetryERPCommandCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [ERP-ARC-027, INT-FR-013, INT-FR-027, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, command_id, reason]
+      properties:
+        idempotency_key: { type: string }
+        command_id: { type: string, format: uuid }
+        reason: { type: string }
+
+    CancelPendingERPCommandCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [ERP-ARC-027, INT-FR-015, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, command_id, reason]
+      properties:
+        idempotency_key: { type: string }
+        command_id: { type: string, format: uuid }
+        reason: { type: string }
+
+    CreateCorrectedCommandCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [INT-FR-014, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, original_command_id, corrected_payload, reason]
+      properties:
+        idempotency_key: { type: string }
+        original_command_id: { type: string, format: uuid }
+        corrected_payload: { type: object }
+        reason: { type: string }
+
+    IngestERPEventCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [ERP-ARC-022, INT-FR-010, INT-FR-011, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, erp_instance_id, external_event_id, payload]
+      properties:
+        idempotency_key: { type: string }
+        erp_instance_id: { type: string, format: uuid }
+        external_event_id: { type: string }
+        entity_type: { type: [string, "null"] }
+        external_entity_id: { type: [string, "null"], description: "INT-FR-011, WP-07 completion pass -- the specific external record this event concerns, for out-of-order/stale detection." }
+        source_version: { type: [string, "null"] }
+        payload: { type: object }
+
+    CreateReconciliationRunCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [ERP-ARC-025, INT-FR-017, INT-FR-018, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, erp_instance_id, scope, reconciliation_type, cutoff_at]
+      properties:
+        idempotency_key: { type: string }
+        erp_instance_id: { type: string, format: uuid }
+        scope: { type: string }
+        reconciliation_type: { type: string }
+        cutoff_at: { type: string, format: date-time }
+        query_keys: { type: [object, "null"] }
+
+    RecordReconciliationDifferenceCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [INT-FR-017, INT-FR-019, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, run_id, difference_type]
+      properties:
+        idempotency_key: { type: string }
+        run_id: { type: string, format: uuid }
+        difference_type:
+          type: string
+          enum:
+            [
+              MISSING_EXTERNAL, EXTRA_EXTERNAL, VALUE_MISMATCH, STATUS_MISMATCH, REFERENCE_MISMATCH,
+              DUPLICATE_EXTERNAL, STALE_MAPPING,
+            ]
+        internal_ref: { type: [object, "null"] }
+        external_ref: { type: [object, "null"] }
+        field_name: { type: [string, "null"] }
+        internal_value: { type: [object, "null"] }
+        external_value: { type: [object, "null"] }
+        requires_qa_hold: { type: boolean, default: false }
+
+    ResolveReconciliationDifferenceCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [INT-FR-019, INT-FR-020, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, difference_id, expected_version, resolution_status, resolution_reason]
+      properties:
+        idempotency_key: { type: string }
+        difference_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        resolution_status: { type: string, enum: [RESOLVED, ESCALATED] }
+        resolution_reason: { type: string }
+
+    CompleteReconciliationRunCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [ERP-ARC-025, INT-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, run_id, expected_version, status]
+      properties:
+        idempotency_key: { type: string }
+        run_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        status: { type: string, enum: [COMPLETED, FAILED] }
+
+    ValidateERPInstanceCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MULTI-FR-022, MULTI-FR-024, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, instance_id, expected_version, acceptance_reference]
+      properties:
+        idempotency_key: { type: string }
+        instance_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        acceptance_reference: { type: string }
+
+    IntegrationSLAMetrics:
+      type: object
+      x-requirement-ids: [INT-FR-021]
+      properties:
+        oldest_pending_age_seconds: { type: [number, "null"] }
+        oldest_dead_letter_age_seconds: { type: [number, "null"] }
+        oldest_open_reconciliation_run_age_seconds: { type: [number, "null"] }
+        oldest_open_reconciliation_difference_age_seconds: { type: [number, "null"] }
+
+    MasterDataQualityMetrics:
+      type: object
+      x-requirement-ids: [MDS-FR-026]
+      properties:
+        unmapped_count: { type: integer }
+        conflict_count: { type: integer }
+        stale_count: { type: integer }
+        failed_sync_count: { type: integer }
+        duplicate_count: { type: integer }
+        active_mapping_count: { type: integer }
+
+    CreateCompensationCommandCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [INT-FR-016, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, original_command_id, compensating_command_type, compensating_payload, gxp_authorization_reference, reason]
+      properties:
+        idempotency_key: { type: string }
+        original_command_id: { type: string, format: uuid }
+        compensating_command_type: { type: string }
+        compensating_payload: { type: object }
+        gxp_authorization_reference: { type: object, description: "e.g. {record_type, record_id, action} identifying the authorizing GxP correction/disposition record." }
+        reason: { type: string }
+
+    StartBulkJobCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [INT-FR-023, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, erp_instance_id, job_type, entity_type]
+      properties:
+        idempotency_key: { type: string }
+        erp_instance_id: { type: string, format: uuid }
+        job_type: { type: string, enum: [IMPORT, EXPORT] }
+        entity_type: { type: string }
+        total_records: { type: [integer, "null"] }
+
+    RecordBulkJobProgressCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [INT-FR-023, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, job_id, expected_version]
+      properties:
+        idempotency_key: { type: string }
+        job_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        succeeded_delta: { type: integer, default: 0 }
+        newly_failed_records: { type: [array, "null"], items: { type: object } }
+        resume_cursor: { type: [string, "null"] }
+
+    CompleteBulkJobCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [INT-FR-023, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, job_id, expected_version]
+      properties:
+        idempotency_key: { type: string }
+        job_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+
+    RecordMigrationPackageCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MDS-FR-028, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, package_name, source_checksum]
+      properties:
+        idempotency_key: { type: string }
+        erp_instance_id: { type: [string, "null"], format: uuid }
+        site_id: { type: [string, "null"], format: uuid }
+        package_name: { type: string }
+        source_checksum: { type: string }
+        entity_types: { type: [array, "null"], items: { type: string } }
+        approval_reference: { type: [string, "null"] }

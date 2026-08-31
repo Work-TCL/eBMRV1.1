@@ -1,0 +1,349 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QMS-005 — Document Control
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-05 Document 30 slice actually built
+    (`services/gxp-api/app/modules/qms/document_*.py`): the linear DRAFT -> REVIEW -> RELEASED ->
+    EFFECTIVE -> OBSOLETE pipeline (APPROVED folds into RELEASED, matching this module family's fold-in
+    precedent), matching the module's own 7-op API list exactly (`/documents/v1`, not `/qms/v1`), plus
+    the `signature-challenges` ceremony-entry-point endpoint (SG-138 engineering half, not in Document
+    30's own list — contracted because the router implements it).
+
+
+    CANCELLED is named only in the state diagram, not by any DOC-FR requirement, and has no operation
+    either — nothing is built or gapped for it. DOC-FR-021 (retirement) folds into `postObsoleteVersion`.
+    DOC-FR-011/013(partial)/014/022/023(partial)/024 are deliberately not built — see
+    docs/generated/18_SPEC_GAPS.md SG-078/SG-079/SG-080. Only `release` is signed
+    (DOCUMENT_VERSION_SIGNATURE_ACTIONS = `("release",)`) and returns `SIGNATURE_POLICY_UNRESOLVED`
+    today (SG-138's policy-data half is still open).
+tags:
+  - name: qms-document-control
+
+paths:
+  /documents/v1/drafts:
+    post:
+      operationId: postCreateDraft
+      tags: [qms-document-control]
+      summary: Create a controlled document (find-or-create by document_code) and its first DRAFT version (DOC-FR-001/002/003/004)
+      description: Requires `document.create`. `document_type` must be one of Document 30's seven types; `is_external=true` requires `external_source`.
+      x-requirement-ids: [DOC-FR-001, DOC-FR-002, DOC-FR-003, DOC-FR-004, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateDocumentDraftCommand' } } }
+      responses:
+        '200': { description: Created, version state DRAFT. `aggregate_id` is the document_version id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (unrecognized document_type, missing content_hash, or is_external without external_source).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /documents/v1/drafts/{document_version_id}/submit:
+    parameters:
+      - { name: document_version_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postSubmitDraft
+      tags: [qms-document-control]
+      summary: Submit a draft for review (DOC-FR-005)
+      description: Requires `document.submit`. DRAFT -> REVIEW only.
+      x-requirement-ids: [DOC-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SubmitDocumentDraftCommand' } } }
+      responses:
+        '200': { description: Submitted., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (reviewers required) or document_version_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /documents/v1/drafts/{document_version_id}/signature-challenges:
+    parameters:
+      - { name: document_version_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postDocumentVersionSignatureChallenge
+      tags: [qms-document-control]
+      summary: Create the Part 11 signature challenge for release (SG-138 engineering half)
+      description: >
+        Not in Document 30's own 7-op API list; contracted because the router implements it. Mounted
+        under the same `/drafts/{id}` path the release mutation itself uses, for symmetry. Resolves the
+        `controlled_document_version`/`release` Document 106 policy and binds a challenge to the current
+        version's id/version/hash. Returns `SIGNATURE_POLICY_UNRESOLVED` today (SG-138's policy-data
+        half is still open).
+      x-requirement-ids: [DOC-FR-006, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DocumentVersionSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not release.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /documents/v1/drafts/{document_version_id}/release:
+    parameters:
+      - { name: document_version_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReleaseDraft
+      tags: [qms-document-control]
+      summary: Release a reviewed draft — signed per Document 106 (DOC-FR-006/015)
+      description: Requires `document.release`. REVIEW -> RELEASED only, and only once review_workflow is recorded and `review_completed=true`. `change_control_id`, if given, must reference a real change control (DOC-FR-015).
+      x-requirement-ids: [DOC-FR-006, DOC-FR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReleaseDocumentDraftCommand' } } }
+      responses:
+        '200': { description: Released., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, DOCUMENT_REVIEW_INCOMPLETE, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: document_version_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /documents/v1/versions/{document_version_id}/make-effective:
+    parameters:
+      - { name: document_version_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postMakeDocumentVersionEffective
+      tags: [qms-document-control]
+      summary: Make a released version effective, superseding the prior effective version (DOC-FR-007/008)
+      description: Requires `document.make_effective`. RELEASED -> EFFECTIVE only. `effective_from` must not be in the future; `training_confirmed` required when `training_impact.required` is truthy.
+      x-requirement-ids: [DOC-FR-007, DOC-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MakeDocumentVersionEffectiveCommand' } } }
+      responses:
+        '200': { description: Effective. Prior EFFECTIVE version, if any, is moved to SUPERSEDED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or EFFECTIVE_PREREQUISITES_INCOMPLETE (future effective_from, or unconfirmed training_impact).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: document_version_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /documents/v1/versions/{document_version_id}/obsolete:
+    parameters:
+      - { name: document_version_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postObsoleteVersion
+      tags: [qms-document-control]
+      summary: Obsolete an effective/superseded version, optionally retiring the parent document (DOC-FR-009/021)
+      description: Requires `document.obsolete`. EFFECTIVE/SUPERSEDED -> OBSOLETE only, terminal. `retirement_reason` is required.
+      x-requirement-ids: [DOC-FR-009, DOC-FR-021, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ObsoleteDocumentVersionCommand' } } }
+      responses:
+        '200': { description: Obsoleted., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (retirement_reason required) or document_version_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /documents/v1/versions/{document_version_id}/controlled-copies:
+    parameters:
+      - { name: document_version_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postIssueControlledCopy
+      tags: [qms-document-control]
+      summary: Issue a numbered controlled copy against an effective version (DOC-FR-010/020)
+      description: Requires `document.controlled_copy.issue`. The version must be EFFECTIVE; `copy_number` must be unique per version.
+      x-requirement-ids: [DOC-FR-010, DOC-FR-020, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/IssueControlledCopyCommand' } } }
+      responses:
+        '200': { description: Issued., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, DOCUMENT_VERSION_OBSOLETE (version is not EFFECTIVE), or CONTROLLED_COPY_CONFLICT (copy_number reuse).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (recipient required) or document_version_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /documents/v1/{document_code}/versions:
+    parameters:
+      - { name: document_code, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getVersions
+      tags: [qms-document-control]
+      summary: A document's identity and every version (current and historical) (DOC-FR-001/002/023)
+      x-requirement-ids: [DOC-FR-001, DOC-FR-002, DOC-FR-023]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DocumentVersionsResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    DocumentType:
+      type: string
+      description: "`DOCUMENT_TYPES` in `app/modules/qms/document_models.py`."
+      x-requirement-ids: [DOC-FR-001]
+      enum: [sop, policy, specification, work_instruction, form, external, other]
+
+    DocumentVersionState:
+      type: string
+      description: "`VERSION_STATES`. APPROVED folds into RELEASED (this module family's fold-in precedent)."
+      x-requirement-ids: [DOC-FR-002, CTR-FR-017]
+      enum: [DRAFT, REVIEW, RELEASED, EFFECTIVE, SUPERSEDED, OBSOLETE]
+
+    ControlledDocumentVersion:
+      type: object
+      description: One document version (`app/modules/qms/document_router.py:_version_dict`). A response schema, so not closed.
+      x-requirement-ids: [DOC-FR-002, DOC-FR-003, DOC-FR-004, DOC-FR-007, DOC-FR-008, DOC-FR-015]
+      required: [id, document_id, version_label, state, content_hash, version]
+      properties:
+        id: { type: string, format: uuid }
+        document_id: { type: string, format: uuid }
+        version_label: { type: string }
+        state: { $ref: '#/components/schemas/DocumentVersionState' }
+        content_hash: { type: string }
+        rendition_hash: { type: [string, "null"] }
+        effective_from: { type: [string, "null"], format: date-time }
+        effective_to: { type: [string, "null"], format: date-time }
+        change_control_id: { type: [string, "null"], format: uuid }
+        periodic_review_due: { type: [string, "null"], format: date-time }
+        superseded_by_version_id: { type: [string, "null"], format: uuid }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+
+    DocumentVersionsResult:
+      type: object
+      description: getVersions's response.
+      x-requirement-ids: [DOC-FR-001, DOC-FR-002, DOC-FR-023]
+      required: [document_code, document_type, status, versions]
+      properties:
+        document_code: { type: string }
+        document_type: { $ref: '#/components/schemas/DocumentType' }
+        status: { type: string, description: "ControlledDocument.status, e.g. active/retired." }
+        versions: { type: array, items: { $ref: '#/components/schemas/ControlledDocumentVersion' } }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postDocumentVersionSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    DocumentVersionSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [release] }
+
+    CreateDocumentDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DOC-FR-001, DOC-FR-002, DOC-FR-003, DOC-FR-004, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, document_code, document_type, owner_subject_id, version_label, content_hash]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        document_code: { type: string, description: Business identity — finds or creates the parent ControlledDocument. }
+        document_type: { $ref: '#/components/schemas/DocumentType' }
+        owner_subject_id: { type: string, format: uuid }
+        version_label: { type: string, description: Must be unique per document. }
+        content_hash: { type: string }
+        department_id: { type: [string, "null"], format: uuid }
+        site_scope: { type: [array, "null"] }
+        rendition_hash: { type: [string, "null"], description: DOC-FR-004 editable-source vs released-rendition differentiation. }
+        source_relationships: { type: [array, "null"], description: DOC-FR-016 parent/child/reference links. }
+        is_external: { type: boolean, default: false }
+        external_source: { type: [string, "null"], description: Required when is_external is true. }
+        external_revision: { type: [string, "null"] }
+
+    SubmitDocumentDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DOC-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, document_version_id, expected_version, reviewers]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        document_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reviewers: { type: array, minItems: 1, items: { type: object }, description: "{role, subject_id} entries." }
+        reason: { type: [string, "null"] }
+
+    ReleaseDocumentDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DOC-FR-006, DOC-FR-012, DOC-FR-013, DOC-FR-014, DOC-FR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, document_version_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        document_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        review_completed: { type: boolean, default: false, description: Must be true alongside a recorded review_workflow to release (DOCUMENT_REVIEW_INCOMPLETE otherwise). }
+        effective_from: { type: [string, "null"], format: date-time }
+        effective_to: { type: [string, "null"], format: date-time }
+        change_control_id: { type: [string, "null"], format: uuid, description: Validated against a real change control if given (DOC-FR-015). }
+        training_impact: { type: [object, "null"], description: DOC-FR-013. }
+        acknowledgment_required: { type: boolean, default: false, description: DOC-FR-014. }
+        periodic_review_due: { type: [string, "null"], format: date-time, description: DOC-FR-012. }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    MakeDocumentVersionEffectiveCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DOC-FR-007, DOC-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, document_version_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        document_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        training_confirmed: { type: boolean, default: false, description: Must be true when training_impact.required is truthy. }
+        reason: { type: [string, "null"] }
+
+    ObsoleteDocumentVersionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DOC-FR-009, DOC-FR-021, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, document_version_id, expected_version, retirement_reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        document_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        retirement_reason: { type: string }
+        retire_document: { type: boolean, default: false, description: Also sets the parent document's status to retired. }
+        reason: { type: [string, "null"] }
+
+    IssueControlledCopyCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DOC-FR-010, DOC-FR-020, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, document_version_id, expected_version, copy_number, recipient]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        document_version_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        copy_number: { type: string, description: Must be unique per version. }
+        recipient: { type: string }
+        location: { type: [string, "null"] }
+        reason: { type: [string, "null"] }

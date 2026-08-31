@@ -1,0 +1,519 @@
+openapi: 3.1.0
+info:
+  title: SPEC-MAT-002D — Material Consumption, Return, Adjustment, Destruction & Reconciliation
+  version: 0.1.0
+  description: >
+    Document 113 contract for the 9 operations of Document 22
+    (`services/gxp-api/app/modules/material/`, the Document-22-labelled slice of `v1_router`/
+    `inventory_v1_router`) that live on surfaces this contract can own cleanly: unsigned consumption/
+    return/loss recording against a `DispensedContainer` (Document 21's output), the one Document 22
+    inventory-adjustment approval ceremony (Document 106 row 55), and request/execute destruction
+    (Document 106 row 56). **The remaining 2 Document 22 operations — `postEvaluateMaterialReconciliation`
+    and `getMaterialDispensingReconciliation` — are NOT in this file.** They live in
+    `spec-ebmr-008.yaml` under its own explicit "NOT Document 17" section, because
+    `app/modules/material/router.py` mounts its `reconciliation_v1_router` under the exact same
+    `/reconciliation/v1` prefix `app/modules/yield_reconciliation`'s router uses — a genuine routing-
+    surface collision discovered and documented in that file (CR-012); consult it for the reconciliation
+    half of Document 22, including the exact reason `batch_id` there resolves against `ebmr.batches`
+    (the legacy `batch` module) rather than `ebmr.gxp_batch` like every `batch_id` in *this* file.
+
+
+    ALL FOUR MOVEMENT TYPES SHARE ONE "REMAINING QUANTITY" GUARD: consumption, return and loss (via
+    `_lock_dispensed_container`/`_mark_container_status_after_movement`) all check the requested quantity
+    against `DispensedContainer.remaining_quantity` (never against `actual_quantity`, which is the
+    original — decrements only) and derive the resulting `status`
+    (`active`/`partially_consumed`/`consumed`/`returned`/`destroyed`) purely from that number — never
+    from a caller-supplied status. `BatchMismatchError` (CON-FR-031) if the container's own `batch_id`
+    doesn't match the request.
+
+
+    MULTI-LOT ATTRIBUTION IS RESOLVED, NEVER GUESSED: because Document 21 supports multi-lot dispensing
+    into one `DispensedContainer` (DSP-FR-017), every ledger-writing operation here needs exactly one
+    `material_lot_id` to attribute its `InventoryTransaction` to. A single-source container resolves
+    automatically; a multi-source container requires the caller to name one of the container's actual
+    source lots (`_resolve_consumption_lot`) — `VALIDATION_FAILED` otherwise, never an arbitrary pick.
+
+
+    RETURN CONDITION ROUTES, NEVER OVERRIDES: `postRecordReturn`'s `condition_acceptable` is a
+    caller-supplied captured classification (CON-FR-006), never an inferred quality judgment —
+    `resulting_status` is `released` when true, `quarantine` when false; an unsuitable return is
+    quarantined, not silently mixed back into available stock.
+
+
+    ONLY ADJUSTMENT-APPROVAL AND DESTRUCTION-EXECUTION ARE SIGNED: Document 106 row 55
+    (`inventory_adjustment_request`, `approve`, independence required — CON-FR-014, the approver cannot
+    be the requester) and row 56 (`destruction_record`, `execute`, no independence, no reason — a
+    `witnesses` JSONB list is captured evidence, not a second Part 11 signature). Consumption, return,
+    loss and both `create` operations (adjustment request, destruction request) are unsigned/RBAC-gated
+    only — no Document 106 row resolves a signature for them.
+
+
+    THREE DOCUMENTED SG-098 GAPS THIS CONTRACT DOES NOT PAPER OVER: (a) `source_type="automatic"` on
+    consumption is rejected outright (`VALIDATION_FAILED`) — no validated edge/rules-engine source exists
+    yet, manual capture only; (b) reconciliation/adjustment tolerance values are caller-supplied captured
+    input, not a released Document 08/17 rule; (c) an auto-created deviation's severity/owner (in the
+    reconciliation-evaluate operation, over in `spec-ebmr-008.yaml`) is caller-supplied, and the actual
+    block on batch Production Complete this would imply is not wired into `app/modules/batch/commands.py`
+    this pass.
+
+
+    SG-146 (UOM expand step, resolved 2026-08-27): every quantity-carrying command here validates its
+    `uom` best-effort against the Document 110 §3 controlled UOM master.
+tags:
+  - name: material
+
+paths:
+  /materials/v1/consumptions:
+    post:
+      operationId: postRecordConsumption
+      tags: [material]
+      summary: Record material consumed from a dispensed container into a batch — unsigned (CON-FR-001/002/004/027/031)
+      description: >
+        Requires the `material_consumption.create` policy action, evaluated against the batch's site.
+        `quantity` must be positive and not exceed the container's `remaining_quantity`. `source_type`
+        is `manual` (the only built path) or `automatic` — `automatic` is always rejected
+        (`VALIDATION_FAILED`, CON-FR-003/SG-098: no validated automatic source exists). Decrements
+        `DispensedContainer.remaining_quantity` and writes a real `CONSUME` `InventoryTransaction`
+        against Document 20's ledger.
+      x-requirement-ids: [CON-FR-001, CON-FR-002, CON-FR-004, CON-FR-027, CON-FR-031, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordConsumptionCommand' }
+      responses:
+        '200':
+          description: Recorded. aggregate_id is the material_consumption record's id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — dispensed_container_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — quantity is not positive, source_type is neither manual nor automatic (or is automatic), the container belongs to a different batch, the container is no longer available, quantity exceeds remaining_quantity, or material_lot_id could not be resolved among the container's multiple source lots.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /materials/v1/returns:
+    post:
+      operationId: postRecordReturn
+      tags: [material]
+      summary: Return unused material from a dispensed container, routing by condition — unsigned (CON-FR-005/006/007/031)
+      description: >
+        Requires `material_return.create`. `quantity` must be positive and not exceed `remaining_
+        quantity`. `resulting_status` is derived, never caller-asserted: `released` (back to available
+        stock at `target_location_id`, with a real balance/ledger `RETURN` transaction) when
+        `condition_acceptable` is true, `quarantine` (no balance credit) when false — CON-FR-006's
+        "unsuitable condition routes to quarantine" rule.
+      x-requirement-ids: [CON-FR-005, CON-FR-006, CON-FR-007, CON-FR-031, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordReturnCommand' }
+      responses:
+        '200':
+          description: Returned. aggregate_id is the material_return record's id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — dispensed_container_id or target_location_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — quantity is not positive, the container belongs to a different batch, the container is no longer available, quantity exceeds remaining_quantity, or material_lot_id could not be resolved.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /materials/v1/losses:
+    post:
+      operationId: postRecordMaterialLoss
+      tags: [material]
+      summary: Record a sample/reject/spill/approved-loss movement from a dispensed container — unsigned, reason mandatory (CON-FR-009/010/011/012/031)
+      description: >
+        Requires `material_loss.create`. One operation for all four loss transaction types — Document
+        22's own data model declares no dedicated table for these (only Document 20's
+        `InventoryTransaction` records them); `loss_type` must be one of `SAMPLE`/`REJECT`/`SPILL`/
+        `APPROVED_LOSS`. `quantity` must be positive, `reason` is mandatory, and quantity must not
+        exceed `remaining_quantity`. Writes an `InventoryTransaction` with `transaction_type` set to the
+        `loss_type` verbatim.
+      x-requirement-ids: [CON-FR-009, CON-FR-010, CON-FR-011, CON-FR-012, CON-FR-031, MUT-FR-005, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordMaterialLossCommand' }
+      responses:
+        '200':
+          description: Recorded. aggregate_id is the InventoryTransaction's id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — dispensed_container_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — loss_type is not one of the four allowed values, quantity is not positive, reason is missing, the container belongs to a different batch, the container is no longer available, or quantity exceeds remaining_quantity.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /inventory/v1/adjustments:
+    post:
+      operationId: postCreateInventoryAdjustmentRequest
+      tags: [material]
+      summary: Request an exceptional, controlled-reason inventory adjustment — unsigned creation (CON-FR-013)
+      description: >
+        Requires `inventory_adjustment_request.create`, evaluated against the lot's site. `reason` is
+        mandatory. `observed_quantity` cannot be negative. `variance = observed_quantity -
+        expected_quantity` is computed server-side and stored — never accepted from the caller. Distinct
+        from Document 20's routine unsigned `postCreateCycleCount`: this is the exceptional, approved
+        path with its own Document 106 row 55 signature at the `approve` step.
+      x-requirement-ids: [CON-FR-013, MUT-FR-005, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInventoryAdjustmentRequestCommand' }
+      responses:
+        '200':
+          description: Requested, status requested. aggregate_id is the adjustment request's id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — material_lot_id or location_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — reason is missing, or observed_quantity is negative.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /inventory/v1/adjustments/{request_id}/signature-challenges:
+    parameters:
+      - { name: request_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAdjustmentSignatureChallenge
+      tags: [material]
+      summary: Create the signature challenge for approving an inventory adjustment request
+      description: No policy check of its own. action is always "approve" (the only value; the router default).
+      x-requirement-ids: [CON-FR-013, CON-FR-014, SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdjustmentSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /inventory/v1/adjustments/{request_id}/approve:
+    parameters:
+      - { name: request_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postApproveInventoryAdjustmentRequest
+      tags: [material]
+      summary: Approve an inventory adjustment request, applying it to the ledger — signed, independence-checked (Document 106 row 55, CON-FR-013/014)
+      description: >
+        Requires `inventory_adjustment_request.approve`. Only a `requested` request may be approved.
+        `VALIDATION_FAILED` if the approver is the request's own requester (CON-FR-014 independence).
+        `MissingSignatureError` (`AdjustmentApprovalRequiredError`, 428) if the resolved signature turns
+        out to be optional-but-absent — this action always requires a real signature in practice, since
+        `_material_sign` returning `None` (policy resolved but not required) is treated as a hard failure
+        here, unlike every other `_material_sign` caller. A non-zero `variance` writes a real
+        `ADJUST_POSITIVE`/`ADJUST_NEGATIVE` `InventoryTransaction` and updates the balance to the
+        request's `observed_quantity`; `VALIDATION_FAILED` if applying it would drive `available`
+        negative at that location.
+      x-requirement-ids: [CON-FR-013, CON-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, SIG-FR-004, SIG-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApproveInventoryAdjustmentRequestCommand' }
+      responses:
+        '200':
+          description: Approved and applied.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — the request is not in requested status.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — the approver is the requester, or applying the variance would drive available below zero.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE — no signature proof supplied, fresh step-up authentication failed, or the resolved policy did not actually require a signature (AdjustmentApprovalRequiredError — this action fails closed even in that case).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /materials/v1/destructions:
+    post:
+      operationId: postCreateDestructionRequest
+      tags: [material]
+      summary: Request destruction of a lot, container, or dispensed container — unsigned creation (CON-FR-015/016/018)
+      description: >
+        Requires `destruction_record.create`, evaluated against the site resolved from whichever scope
+        is set. Exactly one of `material_lot_id`/`container_id`/`dispensed_container_id` must be
+        supplied — `VALIDATION_FAILED` otherwise. `quantity` must be positive; `reason` is mandatory.
+        `witnesses` (CON-FR-016 "witness where policy requires") is captured JSONB evidence, not a
+        second Part 11 signature — Document 106 row 56 registers exactly one signer, at `execute`.
+      x-requirement-ids: [CON-FR-015, CON-FR-016, CON-FR-018, MUT-FR-005, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDestructionRequestCommand' }
+      responses:
+        '200':
+          description: Requested, status requested. aggregate_id is the destruction record's id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — the referenced material lot, container, or dispensed container does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — zero or more than one scope field is set, quantity is not positive, or reason is missing.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /materials/v1/destructions/{destruction_id}/signature-challenges:
+    parameters:
+      - { name: destruction_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postDestructionSignatureChallenge
+      tags: [material]
+      summary: Create the signature challenge for executing a destruction request
+      description: No policy check of its own. action is always "execute" (the only value; the router default).
+      x-requirement-ids: [CON-FR-015, CON-FR-017, SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DestructionSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /materials/v1/destructions/{destruction_id}/execute:
+    parameters:
+      - { name: destruction_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postExecuteDestruction
+      tags: [material]
+      summary: Execute a requested destruction, decrementing the source and writing a real DESTROY ledger transaction — signed (Document 106 row 56, CON-FR-015/017)
+      description: >
+        Requires `destruction_record.execute`. Only a `requested` record may be executed
+        (`DestructionNotAuthorizedError` otherwise). Re-validates the destruction quantity against the
+        scoped source's *current* remaining/available quantity at execution time — never trusts the
+        quantity captured at request time as still valid. Decrements exactly the scoped source
+        (`DispensedContainer.remaining_quantity`, `MaterialContainer.current_quantity`, or
+        `MaterialLot.available_quantity`) and writes one `DESTROY` `InventoryTransaction`. No
+        independence check and no `reason` requirement on this signature (Document 106 row 56 declares
+        neither) — `witnesses` capture is optional evidence, not enforced here.
+      x-requirement-ids: [CON-FR-015, CON-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExecuteDestructionCommand' }
+      responses:
+        '200':
+          description: Executed, status executed.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — the destruction record, or its scoped source, does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID — the record is not requested (DestructionNotAuthorizedError), or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — the destruction quantity now exceeds the scoped source's current remaining/available quantity.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    DispensedContainerStatus:
+      type: string
+      description: "`DISPENSED_CONTAINER_STATUSES` in `app/modules/material/models.py` — derived from remaining_quantity by `_mark_container_status_after_movement`/inline logic in each command, never caller-asserted."
+      x-requirement-ids: [CON-FR-004, CTR-FR-017]
+      enum: [active, partially_consumed, consumed, returned, destroyed]
+
+    LossType:
+      type: string
+      description: "`LOSS_TRANSACTION_TYPES` in `app/modules/material/commands.py` — the closed set postRecordMaterialLoss accepts."
+      x-requirement-ids: [CON-FR-009, CON-FR-010, CON-FR-011, CON-FR-012]
+      enum: [SAMPLE, REJECT, SPILL, APPROVED_LOSS]
+
+    MaterialReturnResultingStatus:
+      type: string
+      description: "`MATERIAL_RETURN_RESULTING_STATUSES` in `app/modules/material/models.py`."
+      x-requirement-ids: [CON-FR-005, CON-FR-006]
+      enum: [released, quarantine, rejected]
+
+    InventoryAdjustmentRequestStatus:
+      type: string
+      description: "`INVENTORY_ADJUSTMENT_REQUEST_STATUSES` in `app/modules/material/models.py`."
+      x-requirement-ids: [CON-FR-013, CTR-FR-017]
+      enum: [requested, approved, rejected]
+
+    DestructionRecordStatus:
+      type: string
+      description: "`DESTRUCTION_RECORD_STATUSES` in `app/modules/material/models.py`."
+      x-requirement-ids: [CON-FR-015, CON-FR-016, CON-FR-017, CTR-FR-017]
+      enum: [requested, authorized, executed]
+
+    SignatureChallengeResponse:
+      type: object
+      description: The response shape shared by postAdjustmentSignatureChallenge and postDestructionSignatureChallenge.
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    AdjustmentSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope.
+      x-requirement-ids: [SIG-FR-005]
+      properties:
+        action: { type: string, enum: [approve], default: approve }
+
+    DestructionSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope.
+      x-requirement-ids: [SIG-FR-005]
+      properties:
+        action: { type: string, enum: [execute], default: execute }
+
+    RecordConsumptionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CON-FR-001, CON-FR-002, CON-FR-003, CON-FR-004, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, dispensed_container_id, quantity, uom]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        step_id: { type: [string, "null"], format: uuid }
+        dispensed_container_id: { type: string, format: uuid }
+        material_lot_id: { type: [string, "null"], format: uuid, description: Required only when the dispensed container has more than one source lot. }
+        quantity: { type: string, description: "Decimal string. Must be positive and not exceed remaining_quantity." }
+        uom: { type: string }
+        source_type: { type: string, enum: [manual, automatic], default: manual, description: "automatic is always rejected — no validated automatic source exists (SG-098)." }
+        source_id: { type: [string, "null"] }
+
+    RecordReturnCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CON-FR-005, CON-FR-006, CON-FR-007, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, dispensed_container_id, quantity, uom, container_condition, condition_acceptable, target_location_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        dispensed_container_id: { type: string, format: uuid }
+        material_lot_id: { type: [string, "null"], format: uuid }
+        quantity: { type: string, description: "Decimal string. Must be positive and not exceed remaining_quantity." }
+        uom: { type: string }
+        container_condition: { type: string, description: Captured free text describing the physical container condition. }
+        condition_acceptable: { type: boolean, description: "Drives resulting_status: true→released, false→quarantine." }
+        storage_exposure_evidence: { type: [object, "null"], description: "Exposure/opening/temperature-excursion evidence (CON-FR-007) — captured JSONB, no controlled code list." }
+        target_location_id: { type: string, format: uuid }
+
+    RecordMaterialLossCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CON-FR-009, CON-FR-010, CON-FR-011, CON-FR-012, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, batch_id, dispensed_container_id, loss_type, quantity, uom, reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        dispensed_container_id: { type: string, format: uuid }
+        loss_type: { $ref: '#/components/schemas/LossType' }
+        quantity: { type: string, description: "Decimal string. Must be positive and not exceed remaining_quantity." }
+        uom: { type: string }
+        reason: { type: string, minLength: 1 }
+        location_id: { type: [string, "null"], format: uuid }
+        evidence: { type: [object, "null"] }
+
+    CreateInventoryAdjustmentRequestCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CON-FR-013, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, material_lot_id, location_id, expected_quantity, observed_quantity, reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        material_lot_id: { type: string, format: uuid }
+        container_id: { type: [string, "null"], format: uuid }
+        location_id: { type: string, format: uuid }
+        expected_quantity: { type: string, description: Decimal string. }
+        observed_quantity: { type: string, description: "Decimal string. Cannot be negative." }
+        reason: { type: string, minLength: 1 }
+        evidence: { type: [object, "null"] }
+
+    ApproveInventoryAdjustmentRequestCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CON-FR-013, CON-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, expected_version, reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    CreateDestructionRequestCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Exactly one of material_lot_id/container_id/dispensed_container_id must be set.
+      x-requirement-ids: [CON-FR-015, CON-FR-016, CON-FR-018, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, quantity, uom, reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        material_lot_id: { type: [string, "null"], format: uuid }
+        container_id: { type: [string, "null"], format: uuid }
+        dispensed_container_id: { type: [string, "null"], format: uuid }
+        quantity: { type: string, description: "Decimal string. Must be positive." }
+        uom: { type: string }
+        reason: { type: string, minLength: 1 }
+        method: { type: [string, "null"] }
+        vendor_name: { type: [string, "null"], description: "Third-party destruction vendor (CON-FR-018)." }
+        manifest_reference: { type: [string, "null"] }
+        certificate_vault_object_id: { type: [string, "null"], format: uuid }
+        witnesses: { type: [object, "null"], description: Captured JSONB list of witness user references — not a second Part 11 signature. }
+
+    ExecuteDestructionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CON-FR-015, CON-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        expected_version: { type: integer, minimum: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

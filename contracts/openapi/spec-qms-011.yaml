@@ -1,0 +1,518 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QMS-011 — Field Action / Recall Management
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-05 Document 36 slice actually built
+    (`services/gxp-api/app/modules/qms/field_action_*.py`): create field action -> scope -> reportability
+    (signed) -> approve (signed) -> communications -> reconcile -> effectiveness -> close (signed),
+    matching the module's own 8-op API list and the fold-in pattern documented in
+    `field_action_models.py`'s module docstring, plus the `signature-challenges` ceremony-entry-point
+    endpoint (SG-138 engineering half, not in Document 36's own list — contracted because the router
+    implements it).
+
+
+    FAR-FR-008(partial)/016/020 are deliberately not built — see docs/generated/18_SPEC_GAPS.md
+    SG-105/SG-106. `reportability`/`approve`/`close` are all signed (FIELD_ACTION_SIGNATURE_ACTIONS =
+    `("reportability", "approve", "close")`) and return `SIGNATURE_POLICY_UNRESOLVED` today (SG-138's
+    policy-data half is still open). CLOSED -> SCOPE_DEFINITION scope expansion (FAR-FR-019) reuses the
+    SCOPE_DEFINITION state plus a `revision` counter increment, not a distinct EXPANDED state.
+tags:
+  - name: qms-field-action
+
+paths:
+  /qms/v1/field-actions:
+    post:
+      operationId: postCreateFieldAction
+      tags: [qms-field-action]
+      summary: Initiate a field action from any of Document 36's declared triggers (FAR-FR-001/002)
+      description: Requires `field_action.create`. `action_type` must be one of Document 36's six types; `trigger_ref.source_type` one of its six trigger sources.
+      x-requirement-ids: [FAR-FR-001, FAR-FR-002, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateFieldActionCommand' } } }
+      responses:
+        '200': { description: Created, state ASSESSMENT. `aggregate_id` is the field action id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — unrecognized action_type/trigger_ref.source_type, or duplicate action_number.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+    get:
+      operationId: getFieldActions
+      tags: [qms-field-action]
+      summary: Paginated, filterable field action list (non-authoritative read, AG-11)
+      x-requirement-ids: [FAR-FR-017]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+        - { name: site_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: state, in: query, required: false, schema: { $ref: '#/components/schemas/FieldActionState' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/FieldActionListResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /qms/v1/field-actions/{field_action_id}:
+    parameters:
+      - { name: field_action_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getFieldActionDetail
+      tags: [qms-field-action]
+      summary: One field action with full detail, scope items, communications and reconciliation (FAR-FR-003/005/006/013)
+      x-requirement-ids: [FAR-FR-003, FAR-FR-005, FAR-FR-006, FAR-FR-013]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/FieldActionDetail' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /qms/v1/field-actions/{field_action_id}/scope:
+    parameters:
+      - { name: field_action_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postDefineScope
+      tags: [qms-field-action]
+      summary: Freeze, extend, or (post-closure) reopen/expand the affected scope (FAR-FR-003/004/007/008/019)
+      description: Requires `field_action.scope`. ASSESSMENT -> SCOPE_DEFINITION on first call; may also be called again while SCOPE_DEFINITION, or from CLOSED to reopen/expand (revision incremented).
+      x-requirement-ids: [FAR-FR-003, FAR-FR-004, FAR-FR-007, FAR-FR-008, FAR-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DefineScopeCommand' } } }
+      responses:
+        '200': { description: Scope defined/extended., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or FIELD_ACTION_SCOPE_REQUIRED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: field_action_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/field-actions/{field_action_id}/signature-challenges:
+    parameters:
+      - { name: field_action_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postFieldActionSignatureChallenge
+      tags: [qms-field-action]
+      summary: Create the Part 11 signature challenge for reportability/approve/close (SG-138 engineering half)
+      description: >
+        Not in Document 36's own 8-op API list; contracted because the router implements it. Resolves
+        the `field_action`/`{action}` Document 106 policy and binds a challenge to the current field
+        action's id/version/hash. Returns `SIGNATURE_POLICY_UNRESOLVED` today for all three actions
+        (SG-138's policy-data half is still open).
+      x-requirement-ids: [FAR-FR-006, FAR-FR-009, FAR-FR-018, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/FieldActionSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not one of reportability/approve/close.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/field-actions/{field_action_id}/reportability:
+    parameters:
+      - { name: field_action_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAssessFieldActionReportability
+      tags: [qms-field-action]
+      summary: Regulatory reportability decision — signed per Document 106 (FAR-FR-006/014/016)
+      description: Requires `field_action.reportability`. SCOPE_DEFINITION -> REGULATORY_DECISION only. Resolves the `field_action`/`reportability` Document 106 policy.
+      x-requirement-ids: [FAR-FR-006, FAR-FR-014, FAR-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReportabilityCommand' } } }
+      responses:
+        '200': { description: Assessed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (regimes/rationale required, bad decision) or field_action_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qms/v1/field-actions/{field_action_id}/approve:
+    parameters:
+      - { name: field_action_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postApproveFieldAction
+      tags: [qms-field-action]
+      summary: Approve the regulatory decision and communication plan — signed per Document 106 (FAR-FR-009)
+      description: Requires `field_action.approve`. REGULATORY_DECISION -> APPROVAL only. Resolves the `field_action`/`approve` Document 106 policy.
+      x-requirement-ids: [FAR-FR-009, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveFieldActionCommand' } } }
+      responses:
+        '200': { description: Approved., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, REPORTABILITY_ASSESSMENT_REQUIRED, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (conclusion required) or field_action_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qms/v1/field-actions/{field_action_id}/communications:
+    parameters:
+      - { name: field_action_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordFieldActionCommunication
+      tags: [qms-field-action]
+      summary: Record/version a notification package (FAR-FR-009/010)
+      description: Requires `field_action.communications`. APPROVAL -> EXECUTION_NOTIFICATION only, and only once the plan is approved (COMMUNICATION_NOT_APPROVED otherwise).
+      x-requirement-ids: [FAR-FR-009, FAR-FR-010, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordCommunicationCommand' } } }
+      responses:
+        '200': { description: Recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or COMMUNICATION_NOT_APPROVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (recipient/message required) or field_action_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/field-actions/{field_action_id}/reconcile:
+    parameters:
+      - { name: field_action_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReconcile
+      tags: [qms-field-action]
+      summary: Record/update the unit reconciliation counts (FAR-FR-011/012)
+      description: Requires `field_action.reconcile`. EXECUTION_NOTIFICATION -> RECONCILIATION.
+      x-requirement-ids: [FAR-FR-011, FAR-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReconcileCommand' } } }
+      responses:
+        '200': { description: Recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (negative affected_count) or field_action_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/field-actions/{field_action_id}/effectiveness:
+    parameters:
+      - { name: field_action_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postEffectiveness
+      tags: [qms-field-action]
+      summary: Record the effectiveness check result (FAR-FR-013)
+      description: Requires `field_action.effectiveness`. RECONCILIATION -> EFFECTIVENESS.
+      x-requirement-ids: [FAR-FR-013, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EffectivenessCommand' } } }
+      responses:
+        '200': { description: Recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (bad result) or field_action_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/field-actions/{field_action_id}/close:
+    parameters:
+      - { name: field_action_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCloseFieldAction
+      tags: [qms-field-action]
+      summary: Final closure — signed per Document 106 (FAR-FR-018)
+      description: Requires `field_action.close`. EFFECTIVENESS -> CLOSED only, and only once reconciliation and effectiveness are both complete. Resolves the `field_action`/`close` Document 106 policy.
+      x-requirement-ids: [FAR-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CloseFieldActionCommand' } } }
+      responses:
+        '200': { description: Closed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, FIELD_ACTION_CLOSURE_BLOCKED, EFFECTIVENESS_REQUIRED, RECONCILIATION_INCOMPLETE, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (conclusion required) or field_action_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    FieldActionState:
+      type: string
+      description: "`FIELD_ACTION_STATES` in `app/modules/qms/field_action_models.py`. CLOSED -> SCOPE_DEFINITION (scope expansion, FAR-FR-019) reuses SCOPE_DEFINITION plus a revision increment rather than a distinct state."
+      x-requirement-ids: [FAR-FR-002, CTR-FR-017]
+      enum: [ASSESSMENT, SCOPE_DEFINITION, REGULATORY_DECISION, APPROVAL, EXECUTION_NOTIFICATION, RECONCILIATION, EFFECTIVENESS, CLOSED]
+
+    FieldActionType:
+      type: string
+      description: "`ACTION_TYPES` — the six action types Document 36 itself enumerates (FAR-FR-002)."
+      x-requirement-ids: [FAR-FR-002]
+      enum: [recall, correction, removal, field_action, customer_advisory, stock_recovery]
+
+    FieldActionTriggerType:
+      type: string
+      description: "`TRIGGER_TYPES` — the six trigger sources Document 36 itself enumerates (FAR-FR-001)."
+      x-requirement-ids: [FAR-FR-001]
+      enum: [complaint, deviation, capa, trend, regulatory_request, management_decision]
+
+    ScopeItem:
+      type: object
+      description: One scope item input, nested inside DefineScopeCommand.
+      x-requirement-ids: [FAR-FR-003, FAR-FR-004, FAR-FR-007, FAR-FR-008]
+      properties:
+        product_ref: { type: [string, "null"], format: uuid }
+        lot_batch_serial_refs: { type: [object, "null"] }
+        distribution_ref: { type: [object, "null"], description: FAR-FR-008 caller-supplied ERP/WMS/CRM consignee scope. }
+        distribution_hold: { type: boolean, default: false, description: FAR-FR-007. }
+        action_required: { type: [string, "null"] }
+
+    FieldActionScopeItemView:
+      type: object
+      description: One persisted scope item, as returned inline by getFieldActionDetail.
+      x-requirement-ids: [FAR-FR-003, FAR-FR-004]
+      required: [id, distribution_hold, status, action_completed]
+      properties:
+        id: { type: string, format: uuid }
+        product_ref: { type: [string, "null"], format: uuid }
+        lot_batch_serial_refs: { type: [object, "null"] }
+        distribution_ref: { type: [object, "null"] }
+        distribution_hold: { type: boolean }
+        status: { type: string, description: "Free string, no enumerated set in models.py; default \"identified\"." }
+        action_required: { type: [string, "null"] }
+        action_completed: { type: boolean }
+
+    FieldActionCommunicationView:
+      type: object
+      description: One communication, as returned inline by getFieldActionDetail.
+      x-requirement-ids: [FAR-FR-009, FAR-FR-010]
+      required: [id, package_version, recipient, message, delivery_status]
+      properties:
+        id: { type: string, format: uuid }
+        package_version: { type: integer, minimum: 1 }
+        recipient: { type: string }
+        channel: { type: [string, "null"] }
+        message: { type: string }
+        sent_at: { type: [string, "null"], format: date-time }
+        delivery_status: { type: string, description: "Free string, no enumerated set in models.py; default \"pending\"." }
+        ack_status: { type: [string, "null"] }
+
+    FieldActionReconciliationView:
+      type: object
+      description: The latest reconciliation snapshot, as returned inline by getFieldActionDetail (null if none exists yet).
+      x-requirement-ids: [FAR-FR-011, FAR-FR-012]
+      required: [affected_count, contacted_count, returned_count, corrected_count, destroyed_count, unavailable_count, outstanding_count, created_at]
+      properties:
+        affected_count: { type: integer, minimum: 0 }
+        contacted_count: { type: integer, minimum: 0 }
+        returned_count: { type: integer, minimum: 0 }
+        corrected_count: { type: integer, minimum: 0 }
+        destroyed_count: { type: integer, minimum: 0 }
+        unavailable_count: { type: integer, minimum: 0 }
+        outstanding_count: { type: integer, minimum: 0 }
+        created_at: { type: string, format: date-time }
+
+    FieldAction:
+      type: object
+      description: One field action (`app/modules/qms/field_action_router.py:_field_action_dict`). A response schema, so not closed.
+      x-requirement-ids: [FAR-FR-001, FAR-FR-002]
+      required: [id, site_id, quality_event_id, action_number, action_type, capa_required, revision, state, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        quality_event_id: { type: string, format: uuid }
+        action_number: { type: string }
+        action_type: { $ref: '#/components/schemas/FieldActionType' }
+        risk_assessment_ref: { type: [string, "null"], format: uuid }
+        capa_required: { type: boolean }
+        capa_rationale: { type: [string, "null"] }
+        scope_snapshot_id: { type: [string, "null"], format: uuid }
+        revision: { type: integer, minimum: 1 }
+        state: { $ref: '#/components/schemas/FieldActionState' }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        created_at: { type: [string, "null"], format: date-time }
+        closed_at: { type: [string, "null"], format: date-time }
+
+    FieldActionDetail:
+      type: object
+      description: getFieldActionDetail's response — FieldAction plus semi-structured fields, scope items, communications and reconciliation.
+      x-requirement-ids: [FAR-FR-003, FAR-FR-005, FAR-FR-006, FAR-FR-013]
+      allOf:
+        - $ref: '#/components/schemas/FieldAction'
+        - type: object
+          required: [trigger_ref, scope_items, communications]
+          properties:
+            trigger_ref: { type: object }
+            reportability_assessment: { type: [object, "null"] }
+            effectiveness_check: { type: [object, "null"] }
+            scope_items: { type: array, items: { $ref: '#/components/schemas/FieldActionScopeItemView' } }
+            communications: { type: array, items: { $ref: '#/components/schemas/FieldActionCommunicationView' } }
+            reconciliation: { oneOf: [{ $ref: '#/components/schemas/FieldActionReconciliationView' }, { type: "null" }] }
+
+    FieldActionListResult:
+      type: object
+      description: getFieldActions's response — the shared page envelope plus items.
+      x-requirement-ids: [FAR-FR-017, CTR-FR-012]
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/FieldAction' } } }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postFieldActionSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    FieldActionSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [reportability, approve, close] }
+
+    CreateFieldActionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [FAR-FR-001, FAR-FR-002, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, action_number, action_type, trigger_ref]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        action_number: { type: string }
+        action_type: { $ref: '#/components/schemas/FieldActionType' }
+        trigger_ref: { type: object, description: Must carry a source_type key valued in FieldActionTriggerType. }
+        risk_assessment_ref: { type: [string, "null"], format: uuid, description: FK into qms.risk_record. }
+
+    DefineScopeCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [FAR-FR-003, FAR-FR-004, FAR-FR-007, FAR-FR-008, FAR-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, field_action_id, expected_version, items]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        field_action_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        items: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ScopeItem' } }
+        reason: { type: [string, "null"] }
+
+    ReportabilityCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [FAR-FR-006, FAR-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, field_action_id, expected_version, applicable_regimes, rationale, decision]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        field_action_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        applicable_regimes: { type: array, minItems: 1, items: { type: string } }
+        rationale: { type: string }
+        decision: { type: string, enum: [reportable, not_reportable] }
+        due_date: { type: [string, "null"], format: date-time }
+        submission_reference: { type: [string, "null"], description: FAR-FR-014. }
+        submission_status: { type: [string, "null"] }
+        capa_required: { type: boolean, default: false }
+        capa_rationale: { type: [string, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    ApproveFieldActionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [FAR-FR-009, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, field_action_id, expected_version, conclusion]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        field_action_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        conclusion: { type: string }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    RecordCommunicationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [FAR-FR-009, FAR-FR-010, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, field_action_id, expected_version, recipient, message]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        field_action_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        recipient: { type: string }
+        message: { type: string }
+        package_version: { type: integer, default: 1 }
+        channel: { type: [string, "null"] }
+        sent_at: { type: [string, "null"], format: date-time }
+        delivery_status: { type: string, default: pending }
+        ack_status: { type: [string, "null"] }
+
+    ReconcileCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [FAR-FR-011, FAR-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, field_action_id, expected_version, affected_count]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        field_action_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        affected_count: { type: integer, minimum: 0 }
+        contacted_count: { type: integer, minimum: 0, default: 0 }
+        returned_count: { type: integer, minimum: 0, default: 0 }
+        corrected_count: { type: integer, minimum: 0, default: 0 }
+        destroyed_count: { type: integer, minimum: 0, default: 0 }
+        unavailable_count: { type: integer, minimum: 0, default: 0 }
+        outstanding_count: { type: integer, minimum: 0, default: 0 }
+
+    EffectivenessCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [FAR-FR-013, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, field_action_id, expected_version, result]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        field_action_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        result: { type: string, enum: [pass, fail] }
+        evidence: { type: [object, "null"] }
+
+    CloseFieldActionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [FAR-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, field_action_id, expected_version, conclusion]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        field_action_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        conclusion: { type: string }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

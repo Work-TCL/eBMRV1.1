@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-sec-005.json",
+  "title": "SPEC-SEC-005 — Secrets Management, PKI, Cryptography & Key Lifecycle Events",
+  "description": "Document 113 event contract for WP-10 Document 65 (app/modules/security/crypto*). SecretRotated / CertificateIssued / CertificateRotated / CertificateRevoked are emitted for real by the Mutation Gateway command handlers (one outbox row per committed mutation). SecretAccessDenied / CryptoHealthFailed / KeyAccessAnomaly are security-telemetry events (Document 65 # 9) with their emit helper (crypto.emit_security_event) and stable error codes (SECRET_ACCESS_DENIED / CRYPTO_HEALTH_FAILED) in place; their runtime call sites are opportunistic (SecretAccessDenied fires where a resolve_secret() call has a live session; CryptoHealthFailed is surfaced as the 503 from GET /security/v1/crypto-health) and telemetry for a real KMS/HSM access-anomaly feed is deferred, same 'mechanism present, infra feed deferred' shape as Document 63/64.",
+  "x-requirement-ids": ["KEY-FR-005", "KEY-FR-006", "KEY-FR-009", "KEY-FR-010", "KEY-FR-022", "KEY-FR-028", "EVT-FR-001", "MUT-FR-031"],
+  "$defs": {
+    "SecretRotatedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["secret_id", "secret_ref", "version"],
+      "properties": {
+        "secret_id": { "type": "string", "format": "uuid" },
+        "secret_ref": { "type": "string" },
+        "version": { "type": "integer" },
+        "emergency": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["KEY-FR-005", "KEY-FR-006"]
+    },
+    "CertificateIssuedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["certificate_id", "serial", "profile"],
+      "properties": {
+        "certificate_id": { "type": "string", "format": "uuid" },
+        "serial": { "type": "string" },
+        "profile": { "type": "string" },
+        "expires_at": { "type": "string", "format": "date-time" }
+      },
+      "x-requirement-ids": ["KEY-FR-008"]
+    },
+    "CertificateRotatedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["certificate_id", "serial", "supersedes_id"],
+      "properties": {
+        "certificate_id": { "type": "string", "format": "uuid" },
+        "serial": { "type": "string" },
+        "supersedes_id": { "type": "string", "format": "uuid" },
+        "supersedes_serial": { "type": "string" }
+      },
+      "x-requirement-ids": ["KEY-FR-009"]
+    },
+    "CertificateRevokedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["certificate_id", "serial", "revocation_reason"],
+      "properties": {
+        "certificate_id": { "type": "string", "format": "uuid" },
+        "serial": { "type": "string" },
+        "revocation_reason": { "type": "string" }
+      },
+      "x-requirement-ids": ["KEY-FR-010"]
+    },
+    "SecretAccessDeniedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reason"],
+      "properties": {
+        "secret_ref": { "type": ["string", "null"] },
+        "service_identity": { "type": ["string", "null"] },
+        "reason": { "type": "string" }
+      },
+      "x-requirement-ids": ["KEY-FR-004", "KEY-FR-022"]
+    },
+    "CryptoHealthFailedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["findings"],
+      "properties": {
+        "checked_at": { "type": "string", "format": "date-time" },
+        "findings": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+      },
+      "x-requirement-ids": ["KEY-FR-028"]
+    },
+    "KeyAccessAnomalyPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["anomaly"],
+      "properties": {
+        "key_ref": { "type": ["string", "null"] },
+        "anomaly": { "type": "string" },
+        "subject": { "type": ["string", "null"] }
+      },
+      "x-requirement-ids": ["KEY-FR-022"]
+    }
+  },
+  "events": [
+    { "event_type": "SecretRotated", "schema_version": "1.0", "producer": "SPEC-SEC-005", "aggregate_type": "secret_metadata", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/SecretRotatedPayload" }, "x-requirement-ids": ["KEY-FR-005"] },
+    { "event_type": "CertificateIssued", "schema_version": "1.0", "producer": "SPEC-SEC-005", "aggregate_type": "certificate_metadata", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/CertificateIssuedPayload" }, "x-requirement-ids": ["KEY-FR-008"] },
+    { "event_type": "CertificateRotated", "schema_version": "1.0", "producer": "SPEC-SEC-005", "aggregate_type": "certificate_metadata", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/CertificateRotatedPayload" }, "x-requirement-ids": ["KEY-FR-009"] },
+    { "event_type": "CertificateRevoked", "schema_version": "1.0", "producer": "SPEC-SEC-005", "aggregate_type": "certificate_metadata", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/CertificateRevokedPayload" }, "x-requirement-ids": ["KEY-FR-010"] },
+    { "event_type": "SecretAccessDenied", "schema_version": "1.0", "producer": "SPEC-SEC-005", "aggregate_type": "security_event", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/SecretAccessDeniedPayload" }, "x-requirement-ids": ["KEY-FR-004"] },
+    { "event_type": "CryptoHealthFailed", "schema_version": "1.0", "producer": "SPEC-SEC-005", "aggregate_type": "security_event", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/CryptoHealthFailedPayload" }, "x-requirement-ids": ["KEY-FR-028"] },
+    { "event_type": "KeyAccessAnomaly", "schema_version": "1.0", "producer": "SPEC-SEC-005", "aggregate_type": "security_event", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/KeyAccessAnomalyPayload" }, "x-requirement-ids": ["KEY-FR-022"] }
+  ]
+}

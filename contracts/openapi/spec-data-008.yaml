@@ -1,0 +1,118 @@
+openapi: 3.1.0
+info:
+  title: SPEC-DATA-008 — Backup, Restore, Point-in-Time Recovery & Disaster Recovery
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-11 Document 76 (`services/gxp-api/app/modules/disaster_recovery/*`).
+    3 owned entities per the approved data-model catalogue: `recovery_objective_profile`,
+    `backup_inventory`, `restore_test` — all PostgreSQL (GxP Core, authoritative).
+
+
+    RPO/RTO numbers are transcribed from Document 109 (SPEC-DATA-012, APPROVED, closes
+    SG-006/008/016) `# 1. Component recovery tiers` — never invented. No signature (Document 106 has
+    no SPEC-DATA-008 row) — all 3 operations are RBAC-gated + mandatory reason.
+tags:
+  - name: disaster-recovery
+
+paths:
+  /platform/v1/recovery-objectives:
+    post:
+      operationId: postRecoveryObjective
+      tags: [disaster-recovery]
+      summary: Set/update a component's RPO/RTO recovery-tier objective (DR-FR-001/002/009)
+      x-requirement-ids: [DR-FR-001, DR-FR-002, DR-FR-009, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateRecoveryObjectiveProfileCommand' } } }
+      responses:
+        '200': { description: Configured; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: "STALE_VERSION / IDEMPOTENCY_CONFLICT.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /platform/v1/backups/health:
+    get:
+      operationId: getBackupHealth
+      tags: [disaster-recovery]
+      summary: Backup freshness / RPO-at-risk status for every declared component (DR-FR-002/015)
+      x-requirement-ids: [DR-FR-002, DR-FR-015]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Per-component backup health., content: { application/json: { schema: { $ref: '#/components/schemas/BackupHealthList' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /platform/v1/restore-tests:
+    post:
+      operationId: postRestoreTest
+      tags: [disaster-recovery]
+      summary: Record an executed restore/PITR drill (DR-FR-016/017/030)
+      x-requirement-ids: [DR-FR-016, DR-FR-017, DR-FR-030, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ExecutePostgresRestoreTestCommand' } } }
+      responses:
+        '200': { description: Recorded (PASS or FAIL); MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateRecoveryObjectiveProfileCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, component, tier, rto_seconds, approved_by, reason]
+      x-requirement-ids: [DR-FR-001, DR-FR-002]
+      properties:
+        idempotency_key: { type: string }
+        component: { type: string }
+        tier: { type: string, enum: [T0, T1, T2, T3, T4, T5] }
+        rpo_seconds: { type: [integer, 'null'], minimum: 0 }
+        rto_seconds: { type: integer, minimum: 0 }
+        approved_by: { type: string }
+        expected_version: { type: [integer, 'null'] }
+        reason: { type: string }
+
+    ExecutePostgresRestoreTestCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, backup_id, target_environment, started_at, completed_at, integrity_checks, reason]
+      x-requirement-ids: [DR-FR-016, DR-FR-017]
+      properties:
+        idempotency_key: { type: string }
+        backup_id: { type: string, format: uuid }
+        target_environment: { type: string }
+        pitr_target: { type: [string, 'null'], format: date-time }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        integrity_checks: { type: object, additionalProperties: { type: boolean } }
+        evidence_ref: { type: [string, 'null'] }
+        reason: { type: string }
+
+    BackupHealthList:
+      type: object
+      additionalProperties: false
+      required: [count, components]
+      x-requirement-ids: [DR-FR-002, DR-FR-015]
+      properties:
+        count: { type: integer }
+        components:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              component: { type: string }
+              objective_defined: { type: boolean }
+              tier: { type: [string, 'null'] }
+              rpo_seconds: { type: [integer, 'null'] }
+              backup_age_seconds: { type: [number, 'null'] }
+              at_risk: { type: [boolean, 'null'] }

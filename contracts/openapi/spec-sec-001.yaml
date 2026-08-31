@@ -1,0 +1,328 @@
+openapi: 3.1.0
+info:
+  title: SPEC-SEC-001 — Security Architecture, Threat Model & Control Framework
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-10 Document 61 (`services/gxp-api/app/modules/security/`). 4 owned
+    entities per the approved data-model catalogue: `security_threat_model_version`, `security_threat`,
+    `security_control`, `security_exception`.
+
+
+    `triggerThreatModelReview()` and `calculateSecurityRisk()` are named functions with their own events
+    in Document 61's contract catalogue but are missing from its terse 6-op `# 7` list — contracted here
+    as extra operations under their owning aggregate's path, same precedent Document 54/58 used for their
+    own extra read/analytics endpoints. A read-only `GET /security/v1/exceptions/{id}` is likewise added
+    (not named in `# 7`, same "extra read operation" precedent).
+
+
+    `mapSecurityControl()`, `calculateSecurityRisk()`, `acceptResidualSecurityRisk()` and
+    `triggerThreatModelReview()` have no dedicated owned table (only 4 entities exist for 8 functions) —
+    see `app/modules/security/models.py`'s module docstring for how each is represented on the 4 owned
+    tables instead. `acceptResidualSecurityRisk` and `openSecurityException` have no usable Document 106
+    signature resolution and always return `SIGNATURE_POLICY_UNRESOLVED` in this baseline (SG-161).
+tags:
+  - name: security
+
+paths:
+  /security/v1/threat-models:
+    post:
+      operationId: postCreateThreatModelVersion
+      tags: [security]
+      summary: Create a draft threat model version (SEC-THR-001/002/003/004/005/019/025)
+      x-requirement-ids: [SEC-THR-001, SEC-THR-002, SEC-THR-003, SEC-THR-004, SEC-THR-005, SEC-THR-019, SEC-THR-025, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateThreatModelVersionCommand' } } }
+      responses:
+        '200': { description: Draft created., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: "THREAT_SCOPE_INVALID.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/threat-models/{threat_model_version_id}/reviews:
+    post:
+      operationId: postTriggerThreatModelReview
+      tags: [security]
+      summary: Trigger a threat model review (SEC-THR-002/024)
+      x-requirement-ids: [SEC-THR-002, SEC-THR-024, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: threat_model_version_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TriggerThreatModelReviewCommand' } } }
+      responses:
+        '200': { description: Review task recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/control-matrix:
+    get:
+      operationId: getSecurityControlMatrix
+      tags: [security]
+      summary: Generate the threat/control/evidence/test matrix for a threat model version (SEC-THR-013/027)
+      description: Read-only join over security_threat.control_mappings and the security_control catalogue (AG-11 — never a regulated decision source).
+      x-requirement-ids: [SEC-THR-013, SEC-THR-027]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: threat_model_version_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: deployment_profile, in: query, required: false, schema: { type: string, enum: [CLOUD, PRIVATE_CLOUD, ON_PREM] } }
+      responses:
+        '200': { description: Control matrix., content: { application/json: { schema: { $ref: '#/components/schemas/SecurityControlMatrix' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/threats:
+    post:
+      operationId: postRegisterThreat
+      tags: [security]
+      summary: Register a threat against a threat model version (SEC-THR-003..012)
+      x-requirement-ids: [SEC-THR-003, SEC-THR-004, SEC-THR-005, SEC-THR-006, SEC-THR-007, SEC-THR-008, SEC-THR-009, SEC-THR-010, SEC-THR-011, SEC-THR-012, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RegisterThreatCommand' } } }
+      responses:
+        '200': { description: Threat registered., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/threats/{threat_id}/controls:
+    post:
+      operationId: postMapSecurityControl
+      tags: [security]
+      summary: Map a preventive/detective/recovery control to a threat (SEC-THR-013)
+      description: Gets-or-creates the security_control catalogue entry by control_code (no createSecurityControl() function exists — see models.py module docstring).
+      x-requirement-ids: [SEC-THR-013, SEC-THR-022, SEC-THR-028, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: threat_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MapSecurityControlCommand' } } }
+      responses:
+        '200': { description: Control mapped., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/threats/{threat_id}/risk-calculations:
+    post:
+      operationId: postCalculateSecurityRisk
+      tags: [security]
+      summary: Calculate inherent or residual security risk for a threat (SEC-THR-014)
+      description: rating is caller-supplied (no risk-scoring formula/matrix is defined in any approved baseline — same established precedent as app/modules/qms/risk_commands.py). Appends the prior value onto risk_calculation_history rather than overwriting it.
+      x-requirement-ids: [SEC-THR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: threat_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CalculateSecurityRiskCommand' } } }
+      responses:
+        '200': { description: Risk calculated., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "SECURITY_RISK_INPUT_INCOMPLETE or VALIDATION_FAILED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/risks/{risk_id}/accept:
+    post:
+      operationId: postAcceptResidualSecurityRisk
+      tags: [security]
+      summary: Accept residual security risk (SEC-THR-015)
+      description: risk_id is the owning security_threat id (no separate SecurityRiskAssessment table). SG-161— no Document 106 row exists for this operation; always returns SIGNATURE_POLICY_UNRESOLVED in this baseline.
+      x-requirement-ids: [SEC-THR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: risk_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AcceptResidualSecurityRiskCommand' } } }
+      responses:
+        '200': { description: Residual risk accepted., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION or SIGNATURE_POLICY_UNRESOLVED (SG-161).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: SECURITY_RISK_INPUT_INCOMPLETE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/exceptions:
+    post:
+      operationId: postOpenSecurityException
+      tags: [security]
+      summary: Open a time-bounded security exception (SEC-THR-023)
+      description: SG-161 — Document 106 row 133 names "Elevated authority defined by the record class" with no dispatch table; always returns SIGNATURE_POLICY_UNRESOLVED in this baseline.
+      x-requirement-ids: [SEC-THR-023, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OpenSecurityExceptionCommand' } } }
+      responses:
+        '200': { description: Exception opened., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: "SIGNATURE_POLICY_UNRESOLVED (SG-161).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (e.g. expiry in the past).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/exceptions/{exception_id}:
+    get:
+      operationId: getSecurityException
+      tags: [security]
+      summary: Read a security exception (SEC-THR-023/027)
+      x-requirement-ids: [SEC-THR-023, SEC-THR-027]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: exception_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Exception., content: { application/json: { schema: { $ref: '#/components/schemas/SecurityExceptionView' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  schemas:
+    CreateThreatModelVersionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SEC-THR-001, SEC-THR-025, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, system_version, methodology_version, deployment_profile]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        system_version: { type: string }
+        methodology_version: { type: string }
+        deployment_profile: { type: string, enum: [CLOUD, PRIVATE_CLOUD, ON_PREM] }
+        scope: { type: [object, "null"] }
+        assets: { type: [object, "null"] }
+        boundaries: { type: [object, "null"] }
+        reason: { type: [string, "null"] }
+
+    TriggerThreatModelReviewCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SEC-THR-002, SEC-THR-024, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, threat_model_version_id, expected_version, change_id, trigger_type]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        threat_model_version_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        change_id: { type: string }
+        trigger_type: { type: string }
+        affected_modules: { type: array, items: { type: string } }
+        reason: { type: [string, "null"] }
+
+    RegisterThreatCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SEC-THR-003, SEC-THR-004, SEC-THR-005, SEC-THR-006, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, threat_model_version_id, asset_or_boundary, threat_type, abuse_case]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        threat_model_version_id: { type: string, format: uuid }
+        asset_or_boundary: { type: string }
+        threat_type: { type: string, enum: [SPOOFING, TAMPERING, REPUDIATION, INFORMATION_DISCLOSURE, DENIAL_OF_SERVICE, ELEVATION_OF_PRIVILEGE, OTHER] }
+        abuse_case: { type: string }
+        attack_preconditions: { type: [object, "null"] }
+        impacted_attributes: { type: array, items: { type: string } }
+        evidence: { type: [object, "null"] }
+        reason: { type: [string, "null"] }
+
+    MapSecurityControlCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SEC-THR-013, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, threat_id, expected_version, control_code, mapping_type]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        threat_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        control_code: { type: string }
+        mapping_type: { type: string, enum: [PREVENTIVE, DETECTIVE, RECOVERY] }
+        implementation_refs: { type: [object, "null"] }
+        objective: { type: [string, "null"] }
+        implementation_owner: { type: [string, "null"] }
+        evidence_source: { type: [string, "null"] }
+        test_owner: { type: [string, "null"] }
+        framework_mappings: { type: [object, "null"] }
+        reason: { type: [string, "null"] }
+
+    CalculateSecurityRiskCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SEC-THR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, threat_id, expected_version, risk_stage, impact_inputs, likelihood_inputs, methodology, rating]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        threat_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        risk_stage: { type: string, enum: [INHERENT, RESIDUAL] }
+        impact_inputs: { type: object }
+        likelihood_inputs: { type: object }
+        methodology: { type: string }
+        rating: { type: object }
+        reason: { type: [string, "null"] }
+
+    AcceptResidualSecurityRiskCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SEC-THR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, risk_id, expected_version, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        risk_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        rationale: { type: string }
+        expiry_review_date: { type: [string, "null"], format: date-time }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    OpenSecurityExceptionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [SEC-THR-023, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, control_or_requirement, reason, expiry]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        control_or_requirement: { type: string }
+        reason: { type: string }
+        expiry: { type: string, format: date-time }
+        risk_assessment_ref: { type: [object, "null"] }
+        compensating_controls: { type: [object, "null"] }
+        remediation_target: { type: [object, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    SecurityControlMatrix:
+      type: object
+      x-requirement-ids: [SEC-THR-013, SEC-THR-027]
+      properties:
+        threat_model_version_id: { type: string, format: uuid }
+        deployment_profile: { type: string }
+        generated_at: { type: string, format: date-time }
+        entries: { type: array, items: { type: object } }
+
+    SecurityExceptionView:
+      type: object
+      x-requirement-ids: [SEC-THR-023]
+      properties:
+        id: { type: string, format: uuid }
+        control_or_requirement: { type: string }
+        state: { type: string }
+        expiry: { type: string, format: date-time }
+        reason: { type: string }
+        version: { type: integer }

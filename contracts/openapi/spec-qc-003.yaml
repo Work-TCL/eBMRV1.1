@@ -1,0 +1,497 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QC-003 — OOS/OOT Management
+  version: 0.1.0
+  description: >
+    Document 25 contract for the WP-04 Document 25 slice built this pass: extends the already-built `qc`
+    module (Document 23) -- open an OOS from a result, lab investigation, assignable-cause classification,
+    signed extended investigation, retest/resample plan authorization, impact assessment, signed
+    disposition and close (Document 106 rows 65-66), plus OOT evaluation via the `rules` module and signed
+    OOT close (row 69). CAPA/Change Control linkage, `/reopen`, and release-engine blocker wiring are
+    deferred -- see docs/generated/18_SPEC_GAPS.md SG-074.
+tags:
+  - name: oos_oot
+
+paths:
+  /quality/oos/v1/from-result/{result_id}:
+    parameters:
+      - { name: result_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postOpenOosFromResult
+      tags: [oos_oot]
+      summary: Open an OOS record from a qc_result (OOS-FR-001/002) -- unsigned unless flagged critical
+      x-requirement-ids: [OOS-FR-001, OOS-FR-002]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenOosFromResultCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: OOS_ALREADY_EXISTS -- an OOS already exists for this result
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  /quality/oos/v1/{oos_id}:
+    parameters:
+      - { name: oos_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getOosRecord
+      tags: [oos_oot]
+      summary: Read an OOS record with its investigation activities and retest/resample plans
+      x-requirement-ids: [OOS-FR-001, OOS-FR-003]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /quality/oos/v1/{oos_id}/lab-investigation:
+    parameters:
+      - { name: oos_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordLabInvestigation
+      tags: [oos_oot]
+      summary: Record a Phase I laboratory investigation checklist entry (OOS-FR-004) -- unsigned
+      x-requirement-ids: [OOS-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordLabInvestigationCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /quality/oos/v1/{oos_id}/classify-lab-cause:
+    parameters:
+      - { name: oos_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postClassifyLabCause
+      tags: [oos_oot]
+      summary: >
+        Determine assignable vs no-assignable lab cause (OOS-FR-006/007) -- unsigned. Folds the diagram's
+        INVALID_TEST_DISPOSITION sub-state into QA_REVIEW on the assignable path.
+      x-requirement-ids: [OOS-FR-006, OOS-FR-007]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClassifyLabCauseCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: INVESTIGATION_INCOMPLETE or LAB_CAUSE_EVIDENCE_REQUIRED
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  /quality/oos/v1/{oos_id}/signature-challenges:
+    parameters:
+      - { name: oos_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postOosSignatureChallenge
+      tags: [oos_oot]
+      summary: Create the Part 11 signature challenge for extended_investigation, disposition, or close
+      x-requirement-ids: [SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties: { action: { type: string, enum: [extended_investigation, disposition, close] } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /quality/oos/v1/{oos_id}/extended-investigation:
+    parameters:
+      - { name: oos_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postStartExtendedInvestigation
+      tags: [oos_oot]
+      summary: >
+        Start extended investigation (OOS-FR-008) -- signed per Document 106 row 68 (meaning Approved,
+        independent of the OOS owner/investigator)
+      x-requirement-ids: [OOS-FR-008]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartExtendedInvestigationCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '428': { $ref: '#/components/responses/MissingSignature' }
+
+  /quality/oos/v1/{oos_id}/retest-plans:
+    parameters:
+      - { name: oos_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAuthorizeRetestPlan
+      tags: [oos_oot]
+      summary: >
+        Authorize a retest plan (OOS-FR-010/011) -- unsigned. Requires the OOS to already be in extended
+        investigation (RETEST_NOT_AUTHORIZED otherwise, §9's "released/approved before execution").
+      x-requirement-ids: [OOS-FR-010, OOS-FR-011]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthorizeRetestPlanCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: RETEST_NOT_AUTHORIZED
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  /quality/oos/v1/{oos_id}/resample-plans:
+    parameters:
+      - { name: oos_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAuthorizeResamplePlan
+      tags: [oos_oot]
+      summary: Authorize a resample plan (OOS-FR-014/015) -- unsigned, same gate as retest plans
+      x-requirement-ids: [OOS-FR-014, OOS-FR-015]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthorizeResamplePlanCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: RESAMPLE_NOT_AUTHORIZED
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  /quality/oos/v1/{oos_id}/impact:
+    parameters:
+      - { name: oos_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordImpactAssessment
+      tags: [oos_oot]
+      summary: Record the impact assessment (OOS-FR-009/018) -- unsigned
+      x-requirement-ids: [OOS-FR-009, OOS-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordImpactAssessmentCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /quality/oos/v1/{oos_id}/disposition:
+    parameters:
+      - { name: oos_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postApproveDisposition
+      tags: [oos_oot]
+      summary: >
+        Approve final disposition (OOS-FR-019) -- signed per Document 106 row 67 (meaning Released,
+        independent of every production performer)
+      x-requirement-ids: [OOS-FR-019]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApproveDispositionCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: IMPACT_ASSESSMENT_REQUIRED or an independence/state conflict
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: '#/components/responses/MissingSignature' }
+
+  /quality/oos/v1/{oos_id}/close:
+    parameters:
+      - { name: oos_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCloseOos
+      tags: [oos_oot]
+      summary: >
+        Close the OOS (OOS-FR-022) -- signed per Document 106 row 66 (meaning Approved, independent of
+        investigator/owner)
+      x-requirement-ids: [OOS-FR-022]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CloseOosCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: QA_APPROVAL_REQUIRED or an independence/state conflict
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: '#/components/responses/MissingSignature' }
+
+  /quality/oot/v1/evaluate:
+    post:
+      operationId: postEvaluateOot
+      tags: [oos_oot]
+      summary: >
+        Evaluate a result's trend rule on demand (OOT-FR-001/002/003/009) -- unsigned. Reuses the `rules`
+        module's acceptance/trend evaluation exactly as Document 23's own classification.
+      x-requirement-ids: [OOT-FR-001, OOT-FR-002, OOT-FR-003, OOT-FR-009]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateOotCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '422':
+          description: OOT_RULE_NOT_RELEASED or ORIGINAL_RESULT_REQUIRED
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  /quality/oot/v1/{oot_id}/signature-challenges:
+    parameters:
+      - { name: oot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postOotSignatureChallenge
+      tags: [oos_oot]
+      summary: Create the Part 11 signature challenge for closing an OOT record
+      x-requirement-ids: [SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties: { action: { type: string, enum: [close] } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /quality/oot/v1/{oot_id}/close:
+    parameters:
+      - { name: oot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCloseOot
+      tags: [oos_oot]
+      summary: >
+        Close the OOT record -- signed per Document 106 row 69 (meaning Approved, independent of
+        investigator/owner)
+      x-requirement-ids: [OOT-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CloseOotCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '428': { $ref: '#/components/responses/MissingSignature' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  responses:
+    NotFound: { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+    Forbidden: { description: Actor's roles do not grant this action, or an SoD independence conflict, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+    Conflict: { description: Invalid state transition or precondition not met, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+    MissingSignature: { description: Fresh step-up authentication failed, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [CTR-FR-006]
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          examples: [OOS_ALREADY_EXISTS, ORIGINAL_RESULT_REQUIRED, LAB_CAUSE_EVIDENCE_REQUIRED, RETEST_NOT_AUTHORIZED, RESAMPLE_NOT_AUTHORIZED, INVESTIGATION_INCOMPLETE, IMPACT_ASSESSMENT_REQUIRED, QA_APPROVAL_REQUIRED, OOT_RULE_NOT_RELEASED, VALIDATION_FAILED, ROLE_MISSING, MISSING_SIGNATURE, INVALID_TRANSITION, STALE_VERSION]
+        message: { type: string }
+        details: { type: object }
+
+    MutationReceipt:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MUT-FR-019]
+      required: [command_id, aggregate_id, resulting_version, audit_event_id, correlation_id]
+      properties:
+        command_id: { type: string, format: uuid }
+        aggregate_id: { type: string, format: uuid }
+        resulting_version: { type: integer }
+        audit_event_id: { type: string, format: uuid }
+        signature_id: { type: [string, "null"], format: uuid }
+        correlation_id: { type: string, format: uuid }
+
+    SignatureChallengeResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    OpenOosFromResultCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [OOS-FR-001, OOS-FR-002, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, source_result_id, oos_number]
+      properties:
+        idempotency_key: { type: string }
+        source_result_id: { type: string, format: uuid }
+        oos_number: { type: string }
+        site_id: { type: [string, "null"], format: uuid }
+        severity: { type: [string, "null"] }
+
+    RecordLabInvestigationCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [OOS-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, oos_record_id, expected_version, activity_type]
+      properties:
+        idempotency_key: { type: string }
+        oos_record_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        activity_type: { type: string }
+        checklist_item: { type: [string, "null"] }
+        response_text: { type: [string, "null"] }
+        evidence_refs: { type: array, items: { type: string } }
+
+    ClassifyLabCauseCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [OOS-FR-006, OOS-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, oos_record_id, expected_version, assignable]
+      properties:
+        idempotency_key: { type: string }
+        oos_record_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        assignable: { type: boolean }
+        root_cause_code: { type: [string, "null"] }
+        evidence_refs: { type: array, items: { type: string } }
+
+    StartExtendedInvestigationCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [OOS-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, oos_record_id, expected_version, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        oos_record_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        investigation_notes: { type: [string, "null"] }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    AuthorizeRetestPlanCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [OOS-FR-010, OOS-FR-011, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, oos_record_id, justification, number_of_retests]
+      properties:
+        idempotency_key: { type: string }
+        oos_record_id: { type: string, format: uuid }
+        justification: { type: string }
+        number_of_retests: { type: integer }
+        method_ref: { type: [string, "null"] }
+        analyst_criteria: { type: [string, "null"] }
+        instrument_criteria: { type: [string, "null"] }
+        interpretation_rule: { type: [string, "null"] }
+
+    AuthorizeResamplePlanCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [OOS-FR-014, OOS-FR-015, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, oos_record_id, scientific_rationale]
+      properties:
+        idempotency_key: { type: string }
+        oos_record_id: { type: string, format: uuid }
+        scientific_rationale: { type: string }
+        sampling_plan_ref: { type: [string, "null"] }
+        sampling_plan_version: { type: [string, "null"] }
+        source_ref: { type: [string, "null"] }
+
+    RecordImpactAssessmentCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [OOS-FR-009, OOS-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, oos_record_id, expected_version, impact_text]
+      properties:
+        idempotency_key: { type: string }
+        oos_record_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        impact_text: { type: string }
+        hold_status: { type: [string, "null"] }
+
+    ApproveDispositionCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [OOS-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, oos_record_id, expected_version, final_classification, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        oos_record_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        final_classification: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    CloseOosCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [OOS-FR-022, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, oos_record_id, expected_version, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        oos_record_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    EvaluateOotCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [OOT-FR-001, OOT-FR-002, OOT-FR-003, OOT-FR-009, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, source_result_id]
+      properties:
+        idempotency_key: { type: string }
+        source_result_id: { type: string, format: uuid }
+
+    CloseOotCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [OOT-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, oot_record_id, expected_version, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        oot_record_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

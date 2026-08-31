@@ -1,0 +1,284 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QC-002 — LIMS Integration Architecture & Generic Adapter Contract
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-04 Document 24 slice built this pass: an adapter in front of the
+    already-built `qc` module (Document 23) -- request/cancel a sample, ingest status/result callbacks
+    with mapping/method/UOM/ordering/duplicate validation, on-demand reconciliation, and instance health.
+    Only ownership_mode='gxp_managed' is implemented; LIMS-FR-013 (real mTLS/OAuth source authentication)
+    and LIMS-FR-016/020 (Document 25 OOS linkage) are deferred -- see docs/generated/18_SPEC_GAPS.md
+    SG-066/SG-070.
+tags:
+  - name: lims_integration
+
+paths:
+  /integrations/lims/{instance_id}/samples:
+    parameters:
+      - { name: instance_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRequestLimsSample
+      tags: [lims_integration]
+      summary: Request a sample via a registered LIMS instance (LIMS-FR-004/005) -- calls qc.commands.create_sample
+      x-requirement-ids: [LIMS-FR-004, LIMS-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequestLimsSampleCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: A sample was already requested with this external_sample_id (LIMS-FR-010)
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  /integrations/lims/{instance_id}/samples/{sample_id}/signature-challenges:
+    parameters:
+      - { name: instance_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: sample_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postSampleSignatureChallenge
+      tags: [lims_integration]
+      summary: Create the Part 11 signature challenge for cancelling this sample
+      x-requirement-ids: [LIMS-FR-021]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [action], properties: { action: { type: string, enum: [cancel] } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /integrations/lims/{instance_id}/samples/{sample_id}/cancel:
+    parameters:
+      - { name: instance_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: sample_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCancelLimsSample
+      tags: [lims_integration]
+      summary: >
+        Cancel a sample -- signed per Document 106 row 64 (meaning Approved, independent of the original
+        requester); blocked if a release-blocking test order is already reviewed (LIMS-FR-021)
+      x-requirement-ids: [LIMS-FR-021]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelLimsSampleCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: Sample not requested through this instance (LIMS_SAMPLE_UNKNOWN) or not found
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: Canceller not independent of requester (SoD), or sample not cancellable
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: '#/components/responses/MissingSignature' }
+
+  /integrations/lims/{instance_id}/reconcile:
+    parameters:
+      - { name: instance_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReconcileLimsInstance
+      tags: [lims_integration]
+      summary: >
+        On-demand comparison of mapped samples against current qc_sample state (LIMS-FR-025/026). No
+        periodic scheduler exists this pass (SG-070) -- this is a manually-triggered check, not a cron job.
+      x-requirement-ids: [LIMS-FR-025, LIMS-FR-026]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReconcileLimsInstanceCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /integrations/lims/{instance_id}/health:
+    parameters:
+      - { name: instance_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getLimsHealth
+      tags: [lims_integration]
+      summary: Instance status, pending/dead-letter message counts (LIMS-FR-032, partial -- basic read only)
+      x-requirement-ids: [LIMS-FR-032]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /integrations/lims/{instance_id}/events/results:
+    parameters:
+      - { name: instance_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postIngestLimsResult
+      tags: [lims_integration]
+      summary: >
+        Inbound result callback. Validates mapping/ownership-mode/method/UOM/ordering/duplicate, then
+        calls qc.commands.record_raw_data + record_result (LIMS-FR-007/009/010/011/012/018/019/028/029).
+        Not signed this pass (Doc 106: only if the step is flagged critical -- no such flag built).
+      x-requirement-ids: [LIMS-FR-007, LIMS-FR-009, LIMS-FR-010, LIMS-FR-011, LIMS-FR-012, LIMS-FR-018, LIMS-FR-019, LIMS-FR-028, LIMS-FR-029]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IngestLimsResultCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404':
+          description: LIMS_MAPPING_NOT_FOUND -- no sample mapping or no matching test order
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: LIMS_DUPLICATE_EVENT or LIMS_RESULT_VERSION_STALE
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: LIMS_METHOD_MISMATCH, LIMS_UOM_INVALID, or unsupported ownership_mode
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  /integrations/lims/{instance_id}/events/status:
+    parameters:
+      - { name: instance_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postIngestLimsStatus
+      tags: [lims_integration]
+      summary: Inbound status callback -- routes to qc.commands.receive_sample (LIMS-FR-006)
+      x-requirement-ids: [LIMS-FR-006]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IngestLimsStatusCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404':
+          description: LIMS_SAMPLE_UNKNOWN
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: LIMS_DUPLICATE_EVENT
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  responses:
+    NotFound: { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+    Forbidden: { description: Actor's roles do not grant this action, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+    MissingSignature: { description: Fresh step-up authentication failed, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [CTR-FR-006]
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          examples: [LIMS_MAPPING_NOT_FOUND, LIMS_METHOD_MISMATCH, LIMS_UOM_INVALID, LIMS_DUPLICATE_EVENT, LIMS_RESULT_VERSION_STALE, LIMS_SAMPLE_UNKNOWN, VALIDATION_FAILED, ROLE_MISSING, MISSING_SIGNATURE]
+        message: { type: string }
+        details: { type: object }
+
+    MutationReceipt:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MUT-FR-019]
+      required: [command_id, aggregate_id, resulting_version, audit_event_id, correlation_id]
+      properties:
+        command_id: { type: string, format: uuid }
+        aggregate_id: { type: string, format: uuid }
+        resulting_version: { type: integer }
+        audit_event_id: { type: string, format: uuid }
+        signature_id: { type: [string, "null"], format: uuid }
+        correlation_id: { type: string, format: uuid }
+
+    SignatureChallengeResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    RequestLimsSampleCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [LIMS-FR-004, LIMS-FR-005, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, instance_id, external_sample_id, sample_number, sample_type, source_type]
+      properties:
+        idempotency_key: { type: string }
+        instance_id: { type: string, format: uuid }
+        external_sample_id: { type: string }
+        sample_number: { type: string }
+        sample_type: { type: string }
+        source_type: { type: string }
+        source_id: { type: [string, "null"], format: uuid }
+        source_location_ref: { type: [string, "null"] }
+        lot_batch_serial_ref: { type: [string, "null"] }
+        sample_quantity: { type: [string, "null"] }
+        sample_uom: { type: [string, "null"] }
+
+    CancelLimsSampleCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [LIMS-FR-021, MUT-FR-005, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, instance_id, sample_id, reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        instance_id: { type: string, format: uuid }
+        sample_id: { type: string, format: uuid }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    ReconcileLimsInstanceCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [LIMS-FR-025, LIMS-FR-026, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, instance_id]
+      properties:
+        idempotency_key: { type: string }
+        instance_id: { type: string, format: uuid }
+
+    IngestLimsStatusCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [LIMS-FR-006, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, instance_id, external_event_id, external_sample_id, status]
+      properties:
+        idempotency_key: { type: string }
+        instance_id: { type: string, format: uuid }
+        external_event_id: { type: string }
+        external_sample_id: { type: string }
+        status: { type: string, enum: [received, in_progress] }
+
+    IngestLimsResultCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [LIMS-FR-007, LIMS-FR-009, LIMS-FR-010, LIMS-FR-011, LIMS-FR-012, LIMS-FR-018, LIMS-FR-019, LIMS-FR-028, LIMS-FR-029, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, instance_id, external_event_id, external_sample_id, test_code, external_result_version, method_version, result_type]
+      properties:
+        idempotency_key: { type: string }
+        instance_id: { type: string, format: uuid }
+        external_event_id: { type: string }
+        external_sample_id: { type: string }
+        test_code: { type: string }
+        external_result_version: { type: integer }
+        method_version: { type: string }
+        result_type: { type: string }
+        value_decimal: { type: [string, "null"] }
+        value_text: { type: [string, "null"] }
+        uom: { type: [string, "null"] }
+        schema_version: { type: [string, "null"] }
+        adapter_version: { type: [string, "null"] }

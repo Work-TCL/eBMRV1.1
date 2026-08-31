@@ -1,0 +1,487 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QMS-010 — Complaint Management
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-05 Document 35 slice actually built
+    (`services/gxp-api/app/modules/qms/complaint_*.py`): create complaint -> triage -> investigation
+    decision -> (investigation -> reportability | reportability directly) -> response -> close (signed),
+    matching the module's own 7-op API list and the fold-in pattern documented in
+    `complaint_models.py`'s module docstring, plus the `signature-challenges` ceremony-entry-point
+    endpoint (SG-138 engineering half, not in Document 35's own list — contracted because the router
+    implements it).
+
+
+    CMP-FR-011(genealogy lookup)/016(trend)/017(CAPA auto-creation, flag+rationale only)/018(field
+    action auto-creation, flag+rationale only)/021(retention policy wiring) are deliberately not built —
+    see docs/generated/18_SPEC_GAPS.md SG-103; CMP-FR-022's field-level PII encryption is out of scope —
+    see SG-104. `reportability`/`close` are both signed (COMPLAINT_SIGNATURE_ACTIONS =
+    `("reportability", "close")`) and return `SIGNATURE_POLICY_UNRESOLVED` today (SG-138's policy-data
+    half is still open).
+tags:
+  - name: qms-complaint
+
+paths:
+  /qms/v1/complaints:
+    post:
+      operationId: postCreateComplaint
+      tags: [qms-complaint]
+      summary: Intake a complaint (CMP-FR-001/002/004/005/023)
+      description: Requires `complaint.create`. `source_channel` must be oral/written/electronic. Computes duplicate detection against `duplicate_of_id` when given.
+      x-requirement-ids: [CMP-FR-001, CMP-FR-002, CMP-FR-004, CMP-FR-005, CMP-FR-023, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateComplaintCommand' } } }
+      responses:
+        '200': { description: Created, state RECEIVED. `aggregate_id` is the complaint id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — unrecognized source_channel/constituent_classification, or duplicate_of_id does not reference an existing complaint.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+    get:
+      operationId: getComplaints
+      tags: [qms-complaint]
+      summary: Paginated, filterable complaint list (non-authoritative read, AG-11)
+      x-requirement-ids: [CMP-FR-001]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+        - { name: site_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: state, in: query, required: false, schema: { $ref: '#/components/schemas/ComplaintState' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ComplaintListResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /qms/v1/complaints/{complaint_id}:
+    parameters:
+      - { name: complaint_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getComplaintDetail
+      tags: [qms-complaint]
+      summary: One complaint with full detail, reportability assessments and communications (CMP-FR-002/009/012/019/023)
+      x-requirement-ids: [CMP-FR-002, CMP-FR-009, CMP-FR-012, CMP-FR-019, CMP-FR-023]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ComplaintDetail' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /qms/v1/complaints/{complaint_id}/triage:
+    parameters:
+      - { name: complaint_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postTriageComplaint
+      tags: [qms-complaint]
+      summary: Quality/Regulatory seriousness and criticality triage (CMP-FR-004/005/006)
+      description: Requires `complaint.triage`. RECEIVED -> TRIAGE only, and only once the product is resolved (COMPLAINT_PRODUCT_UNRESOLVED otherwise).
+      x-requirement-ids: [CMP-FR-004, CMP-FR-005, CMP-FR-006, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TriageComplaintCommand' } } }
+      responses:
+        '200': { description: Triaged., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or COMPLAINT_PRODUCT_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (empty triage) or complaint_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/complaints/{complaint_id}/investigation-decision:
+    parameters:
+      - { name: complaint_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postInvestigationDecision
+      tags: [qms-complaint]
+      summary: Quality's investigation-required/not-required decision (CMP-FR-007/008)
+      description: Requires `complaint.investigation_decision`. TRIAGE -> INVESTIGATION or -> NO_INVESTIGATION_JUSTIFIED. `no_investigation_reason` is required when `investigation_required` is false.
+      x-requirement-ids: [CMP-FR-007, CMP-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/InvestigationDecisionCommand' } } }
+      responses:
+        '200': { description: Decided., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or NO_INVESTIGATION_RATIONALE_REQUIRED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: complaint_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/complaints/{complaint_id}/investigation:
+    parameters:
+      - { name: complaint_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postInvestigateComplaint
+      tags: [qms-complaint]
+      summary: Record investigation findings and conclusion (CMP-FR-009/010)
+      description: Requires `complaint.investigate`. INVESTIGATION -> REPORTABILITY_ASSESSMENT only.
+      x-requirement-ids: [CMP-FR-009, CMP-FR-010, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/InvestigateComplaintCommand' } } }
+      responses:
+        '200': { description: Recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (findings/conclusion required) or complaint_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/complaints/{complaint_id}/reportability:
+    parameters:
+      - { name: complaint_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAssessReportability
+      tags: [qms-complaint]
+      summary: Reportability assessment across applicable regimes — signed per Document 106 (CMP-FR-012/013/014/015/017/018)
+      description: >
+        Requires `complaint.reportability`. INVESTIGATION/NO_INVESTIGATION_JUSTIFIED (post-decision) ->
+        RESPONSE. May emit `ComplaintCAPAOpened`/`ComplaintFieldActionAssessmentOpened` outbox events.
+        Resolves the `complaint_record`/`reportability` Document 106 policy.
+      x-requirement-ids: [CMP-FR-012, CMP-FR-013, CMP-FR-014, CMP-FR-015, CMP-FR-017, CMP-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReportabilityAssessmentCommand' } } }
+      responses:
+        '200': { description: Assessed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, INVESTIGATION_DECISION_REQUIRED, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (applicable_regimes/rationale required) or complaint_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qms/v1/complaints/{complaint_id}/response:
+    parameters:
+      - { name: complaint_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordCommunication
+      tags: [qms-complaint]
+      summary: Log an inbound/outbound complaint communication (CMP-FR-003/019)
+      description: Requires `complaint.response`. Callable at any state except CLOSED.
+      x-requirement-ids: [CMP-FR-003, CMP-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordCommunicationCommand' } } }
+      responses:
+        '200': { description: Recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION (complaint is CLOSED).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (bad direction/communication_type, blank message) or complaint_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/complaints/{complaint_id}/signature-challenges:
+    parameters:
+      - { name: complaint_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postComplaintSignatureChallenge
+      tags: [qms-complaint]
+      summary: Create the Part 11 signature challenge for reportability/close (SG-138 engineering half)
+      description: >
+        Not in Document 35's own 7-op API list; contracted because the router implements it. Resolves
+        the `complaint_record`/`{action}` Document 106 policy and binds a challenge to the current
+        complaint's id/version/hash. Returns `SIGNATURE_POLICY_UNRESOLVED` today for both actions
+        (SG-138's policy-data half is still open).
+      x-requirement-ids: [CMP-FR-012, CMP-FR-020, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ComplaintSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not one of reportability/close.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/complaints/{complaint_id}/close:
+    parameters:
+      - { name: complaint_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCloseComplaint
+      tags: [qms-complaint]
+      summary: QA closure — signed per Document 106 (CMP-FR-020)
+      description: Requires `complaint.close`. RESPONSE -> CLOSED only, and only once reportability is assessed and at least one outbound communication is recorded (COMPLAINT_CLOSURE_BLOCKED otherwise). Resolves the `complaint_record`/`close` Document 106 policy.
+      x-requirement-ids: [CMP-FR-020, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CloseComplaintCommand' } } }
+      responses:
+        '200': { description: Closed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, REPORTABILITY_ASSESSMENT_REQUIRED, COMPLAINT_CLOSURE_BLOCKED, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (conclusion required) or complaint_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    ComplaintState:
+      type: string
+      description: "`COMPLAINT_STATES` in `app/modules/qms/complaint_models.py`."
+      x-requirement-ids: [CMP-FR-001, CTR-FR-017]
+      enum: [RECEIVED, TRIAGE, NO_INVESTIGATION_JUSTIFIED, INVESTIGATION, REPORTABILITY_ASSESSMENT, RESPONSE, CLOSED]
+
+    ComplaintSourceChannel:
+      type: string
+      description: "`SOURCE_CHANNELS` (CMP-FR-001)."
+      x-requirement-ids: [CMP-FR-001]
+      enum: [oral, written, electronic]
+
+    ComplaintConstituentClassification:
+      type: string
+      description: "`CONSTITUENT_CLASSIFICATIONS` (CMP-FR-005)."
+      x-requirement-ids: [CMP-FR-005]
+      enum: [drug, device, interface, combination, packaging, label, usability, unknown]
+
+    CommunicationDirection:
+      type: string
+      description: "`COMMUNICATION_DIRECTIONS` (CMP-FR-003)."
+      x-requirement-ids: [CMP-FR-003]
+      enum: [inbound, outbound]
+
+    CommunicationType:
+      type: string
+      description: "`COMMUNICATION_TYPES` (CMP-FR-003/019)."
+      x-requirement-ids: [CMP-FR-003, CMP-FR-019]
+      enum: [acknowledgment, response, update]
+
+    ComplaintReportabilityAssessment:
+      type: object
+      description: One reportability assessment, as returned inline by getComplaintDetail.
+      x-requirement-ids: [CMP-FR-012, CMP-FR-013, CMP-FR-014, CMP-FR-015]
+      required: [id, applicable_regimes, rationale, reviewer_subject_id, capa_required, field_action_required]
+      properties:
+        id: { type: string, format: uuid }
+        applicable_regimes: { type: array, items: { type: string } }
+        assessment_inputs: { type: [object, "null"] }
+        rationale: { type: string }
+        trigger_date: { type: [string, "null"], format: date-time }
+        due_date: { type: [string, "null"], format: date-time }
+        reviewer_subject_id: { type: string, format: uuid }
+        submission_reference: { type: [string, "null"] }
+        submission_status: { type: [string, "null"] }
+        capa_required: { type: boolean }
+        field_action_required: { type: boolean }
+        created_at: { type: [string, "null"], format: date-time }
+
+    ComplaintCommunication:
+      type: object
+      description: One communication, as returned inline by getComplaintDetail.
+      x-requirement-ids: [CMP-FR-003, CMP-FR-019]
+      required: [id, direction, communication_type, occurred_at, message]
+      properties:
+        id: { type: string, format: uuid }
+        direction: { $ref: '#/components/schemas/CommunicationDirection' }
+        communication_type: { $ref: '#/components/schemas/CommunicationType' }
+        recipient: { type: [string, "null"] }
+        channel: { type: [string, "null"] }
+        occurred_at: { type: string, format: date-time }
+        message: { type: string }
+        reference: { type: [string, "null"] }
+
+    Complaint:
+      type: object
+      description: One complaint record (`app/modules/qms/complaint_router.py:_complaint_dict`). A response schema, so not closed.
+      x-requirement-ids: [CMP-FR-001, CMP-FR-002]
+      required: [id, site_id, quality_event_id, complaint_number, received_at, source_channel, nature_code, description, is_potential_duplicate, state, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        quality_event_id: { type: string, format: uuid }
+        complaint_number: { type: string }
+        received_at: { type: string, format: date-time }
+        source_channel: { $ref: '#/components/schemas/ComplaintSourceChannel' }
+        product_ref: { type: [string, "null"], format: uuid }
+        nature_code: { type: string }
+        description: { type: string }
+        constituent_classification: { oneOf: [{ $ref: '#/components/schemas/ComplaintConstituentClassification' }, { type: "null" }] }
+        investigation_required: { type: [boolean, "null"] }
+        investigation_conclusion: { type: [string, "null"] }
+        is_potential_duplicate: { type: boolean }
+        state: { $ref: '#/components/schemas/ComplaintState' }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        created_at: { type: [string, "null"], format: date-time }
+        closed_at: { type: [string, "null"], format: date-time }
+
+    ComplaintDetail:
+      type: object
+      description: getComplaintDetail's response — Complaint plus every semi-structured field, reportability assessments and communications.
+      x-requirement-ids: [CMP-FR-002, CMP-FR-009, CMP-FR-010, CMP-FR-012, CMP-FR-023]
+      allOf:
+        - $ref: '#/components/schemas/Complaint'
+        - type: object
+          required: [reportability_assessments, communications]
+          properties:
+            lot_batch_serial_refs: { type: [object, "null"] }
+            complainant_info: { type: [object, "null"] }
+            triage: { type: [object, "null"] }
+            no_investigation_reason: { type: [string, "null"] }
+            investigation_findings: { type: [object, "null"] }
+            related_complaint_ids: { type: [array, "null"] }
+            reportability_assessments: { type: array, items: { $ref: '#/components/schemas/ComplaintReportabilityAssessment' } }
+            communications: { type: array, items: { $ref: '#/components/schemas/ComplaintCommunication' } }
+
+    ComplaintListResult:
+      type: object
+      description: getComplaints's response — the shared page envelope plus items.
+      x-requirement-ids: [CMP-FR-001, CTR-FR-012]
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/Complaint' } } }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postComplaintSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    ComplaintSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [reportability, close] }
+
+    CreateComplaintCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CMP-FR-001, CMP-FR-002, CMP-FR-004, CMP-FR-005, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, complaint_number, received_at, source_channel, nature_code, description]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        complaint_number: { type: string }
+        received_at: { type: string, format: date-time }
+        source_channel: { $ref: '#/components/schemas/ComplaintSourceChannel' }
+        nature_code: { type: string }
+        description: { type: string }
+        product_ref: { type: [string, "null"], format: uuid }
+        lot_batch_serial_refs: { type: [object, "null"] }
+        complainant_info: { type: [object, "null"] }
+        constituent_classification: { oneOf: [{ $ref: '#/components/schemas/ComplaintConstituentClassification' }, { type: "null" }] }
+        duplicate_of_id: { type: [string, "null"], format: uuid, description: Must reference an existing complaint if given (CMP-FR-023). }
+
+    TriageComplaintCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CMP-FR-004, CMP-FR-005, CMP-FR-006, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, complaint_id, expected_version, triage]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        complaint_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        triage: { type: object, description: "{seriousness, criticality} and similar." }
+        constituent_classification: { oneOf: [{ $ref: '#/components/schemas/ComplaintConstituentClassification' }, { type: "null" }] }
+        reason: { type: [string, "null"] }
+
+    InvestigationDecisionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CMP-FR-007, CMP-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, complaint_id, expected_version, investigation_required]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        complaint_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        investigation_required: { type: boolean }
+        no_investigation_reason: { type: [string, "null"], description: Required when investigation_required is false. }
+
+    InvestigateComplaintCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CMP-FR-009, CMP-FR-010, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, complaint_id, expected_version, findings, conclusion]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        complaint_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        findings: { type: object }
+        conclusion: { type: string }
+        reason: { type: [string, "null"] }
+
+    ReportabilityAssessmentCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CMP-FR-012, CMP-FR-013, CMP-FR-014, CMP-FR-015, CMP-FR-017, CMP-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, complaint_id, expected_version, applicable_regimes, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        complaint_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        applicable_regimes: { type: array, minItems: 1, items: { type: string } }
+        rationale: { type: string }
+        assessment_inputs: { type: [object, "null"] }
+        trigger_date: { type: [string, "null"], format: date-time }
+        due_date: { type: [string, "null"], format: date-time }
+        submission_reference: { type: [string, "null"] }
+        submission_status: { type: [string, "null"] }
+        capa_required: { type: boolean, default: false }
+        capa_rationale: { type: [string, "null"] }
+        field_action_required: { type: boolean, default: false }
+        field_action_rationale: { type: [string, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    RecordCommunicationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CMP-FR-003, CMP-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, complaint_id, expected_version, direction, communication_type, message, occurred_at]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        complaint_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        direction: { $ref: '#/components/schemas/CommunicationDirection' }
+        communication_type: { $ref: '#/components/schemas/CommunicationType' }
+        message: { type: string }
+        occurred_at: { type: string, format: date-time }
+        recipient: { type: [string, "null"] }
+        channel: { type: [string, "null"] }
+        reference: { type: [string, "null"] }
+
+    CloseComplaintCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CMP-FR-020, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, complaint_id, expected_version, conclusion]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        complaint_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        conclusion: { type: string }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

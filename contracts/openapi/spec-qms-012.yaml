@@ -1,0 +1,390 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QMS-012 — Quality Metrics, Trending & Effectiveness Checks
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-05 Document 37 slice actually built
+    (`services/gxp-api/app/modules/qms/quality_metrics_*.py`): create metric definition -> release
+    (signed) -> calculate snapshot -> management review package (signed); plus effectiveness checks:
+    create -> evaluate. Matches the module's own 7-op API list across two prefixes (`/quality-metrics/v1`
+    and `/effectiveness/v1`) and the fold-in pattern documented in `quality_metrics_models.py`'s module
+    docstring, plus the two `signature-challenges` ceremony-entry-point endpoints (SG-138 engineering
+    half, not in Document 37's own list — contracted because the router implements them; one per record
+    type, `quality_metric_definition` and `quality_metric_snapshot`).
+
+
+    MET-FR-003..011 (deviation/CAPA/OOS/NCR/complaint/supplier/audit/training/batch-quality metric
+    *content* — this module provides the generic calculate/snapshot/dashboard machinery, not
+    pre-built formulas for each named metric family), MET-FR-015 (drilldown), MET-FR-020 (AI analytics
+    hook), MET-FR-021/022 (access/export beyond generic RBAC and the dashboard read) are deliberately not
+    built — see docs/generated/18_SPEC_GAPS.md SG-107/SG-108. `release` (on `quality_metric_definition`)
+    and `management_review` (on `quality_metric_snapshot`) are both signed and return
+    `SIGNATURE_POLICY_UNRESOLVED` today (SG-138's policy-data half is still open).
+tags:
+  - name: qms-quality-metrics
+
+paths:
+  /quality-metrics/v1/definitions:
+    post:
+      operationId: postCreateMetricDefinition
+      tags: [qms-quality-metrics]
+      summary: Define a metric (MET-FR-001/013)
+      description: Requires `quality_metric.definition.create`. Auto-increments `version_no` per `metric_code`.
+      x-requirement-ids: [MET-FR-001, MET-FR-013, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateMetricDefinitionCommand' } } }
+      responses:
+        '200': { description: Created, state DRAFT. `aggregate_id` is the definition id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — blank metric_code, empty numerator_definition, or blank frequency.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /quality-metrics/v1/definitions/{definition_id}/signature-challenges:
+    parameters:
+      - { name: definition_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postDefinitionSignatureChallenge
+      tags: [qms-quality-metrics]
+      summary: Create the Part 11 signature challenge for release (SG-138 engineering half)
+      description: >
+        Not in Document 37's own 7-op API list; contracted because the router implements it. Resolves
+        the `quality_metric_definition`/`release` Document 106 policy and binds a challenge to the
+        current definition's id/version/hash. Returns `SIGNATURE_POLICY_UNRESOLVED` today (SG-138's
+        policy-data half is still open).
+      x-requirement-ids: [MET-FR-002, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DefinitionSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not release.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /quality-metrics/v1/definitions/{definition_id}/release:
+    parameters:
+      - { name: definition_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReleaseMetricDefinition
+      tags: [qms-quality-metrics]
+      summary: Release a draft definition, superseding the prior released version — signed per Document 106 (MET-FR-002)
+      description: Requires `quality_metric.definition.release`. DRAFT -> RELEASED only. Resolves the `quality_metric_definition`/`release` Document 106 policy.
+      x-requirement-ids: [MET-FR-002, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReleaseMetricDefinitionCommand' } } }
+      responses:
+        '200': { description: Released. Prior RELEASED version, if any, is moved to SUPERSEDED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: definition_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /quality-metrics/v1/calculate:
+    post:
+      operationId: postCalculateSnapshot
+      tags: [qms-quality-metrics]
+      summary: Insert a new period snapshot for a released definition (MET-FR-012/014/017/023/024)
+      description: >
+        Requires `quality_metric.calculate`. Definition must be RELEASED (METRIC_DEFINITION_NOT_RELEASED
+        otherwise). Always inserts a new COMPLETE row, never updates a prior snapshot (MET-FR-023 — late/
+        corrected data creates a new snapshot/version). `threshold_exceeded=true` also writes
+        `QualityTrendThresholdExceeded`/`QualitySignalAssessmentOpened` outbox events.
+      x-requirement-ids: [MET-FR-012, MET-FR-014, MET-FR-017, MET-FR-023, MET-FR-024, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CalculateSnapshotCommand' } } }
+      responses:
+        '200': { description: Created, state COMPLETE. `aggregate_id` is the snapshot id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "METRIC_DEFINITION_NOT_RELEASED, or METRIC_SOURCE_INCOMPLETE (empty result).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /quality-metrics/v1/dashboard:
+    get:
+      operationId: getQualityMetricsDashboard
+      tags: [qms-quality-metrics]
+      summary: Latest snapshot per released definition for a site (MET-FR-016/021/022/024)
+      description: A rebuildable, non-authoritative read (AG-11) — the underlying quality_metric_definition/quality_metric_snapshot rows remain the authority for any decision.
+      x-requirement-ids: [MET-FR-016, MET-FR-021, MET-FR-022, MET-FR-024]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: site_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/QualityMetricsDashboardResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /quality-metrics/v1/management-review-packages:
+    post:
+      operationId: postFreezeManagementReviewPackage
+      tags: [qms-quality-metrics]
+      summary: Freeze a set of snapshots into one management review package — signed per Document 106 (MET-FR-016/023)
+      description: >
+        Requires `quality_metric.management_review`. Every named `snapshot_id` must be COMPLETE and not
+        already FROZEN, and its definition must not be SUPERSEDED. Resolves the `quality_metric_snapshot`/
+        `management_review` Document 106 policy against the *first* snapshot — the package as a whole is
+        one signed decision, not one signature per snapshot.
+      x-requirement-ids: [MET-FR-016, MET-FR-023, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/FreezeManagementReviewPackageCommand' } } }
+      responses:
+        '200': { description: "Frozen. `aggregate_id` is the synthetic review_package_id; `resulting_version` is the count of snapshots frozen.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { description: NOT_FOUND — one of the named snapshot_ids does not exist., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '409': { description: "IDEMPOTENCY_CONFLICT, MANAGEMENT_PACKAGE_FROZEN, INVALID_TRANSITION, SNAPSHOT_STALE (definition superseded), or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — snapshot_ids must name at least one snapshot.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /quality-metrics/v1/management-review-packages/signature-challenges:
+    post:
+      operationId: postManagementReviewSignatureChallenge
+      tags: [qms-quality-metrics]
+      summary: Create the Part 11 signature challenge for management_review (SG-138 engineering half)
+      description: >
+        Not in Document 37's own 7-op API list; contracted because the router implements it. No path id
+        — takes the same `snapshot_ids` list `postFreezeManagementReviewPackage` itself takes and
+        resolves the challenge against the first snapshot, mirroring that command's own "the package as
+        a whole is one signed decision" behaviour rather than requiring a representative id the client
+        would have to invent. Returns `SIGNATURE_POLICY_UNRESOLVED` today (SG-138's policy-data half is
+        still open).
+      x-requirement-ids: [MET-FR-016, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ManagementReviewSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { description: NOT_FOUND — the first named snapshot_id does not exist., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not management_review, or snapshot_ids is empty.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /effectiveness/v1/checks:
+    post:
+      operationId: postCreateEffectivenessCheck
+      tags: [qms-quality-metrics]
+      summary: Open an effectiveness check for a CAPA/SCAR/field action (MET-FR-018)
+      description: Requires `effectiveness_check.create`. `source_module`/`source_record_id` is an unenforced polymorphic reference to the originating record.
+      x-requirement-ids: [MET-FR-018, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateEffectivenessCheckCommand' } } }
+      responses:
+        '200': { description: Created, state OBSERVATION. `aggregate_id` is the check id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "EFFECTIVENESS_CRITERION_REQUIRED, or VALIDATION_FAILED (blank source_module).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /effectiveness/v1/checks/{check_id}/evaluate:
+    parameters:
+      - { name: check_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postEvaluateEffectivenessCheck
+      tags: [qms-quality-metrics]
+      summary: Record the effectiveness check's result (MET-FR-018/019)
+      description: Requires `effectiveness_check.evaluate`. OBSERVATION -> PASS/FAIL/INCONCLUSIVE. `next_observation_due` is required when `result=inconclusive`; `escalation_required`/`escalation_rationale` are only persisted when `result=fail`.
+      x-requirement-ids: [MET-FR-018, MET-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EvaluateEffectivenessCheckCommand' } } }
+      responses:
+        '200': { description: Evaluated., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or EFFECTIVENESS_INCONCLUSIVE (missing next_observation_due when result=inconclusive).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (bad result) or check_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    MetricDefinitionState:
+      type: string
+      description: "`METRIC_DEFINITION_STATES` in `app/modules/qms/quality_metrics_models.py`."
+      x-requirement-ids: [MET-FR-001, CTR-FR-017]
+      enum: [DRAFT, RELEASED, SUPERSEDED]
+
+    MetricSnapshotState:
+      type: string
+      description: "`SNAPSHOT_STATES`."
+      x-requirement-ids: [MET-FR-014, CTR-FR-017]
+      enum: [COMPLETE, FROZEN]
+
+    EffectivenessCheckState:
+      type: string
+      description: "`EFFECTIVENESS_STATES`. A logical PLANNED/EVALUATION phase named in the module docstring is not a reachable resting state — checks land directly in OBSERVATION and move directly to a terminal result."
+      x-requirement-ids: [MET-FR-018, CTR-FR-017]
+      enum: [OBSERVATION, PASS, FAIL, INCONCLUSIVE]
+
+    EffectivenessResult:
+      type: string
+      description: "`EFFECTIVENESS_RESULTS` — lowercase command input, distinct from the uppercase EffectivenessCheckState it drives (MET-FR-018)."
+      x-requirement-ids: [MET-FR-018]
+      enum: [pass, fail, inconclusive]
+
+    QualityMetricsDashboardRow:
+      type: object
+      description: One definition's row in getQualityMetricsDashboard's response.
+      x-requirement-ids: [MET-FR-016, MET-FR-024]
+      required: [metric_code, version_no, threshold_exceeded]
+      properties:
+        metric_code: { type: string }
+        version_no: { type: integer, minimum: 1 }
+        latest_result: { type: [object, "null"], description: Null when no snapshot exists yet. }
+        source_cutoff: { type: [string, "null"], format: date-time, description: Null when no snapshot exists yet. }
+        threshold_exceeded: { type: boolean, description: False when no snapshot exists yet. }
+        freshness_seconds: { type: [number, "null"], description: "now() minus source_cutoff, in seconds; null when no snapshot exists yet." }
+
+    QualityMetricsDashboardResult:
+      type: object
+      description: getQualityMetricsDashboard's response — computed, non-persisted (AG-11).
+      x-requirement-ids: [MET-FR-016]
+      required: [site_id, metrics]
+      properties:
+        site_id: { type: string, format: uuid }
+        metrics: { type: array, items: { $ref: '#/components/schemas/QualityMetricsDashboardRow' } }
+
+    SignatureChallengeResponse:
+      type: object
+      description: Response shared by postDefinitionSignatureChallenge and postManagementReviewSignatureChallenge.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    DefinitionSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [release] }
+
+    ManagementReviewSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own. Extends the base signature-challenge request with the same snapshot_ids list postFreezeManagementReviewPackage takes.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action, snapshot_ids]
+      properties:
+        action: { type: string, enum: [management_review] }
+        snapshot_ids: { type: array, minItems: 1, items: { type: string, format: uuid } }
+
+    CreateMetricDefinitionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MET-FR-001, MET-FR-013, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, metric_code, owner_subject_id, source_model_id, numerator_definition, frequency]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        metric_code: { type: string }
+        owner_subject_id: { type: string, format: uuid }
+        source_model_id: { type: string }
+        numerator_definition: { type: object }
+        frequency: { type: string }
+        denominator_definition: { type: [object, "null"], description: MET-FR-013 normalization. }
+        formula_rule_id: { type: [string, "null"], format: uuid, description: FK to a released rules.gxp_rule_definition. }
+        scope_dimensions: { type: [object, "null"] }
+        threshold_rule_ids: { type: [array, "null"], items: { type: string, format: uuid }, description: MET-FR-012 versioned trend/control rules. }
+
+    ReleaseMetricDefinitionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MET-FR-002, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, definition_id, expected_version, effective_from]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        definition_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        effective_from: { type: string, format: date-time }
+        effective_to: { type: [string, "null"], format: date-time }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    CalculateSnapshotCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MET-FR-012, MET-FR-014, MET-FR-017, MET-FR-023, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, metric_definition_id, period_start, period_end, result]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        metric_definition_id: { type: string, format: uuid }
+        period_start: { type: string, format: date-time }
+        period_end: { type: string, format: date-time }
+        result: { type: object, description: Caller-supplied metric arithmetic result. }
+        scope: { type: [object, "null"] }
+        threshold_exceeded: { type: boolean, default: false, description: MET-FR-017. }
+
+    FreezeManagementReviewPackageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MET-FR-016, MET-FR-023, MUT-FR-005, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, site_id, snapshot_ids]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        snapshot_ids: { type: array, minItems: 1, items: { type: string, format: uuid } }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    CreateEffectivenessCheckCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MET-FR-018, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, source_module, source_record_id, criterion, observation_period_start, observation_period_end]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        source_module: { type: string, description: "Unenforced polymorphic reference, e.g. capa/scar/field_action." }
+        source_record_id: { type: string, format: uuid }
+        criterion: { type: string }
+        observation_period_start: { type: string, format: date-time }
+        observation_period_end: { type: string, format: date-time }
+        metric_definition_id: { type: [string, "null"], format: uuid, description: FK qms.quality_metric_definition. }
+        due_date: { type: [string, "null"], format: date-time }
+
+    EvaluateEffectivenessCheckCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MET-FR-018, MET-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, check_id, expected_version, result]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        check_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        result: { $ref: '#/components/schemas/EffectivenessResult' }
+        evidence: { type: [object, "null"] }
+        next_observation_due: { type: [string, "null"], format: date-time, description: Required when result is inconclusive. }
+        escalation_required: { type: boolean, default: false, description: Only persisted when result is fail. }
+        escalation_rationale: { type: [string, "null"], description: Only persisted when result is fail. }

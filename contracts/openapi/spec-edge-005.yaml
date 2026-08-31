@@ -1,0 +1,640 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EDGE-005 — PLC/SCADA Data Acquisition, Evidence Mapping & Command Boundary
+  version: 0.1.0
+  description: >
+    Document 113 contract for the server-side "Integration Gateway" slice of Document 47 built this pass
+    (see app/modules/machine_integration/models.py's module docstring and
+    /root/.claude/plans/enumerated-swimming-dijkstra.md for the scope split). Consumes Document 43's
+    already-accepted `edge.edge_observations` rows by event_id; never writes Batch/Equipment/EM/QC tables
+    directly (AG-05/AG-06). The on-prem half (`executeMachineCommandAtEdge()`, the actual PLC/SCADA
+    acquisition) is a distinct future deployable, same boundary as Documents 44-46. See
+    docs/generated/18_SPEC_GAPS.md SG-127..SG-131 for the signature-policy and evidence/command boundary
+    decisions this build relies on.
+tags:
+  - name: machine-integration
+
+paths:
+  /machine-integration/v1/signal-mappings/signature-challenges:
+    post:
+      operationId: postSignalMappingSignatureChallenge
+      tags: [machine-integration]
+      summary: Create the Released-meaning signature challenge required before releasing a mapping (SG-127)
+      x-requirement-ids: [MAP-FR-002, MAP-FR-003]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [mapping_id]
+              properties:
+                mapping_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureChallengeResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /machine-integration/v1/signal-mappings/{mapping_id}/release:
+    post:
+      operationId: postReleaseSignalMapping
+      tags: [machine-integration]
+      summary: Release a signal mapping version (MAP-FR-002..008/017/027/028, SG-127)
+      x-requirement-ids: [MAP-FR-002, MAP-FR-003, MAP-FR-004, MAP-FR-005, MAP-FR-006, MAP-FR-007, MAP-FR-008, MAP-FR-017, MAP-FR-027, MAP-FR-028]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: mapping_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseSignalMappingCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: Mapping not eligible for release, incomplete for release, or signer not independent of drafter (SG-127 SoD)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '428':
+          description: Missing or failed signature step-up (SG-127)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /machine-integration/v1/batch-contexts:
+    post:
+      operationId: postOpenBatchContext
+      tags: [machine-integration]
+      summary: Register an active batch context for a machine source (MAP-FR-012/013, §6 steps 1-2)
+      x-requirement-ids: [MAP-FR-012, MAP-FR-013]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenBatchContextCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  context_id: { type: string, format: uuid }
+                  status: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /machine-integration/v1/batch-contexts/{context_id}/close:
+    post:
+      operationId: postCloseBatchContext
+      tags: [machine-integration]
+      summary: Close an active batch context (§6 step 4)
+      x-requirement-ids: [MAP-FR-012, MAP-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: context_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CloseBatchContextCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: Context is not open
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /machine-integration/v1/machine-sources/{source_id}/evidence:ingest:
+    post:
+      operationId: postIngestMachineEvidence
+      tags: [machine-integration]
+      summary: >
+        Route already-accepted edge_observations rows into MachineEvidenceCandidate/MachineAlarmEvent
+        rows per released mapping (evaluateEvidenceRouting + createStepResultCandidate +
+        createMachineAlarmEvent, MAP-FR-009..014/030, SG-129 unsigned)
+      x-requirement-ids: [MAP-FR-009, MAP-FR-010, MAP-FR-011, MAP-FR-012, MAP-FR-013, MAP-FR-014, MAP-FR-015, MAP-FR-030]
+      security: [{ serviceBearerAuth: [] }]
+      parameters:
+        - name: source_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IngestMachineEvidenceCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestMachineEvidenceResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: Machine source not found or not owned by this service identity
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Stale expected_version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /machine-integration/v1/machine-sources/{source_id}/cycle-evidence-manifests:
+    post:
+      operationId: postBuildCycleEvidenceManifest
+      tags: [machine-integration]
+      summary: Build an immutable cycle evidence manifest (MAP-FR-025/026, SG-129 unsigned)
+      x-requirement-ids: [MAP-FR-011, MAP-FR-024, MAP-FR-025, MAP-FR-026]
+      security: [{ serviceBearerAuth: [] }]
+      parameters:
+        - name: source_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BuildCycleEvidenceManifestCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  command_id: { type: string, format: uuid }
+                  manifest_id: { type: string, format: uuid }
+                  manifest_hash: { type: string }
+                  audit_event_id: { type: string, format: uuid }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /machine-integration/v1/machine-commands/signature-challenges:
+    post:
+      operationId: postMachineCommandSignatureChallenge
+      tags: [machine-integration]
+      summary: Create the Approved-meaning signature challenge required before submitting a machine command (SG-128)
+      x-requirement-ids: [MAP-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [source_id, operation_code]
+              properties:
+                source_id: { type: string, format: uuid }
+                operation_code: { type: string }
+                parameters: { type: [object, "null"] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureChallengeResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /machine-integration/v1/machine-commands:
+    post:
+      operationId: postSubmitApprovedMachineCommand
+      tags: [machine-integration]
+      summary: Submit an approved, allowlisted machine command request (MAP-FR-018..021, SG-128)
+      x-requirement-ids: [MAP-FR-018, MAP-FR-019, MAP-FR-020, MAP-FR-021]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitApprovedMachineCommandCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422':
+          description: No released command profile authorizes this operation (COMMAND_NOT_ALLOWED, MAP-FR-019 default-disabled), or batch state not allowed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '428':
+          description: Missing or failed signature step-up (SG-128)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /machine-integration/v1/machine-commands/{request_id}/finalize:
+    post:
+      operationId: postFinalizeMachineCommand
+      tags: [machine-integration]
+      summary: Record a machine command's outcome once the (future) on-prem gateway reports it back (MAP-FR-021/022, SG-129 unsigned)
+      x-requirement-ids: [MAP-FR-021, MAP-FR-022]
+      security: [{ serviceBearerAuth: [] }]
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FinalizeMachineCommandCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: Command request not found or not owned by this service identity
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Command request already finalized, or stale expected_version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /machine-integration/v1/machine-commands/{request_id}:
+    get:
+      operationId: getMachineCommand
+      tags: [machine-integration]
+      summary: Read a machine command request's current status/outcome
+      x-requirement-ids: [MAP-FR-021]
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: object }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /machine-integration/v1/evidence-review:
+    get:
+      operationId: listEvidenceForReview
+      tags: [machine-integration]
+      summary: List out-of-limit machine evidence candidates and pending alarms for QA review
+      description: >
+        MAP-FR-030 — read-only visibility only, added after the initial build. No "mark reviewed" action
+        exists: nothing in Document 47's own function catalogue names a review-completion function, and
+        inventing a signature/state-machine over what is, in substance, a quality disposition would be
+        guessing a regulated decision (CLAUDE.md §4). The requirement's own acceptance intent -- "visible
+        in QA review" -- is satisfied by visibility alone.
+      x-requirement-ids: [MAP-FR-030]
+      parameters:
+        - name: site_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: object }
+        '403':
+          description: Actor's roles do not grant machine_evidence.review_view at this scope
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /machine-integration/v1/cycle-evidence-manifests/{manifest_id}/export:
+    get:
+      operationId: getMachineEvidenceExport
+      tags: [machine-integration]
+      summary: Inspection export composing a cycle evidence manifest with its linked evidence
+      description: >
+        MAP-FR-031 — read-only composition added after the initial build (no new regulated write; same
+        "read query added to serve a real need beyond the declared op list" precedent as Document 38's
+        `getEquipmentHistory`/Document 40's `getReviewSummary`). Nothing in Document 47's own function
+        catalogue (§3) names an export function, so this is never a signed/regulated action of its own.
+        Reuses the review-visibility grant (`machine_evidence.review_view`) rather than a new permission
+        code, since export is the same QA/inspector visibility scope the evidence-review listing already
+        grants.
+      x-requirement-ids: [MAP-FR-031]
+      parameters:
+        - name: manifest_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: object }
+        '403':
+          description: Actor's roles do not grant machine_evidence.review_view at this scope
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: Cycle evidence manifest not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /machine-integration/v1/evidence-replays/signature-challenges:
+    post:
+      operationId: postReplaySignatureChallenge
+      tags: [machine-integration]
+      summary: Create the Approved-meaning signature challenge required before a historical evidence replay (SG-131)
+      x-requirement-ids: [MAP-FR-029]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [event_ids, mode]
+              properties:
+                event_ids: { type: array, items: { type: string, format: uuid } }
+                mode: { type: string, enum: [BACKFILL, REPLAY] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureChallengeResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /machine-integration/v1/sites/{site_id}/evidence-replays:
+    post:
+      operationId: postReplayHistoricalEvidence
+      tags: [machine-integration]
+      summary: Replay/backfill historical machine evidence, tagged BACKFILL/REPLAY (MAP-FR-029, SG-131)
+      x-requirement-ids: [MAP-FR-029]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: site_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReplayHistoricalEvidenceCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  command_id: { type: string, format: uuid }
+                  job_id: { type: string, format: uuid }
+                  audit_event_id: { type: string, format: uuid }
+                  signature_id: { type: [string, "null"], format: uuid }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '428':
+          description: Missing or failed signature step-up (SG-131)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    serviceBearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        SG-120 service credential (`sid_<identity_id>.<secret>`), reused from Document 43 -- the same
+        Document 43 EdgeGateway service identity that calls observations:batch/health/security-events
+        also calls this module's 3 machine-driven operations, since it is the same on-prem gateway
+        process reporting evidence/command outcomes for the machine sources it owns. Never
+        interchangeable with a human bearerAuth token, and structurally never eligible to satisfy a
+        Part 11 signature (Document 106 P7).
+
+  responses:
+    Unauthorized:
+      description: No or invalid bearer/service token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ValidationFailed:
+      description: Request failed schema or business validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [CTR-FR-006]
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          examples:
+            [
+              VALIDATION_FAILED, NOT_FOUND, STALE_VERSION, INVALID_TRANSITION, ROLE_MISSING,
+              SIGNATURE_POLICY_UNRESOLVED, MISSING_SIGNATURE, MAPPING_VALIDATION_INCOMPLETE,
+              BATCH_CONTEXT_AMBIGUOUS, MAPPING_NOT_EFFECTIVE, SOURCE_NOT_ALLOWED, FRESHNESS_FAILED,
+              COMMAND_NOT_ALLOWED,
+            ]
+        message: { type: string }
+        details: { type: object }
+
+    MutationReceipt:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MUT-FR-019]
+      required: [command_id, aggregate_id, resulting_version, audit_event_id, correlation_id]
+      properties:
+        command_id: { type: string, format: uuid }
+        aggregate_id: { type: string, format: uuid }
+        resulting_version: { type: integer }
+        audit_event_id: { type: string, format: uuid }
+        signature_id: { type: [string, "null"], format: uuid }
+        correlation_id: { type: string, format: uuid }
+
+    SignatureChallengeResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    ReleaseSignalMappingCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MAP-FR-002, MAP-FR-003, MAP-FR-004, MAP-FR-005, MAP-FR-006, MAP-FR-007, MAP-FR-008, MAP-FR-017, MAP-FR-027, MAP-FR-028, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, mapping_id, expected_version, reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        mapping_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    OpenBatchContextCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MAP-FR-012, MAP-FR-013, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, source_id, batch_id]
+      properties:
+        idempotency_key: { type: string }
+        source_id: { type: string, format: uuid }
+        batch_id: { type: string, format: uuid }
+        batch_step_id: { type: [string, "null"], format: uuid }
+
+    CloseBatchContextCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MAP-FR-012, MAP-FR-013, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, context_id, expected_version]
+      properties:
+        idempotency_key: { type: string }
+        context_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+
+    IngestMachineEvidenceCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MAP-FR-009, MAP-FR-010, MAP-FR-011, MAP-FR-012, MAP-FR-013, MAP-FR-014, MAP-FR-015, MAP-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, expected_version, event_ids]
+      properties:
+        idempotency_key: { type: string }
+        expected_version: { type: integer }
+        event_ids: { type: array, items: { type: string, format: uuid } }
+
+    IngestMachineEvidenceResult:
+      type: object
+      x-requirement-ids: [MAP-FR-009, MAP-FR-014, MAP-FR-015]
+      properties:
+        command_id: { type: string, format: uuid }
+        resulting_version: { type: integer }
+        audit_event_id: { type: string, format: uuid }
+        candidates_created: { type: array, items: { type: string, format: uuid } }
+        alarms_created: { type: array, items: { type: string, format: uuid } }
+        rejected:
+          type: array
+          items:
+            type: object
+            properties:
+              event_id: { type: string }
+              code: { type: string }
+
+    BuildCycleEvidenceManifestCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MAP-FR-011, MAP-FR-024, MAP-FR-025, MAP-FR-026, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, expected_version, cycle_id, event_ids]
+      properties:
+        idempotency_key: { type: string }
+        expected_version: { type: integer }
+        cycle_id: { type: string }
+        event_ids: { type: array, items: { type: string, format: uuid }, description: "MAP-FR-025 — not restricted to observations strictly within cycle_start/cycle_end; may span a pre/during/post evidence window." }
+        cycle_start: { type: [string, "null"], format: date-time }
+        cycle_end: { type: [string, "null"], format: date-time }
+        statistics: { type: [object, "null"] }
+        raw_evidence_ref: { type: [string, "null"] }
+        historian_instance_ref: { type: [string, "null"], description: "MAP-FR-024 — captured reference only; no historian/time-series system exists in this codebase to validate against." }
+        aggregation_rule_ref: { type: [string, "null"], description: "MAP-FR-011 — captured reference only; the actual aggregation rule lives with the historian's own query (Document 47 §9), not computed here." }
+        mapping_id: { type: [string, "null"], format: uuid }
+
+    SubmitApprovedMachineCommandCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MAP-FR-018, MAP-FR-019, MAP-FR-020, MAP-FR-021, MUT-FR-005, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, source_id, operation_code, reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        source_id: { type: string, format: uuid }
+        operation_code: { type: string }
+        parameters: { type: [object, "null"] }
+        batch_id: { type: [string, "null"], format: uuid }
+        batch_state: { type: [string, "null"] }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    FinalizeMachineCommandCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MAP-FR-021, MAP-FR-022, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, expected_version, outcome_status]
+      properties:
+        idempotency_key: { type: string }
+        expected_version: { type: integer }
+        outcome_status:
+          type: string
+          enum: [COMPLETED, READBACK_MISMATCH, TIMEOUT, FAILED, DENIED]
+        native_response: { type: [object, "null"] }
+        evidence_ref: { type: [string, "null"] }
+
+    ReplayHistoricalEvidenceCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MAP-FR-029, MUT-FR-005, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, event_ids, mode, reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        event_ids: { type: array, items: { type: string, format: uuid } }
+        mode: { type: string, enum: [BACKFILL, REPLAY] }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

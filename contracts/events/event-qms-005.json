@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qms-005.json",
+  "title": "SPEC-QMS-005 \u2014 Document Control Events",
+  "description": "Document 113 event contract for the WP-05 Document 30 module (app/modules/qms/document_commands.py). 07_EVENT_CATALOGUE.yaml declares 6 SPEC-QMS-005 events; only 5 are implemented -- 'DocumentPeriodicReviewDue' is declared but has no producing code path anywhere in this codebase (no scheduled-review-due worker exists, the same 'no notification/escalation infrastructure' gap already documented for other QMS modules, e.g. DEV-FR-023/SG-062, AUDIT-FR-015/SG-101). Recorded here, not fixed -- authoring a worker is application code, out of scope for contract authoring.\n\nREUSE NOTE: 'DocumentVersionReleased' is emitted from THREE call sites -- create_draft() (id, document_code, version_label), submit_draft() (id, state=\"REVIEW\"), and release_draft() (id only) -- despite only the third one actually releasing anything. Real, observed characteristic of the built code (document_commands.py:160/199/279), not invented here.",
+  "x-requirement-ids": [
+    "DOC-FR-001",
+    "DOC-FR-002",
+    "DOC-FR-005",
+    "DOC-FR-006",
+    "DOC-FR-007",
+    "DOC-FR-008",
+    "DOC-FR-009",
+    "DOC-FR-010",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "DocumentVersionReleasedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted by create_draft() (id, document_code, version_label), submit_draft() (id, state) and release_draft() (id only) -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "document_code": {
+          "type": "string"
+        },
+        "version_label": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "const": "REVIEW"
+        }
+      },
+      "x-requirement-ids": [
+        "DOC-FR-001",
+        "DOC-FR-005",
+        "DOC-FR-006"
+      ]
+    },
+    "DocumentVersionSupersededPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "superseded_by"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "superseded_by": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "DOC-FR-008"
+      ]
+    },
+    "DocumentVersionEffectivePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "DOC-FR-007"
+      ]
+    },
+    "DocumentObsoletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "DOC-FR-009",
+        "DOC-FR-021"
+      ]
+    },
+    "ControlledCopyIssuedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "copy_id",
+        "copy_number"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "copy_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "copy_number": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "DOC-FR-010",
+        "DOC-FR-020"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "DocumentVersionReleased",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-005",
+      "aggregate_type": "controlled_document_version",
+      "payload": {
+        "$ref": "#/$defs/DocumentVersionReleasedPayload"
+      },
+      "x-requirement-ids": [
+        "DOC-FR-001",
+        "DOC-FR-005",
+        "DOC-FR-006"
+      ]
+    },
+    {
+      "event_type": "DocumentVersionSuperseded",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-005",
+      "aggregate_type": "controlled_document_version",
+      "payload": {
+        "$ref": "#/$defs/DocumentVersionSupersededPayload"
+      },
+      "x-requirement-ids": [
+        "DOC-FR-008"
+      ]
+    },
+    {
+      "event_type": "DocumentVersionEffective",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-005",
+      "aggregate_type": "controlled_document_version",
+      "payload": {
+        "$ref": "#/$defs/DocumentVersionEffectivePayload"
+      },
+      "x-requirement-ids": [
+        "DOC-FR-007"
+      ]
+    },
+    {
+      "event_type": "DocumentObsoleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-005",
+      "aggregate_type": "controlled_document_version",
+      "payload": {
+        "$ref": "#/$defs/DocumentObsoletedPayload"
+      },
+      "x-requirement-ids": [
+        "DOC-FR-009",
+        "DOC-FR-021"
+      ]
+    },
+    {
+      "event_type": "ControlledCopyIssued",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-005",
+      "aggregate_type": "controlled_document_version",
+      "payload": {
+        "$ref": "#/$defs/ControlledCopyIssuedPayload"
+      },
+      "x-requirement-ids": [
+        "DOC-FR-010",
+        "DOC-FR-020"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,800 @@
+openapi: 3.1.0
+info:
+  title: SPEC-GXP-006 — Regulatory Rules & Calculation Engine
+  version: 0.1.0
+  description: >
+    Document 113 contract for the Document 08 slice actually built
+    (`services/gxp-api/app/modules/rules/`): the rule-definition lifecycle
+    (draft → validated → released), release into the Vault as an immutable version, non-mutating
+    simulation of an unreleased rule, and persisted evaluation of the effective released rule.
+
+
+    All six operations the catalogue declares for SPEC-GXP-006 are implemented; there is no divergence in
+    the operation set. Two path parameters are named for what they carry: the catalogue's `{ruleId}` is
+    `{rule_object_id}` on validate/simulate/release (the UUID of one *version* of a rule) and `{rule_id}`
+    on versions (the business rule identifier, which spans versions). These are different identifiers and
+    the running app is right to distinguish them.
+
+
+    THE CENTRAL DISCIPLINE: a released rule is evaluated, never simulated; a draft rule is simulated,
+    never evaluated. `postSimulateRule` writes nothing at all — no idempotency record, no audit event, no
+    outbox row, no receipt (RUL-FR-023). `postEvaluateRule` persists the evaluation, so a regulated
+    decision made under one rule version cannot later be silently recomputed under another (RUL-FR-022).
+
+
+    FAILS CLOSED TODAY: Document 106's approved floor has no `(rule, release)` policy row, so
+    `postReleaseRule` returns `SIGNATURE_POLICY_UNRESOLVED` (409) on every call rather than releasing an
+    executable regulated rule unsigned. Correct fail-closed behaviour under SIGP-FR-004. See SG-029.
+
+
+    DOCUMENT 110 (SG-143, closed 2026-08-27): `precision_policy.calculation_class` is now required and
+    validated at draft time against Document 110 §2's ten calculation classes (`PRECISION_POLICY_UNRESOLVED`
+    if unresolved). `postEvaluateRule` and `postSimulateRule` round comparisons to the class's declared
+    comparison precision (N4) and, for a COMPUTED presentation-stage class (CC-4/CC-5/CC-9), the final
+    result — retaining the pre-rounding value and the applied Document 110 policy version on the persisted
+    evaluation. `unit_policy` is validated against a released/versioned UOM master
+    (`UOM_UNKNOWN`/`UOM_CONVERSION_UNAVAILABLE`, module-scoped error codes — see the operation descriptions
+    below). Division by zero is a typed `DIVISION_UNDEFINED` error. See SG-145 (Document 110 §2's own
+    approval status, still open) for what is deliberately still open there.
+
+
+    UOM AUTHORING SURFACE (SG-146, authoring half closed 2026-08-27): six new operations
+    (`postCreateUomDraft`, `postReleaseUom`, `getUomVersions`, `postCreateUomConversionDraft`,
+    `postReleaseUomConversion`) let a deployment author and release the UOM/conversion master rows the
+    evaluator's `unit_policy` resolves against, through the same Mutation Gateway draft→released
+    lifecycle, fail-closed signature resolution and Vault snapshot discipline `postCreateRuleDraft`/
+    `postReleaseRule` already use — reusing the `rules.author`/`rules.release` policy actions rather than
+    inventing new ones. The free-text UOM columns elsewhere in the platform (batch/qc/genealogy/yield/
+    material/recipe_master/product_master/batch_execution) remain unmigrated — see SG-146.
+
+    NOT BUILT THIS PASS: golden rule vectors as a first-class artefact (TEST-FR-004); full effective-interval
+    overlap validation (only the open-ended-collision case is rejected); and rule scope resolution by
+    site/product (`scope` is stored and never consulted). See SG-013.
+tags:
+  - name: rules
+
+paths:
+  /rules/v1/drafts:
+    post:
+      operationId: postCreateRuleDraft
+      tags: [rules]
+      summary: Author a new rule version in `draft` (RUL-FR-001/002)
+      description: >
+        Requires the `rules.author` policy action. Rejects a `(rule_id, semantic_version)` that already
+        exists in any state — a rule version identifier is never reused, so a "redraft" is a new
+        semantic version, not an overwrite of a released one.
+      x-requirement-ids: [RUL-FR-001, RUL-FR-002, RUL-FR-005, RUL-FR-006, RUL-FR-007, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018, MUT-FR-019]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRuleDraftCommand' }
+      responses:
+        '200':
+          description: Draft created. `aggregate_id` is the `rule_object_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — a draft or released version already exists at this `(rule_id, semantic_version)`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /rules/v1/{rule_object_id}/validate:
+    parameters:
+      - name: rule_object_id
+        in: path
+        required: true
+        description: The UUID of one rule *version*, not the business `rule_id`.
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postValidateRule
+      tags: [rules]
+      summary: Move a draft to `validated` after static checks (RUL-FR-005/006)
+      description: >
+        Requires `rules.author`. Only a `draft` can be validated. Two static checks run: every variable
+        the expression references must be declared in `input_contract` (RUL-FR-006 — no undeclared input can
+        reach the evaluator, Document 113 §3 F1's no-orphan-fields rule applied to rule inputs), and
+        `output_contract` must declare at least the result type/unit (RUL-FR-007). Both failures are
+        `VALIDATION_FAILED` with the offending names in `details`.
+      x-requirement-ids: [RUL-FR-002, RUL-FR-005, RUL-FR-006, RUL-FR-007, MUT-FR-005, MUT-FR-008, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ValidateRuleCommand' }
+      responses:
+        '200':
+          description: Validated.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: >
+            VALIDATION_FAILED — not a draft, an expression references an undeclared input
+            (`details.undeclared`), or `output_contract` is empty.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /rules/v1/{rule_object_id}/simulate:
+    parameters:
+      - name: rule_object_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postSimulateRule
+      tags: [rules]
+      summary: Evaluate a draft or validated rule against trial inputs, writing nothing (RUL-FR-023)
+      description: >
+        Requires `rules.author`. Only a `draft` or `validated` rule can be simulated — attempting to
+        simulate a released rule is `VALIDATION_FAILED`, because a released rule's outputs are regulated
+        results that must be persisted through `postEvaluateRule`, not produced off the record.
+
+
+        This is the one operation in this contract that is **not** a Mutation Gateway command: it takes no
+        `idempotency_key`, writes no audit event, no outbox row and no receipt, and returns a plain
+        result rather than a `MutationReceipt`. That is deliberate and required (RUL-FR-023) — a
+        simulation must never enter the regulated record.
+      x-requirement-ids: [RUL-FR-023]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SimulateRuleRequest' }
+      responses:
+        '200':
+          description: >
+            Simulation result. Explicitly flagged `simulated: true` so it can never be mistaken for a
+            regulated evaluation.
+          content: { application/json: { schema: { $ref: '#/components/schemas/SimulationResult' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: >
+            NOT_FOUND (the rule does not exist), or Document 110 module-scoped
+            UOM_CONVERSION_UNAVAILABLE (a `unit_policy` entry declares `convert_to` and no released
+            conversion resolves as of evaluation time — CALC-FR-006, SPEC-GXP-008 §5).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: >
+            Document 110 module-scoped DIVISION_UNDEFINED (a division in the expression was by zero or
+            otherwise undefined — CALC-FR-010, SPEC-GXP-008 §5). Simulate is not a Mutation Gateway
+            command (RUL-FR-023), so unlike `postEvaluateRule` this is never caught and recorded as an
+            ERROR outcome — there is no persisted row to attach one to — it surfaces directly here.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: >
+            VALIDATION_FAILED — the rule is released (evaluate it instead), or the expression could not
+            be evaluated against these inputs — or Document 110 module-scoped UOM_UNKNOWN /
+            NUMERIC_OVERFLOW (SPEC-GXP-008 §5).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /rules/v1/{rule_object_id}/release:
+    parameters:
+      - name: rule_object_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postReleaseRule
+      tags: [rules]
+      summary: Sign and release a validated rule, freezing it into the Vault (RUL-FR-002/003/027)
+      description: >
+        Requires the `rules.release` policy action — a different action from `rules.author`, so the
+        deployment can require a different role to release than to write (Document 107 SoD).
+
+
+        Only a `validated` rule can be released. If `effective_to` is omitted, another released version of
+        the same `rule_id` that is also open-ended is rejected up front: two simultaneously open-ended
+        versions would make effective-rule resolution permanently ambiguous, and the right time to catch
+        that is at release, not at the evaluation that later depends on it.
+
+
+        On success the rule's canonical form — expression, input/output contracts and the unit, precision
+        and rounding policies — is released as an immutable Vault version, and
+        `released_vault_object_id` is set to it. The Vault copy, not the mutable row, is the evidence of
+        what was released (VLT-FR-001/002).
+      x-requirement-ids: [RUL-FR-002, RUL-FR-003, RUL-FR-027, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, VLT-FR-001]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseRuleCommand' }
+      responses:
+        '200':
+          description: Released.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: >
+            SIGNATURE_POLICY_UNRESOLVED (no Document 106 row — the current behaviour of this endpoint),
+            IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or CONCURRENT_VAULT_RELEASE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: >
+            VALIDATION_FAILED — the rule is not `validated`, or another open-ended released version of
+            this `rule_id` must be superseded first (`details.rule_id`).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /rules/v1/{rule_id}/versions:
+    parameters:
+      - name: rule_id
+        in: path
+        required: true
+        description: >
+          The business rule identifier, which spans versions — not the per-version `rule_object_id` used
+          by validate/simulate/release.
+        schema: { type: string, maxLength: 160 }
+    get:
+      operationId: getRuleVersions
+      tags: [rules]
+      summary: Every version of one business rule, in any state (RUL-FR-002/003)
+      description: >
+        Requires the `rules.evaluate` policy action — reading which rule versions exist is part of
+        understanding an evaluation, so it is gated with evaluation rather than authoring. Returns a
+        plain array: a single rule's version history is bounded by construction and is not paginated (a
+        deliberate deviation from CTR-FR-012 for this operation).
+      x-requirement-ids: [RUL-FR-002, RUL-FR-003]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RuleDefinition' }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /rules/v1/evaluate:
+    post:
+      operationId: postEvaluateRule
+      tags: [rules]
+      summary: Evaluate the effective released rule and persist the evaluation (RUL-FR-022)
+      description: >
+        Requires the `rules.evaluate` policy action. Resolves the *effective released* version of
+        `rule_id` — a draft or a superseded version is never evaluated — runs the expression, and
+        persists a `rule_evaluation` row recording the resolved rule version, the input hash, the inputs,
+        the result and the outcome, inside the same transaction as the audit event and the outbox row.
+
+
+        A failed expression evaluation is itself a recorded outcome (`ERROR`), not a dropped request: the
+        evaluation row is written either way, so an investigation can always see that an evaluation was
+        attempted and what it did. This includes every Document 110 (SPEC-GXP-008) condition —
+        `DIVISION_UNDEFINED`, `NUMERIC_OVERFLOW`, `UOM_UNKNOWN`, `UOM_CONVERSION_UNAVAILABLE` — each
+        recorded with its stable error code in the persisted `result.code` rather than aborting the
+        request (unlike `postSimulateRule`, which has no persisted row to attach an ERROR outcome to and
+        so raises these directly). A COMPUTED result under a presentation-stage calculation class
+        (CC-4/CC-5/CC-9) additionally stores `raw_result` (the pre-rounding value) and
+        `applied_policy_version` on the evaluation row (CALC-FR-002/004/008) — not part of this receipt,
+        which only ever returns identifiers.
+
+
+        There is no `expected_version`: an evaluation creates a new record rather than transitioning an
+        existing aggregate. The optional `aggregate_type`/`aggregate_id`/`aggregate_version` fields are
+        the *subject* the evaluation was about, recorded for lineage (DATA-FR-029), not a concurrency
+        assertion on it.
+      x-requirement-ids: [RUL-FR-004, RUL-FR-021, RUL-FR-022, RUL-FR-031, MUT-FR-010, MUT-FR-014, MUT-FR-015, MUT-FR-018, DATA-FR-029]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateRuleCommand' }
+      responses:
+        '200':
+          description: Evaluated and persisted. `aggregate_id` is the `evaluation_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — no released version of this `rule_id` is effective now.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /rules/v1/uom/drafts:
+    post:
+      operationId: postCreateUomDraft
+      tags: [rules]
+      summary: Author a new UOM code version in `draft` (Document 110 §3, SG-146)
+      description: >
+        Requires the `rules.author` policy action — the same action that authors a rule, since a UOM is
+        released reference data for the same calculation engine. Rejects a `(code, version)` that
+        already exists in any state, the same "a version identifier is never reused" discipline
+        `postCreateRuleDraft` applies to `(rule_id, semantic_version)`. `factor` must be a positive
+        decimal string; `dimension`/`base_unit` are free text (no controlled vocabulary exists in the
+        approved baseline to validate against, AG-15) — CALC-FR-006 is enforced by the evaluator only
+        accepting a *released* code, not by a closed dimension enum here.
+      x-requirement-ids: [CALC-FR-006, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUomDraftCommand' }
+      responses:
+        '200':
+          description: Draft created. `aggregate_id` is the `uom_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — a draft or released UOM already exists at this `(code, version)`, a required field is blank, `precision_dp` is negative, or `factor`/`offset` is not a valid positive decimal.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /rules/v1/uom/{uom_id}/release:
+    parameters:
+      - name: uom_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postReleaseUom
+      tags: [rules]
+      summary: Sign and release a draft UOM, freezing it into the Vault (Document 110 §3, SG-146)
+      description: >
+        Requires the `rules.release` policy action. Only a `draft` UOM can be released. On success the
+        UOM's canonical form is released as an immutable Vault version (`object_type="uom"`,
+        `business_id` = the UOM `code`) and becomes resolvable by the rules evaluator's `unit_policy`
+        validation (`UOM_UNKNOWN` until then). Same fail-closed signature discipline as
+        `postReleaseRule`: no Document 106 `(uom, release)` policy row means `SIGNATURE_POLICY_UNRESOLVED`.
+      x-requirement-ids: [CALC-FR-006, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, VLT-FR-001]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseUomCommand' }
+      responses:
+        '200':
+          description: Released.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or CONCURRENT_VAULT_RELEASE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — the UOM is not `draft`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /rules/v1/uom/{code}/versions:
+    parameters:
+      - name: code
+        in: path
+        required: true
+        schema: { type: string, maxLength: 20 }
+    get:
+      operationId: getUomVersions
+      tags: [rules]
+      summary: Every version of one UOM code, in any state (Document 110 §3, SG-146)
+      description: >
+        Requires the `rules.evaluate` policy action — same rationale as `getRuleVersions`: reading which
+        UOM versions exist is part of understanding an evaluation. Returns a plain array, not paginated.
+      x-requirement-ids: [CALC-FR-006]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/UomDefinition' } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /rules/v1/uom-conversions/drafts:
+    post:
+      operationId: postCreateUomConversionDraft
+      tags: [rules]
+      summary: Author a new UOM conversion version in `draft` (Document 110 §3, SG-146)
+      description: >
+        Requires `rules.author`. `from_code`/`to_code` must each already have at least one drafted UOM
+        row (any status — released-only is the evaluator's own gate at resolution time, not a draft-time
+        restriction) and must differ. Rejects a `(from_code, to_code, version)` that already exists.
+      x-requirement-ids: [CALC-FR-006, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUomConversionDraftCommand' }
+      responses:
+        '200':
+          description: Draft created. `aggregate_id` is the `conversion_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — `from_code`/`to_code` blank or equal, either code has no drafted UOM, `factor` is not a valid positive decimal, `rounding_stage` is blank, or a draft/released conversion already exists at this `(from_code, to_code, version)`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /rules/v1/uom-conversions/{conversion_id}/release:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postReleaseUomConversion
+      tags: [rules]
+      summary: Sign and release a draft UOM conversion, freezing it into the Vault (Document 110 §3, SG-146)
+      description: >
+        Requires `rules.release`. Only a `draft` conversion can be released. On success the conversion's
+        canonical form is released as an immutable Vault version (`object_type="uom_conversion"`,
+        `business_id` = `"{from_code}->{to_code}"`) and becomes resolvable by a rule's own
+        `unit_policy.convert_to` at evaluation time (`UOM_CONVERSION_UNAVAILABLE` until then). Same
+        fail-closed signature discipline as `postReleaseRule`.
+      x-requirement-ids: [CALC-FR-006, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, VLT-FR-001]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseUomConversionCommand' }
+      responses:
+        '200':
+          description: Released.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or CONCURRENT_VAULT_RELEASE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — the conversion is not `draft`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    RuleStatus:
+      type: string
+      description: >
+        The rule-version lifecycle (RUL-FR-002). Closed enum — these are the only three values the code
+        writes, and the transitions between them are the only ones any endpoint performs. Adding a state
+        is a minor version; removing one is breaking (Document 113 §3 F7).
+      x-requirement-ids: [RUL-FR-002, CTR-FR-017]
+      enum: [draft, validated, released]
+
+    RuleExpressionAst:
+      type: object
+      description: >
+        The rule's expression as a structured AST, never source text — customer-provided Python or
+        JavaScript is prohibited in authoritative mutation execution (MUT-FR-029). The evaluator in
+        `app/modules/rules/expression.py` interprets a fixed node vocabulary; the node schema itself is
+        not declared here because it is an internal evaluator contract rather than a stable published
+        one, and publishing a partial version would invite consumers to depend on it.
+
+
+        PRECISION (RESOLVED SG-143, 2026-08-27): Document 110 and Document 113 §3 F2 require regulated
+        numerics to be exact decimals with an explicit UOM. `unit_policy`, `precision_policy` and
+        `rounding_policy` are captured on the rule and frozen into its Vault version; the evaluator now
+        also consults the released rule's own `precision_policy.calculation_class` (one of Document 110
+        §2's ten classes) to round comparisons at their declared precision (N4) and, for a
+        presentation-stage class, the final COMPUTED result (`app/modules/rules/precision.py`). This
+        does not change the AST vocabulary itself — still the fixed, safe node set described above. See
+        SG-145 (§2's own approval status) and SG-146 (the UOM master's authoring surface and the
+        pre-existing free-text UOM columns elsewhere in the platform) for what remains open.
+      x-requirement-ids: [RUL-FR-005, RUL-FR-009, RUL-FR-010, MUT-FR-029]
+      additionalProperties: true
+
+    RuleDefinition:
+      type: object
+      description: One rule version (`app/modules/rules/router.py:_rule_dict`). A response schema, so not closed.
+      x-requirement-ids: [RUL-FR-001, RUL-FR-002, RUL-FR-003, RUL-FR-006, RUL-FR-007, RUL-FR-008, RUL-FR-009, RUL-FR-010]
+      required: [rule_object_id, rule_id, rule_type, semantic_version, status, expression_ast, input_contract, output_contract, unit_policy, precision_policy, rounding_policy]
+      properties:
+        rule_object_id: { type: string, format: uuid }
+        rule_id:
+          type: string
+          maxLength: 160
+          description: The business rule identifier, stable across versions.
+        rule_type:
+          type: string
+          maxLength: 60
+          description: >
+            The rule's category. Not a closed enum: no controlled rule-type vocabulary exists in the
+            baseline and the column accepts any string, so declaring one would be guessing regulated
+            behaviour (AG-15). See SG-013.
+        semantic_version:
+          type: string
+          maxLength: 40
+          description: Unique together with `rule_id` across all states.
+        status: { $ref: '#/components/schemas/RuleStatus' }
+        effective_from: { type: [string, "null"], format: date-time }
+        effective_to:
+          type: [string, "null"]
+          format: date-time
+          description: Null means open-ended; at most one released open-ended version may exist per `rule_id`.
+        expression_ast: { $ref: '#/components/schemas/RuleExpressionAst' }
+        input_contract:
+          type: object
+          description: >
+            Declared inputs, keyed by variable name. Validation rejects any expression variable not
+            declared here (RUL-FR-006).
+        output_contract:
+          type: object
+          description: Declared result type and unit. Must be non-empty to validate.
+        unit_policy:
+          type: object
+          description: >
+            UOM handling for this rule (Document 110 §3), keyed by input variable name: either a bare
+            released UOM code, or `{"uom": code, "convert_to": code}` to convert before evaluation.
+            Enforced by the evaluator (`UOM_UNKNOWN`/`UOM_CONVERSION_UNAVAILABLE`) when non-empty.
+        precision_policy:
+          type: object
+          description: >
+            Decimal precision for this rule (Document 110 §2). Must resolve `calculation_class` to one
+            of the ten declared classes (`PRECISION_POLICY_UNRESOLVED` otherwise); CC-5 additionally
+            requires `reported_decimal_places`. Enforced by the evaluator at comparison and, for a
+            presentation-stage class, at the final result.
+        rounding_policy:
+          type: object
+          description: >
+            Rounding mode and policy version for this rule (Document 110 §2) — rounding mode/stage
+            themselves are fixed per `calculation_class`, not independently chosen here.
+        released_vault_object_id:
+          type: [string, "null"]
+          format: uuid
+          description: The immutable Vault version created at release. Null until released.
+
+    SimulationResult:
+      type: object
+      additionalProperties: false
+      description: The non-regulated output of `postSimulateRule`. Never persisted anywhere.
+      x-requirement-ids: [RUL-FR-023]
+      required: [rule_object_id, result, simulated]
+      properties:
+        rule_object_id: { type: string, format: uuid }
+        result:
+          description: >
+            The evaluator's raw output. Untyped because a rule's result type is whatever its
+            `output_contract` declares — boolean for an eligibility rule, a number for a calculation.
+        simulated:
+          type: boolean
+          const: true
+          description: >
+            Always true. Present so a simulation result can never be mistaken for, or replayed as, a
+            regulated evaluation (RUL-FR-023).
+
+    RuleOutcome:
+      type: string
+      description: >
+        The classification stored on a persisted evaluation. Closed enum — `evaluate_rule` produces
+        exactly these four. `PASS`/`FAIL` for a boolean result, `COMPUTED` for any other value,
+        `ERROR` when the expression could not be evaluated against the supplied inputs.
+      x-requirement-ids: [RUL-FR-021, RUL-FR-022, CTR-FR-017]
+      enum: [PASS, FAIL, COMPUTED, ERROR]
+
+    CreateRuleDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RUL-FR-001, RUL-FR-005, RUL-FR-006, RUL-FR-007, RUL-FR-009, RUL-FR-010, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, rule_id, rule_type, semantic_version, expression_ast, input_contract, output_contract, unit_policy, precision_policy, rounding_policy]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        rule_id: { type: string, maxLength: 160 }
+        rule_type: { type: string, maxLength: 60 }
+        semantic_version: { type: string, maxLength: 40 }
+        expression_ast: { $ref: '#/components/schemas/RuleExpressionAst' }
+        input_contract: { type: object }
+        output_contract: { type: object }
+        unit_policy: { type: object }
+        precision_policy: { type: object }
+        rounding_policy: { type: object }
+        reason_codes:
+          type: [object, "null"]
+          description: Reason codes this rule may attach to a FAIL outcome.
+        scope:
+          type: [object, "null"]
+          description: >
+            Intended site/product applicability. Stored but never consulted by resolution today — see
+            SG-013. Do not rely on it to restrict where a rule applies.
+
+    ValidateRuleCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RUL-FR-002, RUL-FR-005, RUL-FR-006, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, rule_object_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        rule_object_id:
+          type: string
+          format: uuid
+          description: Must equal the `rule_object_id` path parameter.
+
+    SimulateRuleRequest:
+      type: object
+      description: >
+        NOT A CLOSED PAYLOAD, and this is a defect rather than a design choice.
+        `app/modules/rules/router.py:SimulateRuleRequest` is a plain Pydantic `BaseModel` without
+        `extra="forbid"`, so unknown top-level fields are silently accepted. Every other request body in
+        this work package inherits `CommandEnvelope` and is closed.
+
+
+        Declaring `additionalProperties: false` here would make the contract false, so it is declared
+        truthfully and reported instead. The exposure is low — simulate is read-only and writes nothing
+        (RUL-FR-023), so an ignored extra field cannot reach regulated state — but it still contradicts
+        CTR-FR-005 and Document 113 §3 F6's intent. Raised as SG-144.
+      x-requirement-ids: [RUL-FR-023, CTR-FR-005]
+      required: [inputs]
+      properties:
+        inputs:
+          type: object
+          description: >
+            Trial values keyed by the variable names declared in the rule's `input_contract`. Free-form
+            by design — the rule's own contract defines the shape.
+
+    ReleaseRuleCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RUL-FR-002, RUL-FR-003, MUT-FR-005, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, rule_object_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        rule_object_id:
+          type: string
+          format: uuid
+          description: Must equal the `rule_object_id` path parameter.
+        effective_from:
+          type: [string, "null"]
+          format: date-time
+          description: RFC 3339 UTC. Defaults to the release instant when omitted.
+        effective_to:
+          type: [string, "null"]
+          format: date-time
+          description: >
+            RFC 3339 UTC. Omitting it releases an open-ended version, which is rejected if another
+            open-ended released version of the same `rule_id` already exists.
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password:
+          type: [string, "null"]
+          format: password
+          writeOnly: true
+
+    EvaluateRuleCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RUL-FR-004, RUL-FR-021, RUL-FR-022, MUT-FR-005, MUT-FR-010, MUT-FR-014, DATA-FR-029]
+      required: [idempotency_key, rule_id, inputs]
+      properties:
+        idempotency_key:
+          type: string
+          maxLength: 200
+          description: >
+            Replaying the same key with the same inputs returns the original receipt and creates no
+            second evaluation row (Document 113 §5 I1) — which matters here, because a duplicated
+            evaluation of a regulated rule would look like two independent decisions.
+        rule_id:
+          type: string
+          maxLength: 160
+          description: The business rule identifier. The effective *released* version is resolved server-side.
+        inputs:
+          type: object
+          description: >
+            Values keyed by the variable names declared in the rule's `input_contract`, as decimal
+            strings (Document 110 N1 — never a binary float). Unit is declared once per variable on the
+            rule's own `unit_policy`, not per input value here (Document 113 §3 F2's per-value UOM
+            envelope is not built — see SG-146); a variable named in `unit_policy` is validated
+            (`UOM_UNKNOWN`) and, if `convert_to` is declared, converted before evaluation
+            (`UOM_CONVERSION_UNAVAILABLE`). Comparisons and, for a presentation-stage calculation class,
+            the final result are rounded per the rule's own `precision_policy.calculation_class`
+            (Document 110 §2).
+        aggregate_type:
+          type: [string, "null"]
+          maxLength: 100
+          description: The subject this evaluation was about, for lineage. Not a concurrency assertion.
+        aggregate_id: { type: [string, "null"], format: uuid }
+        aggregate_version: { type: [integer, "null"] }
+
+    UomStatus:
+      type: string
+      description: The UOM/conversion lifecycle (Document 110 §3, SG-146). Two states — no `validated` middle step, since there is no expression to statically check the way a rule has.
+      x-requirement-ids: [CALC-FR-006]
+      enum: [draft, released]
+
+    UomDefinition:
+      type: object
+      description: One version of one UOM code (`app/modules/rules/router.py:_uom_dict`). A response schema, so not closed.
+      x-requirement-ids: [CALC-FR-006]
+      required: [uom_id, code, dimension, base_unit, factor, offset, precision_dp, status, version]
+      properties:
+        uom_id: { type: string, format: uuid }
+        code: { type: string, maxLength: 20 }
+        dimension: { type: string, maxLength: 40 }
+        base_unit:
+          type: string
+          maxLength: 20
+          description: The code of this dimension's base unit (self-referential for the base unit's own row) — not a boolean flag.
+        factor:
+          type: string
+          description: Decimal string (Document 110 N1). Multiplies a value in this unit to its dimension's base unit.
+        offset: { type: string, description: Decimal string. Additive after the factor multiplication. }
+        precision_dp: { type: integer, minimum: 0 }
+        status: { $ref: '#/components/schemas/UomStatus' }
+        version: { type: integer, minimum: 1 }
+
+    CreateUomDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CALC-FR-006, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, code, dimension, base_unit, factor, precision_dp]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        code: { type: string, maxLength: 20 }
+        dimension: { type: string, maxLength: 40 }
+        base_unit: { type: string, maxLength: 20 }
+        factor: { type: string, description: Decimal string; must be strictly positive. }
+        offset: { type: string, description: Decimal string. Defaults to "0". }
+        precision_dp: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 1, description: Defaults to 1. Unique together with `code`. }
+
+    ReleaseUomCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CALC-FR-006, MUT-FR-005, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, uom_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        uom_id: { type: string, format: uuid, description: Must equal the `uom_id` path parameter. }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    CreateUomConversionDraftCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CALC-FR-006, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, from_code, to_code, factor, rounding_stage]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        from_code: { type: string, maxLength: 20 }
+        to_code: { type: string, maxLength: 20 }
+        factor: { type: string, description: Decimal string; must be strictly positive. }
+        rounding_stage: { type: string, maxLength: 40 }
+        effective_from: { type: [string, "null"], format: date-time, description: RFC 3339 UTC. Defaults to the draft-creation instant when omitted. }
+        version: { type: integer, minimum: 1, description: Defaults to 1. Unique together with `from_code`/`to_code`. }
+
+    ReleaseUomConversionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [CALC-FR-006, MUT-FR-005, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, conversion_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        conversion_id: { type: string, format: uuid, description: Must equal the `conversion_id` path parameter. }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

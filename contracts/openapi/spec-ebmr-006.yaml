@@ -1,0 +1,396 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EBMR-006 — Release / Disposition Engine
+  version: 0.1.0
+  description: >
+    Document 113 contract for the Document 15 slice actually built
+    (`services/gxp-api/app/modules/release/`): get-or-create + evaluate a release scope
+    (REL-FR-001/003/004/008/025), release with mandatory immediate re-evaluation and a Document 106
+    signature ceremony (REL-FR-006/007/008/009), hold and reject (REL-FR-011/012, both signature-gated),
+    and the release package read view.
+
+
+    ONLY 1 OF 3 OWNED ENTITIES IS DDL-READY THE ORDINARY WAY: `release_scope` is DDL-ready in
+    `docs/generated/04_DATA_MODEL_CATALOGUE.md`; `release_evaluation`/`release_decision` are prose-only
+    field-name lists there, but — like 5 of Document 10's 9 entities — both lists are genuinely
+    unambiguous (no polymorphic value typing, no missing referenced entity, and Document 15 §6 gives a
+    concrete JSON shape for the one semi-structured field, `blockers`). They are typed directly in
+    `app/modules/release/models.py` as an ordinary engineering decision, not a guess at regulated content
+    — see that file's own docstring for the reasoning.
+
+
+    ONLY `scope_type == "batch"` IS SUPPORTED: device lot/serial/combination-product scope
+    (REL-FR-002/016) needs deeper Document 12/13 integration this pass doesn't build —
+    `VALIDATION_FAILED` for any other `scope_type`.
+
+
+    ELIGIBILITY CHECKS ONLY 2 OF 9 NAMED CATEGORIES (REL-FR-003, real but partial): Document 15 names
+    manufacturing completeness, QA review, QC, QMS, materials, equipment, environment, packaging,
+    genealogy and yield/reconciliation as eligibility inputs. Only QA review currency/completeness
+    (Document 14, `qa_review_package.state`/`batch_version` staleness) and Vault execution-snapshot
+    integrity (Document 06) have a real data source in this codebase today — QC, QMS, materials,
+    equipment, environment, packaging, genealogy and yield/reconciliation are silently absent from
+    `evaluate_eligibility`'s blocker/warning output, not guessed at (SG-056). `evaluate_eligibility` never
+    produces a warning this pass either — `warnings` is always `[]`.
+
+
+    STATE MODEL IS A NARROW SLICE (Document 15 §3/REL-FR-010 names a fuller list: Draft Evaluation,
+    Eligible, Blocked, Pending Signature, Released, Rejected, Hold, Rework, Reprocess, Destruction,
+    Return/Other). `REWORK`/`REPROCESS`/`DESTRUCTION` need an approved-route entity that doesn't exist
+    anywhere in this codebase (the same gap `batch_execution`/`device` hit — SG-047/048/050) and have no
+    way to reach closure without one, so they are not reachable states this pass. `PENDING_SIGNATURE`
+    isn't a separate persisted phase — the signature ceremony is synchronous within
+    `postReleaseScopeDecision`/`postRejectScope`/`postHoldScope`, matching every other signed action in
+    this codebase. `RELEASE_STATES` in `app/modules/release/models.py` is the honestly-reachable subset:
+    `draft_evaluation`, `eligible`, `blocked`, `released`, `rejected`, `hold`. A `released` scope can
+    still move to `hold` (REL-FR-031, "revoke availability") — the original `RELEASED` decision row is
+    never edited or removed, so this reflects current availability without rewriting release history.
+tags:
+  - name: release
+
+paths:
+  /release/v1/scopes/{scope_type}/{target_id}/evaluate:
+    parameters:
+      - name: scope_type
+        in: path
+        required: true
+        schema: { type: string }
+      - name: target_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postEvaluateReleaseScope
+      tags: [release]
+      summary: Get-or-create a release scope and (re-)evaluate its eligibility (REL-FR-001/003/004/008/025)
+      description: >
+        Requires the `release.evaluate` policy action. `scope_type` must be `"batch"` —
+        `VALIDATION_FAILED` otherwise (see the file description). First call for a `(scope_type,
+        target_id)` creates the scope in `draft_evaluation`; a later call re-evaluates it in place.
+        `INVALID_TRANSITION` if the scope is already `released` or `rejected` (terminal for
+        re-evaluation). While `hold`, re-evaluation still runs and records a new
+        `ReleaseEvaluation`, but the hold itself is a deliberate quality lock that a re-evaluation never
+        silently clears — `scope.state` stays `hold` regardless of the computed eligibility.
+      x-requirement-ids: [REL-FR-001, REL-FR-003, REL-FR-004, REL-FR-005, REL-FR-008, REL-FR-011, REL-FR-025, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateReleaseScopeCommand' }
+      responses:
+        '200':
+          description: Evaluated. `aggregate_id` is the `scope_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the batch referenced by `target_id` does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: IDEMPOTENCY_CONFLICT or INVALID_TRANSITION — the scope is already `released` or `rejected`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `scope_type`/`target_id` in path and body do not match, or `scope_type` is not `"batch"`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /release/v1/scopes/{scope_id}/eligibility:
+    parameters:
+      - name: scope_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getReleaseScopeEligibility
+      tags: [release]
+      summary: A release scope and its current (last-computed) evaluation (REL-FR-001/003)
+      description: >
+        Requires `release.view`. Returns the scope and whichever `ReleaseEvaluation` it currently points
+        to (`current_evaluation_id`) — this is the evaluation as of the last `postEvaluateReleaseScope`
+        or `postReleaseScopeDecision` call, not necessarily current against the batch's live state; call
+        `postEvaluateReleaseScope` again to refresh it (AG-11: this endpoint itself never recomputes).
+        `evaluation` is null only before the scope's first evaluation, which cannot happen through this
+        API (creation and first evaluation are the same call).
+      x-requirement-ids: [REL-FR-001, REL-FR-003]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/ReleaseScopeEligibility' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /release/v1/scopes/{scope_id}/release:
+    parameters:
+      - name: scope_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postReleaseScopeDecision
+      tags: [release]
+      summary: Sign and release a scope, freezing a release package into the Vault (REL-FR-006/007/008/009)
+      description: >
+        Requires `release.release` — a different policy action from `release.evaluate`/`release.hold`/
+        `release.reject` (Document 107 SoD). Only a state with `released` in its `ALLOWED_TRANSITIONS`
+        set (`eligible`) may release. Mandatory immediate re-evaluation before commit (REL-FR-008 — "no
+        stale green status"): `VALIDATION_FAILED` if the fresh eligibility check finds any blocker, even
+        if the scope was `eligible` when read. On success, releases the canonical release package
+        (scope + evaluation + signature reference) as an immutable Vault version
+        (`object_type="release_package"`, VLT-FR-001) and records a `ReleaseDecision` row with
+        `decision_code="RELEASED"`.
+      x-requirement-ids: [REL-FR-006, REL-FR-007, REL-FR-008, REL-FR-009, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, VLT-FR-001]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseDecisionCommand' }
+      responses:
+        '200':
+          description: Released.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, CONCURRENT_VAULT_RELEASE, or INVALID_TRANSITION — the scope is not `eligible`, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `scope_id` in path and body do not match, or a fresh re-evaluation found a blocker (`details.blockers`).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /release/v1/scopes/{scope_id}/hold:
+    parameters:
+      - name: scope_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postHoldReleaseScope
+      tags: [release]
+      summary: Place a release scope on hold — usable before or after release (REL-FR-011/031)
+      description: >
+        Requires `release.hold`. Allowed from `draft_evaluation`, `eligible`, `blocked` or `released`
+        (`ALLOWED_TRANSITIONS`); `hold` is terminal in this contract — there is no resume-from-hold
+        endpoint, the same reasoning as the `batch_execution`/`device` one-way holds this session's other
+        contracts document. `VALIDATION_FAILED` if the scope has never been evaluated
+        (`current_evaluation_id` is null) — a hold decision always references the scope's current
+        evaluation. Reuses the same `ReleaseDecisionCommand` shape as release/reject.
+      x-requirement-ids: [REL-FR-011, REL-FR-031, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseDecisionCommand' }
+      responses:
+        '200':
+          description: Held.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — the scope is `rejected` or already `hold`, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `scope_id` in path and body do not match, or the scope has never been evaluated.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /release/v1/scopes/{scope_id}/reject:
+    parameters:
+      - name: scope_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postRejectReleaseScope
+      tags: [release]
+      summary: Reject a release scope — terminal (REL-FR-012)
+      description: >
+        Requires `release.reject`. Allowed from `draft_evaluation`, `eligible` or `blocked`
+        (`ALLOWED_TRANSITIONS`); `rejected` is terminal — `ALLOWED_TRANSITIONS["rejected"]` is the empty
+        set. `VALIDATION_FAILED` if the scope has never been evaluated. Reuses the same
+        `ReleaseDecisionCommand` shape as release/hold.
+      x-requirement-ids: [REL-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseDecisionCommand' }
+      responses:
+        '200':
+          description: Rejected.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — the scope is already `released`, `rejected`, or `hold`, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `scope_id` in path and body do not match, or the scope has never been evaluated.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /release/v1/scopes/{scope_id}/package:
+    parameters:
+      - name: scope_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getReleasePackage
+      tags: [release]
+      summary: The release package — scope, current evaluation and full decision history (REL-FR-009/028, partial)
+      description: >
+        Requires `release.view`. `decisions` is every `ReleaseDecision` ever recorded against this scope
+        (release/hold/reject), oldest first — a real, if partial, release certificate/export
+        (REL-FR-028): DDCP-specific constituent/compatibility detail (Document 15 §8) is not built
+        (SG-056).
+      x-requirement-ids: [REL-FR-009, REL-FR-028]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/ReleasePackage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    ReleaseScopeType:
+      type: string
+      description: "`SCOPE_TYPES` in `app/modules/release/models.py` — only \"batch\" is supported this pass (REL-FR-002/016 device/serial/combination scope needs deeper Document 12/13 integration)."
+      x-requirement-ids: [REL-FR-001, REL-FR-002]
+      enum: [batch]
+
+    ReleaseScopeState:
+      type: string
+      description: >
+        `RELEASE_STATES` in `app/modules/release/models.py` — the honestly-reachable subset of Document
+        15 §3/REL-FR-010's full model (Rework/Reprocess/Destruction excluded, see the file description).
+        `ALLOWED_TRANSITIONS` is the only transition table any endpoint uses:
+        draft_evaluation→eligible|blocked|hold; eligible→eligible|blocked|released|rejected|hold;
+        blocked→eligible|blocked|rejected|hold; released→hold (REL-FR-031); rejected/hold are terminal.
+      x-requirement-ids: [REL-FR-010, CTR-FR-017]
+      enum: [draft_evaluation, eligible, blocked, released, rejected, hold]
+
+    DecisionCode:
+      type: string
+      description: "`DECISION_CODES` in `app/modules/release/models.py`."
+      x-requirement-ids: [REL-FR-010]
+      enum: [RELEASED, REJECTED, HOLD]
+
+    ReleaseBlocker:
+      type: object
+      description: "One entry in an evaluation's blockers/warnings array — Document 15 §6's blocker contract (`app/modules/release/service.py:_blocker`). Only 4 concrete codes are ever produced this pass: QA_REVIEW_MISSING, REVIEW_NOT_CURRENT, BATCH_ON_HOLD, INTEGRITY_CHECK_FAILED (REL-FR-004/025 — the QA-review/hold/integrity slice of the 9 named eligibility categories)."
+      x-requirement-ids: [REL-FR-004, REL-FR-005]
+      required: [code, severity, source_type, message_key, resolution_action]
+      properties:
+        code: { type: string }
+        severity: { type: string, description: "Always \"CRITICAL\" this pass — no lower-severity blocker code is produced." }
+        source_type: { type: string, description: "e.g. qa_review_package, batch, vault_object." }
+        source_id: { type: [string, "null"] }
+        message_key: { type: string }
+        resolution_action: { type: string, description: "A machine-readable next-step code, e.g. COMPLETE_QA_REVIEW, RESOLVE_BATCH_HOLD." }
+
+    ReleaseEvaluation:
+      type: object
+      description: One evaluation snapshot (`app/modules/release/router.py:_evaluation_dict`).
+      x-requirement-ids: [REL-FR-003, REL-FR-004, REL-FR-005]
+      required: [evaluation_id, scope_version, evaluated_batch_version, blockers, warnings, eligible, evaluation_time]
+      properties:
+        evaluation_id: { type: string, format: uuid }
+        scope_version: { type: integer, minimum: 1, description: The scope's aggregate version at the moment this evaluation was computed. }
+        evaluated_batch_version: { type: integer, minimum: 1, description: The batch's aggregate version this evaluation was computed against. }
+        blockers: { type: array, items: { $ref: '#/components/schemas/ReleaseBlocker' } }
+        warnings: { type: array, items: { $ref: '#/components/schemas/ReleaseBlocker' }, description: "Always [] this pass — evaluate_eligibility never produces a warning yet." }
+        eligible: { type: boolean, description: True exactly when blockers is empty. }
+        evaluation_time: { type: string, format: date-time }
+
+    ReleaseDecision:
+      type: object
+      description: One decision record (`app/modules/release/router.py:_decision_dict`).
+      x-requirement-ids: [REL-FR-009, REL-FR-029]
+      required: [decision_id, decision_code, decision_time]
+      properties:
+        decision_id: { type: string, format: uuid }
+        decision_code: { $ref: '#/components/schemas/DecisionCode' }
+        reason: { type: [string, "null"] }
+        signature_id: { type: [string, "null"], format: uuid, description: Null only if Document 106 resolved no signature required for this action's policy row. }
+        decision_time: { type: string, format: date-time }
+        release_package_hash: { type: [string, "null"], description: The Vault digest — set only on a RELEASED decision. }
+
+    ReleaseScope:
+      type: object
+      description: One release scope (`app/modules/release/router.py:_scope_dict`). A response schema, so not closed.
+      x-requirement-ids: [REL-FR-001, REL-FR-010]
+      required: [scope_id, site_id, scope_type, target_id, product_version_id, batch_id, state, version]
+      properties:
+        scope_id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        scope_type: { $ref: '#/components/schemas/ReleaseScopeType' }
+        target_id: { type: string, format: uuid, description: "The scoped entity's id — currently always a batch_id, since scope_type is always \"batch\"." }
+        product_version_id: { type: string, format: uuid }
+        batch_id: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/ReleaseScopeState' }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        current_evaluation_id: { type: [string, "null"], format: uuid }
+        released_vault_object_id: { type: [string, "null"], format: uuid }
+        decision_at: { type: [string, "null"], format: date-time }
+
+    ReleaseScopeEligibility:
+      type: object
+      description: getReleaseScopeEligibility's response.
+      x-requirement-ids: [REL-FR-001, REL-FR-003]
+      required: [scope]
+      properties:
+        scope: { $ref: '#/components/schemas/ReleaseScope' }
+        evaluation: { oneOf: [{ $ref: '#/components/schemas/ReleaseEvaluation' }, { type: "null" }] }
+
+    ReleasePackage:
+      type: object
+      description: getReleasePackage's response.
+      x-requirement-ids: [REL-FR-009, REL-FR-028]
+      required: [scope, decisions]
+      properties:
+        scope: { $ref: '#/components/schemas/ReleaseScope' }
+        evaluation: { oneOf: [{ $ref: '#/components/schemas/ReleaseEvaluation' }, { type: "null" }] }
+        decisions: { type: array, items: { $ref: '#/components/schemas/ReleaseDecision' }, description: Oldest first. }
+
+    EvaluateReleaseScopeCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [REL-FR-001, REL-FR-003, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, scope_type, scope_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        scope_type: { type: string, description: Must equal the path parameter scope_type. }
+        scope_id: { type: string, format: uuid, description: Must equal the path parameter target_id. }
+
+    ReleaseDecisionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Shared by release/hold/reject — the only fields any of the three decisions need.
+      x-requirement-ids: [REL-FR-006, REL-FR-007, REL-FR-011, REL-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, scope_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        scope_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"], description: Not required at the schema level; recorded on the ReleaseDecision and audit event when supplied. }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

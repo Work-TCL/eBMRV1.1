@@ -1,0 +1,59 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /home/hepin/mydata/eBMR-new/services/gxp-api/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/hepin/mydata/eBMR-new/services/gxp-api
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.14.2
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=session
+collecting ... collected 48 items
+
+tests/test_contract_conformance.py::test_contract_is_parseable_openapi_31[spec-gxp-001.yaml] PASSED [  2%]
+tests/test_contract_conformance.py::test_contract_is_parseable_openapi_31[spec-gxp-002.yaml] PASSED [  4%]
+tests/test_contract_conformance.py::test_contract_is_parseable_openapi_31[spec-gxp-003.yaml] PASSED [  6%]
+tests/test_contract_conformance.py::test_contract_is_parseable_openapi_31[spec-gxp-004.yaml] PASSED [  8%]
+tests/test_contract_conformance.py::test_contract_is_parseable_openapi_31[spec-gxp-006.yaml] PASSED [ 10%]
+tests/test_contract_conformance.py::test_every_ref_resolves[spec-gxp-001.yaml] PASSED [ 12%]
+tests/test_contract_conformance.py::test_every_ref_resolves[spec-gxp-002.yaml] PASSED [ 14%]
+tests/test_contract_conformance.py::test_every_ref_resolves[spec-gxp-003.yaml] PASSED [ 16%]
+tests/test_contract_conformance.py::test_every_ref_resolves[spec-gxp-004.yaml] PASSED [ 18%]
+tests/test_contract_conformance.py::test_every_ref_resolves[spec-gxp-006.yaml] PASSED [ 20%]
+tests/test_contract_conformance.py::test_command_payloads_are_closed[spec-gxp-001.yaml] PASSED [ 22%]
+tests/test_contract_conformance.py::test_command_payloads_are_closed[spec-gxp-002.yaml] PASSED [ 25%]
+tests/test_contract_conformance.py::test_command_payloads_are_closed[spec-gxp-003.yaml] PASSED [ 27%]
+tests/test_contract_conformance.py::test_command_payloads_are_closed[spec-gxp-004.yaml] PASSED [ 29%]
+tests/test_contract_conformance.py::test_command_payloads_are_closed[spec-gxp-006.yaml] PASSED [ 31%]
+tests/test_contract_conformance.py::test_every_command_schema_requires_an_idempotency_key PASSED [ 33%]
+tests/test_contract_conformance.py::test_schemas_and_operations_carry_requirement_ids[spec-gxp-001.yaml] PASSED [ 35%]
+tests/test_contract_conformance.py::test_schemas_and_operations_carry_requirement_ids[spec-gxp-002.yaml] PASSED [ 37%]
+tests/test_contract_conformance.py::test_schemas_and_operations_carry_requirement_ids[spec-gxp-003.yaml] PASSED [ 39%]
+tests/test_contract_conformance.py::test_schemas_and_operations_carry_requirement_ids[spec-gxp-004.yaml] PASSED [ 41%]
+tests/test_contract_conformance.py::test_schemas_and_operations_carry_requirement_ids[spec-gxp-006.yaml] PASSED [ 43%]
+tests/test_contract_conformance.py::test_requirement_ids_use_a_known_namespace[spec-gxp-001.yaml] PASSED [ 45%]
+tests/test_contract_conformance.py::test_requirement_ids_use_a_known_namespace[spec-gxp-002.yaml] PASSED [ 47%]
+tests/test_contract_conformance.py::test_requirement_ids_use_a_known_namespace[spec-gxp-003.yaml] PASSED [ 50%]
+tests/test_contract_conformance.py::test_requirement_ids_use_a_known_namespace[spec-gxp-004.yaml] PASSED [ 52%]
+tests/test_contract_conformance.py::test_requirement_ids_use_a_known_namespace[spec-gxp-006.yaml] PASSED [ 54%]
+tests/test_contract_conformance.py::test_operation_ids_are_unique_across_all_contracts PASSED [ 56%]
+tests/test_contract_conformance.py::test_envelopes_are_canonical[spec-gxp-001.yaml] PASSED [ 58%]
+tests/test_contract_conformance.py::test_envelopes_are_canonical[spec-gxp-002.yaml] PASSED [ 60%]
+tests/test_contract_conformance.py::test_envelopes_are_canonical[spec-gxp-003.yaml] PASSED [ 62%]
+tests/test_contract_conformance.py::test_envelopes_are_canonical[spec-gxp-004.yaml] PASSED [ 64%]
+tests/test_contract_conformance.py::test_envelopes_are_canonical[spec-gxp-006.yaml] PASSED [ 66%]
+tests/test_contract_conformance.py::test_canonical_envelopes_are_defined_exactly_once PASSED [ 68%]
+tests/test_contract_conformance.py::test_mutation_receipt_matches_the_built_pydantic_model PASSED [ 70%]
+tests/test_contract_conformance.py::test_command_envelope_matches_the_built_pydantic_model PASSED [ 72%]
+tests/test_contract_conformance.py::test_platform_error_codes_match_the_raised_exception_classes PASSED [ 75%]
+tests/test_contract_conformance.py::test_wp01_contracts_cover_every_implemented_wp01_operation PASSED [ 77%]
+tests/test_contract_conformance.py::test_gxp001_and_gxp002_declare_no_paths PASSED [ 79%]
+tests/test_contract_conformance.py::test_every_operation_declares_its_security_scheme[spec-gxp-003.yaml] PASSED [ 81%]
+tests/test_contract_conformance.py::test_every_operation_declares_its_security_scheme[spec-gxp-004.yaml] PASSED [ 83%]
+tests/test_contract_conformance.py::test_every_operation_declares_its_security_scheme[spec-gxp-006.yaml] PASSED [ 85%]
+tests/test_contract_conformance.py::test_report_preexisting_contract_debt PASSED [ 87%]
+tests/test_contract_conformance.py::test_extra_field_on_a_command_payload_is_rejected PASSED [ 89%]
+tests/test_contract_conformance.py::test_simulate_accepts_an_unknown_field_sg144 PASSED [ 91%]
+tests/test_contract_conformance.py::test_same_idempotency_key_same_payload_returns_the_original_receipt PASSED [ 93%]
+tests/test_contract_conformance.py::test_same_idempotency_key_different_payload_conflicts PASSED [ 95%]
+tests/test_contract_conformance.py::test_error_body_matches_the_committed_error_response_schema PASSED [ 97%]
+tests/test_contract_conformance.py::test_audit_list_response_matches_the_committed_page_envelope PASSED [100%]
+
+======================== 48 passed in 84.22s (0:01:24) =========================

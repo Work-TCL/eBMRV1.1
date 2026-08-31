@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5,9 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.policy.service import evaluate_policy
 from app.modules.product.models import Product
-from app.modules.recipe.commands import CreateRecipeCommand, create_recipe
+from app.modules.recipe.commands import (
+    CreateRecipeCommand,
+    DeleteRecipeCommand,
+    UpdateRecipeCommand,
+    create_recipe,
+    delete_recipe,
+    update_recipe,
+)
 from app.modules.recipe.models import Recipe, RecipeStep
+from app.mutation.errors import ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/recipes", tags=["recipe"])
@@ -83,3 +94,30 @@ async def get_recipe(recipe_id: str, session: AsyncSession = Depends(get_session
             for s in steps
         ],
     }
+
+
+@router.patch("/{recipe_id}", response_model=MutationReceipt)
+async def patch_recipe(
+    recipe_id: uuid.UUID,
+    cmd: UpdateRecipeCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.recipe_id != recipe_id:
+        raise ValidationFailedError("recipe_id in path and body must match")
+    async with session.begin():
+        return await update_recipe(session, cmd, actor.user_id)
+
+
+@router.delete("/{recipe_id}", response_model=MutationReceipt)
+async def delete_recipe_endpoint(
+    recipe_id: uuid.UUID,
+    cmd: DeleteRecipeCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.recipe_id != recipe_id:
+        raise ValidationFailedError("recipe_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="platform.administer", site_id=None)
+        return await delete_recipe(session, cmd, actor.user_id)

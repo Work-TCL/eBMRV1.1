@@ -1,0 +1,626 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EQP-005 — Sterilization, CIP/SIP & Sterile Filtration Management
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 42 (`services/gxp-api/app/modules/equipment/sterilization_router.py`
+    + `sterilization_commands.py` + `sterilization_models.py`) — same `equipment` module/schema (AG-05).
+    Exactly the 13 operations the code exposes across three route prefixes (`/sterilization/v1`,
+    `/cip-sip/v1`, `/filtration/v1`, all genuinely owned by this document). `process_cycle_profile_version`
+    is seed-only (no create endpoint), same precedent as `cleaning_procedure_version`.
+
+
+    ONE ENTITY, TWO CREATE ROUTES: `postCreateProcessCycle` (`/sterilization/v1/cycles`) and
+    `postCreateCipSipCycle` (`/cip-sip/v1/cycles`) both create the identical `ProcessCycle` row via the
+    identical handler, distinguished only by the `process_type` value supplied — the spec's own two-
+    endpoint surface maps onto the data model's single `process_cycle` entity. `getSterilizationCycle`,
+    `postCycleSignatureChallenge`, `postStartCycle`, `postRecordCycleData`, `postReviewCycle` and
+    `getSterilizationItemStatus` are shared by both creation routes.
+
+
+    STR-FR-009 DRIVES A DESIGN SPLIT FROM DOCUMENT 38's CALIBRATION PRECEDENT: `postRecordCycleData` never
+    accepts an operator-asserted pass/fail — only raw telemetry and a controller-reported `critical_alarm`
+    flag (which immediately holds the cycle). Only the independent reviewer (`postReviewCycle`, Document
+    106 row 117, MUST be independent of `started_by_user_id`) decides accept/reject, and a cycle that ever
+    raised `critical_alarm` can never be accepted regardless of the reviewer's decision. Accepting issues
+    `sterile_status: eligible` onto every load item with an expiry computed from the profile's
+    `sterile_status_validity_hours` (STR-FR-012). `postCompleteFilterUse` (Document 106 row 116) has no
+    independence requirement — a performer-attested filter-use result is consistent with Document 106's
+    own policy there, not a guess.
+
+
+    `getSterilizationItemStatus` IS POLYMORPHIC: it tries a `SterilizationLoadItem` first, then a
+    `SterileFilterUse` — no separate item-type discriminator exists at the API boundary, so the two
+    response shapes differ by which entity actually matched.
+
+
+    `SterileFilterUse.reuse_count` DEFAULTS TO 0 AND IS NEVER INCREMENTED this pass — default single-use
+    per STR-FR-022's safe default; reuse tracking itself is a SPEC_GAP.
+tags:
+  - name: sterilization
+
+paths:
+  /sterilization/v1/cycles:
+    post:
+      operationId: postCreateProcessCycle
+      tags: [sterilization]
+      summary: Create a sterilization process cycle (STR-FR-004/005/006)
+      description: >
+        Unsigned — no Document 106 row for creation. `load_items` must be non-empty. `equipment_id` must
+        be a currently eligible (qualified/calibrated) Document 38 asset (STR-FR-005). If any load item
+        shares an `item_reference` with a previously FAILED cycle, `reprocessing_authorization_ref` is
+        required (STR-FR-026). Same handler as postCreateCipSipCycle.
+      x-requirement-ids: [STR-FR-004, STR-FR-005, STR-FR-006, STR-FR-026, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProcessCycleCommand' }
+      responses:
+        '200':
+          description: Created at state DRAFT.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: The referenced profile_version_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: "REPROCESSING_AUTHORIZATION_REQUIRED — a load_items entry shares an item_reference with a previously FAILED cycle and no reprocessing_authorization_ref was supplied (STR-FR-026)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — load_items must not be empty. STERILIZER_INELIGIBLE — equipment_id is not currently eligible (STR-FR-005)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /cip-sip/v1/cycles:
+    post:
+      operationId: postCreateCipSipCycle
+      tags: [sterilization]
+      summary: Create a CIP/SIP process cycle — identical handler to postCreateProcessCycle
+      description: Same ProcessCycle entity, same CreateProcessCycleCommand schema and handler as `/sterilization/v1/cycles` — this route exists so a CIP/SIP-specific caller can use a CIP/SIP-shaped path; `process_type` (e.g. CIP/SIP) is what actually distinguishes the resulting cycle.
+      x-requirement-ids: [STR-FR-004, STR-FR-005, STR-FR-006, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProcessCycleCommand' }
+      responses:
+        '200':
+          description: Created at state DRAFT.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: The referenced profile_version_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: "REPROCESSING_AUTHORIZATION_REQUIRED — a load_items entry shares an item_reference with a previously FAILED cycle and no reprocessing_authorization_ref was supplied (STR-FR-026)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — load_items must not be empty. STERILIZER_INELIGIBLE — equipment_id is not currently eligible (STR-FR-005)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /sterilization/v1/cycles/{cycle_id}:
+    parameters:
+      - { name: cycle_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getSterilizationCycle
+      tags: [sterilization]
+      summary: Process cycle detail
+      description: Not in the spec's declared API table; contracted because the router implements it. Serves cycles created via either creation route.
+      x-requirement-ids: [STR-FR-004]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/ProcessCycle' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /sterilization/v1/cycles/{cycle_id}/signature-challenges:
+    parameters:
+      - { name: cycle_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCycleSignatureChallenge
+      tags: [sterilization]
+      summary: Create the signature challenge for postStartCycle or postReviewCycle
+      description: Not in the spec's declared API table; contracted because the router implements it. `action` selects the meaning — `start` ("Performed") or `review` ("Reviewed").
+      x-requirement-ids: [SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CycleSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: "VALIDATION_FAILED — action is not start/review."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /sterilization/v1/cycles/{cycle_id}/start:
+    parameters:
+      - { name: cycle_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postStartCycle
+      tags: [sterilization]
+      summary: Start a draft process cycle (Document 106 row 118)
+      description: Only valid from state DRAFT. No independence requirement (Production Supervisor or any qualified issuer). Signature is conditional on the current Document 106 policy row for process_cycle/start.
+      x-requirement-ids: [STR-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartCycleCommand' }
+      responses:
+        '200':
+          description: Started — state CYCLE_STARTED.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — only a draft cycle (state DRAFT) can be started."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — cycle_id mismatch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /sterilization/v1/cycles/{cycle_id}/data:
+    parameters:
+      - { name: cycle_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordCycleData
+      tags: [sterilization]
+      summary: Append telemetry/alarm data to a running cycle (STR-FR-007/008/009)
+      description: >
+        Never accepts an operator-asserted pass/fail (STR-FR-009). Only valid from state CYCLE_STARTED/
+        CYCLE_RUNNING. `critical_alarm: true` immediately holds the cycle (state HOLD, `requires_deviation`);
+        `final: true` (without a critical alarm) moves to REVIEW_PENDING; otherwise stays/moves to
+        CYCLE_RUNNING. `parameter_data`/`alarm_data` merge into the cumulative summary, never overwritten
+        wholesale.
+      x-requirement-ids: [STR-FR-007, STR-FR-008, STR-FR-009, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordCycleDataCommand' }
+      responses:
+        '200':
+          description: Recorded.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — data can only be recorded while the cycle is running (state CYCLE_STARTED/CYCLE_RUNNING)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — cycle_id mismatch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /sterilization/v1/cycles/{cycle_id}/review:
+    parameters:
+      - { name: cycle_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReviewCycle
+      tags: [sterilization]
+      summary: Independently accept or reject a completed cycle (Document 106 row 117)
+      description: >
+        Only valid from state REVIEW_PENDING or HOLD. The reviewer must be independent of
+        `started_by_user_id` (SIG-FR-018) — rejected otherwise. `decision: accept` is refused if the cycle
+        ever raised `critical_alarm`, regardless of who reviews it — a controller "complete" is never
+        treated as an automatic accept (STR-FR-009/012). Accepting issues `sterile_status: eligible` with
+        a computed expiry onto every load item on the cycle. `decision: reject` requires `reason`.
+      x-requirement-ids: [STR-FR-009, STR-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, SIG-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewCycleCommand' }
+      responses:
+        '200':
+          description: ACCEPTED or FAILED.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — only REVIEW_PENDING/HOLD can be reviewed."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — cycle_id mismatch, decision not accept/reject, reviewer is the performer who started the cycle (SIG-FR-018), accepting a cycle that raised critical_alarm, or reject without a reason."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /sterilization/v1/items/{item_id}/status:
+    parameters:
+      - { name: item_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getSterilizationItemStatus
+      tags: [sterilization]
+      summary: Effective sterile status for a load item or filter use (STR-FR-013/028)
+      description: >
+        Polymorphic: tries a SterilizationLoadItem first, then a SterileFilterUse — no separate item-type
+        discriminator exists at the API boundary. A load item's `sterile_status_expiry` in the past is
+        reported as `expired` even though the underlying row still says `eligible`, computed on read (no
+        background scheduler exists in this codebase, SPEC_GAP).
+      x-requirement-ids: [STR-FR-013, STR-FR-028]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SterilizationItemStatus' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — no sterilization load item or filter use matches this id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /filtration/v1/filters/install:
+    post:
+      operationId: postInstallFilter
+      tags: [sterilization]
+      summary: Register a sterile filter installation (STR-FR-016/017)
+      description: Unsigned — no Document 106 row for installation capture.
+      x-requirement-ids: [STR-FR-016, STR-FR-017, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InstallFilterCommand' }
+      responses:
+        '200':
+          description: Created at state INSTALLED.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422':
+          description: VALIDATION_FAILED — filter_serial is required.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /filtration/v1/filters/{use_id}:
+    parameters:
+      - { name: use_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getFilterUse
+      tags: [sterilization]
+      summary: Sterile filter use detail
+      description: Not in the spec's declared API table; contracted because the router implements it.
+      x-requirement-ids: [STR-FR-016]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SterileFilterUse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /filtration/v1/filters/{use_id}/integrity-tests:
+    parameters:
+      - { name: use_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordFilterIntegrityTest
+      tags: [sterilization]
+      summary: Record a pre-use or post-use filter integrity test (STR-FR-018/019/020)
+      description: >
+        Unsigned. `phase: pre` requires state INSTALLED and, on `result: pass`, moves to IN_USE (on
+        `fail`, to FAILED with `requires_deviation`). `phase: post` requires state IN_USE and moves to
+        POST_USE_TEST regardless of result (a `fail` still sets `requires_deviation`); the terminal
+        ACCEPTED/FAILED state is decided later by `postCompleteFilterUse`, not here.
+      x-requirement-ids: [STR-FR-018, STR-FR-019, STR-FR-020, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordFilterIntegrityTestCommand' }
+      responses:
+        '200':
+          description: Recorded.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — pre-use requires state INSTALLED, post-use requires state IN_USE."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — use_id mismatch, unrecognized phase, or result not pass/fail."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /filtration/v1/uses/{use_id}/signature-challenges:
+    parameters:
+      - { name: use_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postFilterUseSignatureChallenge
+      tags: [sterilization]
+      summary: Create the signature challenge for postCompleteFilterUse
+      description: Not in the spec's declared API table; contracted because the router implements it. `action` must be `"complete"` (meaning `"Performed"`).
+      x-requirement-ids: [SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FilterUseSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: "VALIDATION_FAILED — action is not \"complete\"."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /filtration/v1/uses/{use_id}/complete:
+    parameters:
+      - { name: use_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCompleteFilterUse
+      tags: [sterilization]
+      summary: Complete a sterile filter use (STR-FR-021/022/023, Document 106 row 116)
+      description: >
+        Only valid from state POST_USE_TEST. No independence requirement (consistent with the current
+        Document 106 policy for this action, not a guess). Terminal state is derived from
+        `post_use_integrity_result`: ACCEPTED when it was `pass`, FAILED otherwise. Signature is
+        conditional on the current Document 106 policy row for sterile_filter_use/complete.
+      x-requirement-ids: [STR-FR-021, STR-FR-022, STR-FR-023, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteFilterUseCommand' }
+      responses:
+        '200':
+          description: ACCEPTED or FAILED.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — only a filter with a recorded post-use test (state POST_USE_TEST) can be completed."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — use_id mismatch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    ProcessType:
+      type: string
+      x-requirement-ids: [STR-FR-004]
+      enum: [steam_autoclave, dry_heat, depyrogenation, gas, radiation, external_reference, SIP, CIP, sterile_filtration]
+
+    ProcessCycleState:
+      type: string
+      description: "`CYCLE_STATES` in `app/modules/equipment/sterilization_models.py`."
+      x-requirement-ids: [STR-FR-004, CTR-FR-017]
+      enum: [DRAFT, CYCLE_STARTED, CYCLE_RUNNING, CYCLE_COMPLETE, REVIEW_PENDING, ACCEPTED, FAILED, HOLD]
+
+    FilterUseState:
+      type: string
+      description: "`FILTER_STATES` in `app/modules/equipment/sterilization_models.py`."
+      x-requirement-ids: [STR-FR-016, CTR-FR-017]
+      enum: [RECEIVED_ELIGIBLE, INSTALLED, PRE_USE_TEST, IN_USE, POST_USE_TEST, ACCEPTED, FAILED]
+
+    IntegrityTestPhase:
+      type: string
+      x-requirement-ids: [STR-FR-018]
+      enum: [pre, post]
+
+    ProcessCycle:
+      type: object
+      description: "`_cycle_dict` in `app/modules/equipment/sterilization_router.py`."
+      x-requirement-ids: [STR-FR-004, STR-FR-005, STR-FR-006, STR-FR-011, STR-FR-026]
+      required: [id, site_id, process_type, equipment_id, state, critical_alarm, requires_deviation, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        process_type: { $ref: '#/components/schemas/ProcessType' }
+        equipment_id: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/ProcessCycleState' }
+        critical_alarm: { type: boolean }
+        indicator_results: { type: [object, "null"], description: "STR-FR-011 — captured, not enumerated." }
+        reprocessing_authorization_ref: { type: [object, "null"], description: "STR-FR-026 — required when reprocessing a previously FAILED load; structurally required, not content-validated." }
+        requires_deviation: { type: boolean }
+        version: { type: integer, minimum: 1 }
+
+    SterileFilterUse:
+      type: object
+      description: "`_filter_use_dict` in `app/modules/equipment/sterilization_router.py`."
+      x-requirement-ids: [STR-FR-016, STR-FR-017, STR-FR-022]
+      required: [id, site_id, filter_serial, state, requires_deviation, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        filter_serial: { type: string }
+        state: { $ref: '#/components/schemas/FilterUseState' }
+        pre_use_integrity_result: { type: [string, "null"], enum: [pass, fail, null] }
+        post_use_integrity_result: { type: [string, "null"], enum: [pass, fail, null] }
+        reuse_count: { type: integer, minimum: 0, description: "STR-FR-022 — count of prior ACCEPTED uses of this filter_serial at this site, computed at install time. Tracking only, not an enforced reuse limit." }
+        requires_deviation: { type: boolean }
+        version: { type: integer, minimum: 1 }
+
+    SterilizationItemStatus:
+      type: object
+      description: "`get_item_status` in `app/modules/equipment/sterilization_commands.py`. Shape differs by which underlying entity matched — see item_kind."
+      x-requirement-ids: [STR-FR-013, STR-FR-028]
+      required: [item_id, item_kind]
+      properties:
+        item_id: { type: string, format: uuid }
+        item_kind: { type: string, enum: [sterilization_load_item, sterile_filter_use] }
+        sterile_status: { type: [string, "null"], description: "sterilization_load_item only." }
+        sterile_status_expiry: { type: [string, "null"], format: date-time, description: "sterilization_load_item only." }
+        state: { type: [string, "null"], description: "sterile_filter_use only." }
+        pre_use_integrity_result: { type: [string, "null"], description: "sterile_filter_use only." }
+        post_use_integrity_result: { type: [string, "null"], description: "sterile_filter_use only." }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postCycleSignatureChallenge's / postFilterUseSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    CycleSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [start, review] }
+
+    FilterUseSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [complete] }
+
+    LoadItemInput:
+      type: object
+      additionalProperties: false
+      description: One load item supplied at cycle creation (STR-FR-004). No dedicated CRUD endpoint exists for load items after creation.
+      x-requirement-ids: [STR-FR-004, STR-FR-012]
+      required: [item_type, item_reference]
+      properties:
+        item_type: { type: string, description: Polymorphic — equipment/component/lot/container. }
+        item_reference: { type: string, description: "Captured, unenforced reference — the referenced table varies by item_type." }
+        position: { type: [string, "null"] }
+
+    CreateProcessCycleCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Shared by postCreateProcessCycle and postCreateCipSipCycle.
+      x-requirement-ids: [STR-FR-004, STR-FR-005, STR-FR-006, STR-FR-026, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, process_type, equipment_id, profile_version_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        process_type: { $ref: '#/components/schemas/ProcessType' }
+        equipment_id: { type: string, format: uuid, description: "STR-FR-005 — must reference a currently eligible (qualified/calibrated) Document 38 equipment asset." }
+        profile_version_id: { type: string, format: uuid }
+        batch_id: { type: [string, "null"], format: uuid }
+        load_items: { type: array, items: { $ref: '#/components/schemas/LoadItemInput' }, minItems: 1 }
+        reprocessing_authorization_ref: { type: [object, "null"], description: "STR-FR-026 — required if any load item's item_reference matches a previously FAILED cycle's load items." }
+
+    StartCycleCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are optional — required only when the current Document 106 policy row for process_cycle/start demands a signature.
+      x-requirement-ids: [STR-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, cycle_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        cycle_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    RecordCycleDataCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [STR-FR-007, STR-FR-008, STR-FR-009, STR-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, cycle_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        cycle_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        controller_cycle_id: { type: [string, "null"] }
+        parameter_data: { type: [object, "null"], description: Merged into the cumulative parameter_summary. }
+        alarm_data: { type: [object, "null"], description: Merged into the cumulative alarm_summary. }
+        indicator_results: { type: [object, "null"], description: "STR-FR-011 — biological/chemical indicator IDs/locations/lots/results, merged into the cumulative indicator_results. Captured, not enumerated." }
+        critical_alarm: { type: boolean, default: false }
+        final: { type: boolean, default: false }
+
+    ReviewCycleCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are always required (the policy decides at runtime whether they are enforced).
+      x-requirement-ids: [STR-FR-009, STR-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004, SIG-FR-018]
+      required: [idempotency_key, cycle_id, expected_version, decision, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        cycle_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        decision: { type: string, enum: [accept, reject] }
+        reason: { type: [string, "null"], description: Required when decision is reject. }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    InstallFilterCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [STR-FR-016, STR-FR-017, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, filter_serial]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        filter_serial: { type: string, minLength: 1 }
+        filter_lot: { type: [string, "null"] }
+        filter_type: { type: [string, "null"] }
+        manufacturer: { type: [string, "null"] }
+        batch_id: { type: [string, "null"], format: uuid }
+        sterilization_cycle_id: { type: [string, "null"], format: uuid }
+        housing_location: { type: [string, "null"] }
+        direction: { type: [string, "null"] }
+
+    RecordFilterIntegrityTestCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [STR-FR-018, STR-FR-019, STR-FR-020, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, use_id, expected_version, phase, result]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        use_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        phase: { $ref: '#/components/schemas/IntegrityTestPhase' }
+        result: { type: string, enum: [pass, fail] }
+        test_ref: { type: [object, "null"] }
+
+    CompleteFilterUseCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are optional — required only when the current Document 106 policy row for sterile_filter_use/complete demands a signature.
+      x-requirement-ids: [STR-FR-021, STR-FR-022, STR-FR-023, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, use_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        use_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        process_parameters: { type: [object, "null"] }
+        reason: { type: [string, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

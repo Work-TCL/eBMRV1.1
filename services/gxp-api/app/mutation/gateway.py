@@ -102,6 +102,7 @@ async def write_outbox_event(
     payload: dict,
     correlation_id: uuid.UUID,
     causation_id: uuid.UUID | None = None,
+    schema_version: str = "1.0",
 ) -> OutboxEvent:
     event = OutboxEvent(
         event_type=event_type,
@@ -111,6 +112,7 @@ async def write_outbox_event(
         payload=payload,
         correlation_id=correlation_id,
         causation_id=causation_id,
+        schema_version=schema_version,
     )
     session.add(event)
     return event

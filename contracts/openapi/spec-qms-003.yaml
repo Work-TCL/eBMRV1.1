@@ -1,0 +1,433 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QMS-003 — Nonconformance Management
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-05 Document 28 slice actually built
+    (`services/gxp-api/app/modules/qms/ncr_*.py`): the linear OPEN -> SEGREGATED -> EVALUATION ->
+    {REWORK,REPAIR,RETURN,SCRAP,USE_AS_IS} -> VERIFICATION -> CLOSED pipeline, matching the module's own
+    6-op API list exactly, plus the `signature-challenges` ceremony-entry-point endpoint (SG-138
+    engineering half, not in Document 28's own list — contracted because the router implements it).
+
+
+    NCR-FR-002(automatic-source-creation)/010(partial supplier link — data capture only, no SCAR
+    auto-creation)/011(partial — release_blocker_active flag exists but no release-module integration)/
+    012(partial — capa_required flag only, no CAPA auto-creation)/014(scrap/destruction inventory
+    integration)/016(reopen)/017(trend)/018(export) are deliberately not built — see
+    docs/generated/18_SPEC_GAPS.md SG-067/SG-068/SG-069. There is no reopen endpoint: CLOSED has no
+    outgoing transitions (NCR-FR-016, SG-069). `disposition`/`verify`/`close` are all signed
+    (NCR_SIGNATURE_ACTIONS); all three return `SIGNATURE_POLICY_UNRESOLVED` today (SG-138's policy-data
+    half is still open).
+tags:
+  - name: qms-ncr
+
+paths:
+  /qms/v1/nonconformances:
+    post:
+      operationId: postCreateNcr
+      tags: [qms-ncr]
+      summary: Initiate a nonconformance against a requirement/spec/test (NCR-FR-001/002/004)
+      description: Requires `ncr.create`. `scope_records` must be non-empty. `requirement_ref` must carry `spec_ref` or `test_ref`.
+      x-requirement-ids: [NCR-FR-001, NCR-FR-002, NCR-FR-004, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateNcrCommand' } } }
+      responses:
+        '200': { description: Created, state OPEN. `aggregate_id` is the ncr id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED or NCR_SCOPE_REQUIRED (empty scope_records).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+    get:
+      operationId: getNonconformances
+      tags: [qms-ncr]
+      summary: Paginated, filterable NCR list (non-authoritative read, AG-11)
+      x-requirement-ids: [NCR-FR-001, NCR-FR-011]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+        - { name: site_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: state, in: query, required: false, schema: { $ref: '#/components/schemas/NcrState' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/NcrListResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /qms/v1/nonconformances/{ncr_id}:
+    parameters:
+      - { name: ncr_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getNonconformanceDetail
+      tags: [qms-ncr]
+      summary: One NCR with full detail and its dispositions (NCR-FR-004/005/013/018)
+      x-requirement-ids: [NCR-FR-004, NCR-FR-005, NCR-FR-013, NCR-FR-018]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/NcrDetail' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /qms/v1/nonconformances/{ncr_id}/segregate:
+    parameters:
+      - { name: ncr_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postSegregateNcr
+      tags: [qms-ncr]
+      summary: Hold/segregate the affected lots/serials (NCR-FR-003)
+      description: Requires `ncr.segregate`. OPEN -> SEGREGATED only.
+      x-requirement-ids: [NCR-FR-003, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SegregateNcrCommand' } } }
+      responses:
+        '200': { description: Segregated., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (locations required) or ncr_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/nonconformances/{ncr_id}/evaluate:
+    parameters:
+      - { name: ncr_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postEvaluateNcr
+      tags: [qms-ncr]
+      summary: Risk evaluation — usability, quality/safety/performance impact (NCR-FR-005)
+      description: Requires `ncr.evaluate`. SEGREGATED/EVALUATION -> EVALUATION.
+      x-requirement-ids: [NCR-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EvaluateNcrCommand' } } }
+      responses:
+        '200': { description: Evaluated., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or SEGREGATION_REQUIRED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (evaluation missing usability/quality_impact/safety_impact/performance_impact/investigation_needed) or ncr_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/nonconformances/{ncr_id}/disposition:
+    parameters:
+      - { name: ncr_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postDispositionNcr
+      tags: [qms-ncr]
+      summary: Rework/repair/return/scrap/use-as-is a partial scope — signed per Document 106 (NCR-FR-006/007/008/013/015)
+      description: >
+        Requires `ncr.disposition`. EVALUATION or any prior disposition state -> the new disposition
+        state. `use_as_is_authorized_by` is required for USE_AS_IS (NCR-FR-007's default-restricted
+        rule); `rework_route` is required for REWORK/REPAIR. Resolves the `nonconformance_record`/
+        `disposition` Document 106 policy.
+      x-requirement-ids: [NCR-FR-006, NCR-FR-007, NCR-FR-008, NCR-FR-013, NCR-FR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DispositionNcrCommand' } } }
+      responses:
+        '200': { description: Dispositioned., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, DISPOSITION_NOT_ALLOWED, USE_AS_IS_NOT_AUTHORIZED, REWORK_ROUTE_REQUIRED, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (missing affected_scope/justification, unrecognized disposition_type) or NCR_SCOPE_REQUIRED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qms/v1/nonconformances/{ncr_id}/signature-challenges:
+    parameters:
+      - { name: ncr_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postNcrSignatureChallenge
+      tags: [qms-ncr]
+      summary: Create the Part 11 signature challenge for disposition/verify/close (SG-138 engineering half)
+      description: >
+        Not in Document 28's own 6-op API list; contracted because the router implements it. Resolves
+        the `nonconformance_record`/`{action}` Document 106 policy and binds a challenge to the current
+        NCR id/version/hash. Returns `SIGNATURE_POLICY_UNRESOLVED` today for all three actions (SG-138's
+        policy-data half is still open).
+      x-requirement-ids: [NCR-FR-015, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/NcrSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not one of disposition/verify/close.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/nonconformances/{ncr_id}/verify:
+    parameters:
+      - { name: ncr_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postVerifyNcr
+      tags: [qms-ncr]
+      summary: Reinspection/retest verification — signed per Document 106 (NCR-FR-009/015)
+      description: >
+        Requires `ncr.verify`. Any disposition state -> VERIFICATION. Requires `reinspection_evidence`
+        (non-empty `result`) when the current disposition is REWORK/REPAIR; otherwise requires
+        `confirmation`. Resolves the `nonconformance_record`/`verify` Document 106 policy.
+      x-requirement-ids: [NCR-FR-009, NCR-FR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VerifyNcrCommand' } } }
+      responses:
+        '200': { description: Verified., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, REINSPECTION_REQUIRED, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: ncr_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qms/v1/nonconformances/{ncr_id}/close:
+    parameters:
+      - { name: ncr_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCloseNcr
+      tags: [qms-ncr]
+      summary: QA closure — signed per Document 106 (NCR-FR-015/018)
+      description: Requires `ncr.close`. VERIFICATION -> CLOSED only, requires at least one recorded disposition and a conclusion. Resolves the `nonconformance_record`/`close` Document 106 policy. CLOSED is genuinely terminal — no reopen endpoint (NCR-FR-016, SG-069).
+      x-requirement-ids: [NCR-FR-015, NCR-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CloseNcrCommand' } } }
+      responses:
+        '200': { description: Closed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, NCR_CLOSURE_BLOCKED, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (conclusion required) or ncr_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    NcrState:
+      type: string
+      description: "`NCR_STATES` in `app/modules/qms/ncr_models.py`."
+      x-requirement-ids: [NCR-FR-001, CTR-FR-017]
+      enum: [OPEN, SEGREGATED, EVALUATION, REWORK, REPAIR, RETURN, SCRAP, USE_AS_IS, VERIFICATION, CLOSED]
+
+    NcrScopeType:
+      type: string
+      description: "`NCR_SCOPE_TYPES` (NCR-FR-001)."
+      x-requirement-ids: [NCR-FR-001]
+      enum: [material, component, subassembly, device, packaging, finished_output]
+
+    NcrSourceType:
+      type: string
+      description: "`NCR_SOURCE_TYPES` (NCR-FR-002)."
+      x-requirement-ids: [NCR-FR-002]
+      enum: [qc_result, test, inspection]
+
+    NcrDispositionType:
+      type: string
+      description: "`NCR_DISPOSITION_TYPES` (NCR-FR-006)."
+      x-requirement-ids: [NCR-FR-006]
+      enum: [REWORK, REPAIR, RETURN, SCRAP, USE_AS_IS]
+
+    NcrDisposition:
+      type: object
+      description: One `ncr_disposition` row, as returned inline by getNonconformanceDetail.
+      x-requirement-ids: [NCR-FR-006, NCR-FR-007, NCR-FR-008, NCR-FR-013]
+      required: [id, affected_scope, disposition_type, justification, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        affected_scope: { type: array, items: { type: object } }
+        quantity: { type: [number, "null"] }
+        serials: { type: [array, "null"], items: { type: string } }
+        disposition_type: { $ref: '#/components/schemas/NcrDispositionType' }
+        justification: { type: string }
+        rework_route: { type: [object, "null"] }
+        follow_up_test_requirements: { type: [object, "null"] }
+        use_as_is_authorized_by: { type: [string, "null"], format: uuid }
+        signature_id: { type: [string, "null"], format: uuid }
+        created_at: { type: [string, "null"], format: date-time }
+
+    Ncr:
+      type: object
+      description: One nonconformance record (`app/modules/qms/ncr_router.py:_ncr_dict`). A response schema, so not closed.
+      x-requirement-ids: [NCR-FR-001, NCR-FR-004, NCR-FR-011]
+      required: [id, site_id, quality_event_id, ncr_number, scope_type, defect_code, severity, state, owner_subject_id, release_blocker_active, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        quality_event_id: { type: string, format: uuid }
+        ncr_number: { type: string }
+        source_type: { oneOf: [{ $ref: '#/components/schemas/NcrSourceType' }, { type: "null" }] }
+        source_id: { type: [string, "null"], format: uuid }
+        scope_type: { $ref: '#/components/schemas/NcrScopeType' }
+        defect_code: { type: string }
+        severity: { type: string }
+        state: { $ref: '#/components/schemas/NcrState' }
+        owner_subject_id: { type: string, format: uuid }
+        capa_required: { type: [boolean, "null"] }
+        release_blocker_active: { type: boolean }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        created_at: { type: [string, "null"], format: date-time }
+        closed_at: { type: [string, "null"], format: date-time }
+
+    NcrDetail:
+      type: object
+      description: getNonconformanceDetail's response — Ncr plus every semi-structured field and its dispositions.
+      x-requirement-ids: [NCR-FR-004, NCR-FR-005, NCR-FR-006, NCR-FR-009, NCR-FR-010, NCR-FR-013]
+      allOf:
+        - $ref: '#/components/schemas/Ncr'
+        - type: object
+          required: [scope_records, requirement_ref, closure_history, dispositions]
+          properties:
+            scope_records: { type: array, items: { type: object } }
+            requirement_ref: { type: object, description: "{spec_ref} or {test_ref}." }
+            segregation: { type: [object, "null"] }
+            evaluation: { type: [object, "null"] }
+            supplier_link: { type: [object, "null"] }
+            capa_rationale: { type: [string, "null"] }
+            verification: { type: [object, "null"] }
+            closure_history: { type: array, items: { type: object } }
+            dispositions: { type: array, items: { $ref: '#/components/schemas/NcrDisposition' } }
+
+    NcrListResult:
+      type: object
+      description: getNonconformances's response — the shared page envelope plus items.
+      x-requirement-ids: [NCR-FR-001, CTR-FR-012]
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: '#/components/schemas/Ncr' } } }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postNcrSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    NcrSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [disposition, verify, close] }
+
+    CreateNcrCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [NCR-FR-001, NCR-FR-002, NCR-FR-004, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, ncr_number, scope_type, scope_records, requirement_ref, defect_code, severity, owner_subject_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        ncr_number: { type: string }
+        scope_type: { $ref: '#/components/schemas/NcrScopeType' }
+        scope_records: { type: array, minItems: 1, items: { type: object } }
+        requirement_ref: { type: object, description: "Must carry spec_ref or test_ref." }
+        defect_code: { type: string }
+        severity: { type: string }
+        owner_subject_id: { type: string, format: uuid }
+        source_type: { oneOf: [{ $ref: '#/components/schemas/NcrSourceType' }, { type: "null" }] }
+        source_id: { type: [string, "null"], format: uuid }
+        source_version: { type: [integer, "null"] }
+        supplier_link: { type: [object, "null"], description: NCR-FR-010 supplier source link (data capture only). }
+
+    SegregateNcrCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [NCR-FR-003, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, ncr_id, expected_version, locations]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        ncr_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        locations: { type: array, minItems: 1, items: { type: object } }
+        reason: { type: [string, "null"] }
+
+    EvaluateNcrCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [NCR-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, ncr_id, expected_version, evaluation]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        ncr_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        evaluation: { type: object, description: Must carry usability/quality_impact/safety_impact/performance_impact/investigation_needed. }
+        requirement_ref: { type: [object, "null"], description: Overwrites the record's requirement_ref if given. }
+        reason: { type: [string, "null"] }
+
+    DispositionNcrCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [NCR-FR-006, NCR-FR-007, NCR-FR-008, NCR-FR-013, NCR-FR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, ncr_id, expected_version, disposition_type, affected_scope, justification]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        ncr_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        disposition_type: { $ref: '#/components/schemas/NcrDispositionType' }
+        affected_scope: { type: array, minItems: 1, items: { type: object } }
+        justification: { type: string }
+        quantity: { type: [number, "null"] }
+        serials: { type: [array, "null"], items: { type: string } }
+        rework_route: { type: [object, "null"], description: Required when disposition_type is REWORK/REPAIR. }
+        follow_up_test_requirements: { type: [object, "null"] }
+        use_as_is_authorized_by: { type: [string, "null"], format: uuid, description: Required when disposition_type is USE_AS_IS (NCR-FR-007). }
+        capa_required: { type: boolean, default: false }
+        capa_rationale: { type: [string, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    VerifyNcrCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [NCR-FR-009, NCR-FR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, ncr_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        ncr_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reinspection_evidence: { type: [object, "null"], description: "Required (non-empty result key) when the current disposition is REWORK/REPAIR." }
+        confirmation: { type: [object, "null"], description: Required when the current disposition is not REWORK/REPAIR. }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+        reason: { type: [string, "null"] }
+
+    CloseNcrCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [NCR-FR-015, NCR-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, ncr_id, expected_version, conclusion]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        ncr_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        conclusion: { type: string }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

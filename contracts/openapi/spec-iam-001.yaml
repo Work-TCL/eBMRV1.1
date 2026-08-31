@@ -1,0 +1,1003 @@
+openapi: 3.1.0
+info:
+  title: SPEC-IAM-001 — Identity, Authorization, RBAC, Qualification & Segregation-of-Duties
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-01 Document 07 core actually built (see
+    docs/generated/18_SPEC_GAPS.md for what's deferred): the permission catalog, role->permission
+    assignment, and the policy decision endpoint, plus (added 2026-08-29) the platform admin/auth CRUD
+    surface `app/modules/iam/router.py` also owns — organization, sites, users, roles and login/session —
+    none of which appear in Document 07's own declared 7-op API list (`POST /policy/v1/decisions`,
+    `GET /iam/v1/subjects/{id}/effective-authority`, `GET /iam/v1/subjects/{id}/qualifications`,
+    `POST /iam/v1/temporary-authorizations`, `POST /iam/v1/break-glass`, `POST /iam/v1/access-reviews`,
+    `GET /iam/v1/access-reviews/{id}/report`) — NONE of those 7 declared operations are implemented in
+    this codebase at all. What exists instead is basic platform administration (create/list/update/
+    delete user, role, site, organization; assign a role; login) traced to the closest-fit IAM-FR-*
+    requirements (unique identity, lifecycle, role catalogue, policy-decision evidence) rather than
+    guessed onto the undeclared endpoint names. This is a real, reported gap, not a silent
+    reinterpretation — see the SPEC_GAP note below.
+
+
+    NO OPTIMISTIC CONCURRENCY ON THIS SURFACE (deviates from MUT-FR-009): none of `User`/`Role`/`Site`/
+    `Organization` carry a `version` column, and every command here calls the gateway with
+    `expected_version=None` — reported as-is, not silently added. `UserSiteRole`/`Qualification`/
+    `SodRule`/`SodException` (Document 07's declared `iam_role_assignment`/`iam_qualification` entities,
+    partially built) have no CRUD API of their own beyond `postAssignUserRole`.
+
+
+    SPEC_GAP: IAM-FR-010 (qualification object), IAM-FR-011 (training gate), IAM-FR-016 (delegation),
+    IAM-FR-017 (temporary authorization), IAM-FR-018 (break-glass), IAM-FR-020 (vendor support access),
+    IAM-FR-021 (service accounts — partially built, see `ServiceIdentity` in `spec-edge-001.yaml`'s
+    scope), IAM-FR-025 (role-assignment approval workflow — `UserSiteRole.approved_by_user_id`/`status`/
+    `effective_from`/`expires_at` columns exist but no command populates them), IAM-FR-026 (access
+    review) and IAM-FR-031 (qualification override) have no implemented command surface to contract.
+tags:
+  - name: policy
+  - name: iam
+  - name: auth
+
+paths:
+  /policy/v1/decisions:
+    post:
+      operationId: postPolicyDecision
+      tags: [policy]
+      summary: Evaluate whether the authenticated actor may perform an action (IAM-FR-006, IAM-FR-028)
+      x-requirement-ids: [IAM-FR-006, IAM-FR-014, IAM-FR-028]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyDecisionRequest'
+      responses:
+        '200':
+          description: >
+            A decision is always returned with 200 — DENY is a valid decision outcome, not a request
+            failure. No decision is persisted (see SPEC_GAP: no decision-log entity schema exists in
+            the source baseline).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyDecisionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /permissions:
+    get:
+      operationId: listPermissions
+      tags: [iam]
+      summary: List the permission catalog (IAM-FR-006)
+      x-requirement-ids: [IAM-FR-006]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Permission'
+
+  /roles/{role_id}/permissions:
+    parameters:
+      - name: role_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getRolePermissions
+      tags: [iam]
+      summary: List permissions currently assigned to a role
+      x-requirement-ids: [IAM-FR-006]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Permission'
+    post:
+      operationId: setRolePermissions
+      tags: [iam]
+      summary: Replace a role's permission assignments (bulk set, not incremental add/remove)
+      x-requirement-ids: [IAM-FR-005, IAM-FR-006, IAM-FR-025]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetRolePermissionsCommand'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MutationReceipt'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /auth/token:
+    post:
+      operationId: postAuthToken
+      tags: [auth]
+      summary: Authenticate with username/password and obtain a bearer token
+      description: >
+        AG-07/IAM-FR-024: this is authentication, not a regulated mutation or an electronic signature —
+        no MutationReceipt, no audit event, no outbox event. Form-encoded (`OAuth2PasswordRequestForm`),
+        not JSON. Document 62 (SPEC-SEC-002) IAMSEC-FR-001/006/007: also creates a real, revocable
+        `security.application_session` row (`createApplicationSession()`) and binds its id into the
+        returned token as an optional `session_id` claim — still not a signature (AG-07/IAMSEC-FR-009),
+        purely session lifecycle. See `spec-sec-002.yaml`.
+      x-requirement-ids: [IAM-FR-001, IAM-FR-004, IAM-FR-013, IAM-FR-023, IAM-FR-024, IAMSEC-FR-001, IAMSEC-FR-006, IAMSEC-FR-007]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password, writeOnly: true }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [access_token, token_type]
+                properties:
+                  access_token: { type: string }
+                  token_type: { type: string, enum: [bearer] }
+        '401':
+          description: Unknown username, wrong password, or a disabled user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /auth/me:
+    get:
+      operationId: getAuthMe
+      tags: [auth]
+      summary: The authenticated actor's identity and effective roles at every site
+      x-requirement-ids: [IAM-FR-001, IAM-FR-008]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthMeResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      operationId: postAuthLogout
+      tags: [auth]
+      summary: Revoke the calling token's own application session (Document 62, IAMSEC-FR-010/022)
+      description: >
+        Revokes only the current token's `security.application_session` (`revokeSession()`), immediately
+        invalidating this specific token even though its JWT `exp` has not elapsed. A token issued before
+        session tracking existed (no `session_id` claim) has nothing to revoke and returns `422`.
+      x-requirement-ids: [IAMSEC-FR-010, IAMSEC-FR-022]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Session revoked.
+          content:
+            application/json:
+              schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: This token was not created with session tracking; nothing to log out.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /organization:
+    get:
+      operationId: getOrganization
+      tags: [iam]
+      summary: The single-tenant organization record
+      description: ADR-0006 single-organization platform — exactly one row exists; this reads it.
+      x-requirement-ids: [C-001]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: NOT_FOUND — no organization row exists yet.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      operationId: patchOrganization
+      tags: [iam]
+      summary: Update the organization name
+      description: Requires the platform.administer permission (site_id null — "at any site" shape). No optimistic concurrency (see file description).
+      x-requirement-ids: [C-001, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateOrganizationCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: NOT_FOUND — no organization row exists yet.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /sites:
+    get:
+      operationId: listSites
+      tags: [iam]
+      summary: List sites
+      description: Not paginated — returns every site.
+      x-requirement-ids: [C-002]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/SiteSummary' } }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: postCreateSite
+      tags: [iam]
+      summary: Create a site under the single organization
+      description: Requires platform.administer. code must be unique.
+      x-requirement-ids: [C-002, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSiteCommand' }
+      responses:
+        '200':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: NOT_FOUND — no organization row exists yet.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          description: VALIDATION_FAILED — code is already in use.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /sites/{site_id}:
+    parameters:
+      - { name: site_id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      operationId: patchSite
+      tags: [iam]
+      summary: Update a site's code/name
+      x-requirement-ids: [C-002, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateSiteCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: "VALIDATION_FAILED — site_id in path/body mismatch, or the new code is already in use by another site."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      operationId: deleteSite
+      tags: [iam]
+      summary: Delete a site
+      description: >
+        Refuses if any product, material, material lot, batch or role assignment still references the
+        site (`find_blocking_reference`) — a real referential-integrity guard, not a soft-delete/status
+        flag. Note this module's DELETE convention differs from Document 113's usual command-body
+        pattern: the command payload is required and its site_id must match the path.
+      x-requirement-ids: [C-002, MUT-FR-005, MUT-FR-010, DATA-FR-023]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteSiteCommand' }
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: "VALIDATION_FAILED — site_id in path/body mismatch, or the site is still referenced by a product/material/material lot/batch/role assignment."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [iam]
+      summary: Paginated, searchable user list with each user's roles-by-site
+      description: "`q` free-text searches username/email/full_name. `roles` on each item is a display list of \"role_name @ site_code\" strings, not structured."
+      x-requirement-ids: [IAM-FR-001, IAM-FR-005, CTR-FR-012]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/Query' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserPage' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: postCreateUser
+      tags: [iam]
+      summary: Create a user (IAM-FR-001)
+      description: Unsigned — not in the Document 106 floor. username must be unique platform-wide (User has no site_id; site scope comes from a separate UserSiteRole assignment).
+      x-requirement-ids: [IAM-FR-001, IAM-FR-004, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUserCommand' }
+      responses:
+        '200':
+          description: Created at status active.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: VALIDATION_FAILED — username is already in use.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /users/{user_id}:
+    parameters:
+      - { name: user_id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      operationId: patchUser
+      tags: [iam]
+      summary: Update a user's email/full_name
+      description: username and password are not editable through this operation.
+      x-requirement-ids: [IAM-FR-001, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUserCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: "VALIDATION_FAILED — user_id in path/body mismatch."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /users/{user_id}/deactivate:
+    parameters:
+      - { name: user_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postDeactivateUser
+      tags: [iam]
+      summary: Disable a user (IAM-FR-004)
+      description: Sets status to disabled. A disabled user cannot log in or act/sign, but every historical reference to this actor remains intact (IAM-FR-032) — no delete.
+      x-requirement-ids: [IAM-FR-004, IAM-FR-032, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetUserStatusCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: "VALIDATION_FAILED — user_id in path/body mismatch."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /users/{user_id}/reactivate:
+    parameters:
+      - { name: user_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReactivateUser
+      tags: [iam]
+      summary: Re-enable a disabled user (IAM-FR-004)
+      description: Sets status back to active. Same request/response shape as postDeactivateUser.
+      x-requirement-ids: [IAM-FR-004, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetUserStatusCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: "VALIDATION_FAILED — user_id in path/body mismatch."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /users/{user_id}/roles:
+    parameters:
+      - { name: user_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAssignUserRole
+      tags: [iam]
+      summary: Grant a user a role at a site (IAM-FR-005/008) — Document 07's iam_role_assignment
+      description: Rejects a duplicate (same user/site/role) assignment. Evaluated against the target site_id, unlike the other admin operations on this surface which evaluate platform.administer with site_id null.
+      x-requirement-ids: [IAM-FR-005, IAM-FR-008, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignUserRoleCommand' }
+      responses:
+        '200':
+          description: Assigned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: NOT_FOUND — the referenced user_id or role_id does not exist.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          description: "VALIDATION_FAILED — user_id in path/body mismatch, or this user already holds this role at this site."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /roles:
+    get:
+      operationId: listRoles
+      tags: [iam]
+      summary: Paginated, searchable role list (IAM-FR-005)
+      description: "`q` free-text searches name/description."
+      x-requirement-ids: [IAM-FR-005, CTR-FR-012]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/Query' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RolePage' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: postCreateRole
+      tags: [iam]
+      summary: Create a role (IAM-FR-005)
+      description: name must be unique platform-wide.
+      x-requirement-ids: [IAM-FR-005, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRoleCommand' }
+      responses:
+        '200':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: VALIDATION_FAILED — name is already in use.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /roles/{role_id}:
+    parameters:
+      - { name: role_id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      operationId: patchRole
+      tags: [iam]
+      summary: Update a role's name/description
+      x-requirement-ids: [IAM-FR-005, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateRoleCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: "VALIDATION_FAILED — role_id in path/body mismatch, or the new name is already in use by another role."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      operationId: deleteRole
+      tags: [iam]
+      summary: Delete a role
+      description: >
+        Refuses if any user assignment, SoD rule (either side of the pair) or signature policy
+        (`required_role_id`) still references the role. Cascade-clears the role's `RolePermission` rows
+        first (no ORM relationship links them). Same DELETE-with-required-body convention as deleteSite.
+      x-requirement-ids: [IAM-FR-005, MUT-FR-005, MUT-FR-010, DATA-FR-023]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteRoleCommand' }
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: "VALIDATION_FAILED — role_id in path/body mismatch, or the role is still referenced by a user assignment/SoD rule/signature policy."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: No or invalid bearer token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Actor's effective roles do not grant this action (code ROLE_MISSING) or a standing
+        SoD rule prohibits the actor's held role combination (code SOD_CONFLICT, 409 not 403 — see the
+        SetRolePermissions 200 case, this response documents the 403 branch only)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ValidationFailed:
+      description: Unknown permission id(s) in the request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: NOT_FOUND — the referenced record does not exist
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Query:
+      name: q
+      in: query
+      required: false
+      schema: { type: string }
+      description: Free-text search.
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [CTR-FR-006]
+      required: [code, message, details]
+      properties:
+        code: { type: string, examples: [ROLE_MISSING, SOD_CONFLICT, VALIDATION_FAILED] }
+        message: { type: string }
+        details: { type: object }
+
+    MutationReceipt:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MUT-FR-019]
+      required: [command_id, aggregate_id, resulting_version, audit_event_id, correlation_id]
+      properties:
+        command_id: { type: string, format: uuid }
+        aggregate_id: { type: string, format: uuid }
+        resulting_version: { type: integer }
+        audit_event_id: { type: string, format: uuid }
+        signature_id: { type: [string, "null"], format: uuid }
+        correlation_id: { type: string, format: uuid }
+
+    Permission:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [IAM-FR-006]
+      required: [id, code, action, resource_type]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, description: "Stable identifier evaluated by the policy engine, e.g. batch.release" }
+        action: { type: string }
+        resource_type: { type: string }
+        description: { type: [string, "null"] }
+
+    SetRolePermissionsCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [IAM-FR-005, IAM-FR-006, IAM-FR-025, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, role_id, permission_ids]
+      properties:
+        idempotency_key: { type: string }
+        role_id: { type: string, format: uuid }
+        permission_ids:
+          type: array
+          items: { type: string, format: uuid }
+          description: The complete new set — replace semantics, not incremental add/remove.
+
+    PolicyDecisionRequest:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [IAM-FR-006, IAM-FR-014, IAM-FR-028]
+      required: [action]
+      properties:
+        action: { type: string, description: "Permission code being evaluated, e.g. batch.release" }
+        site_id:
+          type: [string, "null"]
+          format: uuid
+          description: "null evaluates 'at any site' (the platform.administer / require_admin_anywhere shape)"
+
+    PolicyDecisionResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [IAM-FR-006, IAM-FR-014, IAM-FR-028]
+      required: [decision, action, reason, held_roles]
+      properties:
+        decision: { type: string, enum: [ALLOW, DENY] }
+        action: { type: string }
+        reason:
+          type: [string, "null"]
+          description: "Error code explaining a DENY (ROLE_MISSING | SOD_CONFLICT); null on ALLOW"
+        message: { type: string }
+        held_roles:
+          type: array
+          items: { type: string }
+
+    AuthMeResponse:
+      type: object
+      description: "`app/modules/iam/router.py::me`."
+      additionalProperties: false
+      x-requirement-ids: [IAM-FR-001, IAM-FR-008]
+      required: [user_id, username, roles_by_site]
+      properties:
+        user_id: { type: string, format: uuid }
+        username: { type: string }
+        roles_by_site:
+          type: object
+          description: Map of site_id (string) -> sorted array of role names held at that site.
+          additionalProperties: { type: array, items: { type: string } }
+
+    Organization:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [C-001]
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+
+    SiteSummary:
+      type: object
+      description: listSites's item shape — narrower than the full Site entity (no organization_id/created_at).
+      additionalProperties: false
+      x-requirement-ids: [C-002]
+      required: [id, code, name]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+
+    UserSummary:
+      type: object
+      description: listUsers's item shape (`list_users` in the router) — includes a display-only roles list, never password_hash.
+      additionalProperties: false
+      x-requirement-ids: [IAM-FR-001, IAM-FR-005]
+      required: [id, username, email, full_name, status, roles]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        email: { type: string }
+        full_name: { type: string }
+        status: { type: string, enum: [active, disabled] }
+        roles:
+          type: array
+          items: { type: string }
+          description: "Display strings, e.g. \"qa_releaser @ SITE01\" — not structured role/site ids."
+
+    UserPage:
+      type: object
+      description: listUsers's response envelope (`app/core/pagination.py`).
+      additionalProperties: false
+      x-requirement-ids: [CTR-FR-012]
+      required: [total, page, page_size, total_pages, items]
+      properties:
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1 }
+        total_pages: { type: integer, minimum: 1 }
+        items: { type: array, items: { $ref: '#/components/schemas/UserSummary' } }
+
+    RoleSummary:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [IAM-FR-005]
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: [string, "null"] }
+
+    RolePage:
+      type: object
+      description: listRoles's response envelope (`app/core/pagination.py`).
+      additionalProperties: false
+      x-requirement-ids: [CTR-FR-012]
+      required: [total, page, page_size, total_pages, items]
+      properties:
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1 }
+        total_pages: { type: integer, minimum: 1 }
+        items: { type: array, items: { $ref: '#/components/schemas/RoleSummary' } }
+
+    UpdateOrganizationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [C-001, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, name]
+      properties:
+        idempotency_key: { type: string }
+        name: { type: string, minLength: 1 }
+
+    CreateSiteCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [C-002, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, code, name]
+      properties:
+        idempotency_key: { type: string }
+        code: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+
+    UpdateSiteCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [C-002, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, code, name]
+      properties:
+        idempotency_key: { type: string }
+        site_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        code: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+
+    DeleteSiteCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [C-002, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id]
+      properties:
+        idempotency_key: { type: string }
+        site_id: { type: string, format: uuid, description: Must equal the path parameter. }
+
+    CreateUserCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [IAM-FR-001, IAM-FR-004, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, username, email, full_name, password]
+      properties:
+        idempotency_key: { type: string }
+        username: { type: string, minLength: 1 }
+        email: { type: string }
+        full_name: { type: string, minLength: 1 }
+        password: { type: string, format: password, writeOnly: true }
+
+    UpdateUserCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). username and password are not editable through this command.
+      x-requirement-ids: [IAM-FR-001, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, user_id, email, full_name]
+      properties:
+        idempotency_key: { type: string }
+        user_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        email: { type: string }
+        full_name: { type: string, minLength: 1 }
+
+    SetUserStatusCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Shared by postDeactivateUser and postReactivateUser — the resulting status is chosen by which operation is called, not by a field in the body.
+      x-requirement-ids: [IAM-FR-004, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, user_id]
+      properties:
+        idempotency_key: { type: string }
+        user_id: { type: string, format: uuid, description: Must equal the path parameter. }
+
+    AssignUserRoleCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [IAM-FR-005, IAM-FR-008, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, user_id, site_id, role_id]
+      properties:
+        idempotency_key: { type: string }
+        user_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        site_id: { type: string, format: uuid }
+        role_id: { type: string, format: uuid }
+
+    CreateRoleCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [IAM-FR-005, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, name]
+      properties:
+        idempotency_key: { type: string }
+        name: { type: string, minLength: 1 }
+        description: { type: [string, "null"] }
+
+    UpdateRoleCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [IAM-FR-005, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, role_id, name]
+      properties:
+        idempotency_key: { type: string }
+        role_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        name: { type: string, minLength: 1 }
+        description: { type: [string, "null"] }
+
+    DeleteRoleCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [IAM-FR-005, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, role_id]
+      properties:
+        idempotency_key: { type: string }
+        role_id: { type: string, format: uuid, description: Must equal the path parameter. }

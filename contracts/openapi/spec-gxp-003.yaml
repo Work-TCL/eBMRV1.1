@@ -1,0 +1,396 @@
+openapi: 3.1.0
+info:
+  title: SPEC-GXP-003 — Immutable Audit Ledger & Audit Review
+  version: 0.1.0
+  description: >
+    Document 113 contract for the Document 05 slice actually built (`services/gxp-api/app/modules/audit/`):
+    the append-only audit ledger's read/review surface (by record, by batch, by actor, and a bounded
+    filtered search), on-demand per-record-stream hash-chain verification, and the signed audit-export
+    command.
+
+
+    All five operations the catalogue declares for SPEC-GXP-003 are implemented; there is no divergence in
+    the operation set. Path parameters are named `{aggregate_type}/{aggregate_id}`/`{batch_id}`/
+    `{subject_id}` in the running app rather than the catalogue's `{type}/{id}`/`{subjectId}` — the same
+    operations under the app's snake_case convention.
+
+
+    NOT BUILT THIS PASS: signed integrity checkpoints / Merkle roots over audit ranges and the scheduled
+    chain-verification job (AUD-FR-017/018 — verification here is on-demand per aggregate, not a
+    background attestation); time/tenant partitioning (AUD-FR-015); audit-review annotation records
+    (AUD-FR-021); and retention/legal-hold transitions over audit ranges (AUD-FR-023/024). See SG-013.
+
+
+    IMMUTABILITY: `audit_events` has no UPDATE or DELETE path anywhere in the application — no endpoint,
+    no command, no service function. There is deliberately no operation in this contract that modifies an
+    audit event, and adding one would violate AG-08 and Document 05's AUD-FR-014/030.
+tags:
+  - name: audit
+
+paths:
+  /audit/v1/records/{aggregate_type}/{aggregate_id}:
+    parameters:
+      - name: aggregate_type
+        in: path
+        required: true
+        description: The aggregate's stable type discriminator (e.g. `batch`, `material_lot`, `rule`, `vault_object`).
+        schema: { type: string, maxLength: 100 }
+      - name: aggregate_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getAuditRecordsForAggregate
+      tags: [audit]
+      summary: List the audit event stream for one regulated record, optionally chain-verified (AUD-FR-020)
+      description: >
+        Requires the `audit.review` policy action. Results are scoped to the sites the actor can see; an
+        actor holding `platform.administer` is unrestricted. Ordering, paging and free-text search follow
+        the shared list envelope; `q` matches `action` and `reason`.
+      x-requirement-ids: [AUD-FR-006, AUD-FR-007, AUD-FR-010, AUD-FR-016, AUD-FR-020, AUD-FR-028]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: verify_chain
+          in: query
+          required: false
+          description: >
+            When true, recomputes each event's hash from its own stored fields and confirms each row's
+            `prev_event_hash` matches the previous row's real `event_hash`, adding `chain_valid` to every
+            item (AUD-FR-016). Off by default because it reads the whole stream, not just the page.
+          schema: { type: boolean, default: false }
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/Page'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/Query'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir'
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/AuditEventPage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /audit/v1/batches/{batch_id}:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getAuditRecordsForBatch
+      tags: [audit]
+      summary: The batch-scoped shorthand for the record stream (AUD-FR-020)
+      description: >
+        Identical to `getAuditRecordsForAggregate` with `aggregate_type` fixed to `batch`. Kept as its own
+        operation because batch-record review is the inspection path Document 05 §Audit Review names
+        explicitly, and a stable `operationId` is required for traceability (CTR-FR-002).
+      x-requirement-ids: [AUD-FR-020, AUD-FR-022]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: verify_chain
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/Page'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/Query'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir'
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/AuditEventPage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /audit/v1/users/{subject_id}:
+    parameters:
+      - name: subject_id
+        in: path
+        required: true
+        description: The immutable actor subject id (AUD-FR-004). Never a display name.
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getAuditRecordsForSubject
+      tags: [audit]
+      summary: Every audit event attributed to one actor, within the caller's site scope (AUD-FR-004/020)
+      x-requirement-ids: [AUD-FR-004, AUD-FR-020]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/Page'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/Query'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir'
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/AuditEventPage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /audit/v1/search:
+    get:
+      operationId: searchAuditRecords
+      tags: [audit]
+      summary: Bounded audit-trail search across record, actor, site, time and signature presence (AUD-FR-020)
+      description: >
+        The filter set is closed and documented (CTR-FR-013) — arbitrary field filtering is not offered.
+        A caller that names a `site_id` it cannot see is rejected rather than silently returned empty.
+      x-requirement-ids: [AUD-FR-009, AUD-FR-020, CTR-FR-012, CTR-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: aggregate_type, in: query, required: false, schema: { type: string, maxLength: 100 } }
+        - { name: aggregate_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: actor_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: site_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - name: occurred_from
+          in: query
+          required: false
+          description: Inclusive lower bound, RFC 3339 UTC (Document 113 §3 F3).
+          schema: { type: string, format: date-time }
+        - name: occurred_to
+          in: query
+          required: false
+          description: Inclusive upper bound, RFC 3339 UTC.
+          schema: { type: string, format: date-time }
+        - name: has_signature
+          in: query
+          required: false
+          description: Restrict to events that do (true) or do not (false) reference a signature (AUD-FR-009).
+          schema: { type: boolean }
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/Page'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/Query'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy'
+        - $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir'
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/AuditEventPage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /audit/v1/exports:
+    post:
+      operationId: postCreateAuditExport
+      tags: [audit]
+      summary: Create a manifest-hashed audit export (AUD-FR-022)
+      description: >
+        Requires the `audit.export` policy action. An export is itself an auditable action (AUD-FR-002),
+        so it goes through the full mutation-gateway path — idempotency check, audit event, outbox event,
+        command receipt — even though it only reads `audit_events`.
+
+
+        FAILS CLOSED TODAY: Document 106's approved floor has no `(audit_export, export)` policy row, so
+        this operation currently returns `SIGNATURE_POLICY_UNRESOLVED` (409) on every call rather than
+        exporting unsigned. That is the correct fail-closed behaviour under SIGP-FR-004, not a defect to
+        route around; the signed path below is written and unreachable until a human decides whether an
+        export requires a signature. See SG-029.
+      x-requirement-ids: [AUD-FR-002, AUD-FR-022, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, MUT-FR-019]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAuditExportCommand' }
+      responses:
+        '200':
+          description: Export created. `aggregate_id` is the export id; the content hash is in the audit event.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    AuditEventPage:
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/AuditEvent' }
+      description: The shared list envelope plus the audit events for the requested page.
+      x-requirement-ids: [AUD-FR-020, CTR-FR-012]
+
+    AuditEvent:
+      type: object
+      description: >
+        One immutable audit ledger row (`app/modules/audit/service.py:event_to_dict`). Not
+        `additionalProperties: false`: `chain_valid` is added only when `verify_chain=true`, and this is a
+        response schema, not a command payload — Document 113 §3 F6 closes command payloads, not reads.
+      x-requirement-ids: [AUD-FR-003, AUD-FR-004, AUD-FR-005, AUD-FR-006, AUD-FR-007, AUD-FR-008, AUD-FR-009, AUD-FR-010, AUD-FR-011, AUD-FR-016]
+      required: [id, aggregate_type, aggregate_id, aggregate_version, action, actor_type, actor_id, occurred_at, changed_fields, correlation_id, event_hash]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: [string, "null"], format: uuid }
+        aggregate_type: { type: string, maxLength: 100 }
+        aggregate_id: { type: string, format: uuid }
+        aggregate_version:
+          type: integer
+          minimum: 1
+          description: >
+            Per-aggregate monotonic sequence. Authoritative ordering comes from this, never from a source
+            timestamp (AUD-FR-028).
+        action:
+          $ref: '#/components/schemas/AuditAction'
+        actor_type:
+          type: string
+          enum: [human, service, device]
+          description: >
+            Closed enum (Document 113 §3 F7). `human` is the only value any built command writes today;
+            `service` and `device` are declared because AUD-FR-004 requires the distinction and the
+            column already carries it for integration and edge callers (MUT-FR-023/024).
+        actor_id:
+          type: string
+          format: uuid
+          description: >
+            Immutable subject id, resolved server-side from the authenticated context — never from a
+            payload (MUT-FR-002 / Document 113 §3 F5).
+        actor_username:
+          type: [string, "null"]
+          description: >
+            Best-effort display name joined at read time. There is no FK from `audit_events.actor_id` to
+            `iam.users.id` (an actor may be a service with no user row), so this is null for any actor
+            without a current user record. Display metadata only; the subject id is the record.
+        occurred_at:
+          type: string
+          format: date-time
+          description: Authoritative server UTC time assigned at write (AUD-FR-003).
+        reason:
+          type: [string, "null"]
+          description: The controlled reason-for-change where policy required one (AUD-FR-008 / MUT-FR-011).
+        old_value: { type: [object, "null"], description: Prior representation for a changed record (AUD-FR-006). }
+        new_value: { type: [object, "null"], description: Resulting representation (AUD-FR-006). }
+        changed_fields:
+          type: array
+          items: { type: string }
+          description: >
+            Normalized changed-field set computed from old/new, so review and search do not depend on
+            diffing raw JSON (AUD-FR-007).
+        signature_id:
+          type: [string, "null"]
+          format: uuid
+          description: The signature that authorised this action, where the action was signed (AUD-FR-009).
+        correlation_id:
+          type: string
+          format: uuid
+          description: Ties this event to its command receipt and its outbox event (AUD-FR-011 / MUT-FR-027).
+        prev_event_hash:
+          type: [string, "null"]
+          pattern: '^[0-9a-f]{64}$'
+          description: The preceding event's `event_hash` in this aggregate's stream; null for the first event.
+        event_hash:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: >
+            SHA-256 over the canonical event representation including `prev_event_hash` — the per-record
+            hash chain (AUD-FR-016).
+        chain_valid:
+          type: [boolean, "null"]
+          description: >
+            Present only when `verify_chain=true`. True when the recomputed hash matches the stored one
+            *and* the link to the prior event holds. Null when chain status could not be determined.
+
+    AuditAction:
+      type: string
+      maxLength: 80
+      description: >
+        Audit action semantics (AUD-FR-005).
+
+
+        DELIBERATELY NOT A CLOSED ENUM, and this is a finding rather than a design choice. AUD-FR-005
+        requires "stable event types", but nothing in the codebase constrains the value: `write_audit_event`
+        takes `action: str`, and several modules pass it through a shared helper from a caller-supplied
+        variable (`app/modules/release/commands.py`, `app/modules/qms/scar_commands.py`,
+        `app/modules/batch_execution/commands.py` and others). There is no central action registry, so a
+        new module can introduce a new spelling — or a typo — with nothing to reject it. Declaring a
+        closed enum here would make this contract false. Raised as SG-142.
+
+
+        The twenty values below are the complete set of PascalCase literals the current code writes,
+        recovered by static extraction over `app/`. `Sampled` and `LossRecorded` come from a conditional
+        in `app/modules/material/commands.py`. Consumers should treat unknown values as opaque
+        (CTR-FR-017 unknown-enum handling) until SG-142 is resolved and this becomes a closed enum — that
+        transition will be a `schema_version` bump, not an additive change.
+      x-requirement-ids: [AUD-FR-005, CTR-FR-017]
+      examples:
+        - Created
+        - Changed
+        - Corrected
+        - Approved
+        - Released
+        - Rejected
+        - Reviewed
+        - Closed
+        - StatusChanged
+        - StepStarted
+        - StepCompleted
+        - Consumed
+        - Returned
+        - Destroyed
+        - Adjusted
+        - Deleted
+        - Sampled
+        - LossRecorded
+        - IntegrationAccepted
+        - PermissionsChanged
+
+    AuditExportFilter:
+      type: object
+      additionalProperties: false
+      description: >
+        Which slice of the ledger the export covers. Every field is optional; an empty filter exports
+        everything within the actor's site scope. The filter is reproduced verbatim in the export
+        manifest so the export can be re-derived and checked (AUD-FR-022).
+      x-requirement-ids: [AUD-FR-022]
+      properties:
+        aggregate_type: { type: [string, "null"], maxLength: 100 }
+        aggregate_id: { type: [string, "null"], format: uuid }
+        actor_id: { type: [string, "null"], format: uuid }
+        site_id: { type: [string, "null"], format: uuid }
+        occurred_from: { type: [string, "null"], format: date-time }
+        occurred_to: { type: [string, "null"], format: date-time }
+
+    CreateAuditExportCommand:
+      type: object
+      additionalProperties: false
+      description: >
+        Composes the canonical command envelope (`idempotency_key`) with the export filter and the
+        signature proof. Closed payload per MUT-FR-005 / Document 113 §3 F6.
+
+
+        No `expected_version`: an export creates a new aggregate rather than transitioning an existing
+        one, so there is no prior version to assert (CTRC-FR-006 is satisfied vacuously here).
+
+
+        `challenge_id`/`reauth_password` are optional in the schema and become mandatory at runtime when
+        the resolved policy sets `signature_required` — the requirement is policy data, never a static
+        schema constraint (SIG-FR-004). Omitting them against a policy that requires a signature returns
+        `MISSING_SIGNATURE` (428), not a schema error.
+      x-requirement-ids: [AUD-FR-022, MUT-FR-005, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, filter]
+      properties:
+        idempotency_key:
+          type: string
+          maxLength: 200
+          description: >
+            Replaying the same key with the same payload returns the original receipt and creates no
+            second export or audit event; the same key with a different payload returns
+            `IDEMPOTENCY_CONFLICT` (Document 113 §5 I1/I4).
+        filter: { $ref: '#/components/schemas/AuditExportFilter' }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password:
+          type: [string, "null"]
+          format: password
+          writeOnly: true
+          description: Fresh step-up authentication. Never persisted, returned or logged (CTR-FR-018).

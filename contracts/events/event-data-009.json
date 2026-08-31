@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-data-009.json",
+  "title": "SPEC-DATA-009 — Cloud-Neutral Deployment, Kubernetes, On-Prem Runtime & Upgrade Events",
+  "description": "Document 113 event contract for WP-11 Document 77 (services/gxp-api/app/modules/deployment/*). InfrastructureApplied and PlatformUpgraded are emitted transactionally through the Mutation Gateway outbox (commands.py). DeploymentPrerequisiteFailed, InfrastructureDriftDetected and CertificateExpiryWarning are emitted transactionally in checks.py (each is a real recorded check outcome, not a background poll). InstallationChecksCompleted and RollbackInitiated are not implemented in this pass -- runPostInstallQualificationChecks() and an explicit rollback-initiation function require a live installer/deployment pipeline this codebase does not run (known limitation, ARCHITECTURE.md); their payload shapes are committed ahead of that implementation (Document 113 contract-first).",
+  "x-requirement-ids": ["DEP-FR-005", "DEP-FR-025", "DEP-FR-026", "DEP-FR-028", "DEP-FR-029", "DEP-FR-030", "DEP-FR-031", "DEP-FR-034", "EVT-FR-001"],
+  "$defs": {
+    "DeploymentPrerequisiteFailedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["checks", "failed", "passed"],
+      "properties": {
+        "checks": { "type": "object", "additionalProperties": { "type": "boolean" } },
+        "failed": { "type": "array", "items": { "type": "string" } },
+        "passed": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["DEP-FR-028", "DEP-FR-029"]
+    },
+    "InfrastructureAppliedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile_name", "environment", "cloud_provider", "ha_profile"],
+      "properties": {
+        "profile_name": { "type": "string" },
+        "environment": { "type": "string" },
+        "cloud_provider": { "type": "string" },
+        "image_digest": { "type": ["string", "null"] },
+        "ha_profile": { "type": "string" }
+      },
+      "x-requirement-ids": ["DEP-FR-004", "DEP-FR-005"]
+    },
+    "InstallationChecksCompletedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["profile_name", "healthy"],
+      "properties": {
+        "profile_name": { "type": "string" },
+        "healthy": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["DEP-FR-029"]
+    },
+    "InfrastructureDriftDetectedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["declared_image_digest", "observed_image_digest", "drifted"],
+      "properties": {
+        "declared_image_digest": { "type": "string" },
+        "observed_image_digest": { "type": "string" },
+        "drifted": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["DEP-FR-031"]
+    },
+    "PlatformUpgradedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile_name", "to_image_digest", "migration_from_revision", "migration_to_revision"],
+      "properties": {
+        "profile_name": { "type": "string" },
+        "from_image_digest": { "type": ["string", "null"] },
+        "to_image_digest": { "type": "string" },
+        "migration_from_revision": { "type": "string" },
+        "migration_to_revision": { "type": "string" }
+      },
+      "x-requirement-ids": ["DEP-FR-025", "DEP-FR-026", "DEP-FR-030"]
+    },
+    "RollbackInitiatedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile_name", "reason"],
+      "properties": {
+        "profile_name": { "type": "string" },
+        "reason": { "type": "string" }
+      },
+      "x-requirement-ids": ["DEP-FR-026"]
+    },
+    "CertificateExpiryWarningPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["warn_within_days", "expiring"],
+      "properties": {
+        "warn_within_days": { "type": "integer" },
+        "expiring": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["certificate_id", "expires_at"],
+            "properties": {
+              "certificate_id": { "type": "string", "format": "uuid" },
+              "expires_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      },
+      "x-requirement-ids": ["DEP-FR-034"]
+    }
+  },
+  "events": [
+    { "event_type": "DeploymentPrerequisiteFailed", "schema_version": "1.0", "producer": "SPEC-DATA-009", "aggregate_type": "deployment_profile", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/DeploymentPrerequisiteFailedPayload" }, "x-requirement-ids": ["DEP-FR-028"] },
+    { "event_type": "InfrastructureApplied", "schema_version": "1.0", "producer": "SPEC-DATA-009", "aggregate_type": "deployment_profile", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/InfrastructureAppliedPayload" }, "x-requirement-ids": ["DEP-FR-005"] },
+    { "event_type": "InstallationChecksCompleted", "schema_version": "1.0", "producer": "SPEC-DATA-009", "aggregate_type": "deployment_profile", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/InstallationChecksCompletedPayload" }, "x-requirement-ids": ["DEP-FR-029"] },
+    { "event_type": "InfrastructureDriftDetected", "schema_version": "1.0", "producer": "SPEC-DATA-009", "aggregate_type": "deployment_profile", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/InfrastructureDriftDetectedPayload" }, "x-requirement-ids": ["DEP-FR-031"] },
+    { "event_type": "PlatformUpgraded", "schema_version": "1.0", "producer": "SPEC-DATA-009", "aggregate_type": "deployment_profile", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/PlatformUpgradedPayload" }, "x-requirement-ids": ["DEP-FR-030"] },
+    { "event_type": "RollbackInitiated", "schema_version": "1.0", "producer": "SPEC-DATA-009", "aggregate_type": "deployment_profile", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/RollbackInitiatedPayload" }, "x-requirement-ids": ["DEP-FR-026"] },
+    { "event_type": "CertificateExpiryWarning", "schema_version": "1.0", "producer": "SPEC-DATA-009", "aggregate_type": "deployment_profile", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/CertificateExpiryWarningPayload" }, "x-requirement-ids": ["DEP-FR-034"] }
+  ]
+}

@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qms-004.json",
+  "title": "SPEC-QMS-004 \u2014 Change Control Events",
+  "description": "Document 113 event contract for the 8 event types Document 29's own module (app/modules/qms/change_commands.py) actually emits. All 8 declared SPEC-QMS-004 events in 07_EVENT_CATALOGUE.yaml are genuinely implemented -- no divergence for this module.\n\nREUSE NOTES: 'ChangeRequested'/'EmergencyChangeOpened' are the same create_change() call site, selected by `cmd.emergency` (change_commands.py:163) -- not two independently-triggered events. 'ChangeApproved' is emitted for both the normal approval path (retrospective: false) and the emergency retrospective-review path (retrospective: true) -- same event_type, a boolean distinguishes them. 'ChangeImplementationStarted' is emitted by BOTH add_change_task() (id, task_id) and implement_change() (id, no task_id) -- two different payload shapes under one event_type name. 'ChangeClosed' covers both close (id) and cancel (id, state=\"CANCELLED\"). All real, observed characteristics of the built code, not invented here.",
+  "x-requirement-ids": [
+    "CHG-FR-001",
+    "CHG-FR-004",
+    "CHG-FR-012",
+    "CHG-FR-013",
+    "CHG-FR-014",
+    "CHG-FR-016",
+    "CHG-FR-017",
+    "CHG-FR-018",
+    "CHG-FR-020",
+    "CHG-FR-021",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "ChangeRequestedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "change_number"
+      ],
+      "description": "Same payload for both ChangeRequested and EmergencyChangeOpened -- only the event_type name differs (change_commands.py:163/167).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "change_number": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "CHG-FR-001",
+        "CHG-FR-014"
+      ]
+    },
+    "ChangeImpactAssessedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "CHG-FR-004",
+        "CHG-FR-005",
+        "CHG-FR-006",
+        "CHG-FR-007"
+      ]
+    },
+    "ChangeApprovedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "retrospective"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "retrospective": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "CHG-FR-013",
+        "CHG-FR-014"
+      ]
+    },
+    "ChangeImplementationStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted by add_change_task() (id, task_id) and implement_change() (id only) -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "task_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "CHG-FR-012"
+      ]
+    },
+    "ChangeValidationCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "CHG-FR-016"
+      ]
+    },
+    "ChangeMadeEffectivePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effective_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "effective_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "x-requirement-ids": [
+        "CHG-FR-009",
+        "CHG-FR-017"
+      ]
+    },
+    "ChangeClosedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string",
+          "const": "CANCELLED",
+          "description": "Present only on the cancel path."
+        }
+      },
+      "x-requirement-ids": [
+        "CHG-FR-018",
+        "CHG-FR-020",
+        "CHG-FR-021"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "ChangeRequested",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-004",
+      "aggregate_type": "change_control",
+      "payload": {
+        "$ref": "#/$defs/ChangeRequestedPayload"
+      },
+      "x-requirement-ids": [
+        "CHG-FR-001"
+      ]
+    },
+    {
+      "event_type": "EmergencyChangeOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-004",
+      "aggregate_type": "change_control",
+      "payload": {
+        "$ref": "#/$defs/ChangeRequestedPayload"
+      },
+      "x-requirement-ids": [
+        "CHG-FR-014"
+      ]
+    },
+    {
+      "event_type": "ChangeImpactAssessed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-004",
+      "aggregate_type": "change_control",
+      "payload": {
+        "$ref": "#/$defs/ChangeImpactAssessedPayload"
+      },
+      "x-requirement-ids": [
+        "CHG-FR-004",
+        "CHG-FR-005",
+        "CHG-FR-006",
+        "CHG-FR-007"
+      ]
+    },
+    {
+      "event_type": "ChangeApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-004",
+      "aggregate_type": "change_control",
+      "payload": {
+        "$ref": "#/$defs/ChangeApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "CHG-FR-013",
+        "CHG-FR-014"
+      ]
+    },
+    {
+      "event_type": "ChangeImplementationStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-004",
+      "aggregate_type": "change_control",
+      "payload": {
+        "$ref": "#/$defs/ChangeImplementationStartedPayload"
+      },
+      "x-requirement-ids": [
+        "CHG-FR-012"
+      ]
+    },
+    {
+      "event_type": "ChangeValidationCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-004",
+      "aggregate_type": "change_control",
+      "payload": {
+        "$ref": "#/$defs/ChangeValidationCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "CHG-FR-016"
+      ]
+    },
+    {
+      "event_type": "ChangeMadeEffective",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-004",
+      "aggregate_type": "change_control",
+      "payload": {
+        "$ref": "#/$defs/ChangeMadeEffectivePayload"
+      },
+      "x-requirement-ids": [
+        "CHG-FR-009",
+        "CHG-FR-017"
+      ]
+    },
+    {
+      "event_type": "ChangeClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-004",
+      "aggregate_type": "change_control",
+      "payload": {
+        "$ref": "#/$defs/ChangeClosedPayload"
+      },
+      "x-requirement-ids": [
+        "CHG-FR-018",
+        "CHG-FR-020",
+        "CHG-FR-021"
+      ]
+    }
+  ]
+}

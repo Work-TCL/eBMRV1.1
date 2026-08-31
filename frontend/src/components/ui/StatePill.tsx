@@ -67,3 +67,99 @@ export function MaterialLotStatePill({ status }: { status: string }) {
     </StatePill>
   );
 }
+
+// --- WP-05 QMS workflow states ------------------------------------------------------------------
+//
+// The QMS aggregates (deviation, CAPA, NCR, change, complaint, SCAR, field action, audit, risk) each
+// run their own state machine, together using 50+ uppercase state names. Enumerating all of them here
+// would mean this file drifts out of date every time a command adds a step, so classify by outcome
+// instead: a state is terminal-good, terminal-inert, failed, needs-attention, or in-flight. Anything
+// unrecognised still renders — as its own name under the neutral "unknown" style — rather than
+// vanishing or crashing.
+
+const TERMINAL_GOOD = new Set([
+  "CLOSED", "COMPLETE", "COMPLETED", "EFFECTIVE", "RELEASED", "VERIFIED", "ACCEPTED", "QUALIFIED",
+  "IMPLEMENTATION_VERIFIED", "APPROVED",
+  // Document 38 equipment lifecycle
+  "QUALIFIED_AVAILABLE",
+]);
+const TERMINAL_INERT = new Set([
+  "CANCELLED", "OBSOLETE", "SUPERSEDED", "FROZEN", "NO_INVESTIGATION_JUSTIFIED", "SUSPENDED",
+]);
+const FAILED = new Set(["EFFECTIVENESS_FAILED", "REJECTED", "OUT_OF_SERVICE"]);
+const NEEDS_ATTENTION = new Set([
+  "OPEN", "REOPENED", "FINDINGS_OPEN", "SEGREGATED", "NEW_VERSION",
+  "CALIBRATION_DUE", "MAINTENANCE_DUE",
+]);
+const NOT_STARTED = new Set([
+  "DRAFT", "SCHEDULED", "ASSIGNED", "RECEIVED", "INSTALLED", "QUALIFICATION_PENDING",
+]);
+
+/** Title-cases an uppercase state name for display: `IMPACT_ASSESSMENT` -> `Impact assessment`. */
+function labelFor(state: string): string {
+  const words = state.replace(/_/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+export function WorkflowStatePill({ state }: { state: string }) {
+  const key = state.toUpperCase();
+  const [design, icon]: [DesignState, IconName] = TERMINAL_GOOD.has(key)
+    ? ["accepted", "check-circle"]
+    : FAILED.has(key)
+      ? ["failed", "x"]
+      : TERMINAL_INERT.has(key)
+        ? ["na", "slash-circle"]
+        : NEEDS_ATTENTION.has(key)
+          ? ["conflict", "alert-triangle"]
+          : NOT_STARTED.has(key)
+            ? ["missing", "clock"]
+            : ["stale", "clock"];
+
+  return (
+    <StatePill state={design} icon={icon}>
+      {labelFor(state)}
+    </StatePill>
+  );
+}
+
+// Severity is a separate axis from workflow state — a CLOSED deviation can still have been critical —
+// so it gets its own pill rather than being folded into the state colour.
+const SEVERITY_STATE: Record<string, DesignState> = {
+  critical: "failed",
+  major: "conflict",
+  serious: "conflict",
+  moderate: "stale",
+  minor: "missing",
+  low: "missing",
+};
+
+export function SeverityPill({ severity }: { severity: string | null | undefined }) {
+  if (!severity) return <span className="text-muted">—</span>;
+  const design = SEVERITY_STATE[severity.toLowerCase()] ?? "unknown";
+  return (
+    <StatePill state={design} icon={design === "failed" ? "alert-circle" : "alert-triangle"}>
+      {labelFor(severity)}
+    </StatePill>
+  );
+}
+
+/** Yes/no flags the QMS records carry (`capa_required`, `release_blocker_active`, …). `null` means
+ * "not yet assessed", which is a different thing from "no" and is shown as such. */
+export function BoolPill({ value, trueLabel = "Yes", falseLabel = "No" }: { value: boolean | null | undefined; trueLabel?: string; falseLabel?: string }) {
+  if (value === null || value === undefined) {
+    return (
+      <StatePill state="missing" icon="help-circle">
+        Not assessed
+      </StatePill>
+    );
+  }
+  return value ? (
+    <StatePill state="conflict" icon="check">
+      {trueLabel}
+    </StatePill>
+  ) : (
+    <StatePill state="na" icon="slash-circle">
+      {falseLabel}
+    </StatePill>
+  );
+}

@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-sec-003.json",
+  "title": "SPEC-SEC-003 — Privileged Access, Support Access, Break-Glass & Administrative Security Events",
+  "description": "Document 113 event contract for the 7 event types Document 63's own module (app/modules/security/privileged_access_commands.py) actually emits. All 7 declared Document 63 # 9 events are implemented -- no divergence for this module.",
+  "x-requirement-ids": [
+    "PAM-FR-005",
+    "PAM-FR-011",
+    "PAM-FR-016",
+    "PAM-FR-018",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "PrivilegedAccessRequestedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "requested_role", "subject_id"],
+      "properties": {
+        "request_id": { "type": "string", "format": "uuid" },
+        "requested_role": { "type": "string" },
+        "subject_id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["PAM-FR-005"]
+    },
+    "PrivilegedAccessGrantedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "decision"],
+      "properties": {
+        "request_id": { "type": "string", "format": "uuid" },
+        "decision": { "type": "string", "enum": ["APPROVED", "DENIED"] },
+        "grant_id": { "type": ["string", "null"], "format": "uuid" }
+      },
+      "x-requirement-ids": ["PAM-FR-016", "PAM-FR-017"]
+    },
+    "SupportSessionOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "support_case_ref"],
+      "properties": {
+        "session_id": { "type": "string", "format": "uuid" },
+        "support_case_ref": { "type": "string" }
+      },
+      "x-requirement-ids": ["PAM-FR-007", "PAM-FR-020"]
+    },
+    "BreakGlassActivatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "grant_id", "incident_ref"],
+      "properties": {
+        "session_id": { "type": "string", "format": "uuid" },
+        "grant_id": { "type": "string", "format": "uuid" },
+        "incident_ref": { "type": "string" }
+      },
+      "x-requirement-ids": ["PAM-FR-011", "PAM-FR-026"]
+    },
+    "AdminCommandExecutedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "command_code"],
+      "properties": {
+        "session_id": { "type": "string", "format": "uuid" },
+        "command_code": { "type": "string" }
+      },
+      "x-requirement-ids": ["PAM-FR-018"]
+    },
+    "PrivilegedSessionClosedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "outcome"],
+      "properties": {
+        "session_id": { "type": "string", "format": "uuid" },
+        "outcome": { "type": "string" }
+      },
+      "x-requirement-ids": ["PAM-FR-011"]
+    },
+    "PrivilegedSessionReviewedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "outcome"],
+      "properties": {
+        "session_id": { "type": "string", "format": "uuid" },
+        "outcome": { "type": "string" }
+      },
+      "x-requirement-ids": ["PAM-FR-011", "PAM-FR-024"]
+    }
+  },
+  "events": [
+    {
+      "event_type": "PrivilegedAccessRequested",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-003",
+      "aggregate_type": "privileged_access_request",
+      "payload": { "$ref": "#/$defs/PrivilegedAccessRequestedPayload" },
+      "x-requirement-ids": ["PAM-FR-005"]
+    },
+    {
+      "event_type": "PrivilegedAccessGranted",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-003",
+      "aggregate_type": "privileged_access_request",
+      "payload": { "$ref": "#/$defs/PrivilegedAccessGrantedPayload" },
+      "x-requirement-ids": ["PAM-FR-016"]
+    },
+    {
+      "event_type": "SupportSessionOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-003",
+      "aggregate_type": "privileged_session",
+      "payload": { "$ref": "#/$defs/SupportSessionOpenedPayload" },
+      "x-requirement-ids": ["PAM-FR-007"]
+    },
+    {
+      "event_type": "BreakGlassActivated",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-003",
+      "aggregate_type": "privileged_session",
+      "payload": { "$ref": "#/$defs/BreakGlassActivatedPayload" },
+      "x-requirement-ids": ["PAM-FR-011"]
+    },
+    {
+      "event_type": "AdminCommandExecuted",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-003",
+      "aggregate_type": "privileged_session",
+      "payload": { "$ref": "#/$defs/AdminCommandExecutedPayload" },
+      "x-requirement-ids": ["PAM-FR-018"]
+    },
+    {
+      "event_type": "PrivilegedSessionClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-003",
+      "aggregate_type": "privileged_session",
+      "payload": { "$ref": "#/$defs/PrivilegedSessionClosedPayload" },
+      "x-requirement-ids": ["PAM-FR-011"]
+    },
+    {
+      "event_type": "PrivilegedSessionReviewed",
+      "schema_version": "1.0",
+      "producer": "SPEC-SEC-003",
+      "aggregate_type": "privileged_session",
+      "payload": { "$ref": "#/$defs/PrivilegedSessionReviewedPayload" },
+      "x-requirement-ids": ["PAM-FR-024"]
+    }
+  ]
+}

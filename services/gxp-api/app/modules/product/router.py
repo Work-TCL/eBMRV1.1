@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5,8 +7,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.product.commands import CreateProductCommand, create_product
+from app.modules.policy.service import evaluate_policy
+from app.modules.product.commands import (
+    CreateProductCommand,
+    DeleteProductCommand,
+    UpdateProductCommand,
+    create_product,
+    delete_product,
+    update_product,
+)
 from app.modules.product.models import Product
+from app.mutation.errors import ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
 SORTABLE = {
@@ -56,3 +67,30 @@ async def list_products(
             for (p,) in rows
         ],
     }
+
+
+@router.patch("/{product_id}", response_model=MutationReceipt)
+async def patch_product(
+    product_id: uuid.UUID,
+    cmd: UpdateProductCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.product_id != product_id:
+        raise ValidationFailedError("product_id in path and body must match")
+    async with session.begin():
+        return await update_product(session, cmd, actor.user_id)
+
+
+@router.delete("/{product_id}", response_model=MutationReceipt)
+async def delete_product_endpoint(
+    product_id: uuid.UUID,
+    cmd: DeleteProductCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.product_id != product_id:
+        raise ValidationFailedError("product_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="platform.administer", site_id=None)
+        return await delete_product(session, cmd, actor.user_id)

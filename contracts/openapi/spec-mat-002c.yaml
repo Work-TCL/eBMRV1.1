@@ -1,0 +1,584 @@
+openapi: 3.1.0
+info:
+  title: SPEC-MAT-002C — Material Dispensing & Weighing
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 21 (`services/gxp-api/app/modules/material/`,
+    `dispensing_v1_router`): create a dispensing order, select one or more sources (multi-lot
+    dispensing), start (freezing a weighing session and the first real IAM qualification-gate wiring in
+    this codebase), record device/manual weight readings (append-only, an unstable or later-corrected
+    overweight reading is never hidden), an optional independent verification, tolerance-checked
+    completion (writing real Document 20 ledger `DISPENSE` transactions and creating the
+    `DispensedContainer` Document 22 later consumes from), signed cancellation, and the active-orders
+    queue.
+
+
+    ORDER CREATION IS THE FIRST SIGNED-BY-DOCUMENT-106 *CREATE* OPERATION IN THIS CODEBASE'S OWN WORDS —
+    AND IT ISN'T SIGNED: every prior signed command in this codebase mutates an already-existing
+    aggregate, because Document 04's signature ceremony binds to an existing record id/version/hash.
+    Building a challenge-binding scheme for a not-yet-created record would be a signature-architecture
+    guess (SG-087); `postCreateDispensingOrder` is unsigned/RBAC-gated instead. The other 7 mutating
+    operations (all acting on an already-created order) get full Document 106 signing via one shared
+    `_dispensing_sign` ceremony helper (rows 48-54).
+
+
+    A REAL, ENFORCED QUALIFICATION GATE — THE ONLY ONE IN THIS CODEBASE: `postStartDispensing` checks the
+    actor holds a current, non-expired `dispensing_operator` `iam.Qualification` record
+    (`QUALIFICATION_MISSING`/`QUALIFICATION_EXPIRED`, Document 07/IAM-FR-010's own "execution checks
+    qualification at action time, not only at login") — no other command anywhere else in this codebase
+    wires this check; this is the first real enforcement, not a retrofit.
+
+
+    A STATE THE MODEL NAMES BUT THE CODE NEVER WRITES: `DispensingOrder.state`'s own catalogue
+    (`DISPENSING_ORDER_STATES`) names `awaiting_verification`; `postVerifyDispensing` actually writes the
+    literal string `"verified"` instead — a real, undocumented mismatch between the model's own state
+    list and what the command writes, surfaced here rather than silently corrected in either direction.
+
+
+    OUT-OF-TOLERANCE FAILS THE COMMIT, NOT A SEPARATE EXCEPTION RECORD: `postCompleteDispensing` rejects
+    (`WeightOutOfToleranceError`, 422) if the summed `actual_taken_quantities` fall outside
+    `[tolerance_low, tolerance_high]` — no exception/deviation entity exists to record an out-of-tolerance
+    attempt into (the same missing-entity root cause as SG-083), so it is refused like any other
+    validation failure rather than silently allowed through or fabricated into a deviation record.
+
+
+    SG-146 (UOM expand step, resolved 2026-08-27): `DispensingOrder.target_uom`/`WeighingReading.uom`
+    validate best-effort against the Document 110 §3 controlled UOM master — see `target_uom_id` on the
+    response schemas.
+tags:
+  - name: dispensing
+
+paths:
+  /dispensing/v1/orders:
+    post:
+      operationId: postCreateDispensingOrder
+      tags: [dispensing]
+      summary: Create a dispensing order — unsigned by design (DSP-FR-001, SG-087)
+      description: >
+        No policy check. `target_qty` must be positive; `tolerance_low` must not exceed
+        `tolerance_high`. `target_qty`/`target_uom`/`tolerance_low`/`tolerance_high` are caller-supplied
+        captured values — no target-calculation or tolerance-rule execution mode exists anywhere in this
+        codebase (SG-089); only the rules engine's PASS/FAIL gate is used elsewhere, not here.
+      x-requirement-ids: [DSP-FR-001, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDispensingOrderCommand' }
+      responses:
+        '200':
+          description: Created, state created. aggregate_id is the order_id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — batch_id or material_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — target_qty is not positive, or tolerance_low exceeds tolerance_high.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /dispensing/v1/orders/{order_id}:
+    parameters:
+      - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getDispensingOrder
+      tags: [dispensing]
+      summary: One dispensing order
+      description: No policy check.
+      x-requirement-ids: [DSP-FR-001]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/DispensingOrder' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /dispensing/v1/orders/{order_id}/signature-challenges:
+    parameters:
+      - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postDispensingSignatureChallenge
+      tags: [dispensing]
+      summary: Create the signature challenge for one of the 7 signed dispensing actions
+      description: No policy check of its own. action selects the Document 106 policy row and meaning — select_source/start/readings/manual_reading/complete map to "Performed", verify to "Verified", cancel to "Approved". VALIDATION_FAILED for any other value.
+      x-requirement-ids: [DSP-FR-002, DSP-FR-004, DSP-FR-009, DSP-FR-011, DSP-FR-018, DSP-FR-030, SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DispensingSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — action is not one of select_source/start/readings/manual_reading/verify/complete/cancel.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /dispensing/v1/orders/{order_id}/select-source:
+    parameters:
+      - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postSelectDispensingSource
+      tags: [dispensing]
+      summary: Select (or add) a source lot/container for this order — signed, repeatable for multi-lot dispensing (DSP-FR-002/003/017)
+      description: >
+        Requires the `dispensing_order.select_source` policy action. Only from `created` or
+        `source_selected` — calling this again while still `source_selected` adds one more source
+        (DSP-FR-017 multi-lot dispensing), it does not replace the prior selection. Exactly one of
+        `reservation_id` or `material_lot_id` must be supplied. A `scanned_container_code` — when
+        supplied — is verified by server lookup against the actually-selected container, never trusted
+        as given. The selected lot/container must be eligible (released, non-expired, non-retest-due)
+        at selection time.
+      x-requirement-ids: [DSP-FR-002, DSP-FR-003, DSP-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SelectDispensingSourceCommand' }
+      responses:
+        '200':
+          description: Source selected/added, state source_selected.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the order, the referenced reservation, or the referenced material lot does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — source selection is only allowed before dispensing starts.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — quantity is not positive, neither reservation_id nor material_lot_id was supplied, the reservation/lot doesn't match this order's material/batch, requested quantity exceeds what's reserved/available, the selected lot/container is not eligible, or the scanned code doesn't match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /dispensing/v1/orders/{order_id}/start:
+    parameters:
+      - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postStartDispensing
+      tags: [dispensing]
+      summary: Start dispensing, opening a weighing session — signed, requires a real dispensing_operator qualification (DSP-FR-004/005/006/007/026)
+      description: >
+        Requires `dispensing_order.start`. Only from `source_selected`. Enforces a real, currently-only
+        wired-here qualification gate: the actor must hold a current, non-expired `dispensing_operator`
+        `iam.Qualification` record. When `booth_location_id` is supplied it must reference an `active`
+        `WarehouseLocation` — booth *status* reuses Document 20's location status; environmental
+        *condition* itself is a WP-06 Equipment gap (SG-088), not checked here.
+      x-requirement-ids: [DSP-FR-004, DSP-FR-005, DSP-FR-006, DSP-FR-007, DSP-FR-026, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018, SIG-FR-004, IAM-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartDispensingCommand' }
+      responses:
+        '200':
+          description: Started, state started. aggregate_id remains the order_id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403':
+          description: ROLE_MISSING, QUALIFICATION_MISSING, or QUALIFICATION_EXPIRED (DSP-FR-005).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '404':
+          description: NOT_FOUND — the order or the referenced booth location does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — the order is not source_selected, or the booth location is not active.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /dispensing/v1/orders/{order_id}/readings:
+    parameters:
+      - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordReading
+      tags: [dispensing]
+      summary: Record a device weight reading — signed, append-only (DSP-FR-009/010/013/014)
+      description: >
+        Requires `dispensing_order.readings`. Only while `started`. `reading_value` cannot be negative.
+        Recorded as `source="device"` — captured, not verified; no Edge/Balance adapter exists yet
+        (SG-088). Every reading is kept including an unstable or later-corrected overweight one
+        (append-only, DSP-FR-014 — no command anywhere edits or removes a `WeighingReading` row); a
+        `stable=true` reading updates the session's running `final_accepted_net` by summing every
+        previously-`accepted` reading plus this one.
+      x-requirement-ids: [DSP-FR-009, DSP-FR-010, DSP-FR-013, DSP-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordReadingCommand' }
+      responses:
+        '200':
+          description: Recorded. aggregate_id is the weighing_session_id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the order does not exist, or it has no weighing session yet.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — the order is not started.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — reading_value is negative.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /dispensing/v1/orders/{order_id}/manual-reading:
+    parameters:
+      - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordManualReading
+      tags: [dispensing]
+      summary: Record a manual weight reading with a mandatory reason — signed, append-only (DSP-FR-009/010/011/013/014)
+      description: Identical mechanics to postRecordReading, recorded as source="manual" — manual_reason is mandatory (DSP-FR-011).
+      x-requirement-ids: [DSP-FR-009, DSP-FR-010, DSP-FR-011, DSP-FR-013, DSP-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordManualReadingCommand' }
+      responses:
+        '200':
+          description: Recorded. aggregate_id is the weighing_session_id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the order does not exist, or it has no weighing session yet.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — reading_value is negative, or manual_reason is missing.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /dispensing/v1/orders/{order_id}/verify:
+    parameters:
+      - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postVerifyDispensing
+      tags: [dispensing]
+      summary: Independent verification of an in-progress dispense — optional, signed, never the performer (DSP-FR-018)
+      description: >
+        Requires `dispensing_order.verify`. Only from `started`. `VerifierRequiredError`
+        (`VALIDATION_FAILED`) if the actor is the order's own `performed_by_user_id`. Optional per
+        DSP-FR-018 ("where required") — `postCompleteDispensing` accepts either `started` or this state.
+        Writes the literal state `"verified"` — despite `DISPENSING_ORDER_STATES` naming
+        `awaiting_verification` instead; a real, undocumented mismatch between the model's own catalogue
+        and what this command actually writes, not silently corrected here.
+      x-requirement-ids: [DSP-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyDispensingCommand' }
+      responses:
+        '200':
+          description: "Verified — resulting state is the literal string \"verified\"."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — the order is not started.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — the verifier is the same user who performed the dispensing (SIG-FR-018).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /dispensing/v1/orders/{order_id}/complete:
+    parameters:
+      - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCompleteDispensing
+      tags: [dispensing]
+      summary: Complete a dispense, writing real ledger DISPENSE transactions and creating a DispensedContainer — signed, tolerance-checked (DSP-FR-012/017/019/022/024/025)
+      description: >
+        Requires `dispensing_order.complete`. Only from `started` or `verified` (see the
+        `postVerifyDispensing` state-name note). Requires at least one source and a positive
+        `actual_taken_quantities` entry for every selected source — `VALIDATION_FAILED` otherwise. Each
+        source's lot/container must still be eligible at completion time
+        (`LotIneligibleError`/`VALIDATION_FAILED`, DSP-FR-025 — re-checked, not trusted from selection
+        time), and a location with sufficient `available` quantity must exist
+        (`SourceQuantityInsufficientError`). Reduces any linked active reservation by the lesser of its
+        quantity or the amount taken, marking it `consumed`. Writes one real `DISPENSE`
+        `InventoryTransaction` per source against Document 20's own ledger/balance machinery. The summed
+        `total_taken` must fall within `[tolerance_low, tolerance_high]`
+        (`WeightOutOfToleranceError`/422) — an out-of-tolerance attempt is rejected outright, not routed
+        to any exception/deviation record (none exists to route it to, SG-083's same missing-entity root
+        cause). On success creates one `DispensedContainer` (`remaining_quantity` starts equal to
+        `total_taken`) — the entity Document 22's consumption/return/reconciliation operations act on.
+      x-requirement-ids: [DSP-FR-012, DSP-FR-017, DSP-FR-019, DSP-FR-022, DSP-FR-024, DSP-FR-025, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteDispensingCommand' }
+      responses:
+        '200':
+          description: Completed, state completed.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — the order is not started/verified.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — a source is missing from actual_taken_quantities or its value is not positive, a source lot is no longer eligible, no location holds sufficient available quantity, or the total is outside tolerance (WeightOutOfToleranceError).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /dispensing/v1/orders/{order_id}/cancel:
+    parameters:
+      - { name: order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCancelDispensing
+      tags: [dispensing]
+      summary: Cancel a dispensing order from any non-terminal state, reversing any reservation — signed, reason mandatory, independence-checked (DSP-FR-030)
+      description: >
+        Requires `dispensing_order.cancel`. `INVALID_TRANSITION` if the order is already `completed` or
+        `cancelled`. `reason` is mandatory — Document 106 row 48 is the one Document 21 row with
+        `reason_required=true` wired correctly from the start (SG-086 notes some pre-existing rows
+        weren't). `VALIDATION_FAILED` if the canceller is the order's own `requested_by_user_id`
+        (independence). Reverses every linked active reservation back to `released`, same balance math
+        as `postReleaseInventoryReservation`.
+      x-requirement-ids: [DSP-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelDispensingCommand' }
+      responses:
+        '200':
+          description: Cancelled.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — the order is already terminal.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — reason is missing, or the canceller is the order's own author.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /dispensing/v1/queue:
+    get:
+      operationId: getDispensingQueue
+      tags: [dispensing]
+      summary: Paginated list of every non-terminal dispensing order
+      description: No policy check. Every order whose state is not completed or cancelled, oldest-created first by default. Genuinely paginated.
+      x-requirement-ids: [DSP-FR-001]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/DispensingOrderPage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    DispensingOrderState:
+      type: string
+      description: "`DISPENSING_ORDER_STATES` in `app/modules/material/models.py`. `awaiting_verification` is named here but never written — `postVerifyDispensing` writes the literal \"verified\" instead (see the file description)."
+      x-requirement-ids: [DSP-FR-001, CTR-FR-017]
+      enum: [created, source_selected, started, awaiting_verification, verified, completed, cancelled]
+
+    DispensingOrder:
+      type: object
+      description: One dispensing order (`app/modules/material/router.py:_dispensing_dict`). A response schema, so not closed.
+      x-requirement-ids: [DSP-FR-001]
+      required: [id, site_id, batch_id, material_id, target_qty, target_uom, tolerance_low, tolerance_high, state, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        batch_id: { type: string, format: uuid }
+        material_id: { type: string, format: uuid }
+        target_qty: { type: string, description: Decimal string. }
+        target_uom: { type: string }
+        tolerance_low: { type: string, description: Decimal string. }
+        tolerance_high: { type: string, description: Decimal string. }
+        state: { $ref: '#/components/schemas/DispensingOrderState' }
+        version: { type: integer, minimum: 1 }
+
+    DispensingOrderPage:
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/DispensingOrder' } }
+      description: getDispensingQueue's response.
+      x-requirement-ids: [DSP-FR-001, CTR-FR-012]
+
+    SignatureChallengeResponse:
+      type: object
+      description: postDispensingSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    DispensingSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [select_source, start, readings, manual_reading, verify, complete, cancel] }
+
+    CreateDispensingOrderCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DSP-FR-001, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, batch_id, material_id, target_qty, target_uom, tolerance_low, tolerance_high]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        batch_id: { type: string, format: uuid }
+        batch_step_id: { type: [string, "null"], format: uuid }
+        material_id: { type: string, format: uuid }
+        material_spec_version_id: { type: [string, "null"], format: uuid, description: Unenforced logical reference — no material_requirement entity exists yet (SG-089). }
+        target_qty: { type: string, description: "Decimal string. Must be positive." }
+        target_uom: { type: string }
+        tolerance_low: { type: string, description: Decimal string. }
+        tolerance_high: { type: string, description: "Decimal string. Must be >= tolerance_low." }
+
+    SelectDispensingSourceCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Exactly one of reservation_id or material_lot_id must be supplied.
+      x-requirement-ids: [DSP-FR-002, DSP-FR-003, DSP-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, expected_version, quantity, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        expected_version: { type: integer, minimum: 1 }
+        material_lot_id: { type: [string, "null"], format: uuid }
+        container_id: { type: [string, "null"], format: uuid }
+        reservation_id: { type: [string, "null"], format: uuid }
+        scanned_container_code: { type: [string, "null"], description: Verified by server lookup against the resolved container, never trusted as given. }
+        quantity: { type: string, description: "Decimal string. Must be positive." }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    StartDispensingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DSP-FR-004, DSP-FR-005, DSP-FR-006, DSP-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, expected_version, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        expected_version: { type: integer, minimum: 1 }
+        booth_location_id: { type: [string, "null"], format: uuid, description: Must reference an active WarehouseLocation when supplied. }
+        tare_method: { type: [string, "null"] }
+        tare_value: { type: [string, "null"], description: Decimal string. }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    RecordReadingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Always recorded as source="device".
+      x-requirement-ids: [DSP-FR-009, DSP-FR-010, DSP-FR-013, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, expected_version, reading_value, uom, stable, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        expected_version: { type: integer, minimum: 1 }
+        reading_value: { type: string, description: "Decimal string. Cannot be negative." }
+        uom: { type: string }
+        stable: { type: boolean }
+        device_id: { type: [string, "null"], description: "Captured, not integrated — no Edge/Balance adapter exists yet (SG-088)." }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    RecordManualReadingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Always recorded as source="manual".
+      x-requirement-ids: [DSP-FR-009, DSP-FR-010, DSP-FR-011, DSP-FR-013, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, expected_version, reading_value, uom, stable, manual_reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        expected_version: { type: integer, minimum: 1 }
+        reading_value: { type: string, description: "Decimal string. Cannot be negative." }
+        uom: { type: string }
+        stable: { type: boolean }
+        manual_reason: { type: string, minLength: 1 }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    VerifyDispensingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DSP-FR-018, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004, SIG-FR-018]
+      required: [idempotency_key, expected_version, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        expected_version: { type: integer, minimum: 1 }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    CompleteDispensingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DSP-FR-012, DSP-FR-017, DSP-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, expected_version, actual_taken_quantities, container_code, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        expected_version: { type: integer, minimum: 1 }
+        actual_taken_quantities:
+          type: object
+          description: Map of dispensing_source_id (string uuid) to the decimal-string quantity actually taken from that source. Every selected source must have a positive entry.
+          additionalProperties: { type: string }
+        container_code: { type: string, maxLength: 120 }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    CancelDispensingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DSP-FR-030, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, expected_version, reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1 }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }

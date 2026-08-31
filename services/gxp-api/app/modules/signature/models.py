@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, SmallInteger, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -24,6 +24,13 @@ class SignaturePolicy(Base):
     meaning: Mapped[str] = mapped_column(String(50), nullable=False)
     required_role_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.roles.id"))
     requires_independent_signer: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Doc 106 SIGP-FR-004: a row's absence is a hard stop (see resolve_signature_requirement), never an
+    # implicit "no signature". `signature_required=False` is how "deliberately no signature" is expressed
+    # as data instead of as an absence.
+    signature_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    signature_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
+    policy_source: Mapped[str] = mapped_column(String(30), nullable=False, default="PLATFORM_FLOOR")
+    reason_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class SignatureChallenge(Base):

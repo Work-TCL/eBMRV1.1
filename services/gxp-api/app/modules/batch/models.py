@@ -52,6 +52,9 @@ class Batch(Base):
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="planned")
     target_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     uom: Mapped[str] = mapped_column(String(20), nullable=False)
+    # SG-146 (remainder, module 4 of 8), MIG-FR-004 expand step: dual-written best-effort, backfillable
+    # (ebmr.batches is mutable — UPDATE granted, migration 329495c9e651 0002's blanket grant).
+    uom_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.gxp_uom.uom_id"))
     version: Mapped[int] = mapped_column(nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 

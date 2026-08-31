@@ -1,0 +1,517 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EQP-004 — Environmental Monitoring & Cleanroom State Control
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 41 (`services/gxp-api/app/modules/equipment/em_router.py` +
+    `em_commands.py` + `em_models.py`) — same `equipment` module/schema (AG-05). Built before Document 40
+    in this pass so aseptic readiness composition can call `get_area_readiness` (EM-FR-020). Contracted
+    from the 11 operations the router actually exposes, not the specification's own declared 8-operation
+    catalogue: the code adds `GET /em/v1/tasks/{sample_id}` (detail), `GET /em/v1/results/{sample_id}`
+    (detail, same underlying row as the task detail read) and `POST /em/v1/results/{sample_id}/signature-
+    challenges`, none of which the spec's §6 API table names.
+
+
+    NO DEDICATED `em_task` TABLE: a "task" is an `em_sample_or_reading` row in state `SAMPLE_TASK` —
+    the same entity `postRecordResult`/`postReviewEmResult` act on later; `getEmTask` and `getEmResult`
+    read the identical underlying row at different lifecycle points (matches Document 38's "plan+
+    execution combined in one row" precedent). `em_location` is seed-only (no create endpoint, same
+    precedent as `equipment_area`); `em_program_version` DOES have a real, unsigned create endpoint
+    (`postCreateEmProgram`) — unlike Document 39's `cleaning_procedure_version`.
+
+
+    TWO ENTRY PATHS INTO `postRecordEmResult`: `sample_id` set continues an existing scheduled/collected
+    task; `sample_id` omitted creates a fresh direct result in one call (e.g. a continuous-sensor manual
+    entry, EM-FR-015), skipping the SAMPLE_TASK/COLLECTED phases — `site_id`/`program_version_id`/
+    `location_id`/`monitoring_type` become required in that branch instead. `alert_action_status:
+    action_excursion` auto-creates an `EmExcursion` row (EM-FR-012) — no separate create-excursion
+    endpoint exists; the only excursion operation this document declares is `postRecordExcursionImpact`,
+    which only ever adds impact/disposition data and never overwrites the original trigger (EM-FR-022:
+    resampling never erases an excursion, it creates a new sample row).
+
+
+    `alert_action_status` IS CAPTURED, PERFORMER-ATTESTED INPUT: no automated numeric limit-vs-result
+    evaluation exists across the many monitoring-type units this pass (SPEC_GAP) — the same restraint as
+    Document 38's calibration `result` field. `getTrends` is raw result history only (EM-FR-017/018,
+    partial) — trend-baseline/statistical excursion detection is not built (SPEC_GAP).
+tags:
+  - name: environmental-monitoring
+
+paths:
+  /em/v1/programs:
+    post:
+      operationId: postCreateEmProgram
+      tags: [environmental-monitoring]
+      summary: Release an EM program version (EM-FR-001/003/004/011/017/018)
+      description: Unsigned — no Document 106 row names a signature for this action.
+      x-requirement-ids: [EM-FR-001, EM-FR-003, EM-FR-004, EM-FR-011, EM-FR-017, EM-FR-018, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateEmProgramCommand' }
+      responses:
+        '200':
+          description: Created at state RELEASED.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422':
+          description: VALIDATION_FAILED — empty program_number.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /em/v1/tasks:
+    post:
+      operationId: postCreateEmTask
+      tags: [environmental-monitoring]
+      summary: Schedule an EM sampling/reading task (EM-FR-005/006)
+      description: Creates an `em_sample_or_reading` row at state SAMPLE_TASK.
+      x-requirement-ids: [EM-FR-005, EM-FR-006, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateEmTaskCommand' }
+      responses:
+        '200':
+          description: Created at state SAMPLE_TASK.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: The referenced program_version_id or location_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /em/v1/tasks/{sample_id}:
+    parameters:
+      - { name: sample_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getEmTask
+      tags: [environmental-monitoring]
+      summary: EM sample/reading detail, read as a scheduled task
+      description: Not in the spec's declared API table; contracted because the router implements it. Same underlying row/shape as getEmResult.
+      x-requirement-ids: [EM-FR-005]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/EmSampleOrReading' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /em/v1/tasks/{sample_id}/collect:
+    parameters:
+      - { name: sample_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCollectEmTask
+      tags: [environmental-monitoring]
+      summary: Record sample collection (EM-FR-008)
+      description: >
+        Only valid from state SAMPLE_TASK; moves to COLLECTED. Where `instrument_equipment_id` is
+        supplied (EM-FR-006), the referenced Document 38 equipment asset must be currently eligible
+        (qualified/calibrated/not on hold).
+      x-requirement-ids: [EM-FR-006, EM-FR-007, EM-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CollectEmTaskCommand' }
+      responses:
+        '200':
+          description: Collected.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — only a scheduled task (state SAMPLE_TASK) can be collected."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — sample_id in path and body must match. EM_INSTRUMENT_INELIGIBLE — instrument_equipment_id is not currently eligible (EM-FR-006)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /em/v1/results/{sample_id}/signature-challenges:
+    parameters:
+      - { name: sample_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postEmSignatureChallenge
+      tags: [environmental-monitoring]
+      summary: Create the signature challenge for postRecordEmResult or postReviewEmResult
+      description: Not in the spec's declared API table; contracted because the router implements it. `action` selects the meaning — `record_result` ("Performed") or `review` ("Reviewed").
+      x-requirement-ids: [SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: "VALIDATION_FAILED — action is not record_result/review."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /em/v1/results:
+    post:
+      operationId: postRecordEmResult
+      tags: [environmental-monitoring]
+      summary: Record an EM result — continuing a task or as a fresh direct entry (Document 106 row 114)
+      description: >
+        `sample_id` set continues an existing SAMPLE_TASK/COLLECTED task (`expected_version` then
+        required); `sample_id` omitted creates a fresh COLLECTED row in the same call (`site_id`,
+        `program_version_id`, `location_id`, `monitoring_type` then required) — e.g. a continuous-sensor
+        manual entry (EM-FR-015). `alert_action_status: action_excursion` auto-creates an `EmExcursion`
+        row and sets `requires_deviation` (EM-FR-012). Signature is conditional on the current Document
+        106 policy row for `em_sample_or_reading`/`record_result`.
+      x-requirement-ids: [EM-FR-007, EM-FR-009, EM-FR-010, EM-FR-012, EM-FR-013, EM-FR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordEmResultCommand' }
+      responses:
+        '200':
+          description: Moved to RESULT_PENDING.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — an existing sample must be in SAMPLE_TASK/COLLECTED to receive a result."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — unrecognized alert_action_status, missing expected_version when sample_id is set, or missing site_id/program_version_id/location_id/monitoring_type when sample_id is omitted."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /em/v1/results/{sample_id}:
+    parameters:
+      - { name: sample_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getEmResult
+      tags: [environmental-monitoring]
+      summary: EM sample/reading detail, read as a result
+      description: Not in the spec's declared API table; contracted because the router implements it. Same underlying row/shape as getEmTask.
+      x-requirement-ids: [EM-FR-007]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/EmSampleOrReading' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /em/v1/results/{sample_id}/review:
+    parameters:
+      - { name: sample_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReviewEmResult
+      tags: [environmental-monitoring]
+      summary: Independently review a recorded EM result (Document 106 row 115)
+      description: >
+        Only valid from state RESULT_PENDING. The reviewer must be independent of the performer
+        (SIG-FR-018) — rejected otherwise. `challenge_id`/`reauth_password` are always required
+        (schema-fixed; the policy decides enforcement at runtime), same precedent as Document 38's
+        `HoldEquipmentCommand`.
+      x-requirement-ids: [EM-FR-013, EM-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, SIG-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewEmResultCommand' }
+      responses:
+        '200':
+          description: Reviewed.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — only a result pending review (state RESULT_PENDING) can be reviewed."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — sample_id mismatch, or reviewer is the same user as the performer (SIG-FR-018)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /em/v1/excursions/{excursion_id}/impact:
+    parameters:
+      - { name: excursion_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordExcursionImpact
+      tags: [environmental-monitoring]
+      summary: Record/update impact assessment and disposition on an excursion (EM-FR-012/019/021/022)
+      description: >
+        Unsigned — no Document 106 row for this action. The only excursion-mutating operation this
+        document declares (no separate create-excursion endpoint — `EmExcursion` rows are auto-created
+        by `postRecordEmResult`). Never overwrites the original excursion trigger; only adds/refines
+        impact/disposition fields — a supplied field replaces its prior value, an omitted one keeps it
+        (EM-FR-022: resampling never erases an excursion).
+      x-requirement-ids: [EM-FR-012, EM-FR-019, EM-FR-021, EM-FR-022, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordExcursionImpactCommand' }
+      responses:
+        '200':
+          description: Recorded.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: STALE_VERSION.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — excursion_id in path and body must match."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /em/v1/areas/{area_id}/readiness:
+    parameters:
+      - { name: area_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getEmAreaReadiness
+      tags: [environmental-monitoring]
+      summary: Derived EM readiness status for a classified area (EM-FR-020)
+      description: >
+        Always derived from current open excursions and recent alerts for the area's locations — never
+        a manual toggle. HOLD when any open (undispositioned) excursion exists for the area; WARNING
+        when no open excursion but at least one of the 5 most recent alert-level results per location
+        is an alert; READY otherwise. This is the function Document 40's aseptic readiness composition
+        calls directly.
+      x-requirement-ids: [EM-FR-020]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/EmAreaReadiness' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /em/v1/trends:
+    get:
+      operationId: getEmTrends
+      tags: [environmental-monitoring]
+      summary: Raw result history for a monitoring location (EM-FR-017/018, partial)
+      description: Most-recent-50 raw result history only — no statistical trend-baseline/excursion-prediction detection is built this pass (SPEC_GAP).
+      x-requirement-ids: [EM-FR-017, EM-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: location_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: monitoring_type, in: query, required: false, schema: { $ref: '#/components/schemas/MonitoringType' } }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/EmTrends' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '422':
+          description: VALIDATION_FAILED — location_id is required.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    EmSampleState:
+      type: string
+      description: "`EM_SAMPLE_STATES` in `app/modules/equipment/em_models.py`."
+      x-requirement-ids: [EM-FR-005, CTR-FR-017]
+      enum: [SAMPLE_TASK, COLLECTED, RESULT_PENDING, REVIEWED]
+
+    AlertActionStatus:
+      type: string
+      description: "`ALERT_ACTION_STATUSES` — captured, performer-attested; no automated limit evaluation this pass."
+      x-requirement-ids: [EM-FR-009, EM-FR-010]
+      enum: [normal, alert, action_excursion]
+
+    MonitoringType:
+      type: string
+      x-requirement-ids: [EM-FR-005]
+      enum: [viable_air, surface_contact, settle_plate, personnel, nonviable_particle, temperature, humidity, differential_pressure]
+
+    EmSampleOrReading:
+      type: object
+      description: "`_sample_dict` in `app/modules/equipment/em_router.py`."
+      x-requirement-ids: [EM-FR-005, EM-FR-006, EM-FR-007, EM-FR-009]
+      required: [id, site_id, program_version_id, location_id, monitoring_type, state, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        program_version_id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        monitoring_type: { type: string }
+        state: { $ref: '#/components/schemas/EmSampleState' }
+        result: { type: [object, "null"] }
+        alert_action_status: { type: [string, "null"] }
+        media_reagent_ref: { type: [object, "null"], description: "EM-FR-007 — captured, not enumerated." }
+        incubation_conditions: { type: [object, "null"], description: "EM-FR-009 — captured, not enumerated." }
+        requires_deviation: { type: boolean }
+        version: { type: integer, minimum: 1 }
+
+    EmAreaReadiness:
+      type: object
+      description: "`get_area_readiness` in `app/modules/equipment/em_commands.py`."
+      x-requirement-ids: [EM-FR-020]
+      required: [area_id, status, ready, open_excursion_count, recent_alert_count]
+      properties:
+        area_id: { type: string, format: uuid }
+        status: { type: string, enum: [READY, WARNING, HOLD, NOT_READY] }
+        ready: { type: boolean }
+        open_excursion_count: { type: integer, minimum: 0 }
+        recent_alert_count: { type: integer, minimum: 0 }
+
+    EmTrends:
+      type: object
+      description: "`get_trends` in `app/modules/equipment/em_commands.py`. Most recent 50 rows, newest first."
+      x-requirement-ids: [EM-FR-017, EM-FR-018]
+      required: [location_id, samples]
+      properties:
+        location_id: { type: string, format: uuid }
+        samples:
+          type: array
+          items:
+            type: object
+            required: [id, monitoring_type, created_at]
+            properties:
+              id: { type: string, format: uuid }
+              monitoring_type: { type: string }
+              result: { type: [object, "null"] }
+              alert_action_status: { type: [string, "null"] }
+              created_at: { type: string, format: date-time }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postEmSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    EmSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [record_result, review] }
+
+    CreateEmProgramCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [EM-FR-001, EM-FR-003, EM-FR-004, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, program_number]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        program_number: { type: string, minLength: 1 }
+        monitoring_types: { type: [object, "null"] }
+        method_version: { type: [string, "null"] }
+        frequency: { type: [object, "null"] }
+        alert_limits: { type: [object, "null"] }
+        action_limits: { type: [object, "null"] }
+        operation_shift_coverage: { type: [object, "null"] }
+        review_trend_rules: { type: [object, "null"] }
+
+    CreateEmTaskCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [EM-FR-005, EM-FR-006, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, program_version_id, location_id, monitoring_type]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        program_version_id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        monitoring_type: { type: string }
+        batch_id: { type: [string, "null"], format: uuid }
+        aseptic_operation_id: { type: [string, "null"], format: uuid, description: "Forward, unenforced reference (Document 40)." }
+
+    CollectEmTaskCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [EM-FR-006, EM-FR-007, EM-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, sample_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        sample_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        instrument_or_media_ref: { type: [object, "null"] }
+        instrument_equipment_id: { type: [string, "null"], format: uuid, description: "EM-FR-006 — where set, must reference a currently eligible (qualified/calibrated) Document 38 equipment asset." }
+        media_reagent_ref: { type: [object, "null"], description: "EM-FR-007 — captured, not enumerated." }
+
+    RecordEmResultCommand:
+      type: object
+      additionalProperties: false
+      description: >
+        Closed command payload (MUT-FR-005 / Document 113 §3 F6). Two mutually-conditional shapes: with
+        sample_id (continue an existing task, expected_version then required) or without it (fresh direct
+        entry, site_id/program_version_id/location_id/monitoring_type then required). challenge_id/
+        reauth_password are optional — required only when the current Document 106 policy row for
+        em_sample_or_reading/record_result demands a signature.
+      x-requirement-ids: [EM-FR-007, EM-FR-009, EM-FR-010, EM-FR-012, EM-FR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, result, alert_action_status]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: [string, "null"], format: uuid }
+        sample_id: { type: [string, "null"], format: uuid }
+        expected_version: { type: [integer, "null"], minimum: 1 }
+        program_version_id: { type: [string, "null"], format: uuid }
+        location_id: { type: [string, "null"], format: uuid }
+        monitoring_type: { type: [string, "null"] }
+        result: { type: object }
+        alert_action_status: { $ref: '#/components/schemas/AlertActionStatus' }
+        incubation_conditions: { type: [object, "null"], description: "EM-FR-009 — captured, not enumerated." }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    ReviewEmResultCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are always required (the policy decides at runtime whether they are enforced).
+      x-requirement-ids: [EM-FR-013, EM-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004, SIG-FR-018]
+      required: [idempotency_key, sample_id, expected_version, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        sample_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"] }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    RecordExcursionImpactCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). A supplied field replaces its prior value on the excursion; an omitted (null) one keeps the existing value.
+      x-requirement-ids: [EM-FR-012, EM-FR-019, EM-FR-021, EM-FR-022, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, excursion_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        excursion_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        affected_time_start: { type: [string, "null"], format: date-time }
+        affected_time_end: { type: [string, "null"], format: date-time }
+        affected_batch_ids: { type: [object, "null"] }
+        organism_details: { type: [object, "null"] }
+        disposition: { type: [string, "null"] }

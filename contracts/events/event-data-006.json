@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-data-006.json",
+  "title": "SPEC-DATA-006 — Temporal Durable Workflow Orchestration Architecture Events",
+  "description": "Document 113 event contract for WP-11 Document 74 (services/gxp-api/app/modules/workflowops/*). Five operational signals about workflow orchestration state (Document 74 # 9). No Temporal cluster is deployed in this codebase; these are emitted best-effort in their own committed transaction (signals.py::emit_workflow_signal, aggregate_type workflow_orchestration) by a future Temporal worker/supervisor -- same 'mechanism present, infra feed deferred' shape as Document 66's zero-trust functions. The workflow-ID scheme (identity.py::derive_workflow_id) and the retry classifier (retry_policy.py::classify_retry) are unit-tested now.",
+  "x-requirement-ids": ["TMP-FR-002", "TMP-FR-005", "TMP-FR-011", "TMP-FR-015", "TMP-FR-023", "EVT-FR-001"],
+  "$defs": {
+    "WorkflowStartedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workflow_id", "workflow_type", "business_id"],
+      "properties": {
+        "workflow_id": { "type": "string" },
+        "workflow_type": { "type": "string" },
+        "business_id": { "type": "string" }
+      },
+      "x-requirement-ids": ["TMP-FR-002"]
+    },
+    "WorkflowStuckDetectedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["workflow_id", "reason"],
+      "properties": {
+        "workflow_id": { "type": "string" },
+        "reason": { "type": "string" },
+        "last_activity": { "type": ["string", "null"] }
+      },
+      "x-requirement-ids": ["TMP-FR-011"]
+    },
+    "TemporalWorkerVersionChangedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["task_queue", "new_version"],
+      "properties": {
+        "task_queue": { "type": "string" },
+        "previous_version": { "type": ["string", "null"] },
+        "new_version": { "type": "string" }
+      },
+      "x-requirement-ids": ["TMP-FR-005"]
+    },
+    "WorkflowCompensationExecutedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workflow_id", "source_action_ref", "compensation_command"],
+      "properties": {
+        "workflow_id": { "type": "string" },
+        "source_action_ref": { "type": "string" },
+        "compensation_command": { "type": "string" }
+      },
+      "x-requirement-ids": ["TMP-FR-015"]
+    },
+    "TemporalNamespaceUnavailablePayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["namespace"],
+      "properties": {
+        "namespace": { "type": "string" },
+        "detail": { "type": ["string", "null"] }
+      },
+      "x-requirement-ids": ["TMP-FR-023"]
+    }
+  },
+  "events": [
+    { "event_type": "WorkflowStarted", "schema_version": "1.0", "producer": "SPEC-DATA-006", "aggregate_type": "workflow_orchestration", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/WorkflowStartedPayload" }, "x-requirement-ids": ["TMP-FR-002"] },
+    { "event_type": "WorkflowStuckDetected", "schema_version": "1.0", "producer": "SPEC-DATA-006", "aggregate_type": "workflow_orchestration", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/WorkflowStuckDetectedPayload" }, "x-requirement-ids": ["TMP-FR-011"] },
+    { "event_type": "TemporalWorkerVersionChanged", "schema_version": "1.0", "producer": "SPEC-DATA-006", "aggregate_type": "workflow_orchestration", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/TemporalWorkerVersionChangedPayload" }, "x-requirement-ids": ["TMP-FR-005"] },
+    { "event_type": "WorkflowCompensationExecuted", "schema_version": "1.0", "producer": "SPEC-DATA-006", "aggregate_type": "workflow_orchestration", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/WorkflowCompensationExecutedPayload" }, "x-requirement-ids": ["TMP-FR-015"] },
+    { "event_type": "TemporalNamespaceUnavailable", "schema_version": "1.0", "producer": "SPEC-DATA-006", "aggregate_type": "workflow_orchestration", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/TemporalNamespaceUnavailablePayload" }, "x-requirement-ids": ["TMP-FR-023"] }
+  ]
+}

@@ -1,0 +1,356 @@
+"use client";
+
+import { useState } from "react";
+import {
+  api,
+  canExecuteQaReview,
+  formatDateTime,
+  newIdempotencyKey,
+} from "@/lib/api";
+import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { PageHead } from "@/components/ui/PageHead";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { Table, EmptyState } from "@/components/ui/Table";
+import { Banner } from "@/components/ui/Banner";
+import { KpiRow, KpiTile } from "@/components/ui/KpiTile";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { Field } from "@/components/ui/Field";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Icon } from "@/components/ui/Icon";
+import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
+import { JsonPanel } from "@/components/ui/JsonPanel";
+import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
+import { useCommand } from "@/components/qms/QmsDetailShell";
+
+interface ReviewPackage {
+  package_id: string;
+  site_id: string;
+  batch_id: string;
+  batch_version: number;
+  record_hash: string;
+  exception_index_version: number;
+  completeness_status: string;
+  state: string;
+  version: number;
+  completed_at: string | null;
+  stale?: boolean;
+}
+
+interface Exceptions {
+  package_id: string;
+  batch_id: string;
+  corrections: unknown[];
+  integrity_check: Record<string, unknown> | null;
+  batch_on_hold: boolean;
+}
+
+const PACKAGE_STATES = ["OPEN", "IN_REVIEW", "COMPLETE"];
+
+export default function QaReviewPage() {
+  const { me } = useMe();
+  const { siteId } = useSiteId();
+  const [state, setState] = useState("");
+  const [reloadToken, setReloadToken] = useState(0);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const dashboard = useApiResource<{ packages: ReviewPackage[] }>(
+    siteId ? `/qa-review/v1/dashboard?site_id=${siteId}${state ? `&state=${state}` : ""}&_=${reloadToken}` : null
+  );
+
+  const packages = dashboard.data?.packages ?? [];
+  const complete = packages.filter((p) => p.state === "COMPLETE").length;
+  const incomplete = packages.filter((p) => p.completeness_status !== "complete").length;
+
+  return (
+    <div>
+      <PageHead
+        title="QA review"
+        subtitle="Document 14 — batch review packages, their exception index and completeness gate."
+        action={
+          canExecuteQaReview(me) ? (
+            <Button variant="primary" onClick={() => setCreateOpen(true)}>
+              <Icon name="plus" /> New review package
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <KpiRow>
+        <KpiTile label="Packages" icon="clipboard" value={packages.length} />
+        <KpiTile label="Complete" icon="check-circle" value={complete} tone="ok" />
+        <KpiTile
+          label="Incomplete record"
+          icon="alert-triangle"
+          value={incomplete}
+          delta={incomplete > 0 ? "Cannot complete review until resolved" : "All records complete"}
+          tone={incomplete > 0 ? "warn" : "ok"}
+        />
+      </KpiRow>
+
+      <p className="hint mb-4">
+        Exception-class and review-age filtering (the rest of RBE-FR-026) needs the `qa_review_item`
+        entity, which is unbuilt — see SG-053. State filtering is the implemented part.
+      </p>
+
+      {dashboard.error && (
+        <Banner tone="critical" title="Could not load the review dashboard">
+          {dashboard.error}
+        </Banner>
+      )}
+
+      <Card>
+        <CardHeader
+          title="Review packages"
+          meta={
+            <span className="flex items-center gap-2">
+              State
+              <Select
+                value={state}
+                onChange={(e) => {
+                  setState(e.target.value);
+                  setReloadToken((n) => n + 1);
+                }}
+              >
+                <option value="">All</option>
+                {PACKAGE_STATES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+            </span>
+          }
+        />
+        {packages.length === 0 ? (
+          <EmptyState icon="clipboard">No review packages for this site.</EmptyState>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <th>Batch</th>
+                <th>State</th>
+                <th>Completeness</th>
+                <th>Index version</th>
+                <th>Completed</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {packages.map((p) => (
+                <tr key={p.package_id}>
+                  <td className="tabular fs-2" style={{ wordBreak: "break-all" }}>
+                    {p.batch_id}
+                  </td>
+                  <td>
+                    <WorkflowStatePill state={p.state} />
+                  </td>
+                  <td>
+                    {p.completeness_status === "complete" ? (
+                      <StatePill state="accepted" icon="check-circle">
+                        Complete
+                      </StatePill>
+                    ) : (
+                      <StatePill state="conflict" icon="alert-triangle">
+                        {p.completeness_status}
+                      </StatePill>
+                    )}
+                  </td>
+                  <td className="tabular fs-2">v{p.exception_index_version}</td>
+                  <td className="tabular fs-2">{p.completed_at ? formatDateTime(p.completed_at) : "—"}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <Button size="sm" variant="secondary" onClick={() => setSelected(p.package_id)}>
+                      Open
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+
+      {createOpen && (
+        <CreatePackageModal
+          onClose={() => setCreateOpen(false)}
+          onDone={() => {
+            setCreateOpen(false);
+            setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
+      {selected && (
+        <PackageModal
+          packageId={selected}
+          onClose={() => setSelected(null)}
+          onChanged={() => setReloadToken((n) => n + 1)}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreatePackageModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const { busy, error, run } = useCommand(onDone);
+  const [batchId, setBatchId] = useState("");
+
+  return (
+    <Modal open onClose={onClose} title="Create a review package">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(() =>
+            api.post(`/qa-review/v1/batches/${batchId}/packages`, {
+              idempotency_key: newIdempotencyKey(),
+              batch_id: batchId,
+            })
+          );
+        }}
+      >
+        <Field
+          label="Batch ID"
+          required
+          hint="The package snapshots the batch at its current version; a later batch change marks it stale."
+        >
+          <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} required autoFocus />
+        </Field>
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !batchId.trim()}>
+            {busy ? "Creating…" : "Create package"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function PackageModal({
+  packageId,
+  onClose,
+  onChanged,
+}: {
+  packageId: string;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const { me } = useMe();
+  const pkg = useApiResource<ReviewPackage>(`/qa-review/v1/packages/${packageId}`);
+  const exceptions = useApiResource<Exceptions>(`/qa-review/v1/packages/${packageId}/exceptions`);
+  const { busy, error, run } = useCommand(() => {
+    pkg.reload();
+    exceptions.reload();
+    onChanged();
+  });
+
+  const p = pkg.data;
+  const e = exceptions.data;
+
+  if (!p) {
+    return (
+      <Modal open onClose={onClose} title="Review package">
+        {pkg.error ? <p className="error-text">{pkg.error}</p> : <p>Loading…</p>}
+      </Modal>
+    );
+  }
+
+  const canAct = canExecuteQaReview(me);
+  const integrityOk = e?.integrity_check
+    ? (e.integrity_check as { valid?: boolean; ok?: boolean }).valid ??
+      (e.integrity_check as { ok?: boolean }).ok ??
+      null
+    : null;
+
+  return (
+    <Modal open onClose={onClose} title="Review package" large>
+      {p.stale && (
+        <Banner tone="warn" title="Package is stale">
+          The batch has changed since this package was indexed (batch version {p.batch_version}). Reindex
+          before completing the review.
+        </Banner>
+      )}
+      {e?.batch_on_hold && (
+        <Banner tone="critical" title="Batch is on hold" icon="lock">
+          A batch on hold cannot have its review completed.
+        </Banner>
+      )}
+      {integrityOk === false && (
+        <Banner tone="critical" title="Execution snapshot failed integrity verification">
+          The Vault object backing this batch does not match its recorded hash.
+        </Banner>
+      )}
+
+      <FactGrid>
+        <Fact label="State">
+          <WorkflowStatePill state={p.state} />
+        </Fact>
+        <Fact label="Completeness">{p.completeness_status}</Fact>
+        <Fact label="Batch version">{p.batch_version}</Fact>
+        <Fact label="Index version">v{p.exception_index_version}</Fact>
+        <Fact label="Completed">{p.completed_at ? formatDateTime(p.completed_at) : "—"}</Fact>
+        <Fact label="Record version">{p.version}</Fact>
+        <IdFact label="Batch" value={p.batch_id} />
+        <IdFact label="Record hash" value={p.record_hash} />
+      </FactGrid>
+
+      <div className="mt-4">
+        <JsonPanel title="Integrity check" value={e?.integrity_check} />
+        <p className="fact-k mb-2">Corrections in this batch</p>
+        {!e || e.corrections.length === 0 ? (
+          <p className="hint">No corrections recorded against this batch.</p>
+        ) : (
+          <JsonPanel title="" value={e.corrections} />
+        )}
+      </div>
+
+      {error && <p className="error-text mt-3">{error}</p>}
+
+      <div className="flex justify-between gap-3 mt-4">
+        <Button variant="secondary" onClick={onClose}>
+          Close
+        </Button>
+        <div className="flex gap-2">
+          {canAct && p.state !== "COMPLETE" && (
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() =>
+                run(() =>
+                  api.post(`/qa-review/v1/packages/${p.package_id}/reindex`, {
+                    idempotency_key: newIdempotencyKey(),
+                    package_id: p.package_id,
+                    expected_version: p.version,
+                  })
+                )
+              }
+            >
+              <Icon name="refresh" /> Reindex
+            </Button>
+          )}
+          {canAct && p.state !== "COMPLETE" && (
+            <Button
+              variant="primary"
+              disabled={busy}
+              onClick={() =>
+                run(() =>
+                  api.post(`/qa-review/v1/packages/${p.package_id}/complete`, {
+                    idempotency_key: newIdempotencyKey(),
+                    package_id: p.package_id,
+                    expected_version: p.version,
+                  })
+                )
+              }
+            >
+              <Icon name="pen" /> {busy ? "Completing…" : "Complete review"}
+            </Button>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}

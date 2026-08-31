@@ -1,0 +1,502 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EDGE-001 — Edge Gateway Runtime Architecture & Construction Specification
+  version: 0.1.0
+  description: >
+    Document 113 contract for the server-side slice of Document 43 built this pass: the 6 declared
+    server APIs (§8) only. The on-prem gateway runtime itself (§12: supervisor, connectors, plugins,
+    local SQLite outbox, CLI) is a distinct future deployable and is not covered by this contract — see
+    docs/generated/18_SPEC_GAPS.md SG-118/SG-119/SG-120 for the signature-policy and service-identity
+    decisions this build relies on.
+tags:
+  - name: edge
+
+paths:
+  /edge/v1/enrollments:
+    post:
+      operationId: postEnrollGateway
+      tags: [edge]
+      summary: Enroll a new edge gateway (EDGE-FR-001/002/003)
+      x-requirement-ids: [EDGE-FR-001, EDGE-FR-002, EDGE-FR-003]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnrollGatewayCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GatewayEnrollmentResult' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Duplicate gateway fingerprint, or bootstrap token invalid/used/expired
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          description: Missing or failed signature step-up (SG-118)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /edge/v1/enrollments/signature-challenges:
+    post:
+      operationId: postEnrollmentSignatureChallenge
+      tags: [edge]
+      summary: Create the Approved-meaning signature challenge required before enrollment (SG-118)
+      x-requirement-ids: [EDGE-FR-002]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [bootstrap_token, gateway_fingerprint]
+              properties:
+                bootstrap_token: { type: string }
+                gateway_fingerprint: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureChallengeResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Bootstrap token invalid, unknown, or already used
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /edge/v1/gateways/{gateway_id}:
+    parameters:
+      - name: gateway_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getGateway
+      tags: [edge]
+      summary: Read gateway registry state (EDGE-FR-001/017)
+      x-requirement-ids: [EDGE-FR-001, EDGE-FR-017]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: Gateway not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /edge/v1/gateways/{gateway_id}/configuration:
+    parameters:
+      - name: gateway_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getGatewayConfiguration
+      tags: [edge]
+      summary: Fetch the active configuration snapshot (EDGE-FR-004/005/006)
+      x-requirement-ids: [EDGE-FR-004, EDGE-FR-005, EDGE-FR-006]
+      security: [{ bearerAuth: [] }, { serviceBearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: Gateway or active configuration snapshot not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /edge/v1/gateways/{gateway_id}/observations:batch:
+    parameters:
+      - name: gateway_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postObservationBatch
+      tags: [edge]
+      summary: Accept a batch of canonical observation envelopes (EDGE-FR-009..016)
+      x-requirement-ids:
+        [
+          EDGE-FR-009, EDGE-FR-010, EDGE-FR-011, EDGE-FR-012, EDGE-FR-013, EDGE-FR-014, EDGE-FR-015,
+          EDGE-FR-016,
+        ]
+      security: [{ serviceBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcceptObservationBatchCommand' }
+      responses:
+        '200':
+          description: OK — accepted/duplicate/rejected event IDs, never a whole-batch failure for a
+            per-envelope condition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObservationBatchResult' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Gateway not found, or the presented service credential does not belong to it
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Stale expected_version, or gateway not eligible to submit observations
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /edge/v1/gateways/{gateway_id}/health:
+    parameters:
+      - name: gateway_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postGatewayHealth
+      tags: [edge]
+      summary: Report a health snapshot (EDGE-FR-017/026)
+      x-requirement-ids: [EDGE-FR-017, EDGE-FR-026]
+      security: [{ serviceBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportHealthCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Gateway not found, or the presented service credential does not belong to it
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Stale expected_version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /edge/v1/gateways/{gateway_id}/security-events:
+    parameters:
+      - name: gateway_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postGatewaySecurityEvent
+      tags: [edge]
+      summary: Report a security-relevant runtime event (EDGE-FR-027); CRITICAL moves the gateway to
+        SECURITY_HOLD
+      x-requirement-ids: [EDGE-FR-027]
+      security: [{ serviceBearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportSecurityEventCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Gateway not found, or the presented service credential does not belong to it
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /edge/v1/gateways/{gateway_id}/signature-challenges:
+    parameters:
+      - name: gateway_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postGatewaySignatureChallenge
+      tags: [edge]
+      summary: Create the Released-meaning signature challenge required before certificate rotation
+        (Document 106 row 119)
+      x-requirement-ids: [EDGE-FR-020]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                action: { type: string, default: certificate_rotation }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureChallengeResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Gateway not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /edge/v1/gateways/{gateway_id}/certificate-rotation:
+    parameters:
+      - name: gateway_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postRotateGatewayCertificate
+      tags: [edge]
+      summary: Rotate a gateway's certificate (EDGE-FR-020; Document 106 row 119 — Released, QA
+        Releaser, independent of the enrolling actor, reason required)
+      x-requirement-ids: [EDGE-FR-020]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RotateGatewayCertificateCommand' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MutationReceipt' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Gateway not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Stale expected_version, signer not independent of the enrolling actor (SoD), or
+            new fingerprint equals the current one
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '428':
+          description: Missing or failed signature step-up
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    serviceBearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        SG-120 minimal edge-gateway service credential (`sid_<identity_id>.<secret>`), issued once at
+        enrollment. Never interchangeable with a human bearerAuth token, and structurally never eligible
+        to satisfy a Part 11 signature (Document 106 P7).
+
+  responses:
+    Unauthorized:
+      description: No or invalid bearer/service token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ValidationFailed:
+      description: Request failed schema or business validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [CTR-FR-006]
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          examples:
+            [
+              VALIDATION_FAILED, NOT_FOUND, STALE_VERSION, INVALID_TRANSITION, ROLE_MISSING,
+              SIGNATURE_POLICY_UNRESOLVED, MISSING_SIGNATURE, ENROLLMENT_TOKEN_INVALID,
+              DUPLICATE_GATEWAY, CERT_ROTATION_FAILED,
+            ]
+        message: { type: string }
+        details: { type: object }
+
+    MutationReceipt:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MUT-FR-019]
+      required: [command_id, aggregate_id, resulting_version, audit_event_id, correlation_id]
+      properties:
+        command_id: { type: string, format: uuid }
+        aggregate_id: { type: string, format: uuid }
+        resulting_version: { type: integer }
+        audit_event_id: { type: string, format: uuid }
+        signature_id: { type: [string, "null"], format: uuid }
+        correlation_id: { type: string, format: uuid }
+
+    SignatureChallengeResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    EnrollGatewayCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [EDGE-FR-001, EDGE-FR-002, EDGE-FR-003, MUT-FR-005, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, bootstrap_token, site_id, gateway_fingerprint, reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        bootstrap_token: { type: string }
+        site_id: { type: string, format: uuid }
+        gateway_fingerprint: { type: string }
+        csr: { type: [string, "null"] }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    GatewayEnrollmentResult:
+      allOf:
+        - $ref: '#/components/schemas/MutationReceipt'
+        - type: object
+          additionalProperties: false
+          required: [gateway_id, config_endpoint]
+          properties:
+            gateway_id: { type: string, format: uuid }
+            bearer_token:
+              type: [string, "null"]
+              description: SG-120 service credential — returned exactly once, never recoverable afterward
+            config_endpoint: { type: string }
+
+    ObservationEnvelopeIn:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [EDGE-FR-009, EDGE-FR-010, EDGE-FR-011, EDGE-FR-012]
+      required: [event_id, gateway_sequence, quality]
+      properties:
+        event_id: { type: string, format: uuid }
+        gateway_sequence: { type: integer }
+        connector_id: { type: [string, "null"] }
+        device_id: { type: [string, "null"] }
+        mapping_id: { type: [string, "null"] }
+        mapping_version: { type: [string, "null"] }
+        source: { type: [object, "null"] }
+        source_timestamp: { type: [string, "null"], format: date-time }
+        gateway_received_at: { type: [string, "null"], format: date-time }
+        clock_quality: { type: [object, "null"] }
+        quality:
+          type: string
+          enum: [GOOD, UNCERTAIN, BAD, STALE, COMM_ERROR, CLOCK_UNCERTAIN]
+        raw: { type: [object, "null"] }
+        normalized: { type: [object, "null"] }
+        correlation_id: { type: [string, "null"] }
+        batch_context: { type: [object, "null"] }
+
+    AcceptObservationBatchCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [EDGE-FR-009, EDGE-FR-010, EDGE-FR-011, EDGE-FR-012, EDGE-FR-013, EDGE-FR-014, EDGE-FR-015, EDGE-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, expected_version, observations]
+      properties:
+        idempotency_key: { type: string }
+        expected_version: { type: integer }
+        observations:
+          type: array
+          items: { $ref: '#/components/schemas/ObservationEnvelopeIn' }
+
+    ObservationBatchResult:
+      allOf:
+        - $ref: '#/components/schemas/MutationReceipt'
+        - type: object
+          additionalProperties: false
+          required: [accepted_event_ids, duplicate_event_ids, rejected]
+          properties:
+            accepted_event_ids:
+              type: array
+              items: { type: string, format: uuid }
+            duplicate_event_ids:
+              type: array
+              items: { type: string, format: uuid }
+            rejected:
+              type: array
+              items:
+                type: object
+                properties:
+                  event_id: { type: string }
+                  code: { type: string }
+
+    ReportHealthCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [EDGE-FR-017, EDGE-FR-026, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, expected_version]
+      properties:
+        idempotency_key: { type: string }
+        expected_version: { type: integer }
+        operational_state:
+          type: [string, "null"]
+          enum: [RUNNING, DEGRADED, OFFLINE_UPSTREAM, DISK_PRESSURE, UPDATE_PENDING, STOPPED, null]
+        metrics: { type: [object, "null"] }
+        clock_quality: { type: [object, "null"] }
+        cert_expiry_days: { type: [integer, "null"] }
+
+    ReportSecurityEventCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [EDGE-FR-027, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, expected_version, event_type, severity]
+      properties:
+        idempotency_key: { type: string }
+        expected_version: { type: integer }
+        event_type: { type: string }
+        severity: { type: string, enum: [INFO, WARNING, CRITICAL] }
+        evidence: { type: [object, "null"] }
+
+    RotateGatewayCertificateCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [EDGE-FR-020, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, expected_version, new_fingerprint, reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        expected_version: { type: integer }
+        new_fingerprint: { type: string }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

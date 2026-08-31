@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qms-011.json",
+  "title": "SPEC-QMS-011 \u2014 Field Action / Recall Management Events",
+  "description": "Document 113 event contract for the WP-05 Document 36 module (app/modules/qms/field_action_commands.py). 07_EVENT_CATALOGUE.yaml declares 9 SPEC-QMS-011 events; 8 are implemented -- 'FieldActionCorrectionCompleted' is declared but has no producing code path (reconcile_field_action() emits 'FieldActionUnitReturned' instead, and no separate correction-completion event exists). Recorded here, not fixed -- out of scope for contract authoring.\n\nREUSE NOTES: 'FieldActionAssessmentOpened' is emitted by both create_field_action() (id, action_number, action_type) and assess_field_action_reportability() (id, decision) -- despite the latter not being an 'opening'. define_scope() selects between 'FieldActionScopeExpanded' and 'FieldActionScopeFrozen' with the exact same payload shape ({id, item_count, scope_snapshot_id}) depending only on `is_expansion` (field_action_commands.py:198-211) -- a post-closure scope reopening (FAR-FR-019) versus the initial freeze. Both real, observed characteristics of the built code, not invented here.",
+  "x-requirement-ids": [
+    "FAR-FR-001",
+    "FAR-FR-002",
+    "FAR-FR-003",
+    "FAR-FR-006",
+    "FAR-FR-009",
+    "FAR-FR-010",
+    "FAR-FR-011",
+    "FAR-FR-013",
+    "FAR-FR-018",
+    "FAR-FR-019",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "FieldActionAssessmentOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted by create_field_action() (id, action_number, action_type) and assess_field_action_reportability() (id, decision) -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "action_number": {
+          "type": "string"
+        },
+        "action_type": {
+          "$ref": "../openapi/spec-qms-011.yaml#/components/schemas/FieldActionType"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "reportable",
+            "not_reportable"
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "FAR-FR-001",
+        "FAR-FR-002",
+        "FAR-FR-006"
+      ]
+    },
+    "FieldActionScopePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "item_count",
+        "scope_snapshot_id"
+      ],
+      "description": "Same shape for both FieldActionScopeExpanded and FieldActionScopeFrozen -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "item_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scope_snapshot_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "FAR-FR-003",
+        "FAR-FR-019"
+      ]
+    },
+    "FieldActionApprovedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "FAR-FR-009"
+      ]
+    },
+    "FieldActionNotificationSentPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "communication_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "communication_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "FAR-FR-009",
+        "FAR-FR-010"
+      ]
+    },
+    "FieldActionUnitReturnedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "outstanding_count"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "outstanding_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "x-requirement-ids": [
+        "FAR-FR-011"
+      ]
+    },
+    "FieldActionEffectivenessCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "FAR-FR-013"
+      ]
+    },
+    "FieldActionClosedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "FAR-FR-018"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "FieldActionAssessmentOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-011",
+      "aggregate_type": "field_action",
+      "payload": {
+        "$ref": "#/$defs/FieldActionAssessmentOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "FAR-FR-001",
+        "FAR-FR-002",
+        "FAR-FR-006"
+      ]
+    },
+    {
+      "event_type": "FieldActionScopeExpanded",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-011",
+      "aggregate_type": "field_action",
+      "payload": {
+        "$ref": "#/$defs/FieldActionScopePayload"
+      },
+      "x-requirement-ids": [
+        "FAR-FR-003",
+        "FAR-FR-019"
+      ]
+    },
+    {
+      "event_type": "FieldActionScopeFrozen",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-011",
+      "aggregate_type": "field_action",
+      "payload": {
+        "$ref": "#/$defs/FieldActionScopePayload"
+      },
+      "x-requirement-ids": [
+        "FAR-FR-003"
+      ]
+    },
+    {
+      "event_type": "FieldActionApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-011",
+      "aggregate_type": "field_action",
+      "payload": {
+        "$ref": "#/$defs/FieldActionApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "FAR-FR-009"
+      ]
+    },
+    {
+      "event_type": "FieldActionNotificationSent",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-011",
+      "aggregate_type": "field_action",
+      "payload": {
+        "$ref": "#/$defs/FieldActionNotificationSentPayload"
+      },
+      "x-requirement-ids": [
+        "FAR-FR-009",
+        "FAR-FR-010"
+      ]
+    },
+    {
+      "event_type": "FieldActionUnitReturned",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-011",
+      "aggregate_type": "field_action",
+      "payload": {
+        "$ref": "#/$defs/FieldActionUnitReturnedPayload"
+      },
+      "x-requirement-ids": [
+        "FAR-FR-011"
+      ]
+    },
+    {
+      "event_type": "FieldActionEffectivenessCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-011",
+      "aggregate_type": "field_action",
+      "payload": {
+        "$ref": "#/$defs/FieldActionEffectivenessCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "FAR-FR-013"
+      ]
+    },
+    {
+      "event_type": "FieldActionClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-011",
+      "aggregate_type": "field_action",
+      "payload": {
+        "$ref": "#/$defs/FieldActionClosedPayload"
+      },
+      "x-requirement-ids": [
+        "FAR-FR-018"
+      ]
+    }
+  ]
+}

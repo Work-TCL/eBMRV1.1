@@ -1,0 +1,172 @@
+openapi: 3.1.0
+info:
+  title: SPEC-DATA-001 — Enterprise Data Ownership, Persistence Topology & Data Lineage
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-11 Document 69 (`services/gxp-api/app/modules/dataops/*`).
+    3 owned entities per the approved data-model catalogue: `data_ownership_registry`,
+    `projection_checkpoint`, `migration_batch` — all PostgreSQL (GxP Core, authoritative), new
+    `dataops` schema.
+
+
+    Governance / registry module. Document 69 # 7 lists exactly four operations: three reads
+    (resolve an entity's authoritative owner/store; read a projected record's freshness; read the
+    generated data dictionary) and one state-changing operation (rebuild a non-authoritative
+    projection from its authoritative source). **No signature anywhere** — Document 106 has no
+    SPEC-DATA-001 row and Document 106 # 10 explicitly exempts "Projection rebuilds and cache
+    invalidation" and "Search, export and read operations". The lint / lineage / consistency helpers
+    (`resolveDataOwner`, `assertAuthoritativeWriteAllowed`, `verifyCrossStoreConsistency`,
+    `registerDataClass`, `recordMigrationProvenance`) are the `app/modules/dataops/*.py` library used
+    by CI, migration tooling and data governance, not additional endpoints.
+tags:
+  - name: dataops
+
+paths:
+  /platform/v1/data-ownership/{entity_type}:
+    get:
+      operationId: getDataOwnership
+      tags: [dataops]
+      summary: Resolve the single authoritative owner/store for an entity type (DATA-FR-001)
+      description: >
+        Fail-closed: an entity type with no EFFECTIVE registry row returns DATA_OWNER_UNKNOWN (404),
+        never a default/guessed owner (AG-15).
+      x-requirement-ids: [DATA-FR-001, DATA-FR-002, DATA-FR-016, DATA-FR-020, DATA-FR-021]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: entity_type, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: The authoritative-owner decision., content: { application/json: { schema: { $ref: '#/components/schemas/DataOwnerDecision' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { description: DATA_OWNER_UNKNOWN., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /platform/v1/projections/{projection_type}/{entity_id}/freshness:
+    get:
+      operationId: getProjectionFreshness
+      tags: [dataops]
+      summary: Is this projected record stale relative to the authoritative source? (DATA-FR-007/008)
+      x-requirement-ids: [DATA-FR-007, DATA-FR-008, DATA-FR-011, DATA-FR-012, DATA-FR-028]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: projection_type, in: path, required: true, schema: { type: string } }
+        - { name: entity_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Projection freshness., content: { application/json: { schema: { $ref: '#/components/schemas/ProjectionFreshness' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { description: No projection checkpoint for this projection type., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /platform/v1/projections/{projection_type}:rebuild:
+    post:
+      operationId: postRebuildProjection
+      tags: [dataops]
+      summary: Rebuild a non-authoritative projection from its authoritative source (DATA-FR-011/028)
+      description: >
+        State-changing (the `projection_checkpoint` is the aggregate). RBAC-gated, no signature
+        (Document 106 # 10). First call for a `projection_type` creates the checkpoint (omit
+        `expected_version`); later calls require the current checkpoint `version`.
+      x-requirement-ids: [DATA-FR-006, DATA-FR-011, DATA-FR-028, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: projection_type, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RebuildProjectionCommand' } } }
+      responses:
+        '200': { description: Rebuilt; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: "STALE_VERSION / INVALID_TRANSITION / IDEMPOTENCY_CONFLICT.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /platform/v1/data-dictionary:
+    get:
+      operationId: getDataDictionary
+      tags: [dataops]
+      summary: The generated machine-readable data-ownership / lineage dictionary (DATA-FR-027)
+      x-requirement-ids: [DATA-FR-001, DATA-FR-021, DATA-FR-022, DATA-FR-027, DATA-FR-029]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: The data dictionary., content: { application/json: { schema: { $ref: '#/components/schemas/DataDictionary' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    RebuildProjectionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, projection_type]
+      x-requirement-ids: [DATA-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      properties:
+        idempotency_key: { type: string }
+        projection_type: { type: string }
+        source_stream: { type: [string, 'null'], description: "Required only when first registering a projection." }
+        source_cutoff: { type: [integer, 'null'], minimum: 0, description: "Optional explicit target source version; clamped to the authoritative max." }
+        expected_version: { type: [integer, 'null'], description: "Current checkpoint version; omit on first create." }
+        reason: { type: [string, 'null'] }
+
+    DataOwnerDecision:
+      type: object
+      additionalProperties: false
+      required: [entity_type, authoritative_service, authoritative_store, projection_targets, state, version]
+      x-requirement-ids: [DATA-FR-001, DATA-FR-002]
+      properties:
+        entity_type: { type: string }
+        authoritative_service: { type: string }
+        authoritative_store: { type: string, enum: [POSTGRES, MARIADB, OBJECT, HISTORIAN, EXTERNAL] }
+        projection_targets: { type: array, items: { type: string } }
+        tenant_scoped: { type: boolean }
+        site_scoped: { type: boolean }
+        classification: { type: string, enum: [GXP, PII, SECURITY, CONFIG, OPERATIONAL, PUBLIC] }
+        retention_policy_id: { type: [string, 'null'], format: uuid }
+        encryption_profile_id: { type: [string, 'null'], format: uuid }
+        source_reference: { type: [string, 'null'] }
+        state: { type: string, enum: [EFFECTIVE, SUPERSEDED] }
+        version: { type: integer }
+
+    ProjectionFreshness:
+      type: object
+      additionalProperties: false
+      required: [projection_type, entity_id, projected_source_version, authoritative_version, stale, degraded, checkpoint_state]
+      x-requirement-ids: [DATA-FR-007, DATA-FR-008]
+      properties:
+        projection_type: { type: string }
+        entity_id: { type: string, format: uuid }
+        projected_source_version: { type: integer }
+        projected_at: { type: [string, 'null'], format: date-time }
+        authoritative_version: { type: [integer, 'null'] }
+        authoritative_event_at: { type: [string, 'null'], format: date-time }
+        checkpoint_state: { type: string, enum: [IDLE, REBUILDING, LIVE, STALE, ERROR] }
+        stale: { type: boolean }
+        degraded: { type: boolean }
+
+    DataDictionary:
+      type: object
+      additionalProperties: false
+      required: [generated_from, entity_count, by_authoritative_store, entries]
+      x-requirement-ids: [DATA-FR-027, DATA-FR-029]
+      properties:
+        generated_from: { type: string }
+        entity_count: { type: integer }
+        by_authoritative_store: { type: object, additionalProperties: { type: integer } }
+        entries:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              entity_type: { type: string }
+              authoritative_service: { type: string }
+              authoritative_store: { type: string }
+              projection_targets: { type: array, items: { type: string } }
+              tenant_scoped: { type: boolean }
+              site_scoped: { type: boolean }
+              classification: { type: string }
+              retention_policy_id: { type: [string, 'null'] }
+              encryption_profile_id: { type: [string, 'null'] }
+              source_reference: { type: [string, 'null'] }
+              version: { type: integer }

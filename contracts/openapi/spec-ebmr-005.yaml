@@ -1,0 +1,368 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EBMR-005 — Review-by-Exception & QA Review
+  version: 0.1.0
+  description: >
+    Document 113 contract for the Document 14 slice actually built
+    (`services/gxp-api/app/modules/qa_review/`): creating a package-level review record against a batch
+    with an inline completeness computation (RBE-FR-001/003/005), reindexing it as the underlying batch
+    changes (RBE-FR-024/028, including automatic reopen-on-change), a computed non-persisted exceptions
+    view, package completion gated on computed completeness plus a Document 106 signature ceremony
+    (RBE-FR-020/022/023), and a site-scoped dashboard.
+
+
+    ONLY 1 OF 3 OWNED ENTITIES IS BUILT: `qa_review_item` and `qa_review_comment` are prose-only
+    field-name lists with no types (SG-053) — consequently there is no itemised exception index, no
+    per-exception severity/disposition/assignment, no reviewer-comment thread, and no "return for
+    controlled action" endpoint. Everything this pass builds operates at the whole-package level only.
+
+
+    COMPLETENESS IS A REAL BUT PARTIAL SIGNAL (RBE-FR-005/029): `compute_completeness`
+    (`app/modules/qa_review/service.py`) checks exactly two things — whether the batch is `on_hold`, and
+    whether its Vault execution-snapshot digest/link integrity check passes — plus whether any
+    `AuditEvent` with `action == "Corrected"` exists against the batch aggregate (RBE-FR-006/008, the
+    "changed-value"/"audit-trail review" slice). Everything else a full completeness engine would check
+    — QC results, materials, equipment, environment, genealogy completeness, packaging, yield, signatures
+    (RBE-FR-010 through RBE-FR-016) — is not evaluated, because those modules/entities don't exist yet or
+    aren't joined in this pass (SG-054). A package can only ever be completed from `completeness_status
+    == "complete"` — there is no itemised disposition/override/acceptance path to complete a package with
+    outstanding exceptions, because that depends on `qa_review_item` (SG-053).
+
+
+    STATE MODEL IS A NARROW SLICE (Document 14 §5): the real model is `CREATED → INDEXING →
+    READY_FOR_REVIEW → IN_REVIEW → ACTION_REQUIRED → IN_REVIEW → REVIEW_COMPLETE`, with
+    `REVIEW_COMPLETE → INVALIDATED/REOPENED` on source change. This pass folds `CREATED`/`INDEXING` into
+    one atomic create-and-index step and never reaches `IN_REVIEW`/`ACTION_REQUIRED` — those states are
+    entered/left through work on individual `qa_review_item` rows, which don't exist, and Document 14's
+    own 9-API list has no "start review" operation either. `QA_REVIEW_STATES` in
+    `app/modules/qa_review/models.py` is the honestly-reachable subset: `READY_FOR_REVIEW`,
+    `REVIEW_COMPLETE`, `REOPENED`.
+
+
+    ONE PACKAGE PER BATCH: `qa_review_package` carries a `UniqueConstraint("batch_id")` — creating a
+    second package against a batch that already has one is `VALIDATION_FAILED`, not a new revision.
+tags:
+  - name: qa_review
+
+paths:
+  /qa-review/v1/batches/{batch_id}/packages:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postCreateReviewPackage
+      tags: [qa_review]
+      summary: Create a QA review package against a batch, with an inline completeness computation (RBE-FR-001/003/005)
+      description: >
+        Requires the `qa_review.create` policy action. `VALIDATION_FAILED` if a package already exists
+        for this `batch_id` (one package per batch). Snapshots `batch_version` and a `record_hash` of the
+        batch's current `{id, version, state, execution_snapshot_id}` at creation time, and computes
+        `completeness_status` immediately — there is no separate `CREATED`/`INDEXING` phase to wait
+        through.
+      x-requirement-ids: [RBE-FR-001, RBE-FR-003, RBE-FR-005, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateReviewPackageCommand' }
+      responses:
+        '200':
+          description: Created, state `READY_FOR_REVIEW`. `aggregate_id` is the `package_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `batch_id` does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — `batch_id` in path and body do not match, or a package already exists for this batch.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /qa-review/v1/packages/{package_id}:
+    parameters:
+      - name: package_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getReviewPackageDetail
+      tags: [qa_review]
+      summary: One review package, plus a live staleness flag (RBE-FR-001/024)
+      description: >
+        Requires `qa_review.view`. `stale` is computed on every call by comparing the package's stored
+        `batch_version` against the batch's actual current `version` (AG-11 — never cached) — `true`
+        means the batch has changed since this package's last index and `postReindexReviewPackage` should
+        be called before relying on `completeness_status`.
+      x-requirement-ids: [RBE-FR-001, RBE-FR-024]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/QaReviewPackageDetail' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /qa-review/v1/packages/{package_id}/exceptions:
+    parameters:
+      - name: package_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getReviewPackageExceptions
+      tags: [qa_review]
+      summary: Computed, non-persisted exceptions view (RBE-FR-003/006/008)
+      description: >
+        Requires `qa_review.view`. Despite the name, this is not backed by `qa_review_item` rows (which
+        don't exist, SG-053) — it recomputes, on every call, the same corrections list and integrity
+        check `postCreateReviewPackage`/`postReindexReviewPackage` use internally
+        (`app/modules/qa_review/service.py:get_exceptions_view`), live against the package's current
+        batch. `corrections` filters `AuditEvent.action == "Corrected"` against the batch aggregate only
+        — batch_execution has no correction command yet (SG-047/048), so `corrections` is genuinely empty
+        today; step-level audit events are not joined in either (SG-054).
+      x-requirement-ids: [RBE-FR-003, RBE-FR-006, RBE-FR-008, RBE-FR-029]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/ExceptionsView' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /qa-review/v1/packages/{package_id}/reindex:
+    parameters:
+      - name: package_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postReindexReviewPackage
+      tags: [qa_review]
+      summary: Recompute completeness against the batch's current version (RBE-FR-024/028)
+      description: >
+        Requires `qa_review.execute`. Recomputes `completeness_status` from the batch's current state.
+        State handling: if the package was `REVIEW_COMPLETE` and the batch has changed since
+        (`batch_version` mismatch), it automatically reopens to `REOPENED` (RBE-FR-024 — new evidence or
+        a correction after completion reopens the review); a `REOPENED` package advancing here moves to
+        `READY_FOR_REVIEW`; any other state's `state` is left unchanged by this call — only
+        `completeness_status`/`exception_index_version`/`batch_version`/`record_hash` update.
+      x-requirement-ids: [RBE-FR-024, RBE-FR-028, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReindexReviewPackageCommand' }
+      responses:
+        '200':
+          description: Reindexed.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: IDEMPOTENCY_CONFLICT or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `package_id` in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /qa-review/v1/packages/{package_id}/complete:
+    parameters:
+      - name: package_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postCompleteReviewPackage
+      tags: [qa_review]
+      summary: Sign and complete a review package (RBE-FR-020/022/023)
+      description: >
+        Requires `qa_review.execute` — Document 107 SoD notes this is the same policy action as
+        `postReindexReviewPackage` (RBE-FR-022's independent-reviewer separation is enforced by whatever
+        Document 106 signer-class policy resolves at signature time, not by a second distinct execute
+        action here). Only a state with `REVIEW_COMPLETE` in its `ALLOWED_TRANSITIONS` set
+        (`READY_FOR_REVIEW`) may complete. `VALIDATION_FAILED` unless `completeness_status == "complete"`
+        exactly — there is no itemised override path to complete a package with outstanding exceptions
+        (SG-053).
+      x-requirement-ids: [RBE-FR-020, RBE-FR-022, RBE-FR-023, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteReviewPackageCommand' }
+      responses:
+        '200':
+          description: Completed.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, SIGNATURE_CHALLENGE_INVALID, or INVALID_TRANSITION — the package is not `READY_FOR_REVIEW`, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `package_id` in path and body do not match, or `completeness_status` is not `complete`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qa-review/v1/dashboard:
+    get:
+      operationId: getReviewDashboard
+      tags: [qa_review]
+      summary: Site-scoped package list, optionally filtered by state (RBE-FR-026, partial)
+      description: >
+        Requires `qa_review.view`. `site_id` is required; `state` optionally narrows to one
+        `QaReviewPackageState` value. Exception-class and review-age filtering/trending
+        (RBE-FR-026's fuller search/trending scope) is not built — it would need `qa_review_item`
+        (SG-053). Returns a plain array wrapped in an object, not paginated (CTR-FR-012 deviation, the
+        same pattern as this codebase's other bounded list endpoints).
+      x-requirement-ids: [RBE-FR-026]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: site_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: state
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/QaReviewPackageState' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/ReviewDashboardResult' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    QaReviewPackageState:
+      type: string
+      description: >
+        `QA_REVIEW_STATES` in `app/modules/qa_review/models.py` — the honestly-reachable subset of
+        Document 14 §5's full model (see the file description for what's folded/skipped and why).
+        `ALLOWED_TRANSITIONS` is the only transition table any endpoint uses:
+        READY_FOR_REVIEW→REVIEW_COMPLETE; REVIEW_COMPLETE→REOPENED; REOPENED→READY_FOR_REVIEW.
+      x-requirement-ids: [RBE-FR-001, CTR-FR-017]
+      enum: [READY_FOR_REVIEW, REVIEW_COMPLETE, REOPENED]
+
+    CompletenessStatus:
+      type: string
+      description: "`COMPLETENESS_STATUSES` in `app/modules/qa_review/models.py` (RBE-FR-005/028). \"complete\" only when neither a blocker (hold, integrity failure) nor a correction-type exception was found; \"blocked\" whenever a genuine release blocker exists; \"has_exceptions\" when only non-blocking corrections exist."
+      x-requirement-ids: [RBE-FR-005, RBE-FR-028]
+      enum: [complete, has_exceptions, blocked]
+
+    QaReviewPackage:
+      type: object
+      description: One QA review package (`app/modules/qa_review/router.py:_package_dict`). A response schema, so not closed.
+      x-requirement-ids: [RBE-FR-001, RBE-FR-003, RBE-FR-005]
+      required: [package_id, site_id, batch_id, batch_version, record_hash, exception_index_version, completeness_status, state, version]
+      properties:
+        package_id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        batch_id: { type: string, format: uuid, description: Unique — one package per batch. }
+        batch_version: { type: integer, minimum: 1, description: The batch's aggregate version as of this package's last index. }
+        record_hash: { type: string, description: "sha256 of the batch snapshot (id, version, state, execution_snapshot_id) at last index." }
+        exception_index_version: { type: integer, minimum: 1, description: Increments on every reindex. }
+        completeness_status: { $ref: '#/components/schemas/CompletenessStatus' }
+        state: { $ref: '#/components/schemas/QaReviewPackageState' }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        completed_at: { type: [string, "null"], format: date-time }
+
+    QaReviewPackageDetail:
+      type: object
+      description: getReviewPackageDetail's response — QaReviewPackage plus a live staleness flag.
+      x-requirement-ids: [RBE-FR-001, RBE-FR-024]
+      allOf:
+        - $ref: '#/components/schemas/QaReviewPackage'
+        - type: object
+          required: [stale]
+          properties:
+            stale: { type: boolean, description: "True when the batch's current version no longer equals this package's stored batch_version — computed live on every call, never cached." }
+
+    AuditCorrection:
+      type: object
+      description: One `AuditEvent` with `action == \"Corrected\"` against the package's batch aggregate (RBE-FR-006/008).
+      x-requirement-ids: [RBE-FR-006, RBE-FR-008]
+      required: [audit_event_id, occurred_at, actor_id]
+      properties:
+        audit_event_id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        actor_id: { type: string, format: uuid }
+        reason: { type: [string, "null"] }
+        old_value: { type: [object, "null"] }
+        new_value: { type: [object, "null"] }
+
+    VaultIntegrityCheck:
+      type: object
+      description: The batch's Vault execution-snapshot integrity result, when one exists ($ref'd inline rather than from another contract file, since no other committed contract currently defines this shape).
+      x-requirement-ids: [RBE-FR-029]
+      properties:
+        digest_valid: { type: boolean }
+        link_valid: { type: boolean }
+
+    ExceptionsView:
+      type: object
+      description: getReviewPackageExceptions's response (`app/modules/qa_review/service.py:get_exceptions_view`). Computed live on every call, not backed by persisted qa_review_item rows.
+      x-requirement-ids: [RBE-FR-003, RBE-FR-006, RBE-FR-008, RBE-FR-029]
+      required: [package_id, batch_id, corrections, batch_on_hold]
+      properties:
+        package_id: { type: string, format: uuid }
+        batch_id: { type: string, format: uuid }
+        corrections: { type: array, items: { $ref: '#/components/schemas/AuditCorrection' } }
+        integrity_check: { oneOf: [{ $ref: '#/components/schemas/VaultIntegrityCheck' }, { type: "null" }], description: Null when the batch has no execution_snapshot_id yet (not yet issued). }
+        batch_on_hold: { type: boolean }
+
+    ReviewDashboardResult:
+      type: object
+      description: getReviewDashboard's response.
+      x-requirement-ids: [RBE-FR-026]
+      required: [packages]
+      properties:
+        packages: { type: array, items: { $ref: '#/components/schemas/QaReviewPackage' } }
+
+    CreateReviewPackageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RBE-FR-001, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+
+    ReindexReviewPackageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RBE-FR-024, RBE-FR-028, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, package_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        package_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+
+    CompleteReviewPackageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [RBE-FR-020, RBE-FR-022, RBE-FR-023, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, package_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        package_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

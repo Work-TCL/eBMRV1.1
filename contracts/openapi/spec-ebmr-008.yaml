@@ -1,0 +1,800 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EBMR-008 — Yield, Calculations & Manufacturing Reconciliation
+  version: 0.1.0
+  description: >
+    Document 113 contract for the Document 17 slice actually built
+    (`services/gxp-api/app/modules/yield_reconciliation/`): yield/potency calculation delegated to
+    Document 08's released-rule engine rather than an embedded formula (Document 17 §3, YLD-FR-001/003/
+    007/015), four mass-balance reconciliation types (material, packaging, label, component —
+    YLD-FR-009..014), independent-verifier signature (the one genuinely signed action in this document,
+    Document 106 row 40 / SIG-FR-018), and a batch-level release-blocker summary with serial-level
+    aggregation (YLD-FR-026/028/029).
+
+
+    NO EMBEDDED FORMULA, BY DESIGN: `evaluate_yield`/`evaluate_potency` never compute arithmetic
+    themselves — they resolve a *released* Document 08 rule and delegate to
+    `app/modules/rules/expression.py::evaluate()`. Yield resolves the fixed seeded rule `yield_percent`
+    (Document 17 §3's literal formula, platform-floor data — YLD-FR-001/003/007); potency has **no**
+    default formula anywhere in the approved baseline and always requires a customer-authored, released
+    rule at the caller-supplied `rule_id` — `postEvaluatePotency` fails closed (`NOT_FOUND`) if none
+    exists, never falling back to a hardcoded pharmaceutical formula.
+
+
+    ROUTES DON'T FOLLOW ONE PREFIX: unlike every other WP-02/WP-03 module, this router declares no
+    `prefix=` on its `APIRouter` — each operation's full path is written out individually
+    (`/manufacturing-calculations/v1/...` for calculations, `/reconciliation/v1/...` for everything else),
+    matching Document 17's own two-namespace API list rather than one module-wide prefix.
+
+
+    RECONCILIATION IS A SHARED ENGINE, NOT FOUR SEPARATE IMPLEMENTATIONS: material and packaging
+    reconciliation share one command shape (`EvaluateReconciliationCommand`) and call the same internal
+    mass-balance evaluator; label reconciliation takes no quantities at all — it reads Document 16's own
+    counts through `packaging.service.get_label_reconciliation_source` (AG-05: packaging owns
+    `label_issue`/`label_reconciliation`, so this module is never a second source of label
+    accountability) and recomputes the mass balance under *its own* tolerance rule, recording Document
+    16's exact-balance result alongside for audit; component reconciliation adds `assembled`/`scrapped`
+    quantity categories (YLD-FR-013's own literal vocabulary) and optionally scopes to a Document 12
+    device unit, which must belong to the same batch or the write fails closed.
+
+
+    APPROVED LOSS REQUIRES A DOCUMENTED REASON (YLD-FR-021): any reconciliation whose `approved_loss`
+    quantity is non-zero requires at least one `loss_reasons` entry with a non-empty `category` and
+    `description`; when every entry carries a `quantity`, they must sum to exactly `approved_loss`. The
+    loss-reason *category vocabulary* is deliberately not a closed enum — no controlled-catalogue entity
+    exists anywhere in the baseline to validate against, and inventing one would decide a customer's
+    quality vocabulary for them (SG-135). `linked_deviation_id` only *links* to a QMS deviation that
+    already exists — this module never creates one (AG-05: QMS owns the deviation lifecycle).
+
+
+    EXTERNAL (ERP/WMS) COMPARISON NEVER FEEDS BACK (YLD-FR-027): when `external_reference` is supplied,
+    the comparison runs strictly after the GxP mass-balance calculation and is recorded as evidence
+    (`external_comparison`) alongside the record — it never overwrites `variance` or `state`. A mismatch
+    with an `erp_run_id` is flagged into Document 53's difference ledger through the ERP module's own
+    command; without one, the comparison still runs and is recorded, just with no ERP run to attach a
+    difference to.
+
+
+    getBatchSummary HAS NO POLICY CHECK: unlike every other read endpoint in this contract (and every
+    read endpoint in every other WP-02/WP-03 contract this session has written), `GET .../batches/{batch_id}/summary`
+    (`app/modules/yield_reconciliation/router.py:get_batch_summary`) calls no `evaluate_policy` — anyone
+    holding a valid bearer token can read it. Documented as the router actually behaves, not silently
+    "corrected" to match the pattern of every other endpoint; a real inconsistency worth a SPEC_GAP if a
+    reviewer wants a tracked disposition (not raised automatically by this contract-writing pass, since
+    read-only exposure with no signature/authorization-boundary change is not itself a regulated-decision
+    guess).
+tags:
+  - name: yield-reconciliation
+
+paths:
+  /manufacturing-calculations/v1/yield/evaluate:
+    post:
+      operationId: postEvaluateYield
+      tags: [yield-reconciliation]
+      summary: Evaluate a yield calculation via the released `yield_percent` rule (YLD-FR-001/003/006/007/008)
+      description: >
+        Requires the `yield_calculation.evaluate` policy action. `manual_reason` is required whenever
+        `manual_source` is supplied (YLD-FR-008). The rule's own Document 110 precision policy (CC-4:
+        6dp intermediate, 2dp reported, half-up, rounded at presentation) governs `result.yield_percent`;
+        this endpoint never re-derives or re-rounds it. `state` becomes `OUT_OF_LIMIT` (not a failure —
+        still `200`) when `min_percent`/`max_percent` are supplied and the reported percentage falls
+        outside them; `FAILED` only when the underlying rule evaluation itself errors (e.g. division by
+        zero on a zero theoretical quantity).
+      x-requirement-ids: [YLD-FR-001, YLD-FR-003, YLD-FR-006, YLD-FR-007, YLD-FR-008, YLD-FR-023, MUT-FR-005, MUT-FR-010, MUT-FR-014, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateYieldCommand' }
+      responses:
+        '200':
+          description: "Evaluated — state may be CALCULATED, OUT_OF_LIMIT or FAILED, all at 200. `aggregate_id` is the manufacturing_calculation id."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `batch_id` does not exist, or the seeded `yield_percent` rule has no effective released version.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — an unrecognized `scope_type`, or `manual_source` supplied without `manual_reason`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /manufacturing-calculations/v1/potency/evaluate:
+    post:
+      operationId: postEvaluatePotency
+      tags: [yield-reconciliation]
+      summary: Evaluate a potency calculation via a customer-authored released rule (YLD-FR-015)
+      description: >
+        Requires `yield_calculation.evaluate`. `rule_id` is mandatory and must resolve to an effective
+        *released* rule — `NOT_FOUND` otherwise. There is no default potency formula anywhere in this
+        baseline (unlike yield, whose formula Document 17 §3 states literally); this endpoint never falls
+        back to a hardcoded formula.
+      x-requirement-ids: [YLD-FR-015, MUT-FR-005, MUT-FR-010, MUT-FR-014, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluatePotencyCommand' }
+      responses:
+        '200':
+          description: Evaluated — state CALCULATED or FAILED.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `batch_id` does not exist, or `rule_id` has no effective released version.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — an unrecognized `scope_type`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /reconciliation/v1/material/evaluate:
+    post:
+      operationId: postEvaluateMaterialReconciliation
+      tags: [yield-reconciliation]
+      summary: Material mass-balance reconciliation (YLD-FR-009/010)
+      description: >
+        Requires the `reconciliation.evaluate` policy action. `quantities` supplies the mass-balance
+        categories (`consumed`/`returned`/`samples`/`rejected`/`destroyed`/`approved_loss`, all optional
+        and defaulting to `0`) against a required `issued` figure; `accounted = sum(categories)`,
+        `variance = issued - accounted`. `tolerance_rule.type` is `"percentage"` (variance measured as
+        `abs(variance)/issued*100`) or `"absolute"` (measured as `abs(variance)`); `inclusive` controls
+        whether the tolerance boundary itself passes. `state` is `ACCEPTABLE` within tolerance,
+        `OUT_OF_TOLERANCE` otherwise — both succeed at `200`.
+      x-requirement-ids: [YLD-FR-009, YLD-FR-010, YLD-FR-018, YLD-FR-019, YLD-FR-020, YLD-FR-021, YLD-FR-027, MUT-FR-005, MUT-FR-010, MUT-FR-014, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateReconciliationCommand' }
+      responses:
+        '200':
+          description: Evaluated — state ACCEPTABLE or OUT_OF_TOLERANCE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `batch_id` does not exist, or `linked_deviation_id` does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — a missing/invalid quantity, a non-zero approved_loss without valid loss_reasons, or a linked_deviation_id from a different site.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /reconciliation/v1/packaging/evaluate:
+    post:
+      operationId: postEvaluatePackagingReconciliation
+      tags: [yield-reconciliation]
+      summary: Packaging material balance reconciliation (YLD-FR-011)
+      description: Requires `reconciliation.evaluate`. Identical mechanics and command shape to `postEvaluateMaterialReconciliation` — only `reconciliation_type` differs internally.
+      x-requirement-ids: [YLD-FR-011, YLD-FR-018, YLD-FR-019, YLD-FR-020, YLD-FR-021, YLD-FR-027, MUT-FR-005, MUT-FR-010, MUT-FR-014, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateReconciliationCommand' }
+      responses:
+        '200':
+          description: Evaluated — state ACCEPTABLE or OUT_OF_TOLERANCE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `batch_id` does not exist, or `linked_deviation_id` does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — a missing/invalid quantity, a non-zero approved_loss without valid loss_reasons, or a linked_deviation_id from a different site.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /reconciliation/v1/labels/evaluate:
+    post:
+      operationId: postEvaluateLabelReconciliation
+      tags: [yield-reconciliation]
+      summary: Label reconciliation, sourced from Document 16's own counts (YLD-FR-012)
+      description: >
+        Requires `reconciliation.evaluate`. Takes a `packaging_run_id`, not quantities — the counts
+        (`issued`/`applied`/`returned`/`samples`/`rejected`/`destroyed`) are read through
+        `packaging.service.get_label_reconciliation_source` (AG-05); `batch_id`/`site_id` are derived
+        from the packaging run, not supplied. `404` if the run has no label reconciliation yet (Document
+        16's `postReconcileLabels` must run first). This module recomputes the mass balance under *this
+        request's* `tolerance_rule` — it never trusts or overwrites Document 16's own exact-balance
+        result, which is recorded alongside in `item_ref.packaging_module_result`/
+        `packaging_module_variance` for audit. Category mapping: Document 16's `applied` becomes this
+        module's `consumed`.
+      x-requirement-ids: [YLD-FR-012, YLD-FR-018, YLD-FR-019, YLD-FR-020, YLD-FR-021, YLD-FR-027, MUT-FR-005, MUT-FR-010, MUT-FR-014, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateLabelReconciliationCommand' }
+      responses:
+        '200':
+          description: Evaluated — state ACCEPTABLE or OUT_OF_TOLERANCE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `packaging_run_id` does not exist, has no label reconciliation yet, or `linked_deviation_id` does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — a non-zero approved_loss without valid loss_reasons, or a linked_deviation_id from a different site.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /reconciliation/v1/components/evaluate:
+    post:
+      operationId: postEvaluateComponentReconciliation
+      tags: [yield-reconciliation]
+      summary: Device component reconciliation, optionally scoped to a serialized unit (YLD-FR-013/026)
+      description: >
+        Requires `reconciliation.evaluate`. `quantities` uses `COMPONENT_QUANTITY_CATEGORIES`
+        (`consumed`/`returned`/`samples`/`rejected`/`destroyed`/`approved_loss`/`assembled`/`scrapped` —
+        the two extra names come from YLD-FR-013's own literal text, not invented here). When
+        `device_unit_id` is supplied, it is resolved through Document 12's own query interface and must
+        belong to `batch_id` — a component reconciliation attributed to a unit from another batch fails
+        closed (`VALIDATION_FAILED`) rather than being written and reported later; the unit's serial
+        number is copied into `item_ref.serial_number` as a denormalised audit label only, never the
+        authoritative link. `device_unit_id` staying null covers YLD-FR-013's "critical component"
+        half — batch-level, no per-unit serial.
+      x-requirement-ids: [YLD-FR-013, YLD-FR-018, YLD-FR-019, YLD-FR-020, YLD-FR-021, YLD-FR-026, YLD-FR-027, MUT-FR-005, MUT-FR-010, MUT-FR-014, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateComponentReconciliationCommand' }
+      responses:
+        '200':
+          description: Evaluated — state ACCEPTABLE or OUT_OF_TOLERANCE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `batch_id` does not exist, `device_unit_id` does not exist, or `linked_deviation_id` does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — `reconciliation_type` is not COMPONENT, the device unit belongs to a different batch, a missing/invalid quantity, a non-zero approved_loss without valid loss_reasons, or a linked_deviation_id from a different site.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /reconciliation/v1/{record_id}/signature-challenges:
+    parameters:
+      - name: record_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postYieldReconciliationSignatureChallenge
+      tags: [yield-reconciliation]
+      summary: Create the step-up signature challenge for verify (Document 106 row 40, SIG-FR-005/018)
+      description: >
+        No explicit policy-action check of its own — anyone holding a valid bearer token may request a
+        challenge; the actual signature authority/independence check happens at
+        `postVerifyRecord`/consume-challenge time, not here (SIG-FR-005's challenge creation is
+        deliberately separate from SIG-FR-006's fresh-authentication proof). `record_kind` selects which
+        table `record_id` is looked up in. `meaning` is always `"Verified"` — this endpoint has no other
+        signature meaning to offer.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifySignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — no record of the given `record_kind` exists at `record_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `record_kind` is neither CALCULATION nor RECONCILIATION.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /reconciliation/v1/{record_id}/verify:
+    parameters:
+      - name: record_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postVerifyRecord
+      tags: [yield-reconciliation]
+      summary: Sign and verify a calculation or reconciliation record — the one genuinely signed action in this document (SIG-FR-018)
+      description: >
+        Requires the `reconciliation.verify` policy action. One operation verifies either entity kind
+        (`record_kind`), matching Document 17's own API list, which declares exactly one
+        `/reconciliation/v1/{id}/verify` rather than one per entity type. Only `CALCULATED`,
+        `OUT_OF_LIMIT` or `OUT_OF_TOLERANCE` may be verified (a post-disposition record can still be
+        verified — an out-of-limit/tolerance result is not itself blocked from independent review).
+        `MISSING_SIGNATURE` (fail-closed, not a generic 403) if the verifying actor is the same user who
+        performed the original calculation/reconciliation — SIG-FR-018's independence requirement is
+        enforced here, before the signature ceremony even begins.
+      x-requirement-ids: [YLD-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, SIG-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyRecordCommand' }
+      responses:
+        '200':
+          description: Verified.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — no record of the given `record_kind` exists at `record_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: SIGNATURE_POLICY_UNRESOLVED, IDEMPOTENCY_CONFLICT, or SIGNATURE_CHALLENGE_INVALID, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `record_kind` is neither CALCULATION nor RECONCILIATION, or the record's state is not verifiable.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: "MISSING_SIGNATURE — no signature proof supplied, fresh step-up authentication failed, or the verifying actor is the same user who performed the original evaluation (SIG-FR-018)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  # ---------------------------------------------------------------------------------------------------
+  # NOT Document 17: app/modules/material/router.py mounts its own `reconciliation_v1_router` under the
+  # same literal "/reconciliation/v1" path prefix as this module's own router — a genuine routing-surface
+  # collision (`tooling/contracts/validate.py`'s `surface_of()` groups by first two literal path segments,
+  # so both modules' operations land in one contract-coverage bucket regardless of which module owns
+  # them). The two operations below are SPEC-MAT-002D (Document 22, CON-FR-019..026, WP-04) material
+  # dispensing/consumption mass-balance reconciliation — a *different* concept from this document's own
+  # MATERIAL-type reconciliation above (`postEvaluateMaterialReconciliation`, path
+  # `/reconciliation/v1/material/evaluate`, singular). They are contracted here only so
+  # `tooling/contracts/validate.py`'s coverage check does not flag them as an uncontracted operation in a
+  # surface this file already commits to — ownership stays with the material module (SPEC-MAT-002D), and
+  # a future material-module contract may re-declare them under its own file without conflict (OpenAPI
+  # operations are not namespace-exclusive to one file). `batch_id` in these two operations resolves
+  # against `ebmr.batches` (the legacy `app/modules/batch` table) — NOT `ebmr.gxp_batch`
+  # (`batch_execution`'s table) that every other `batch_id` in this file refers to; do not treat the two
+  # as interchangeable IDs.
+  # ---------------------------------------------------------------------------------------------------
+
+  /reconciliation/v1/batches/{batch_id}/materials/evaluate:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid, description: Resolves against ebmr.batches (the legacy batch module) — not ebmr.gxp_batch. }
+    post:
+      operationId: postEvaluateMaterialDispensingReconciliation
+      tags: [yield-reconciliation]
+      summary: "NOT Document 17 — SPEC-MAT-002D material dispensing/consumption mass-balance reconciliation (CON-FR-019/020/021/022/023/024)"
+      description: >
+        Requires the `material_reconciliation.evaluate` policy action, evaluated against the batch's own
+        `site_id`. Scoped to `batch_id` (+ optional `material_id`) rather than the spec's prose "material
+        requirement" — no `material_requirement` entity exists anywhere in this codebase (the same
+        scope-narrowing Document 21 already used). Sums `DispensedContainer.actual_quantity` (dispensed),
+        `MaterialConsumption.quantity` (consumed), `MaterialReturn.quantity` (returned), and
+        `InventoryTransaction`/`DestructionRecord` rows by category (sampled, rejected, destroyed;
+        SPILL and APPROVED_LOSS both roll into `approved_loss_total` — CON-FR-020's 7 named categories
+        have no separate "spill" bucket). `unexplained_variance = dispensed_total - accounted`,
+        6dp-intermediate/2dp-reported half-up (CC-4). `outcome` is `ACCEPTABLE` when
+        `abs(unexplained_variance) <= tolerance_value`, else `VARIANCE`. `tolerance_value` is a
+        caller-supplied placeholder (CON-FR-021, not a released Document 08/17 tolerance rule — SG-098).
+        On a `VARIANCE` outcome, supplying both `variance_severity` and `deviation_owner_user_id` opens a
+        QMS deviation through QMS's own `create_deviation` command (AG-06 — the first cross-module
+        owning-command call in this codebase) and links it; omitting either leaves the variance
+        unlinked. Each call inserts a new `MaterialReconciliation` row rather than updating one —
+        `version` is a per-`(batch_id, material_id)` sequence number, not an in-place aggregate version
+        (CON-FR-023 correction pattern), so there is no `expected_version`/stale-version conflict on
+        this operation.
+      x-requirement-ids: [CON-FR-019, CON-FR-020, CON-FR-021, CON-FR-022, CON-FR-023, CON-FR-024, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateMaterialDispensingReconciliationCommand' }
+      responses:
+        '200':
+          description: Evaluated — outcome ACCEPTABLE or VARIANCE, both at 200.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — batch_id does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — tolerance_value is negative.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /reconciliation/v1/batches/{batch_id}/materials:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid, description: Resolves against ebmr.batches (the legacy batch module) — not ebmr.gxp_batch. }
+    get:
+      operationId: getMaterialDispensingReconciliation
+      tags: [yield-reconciliation]
+      summary: "NOT Document 17 — the latest SPEC-MAT-002D material dispensing/consumption reconciliation for a batch"
+      description: >
+        No policy check — same undocumented-exposure pattern this file's own `getBatchSummary` has (see
+        the file description). Returns the highest-`version` `MaterialReconciliation` row for this
+        `batch_id` — `NOT_FOUND` if none has ever been evaluated. `erp_posting_status` is always
+        `"not_integrated"` — no ERP integration exists in this codebase (WP-07 not built, CON-FR-025/026).
+      x-requirement-ids: [CON-FR-019, CON-FR-025, CON-FR-026]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/MaterialDispensingReconciliation' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — no reconciliation has ever been evaluated for this batch.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /reconciliation/v1/batches/{batch_id}/summary:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getBatchSummary
+      tags: [yield-reconciliation]
+      summary: Every calculation/reconciliation for a batch, with a release-blocker flag and serial-level aggregation (YLD-FR-026/028/029)
+      description: >
+        No policy check (see the file description's own note on this). `release_blocked` is `true` when
+        any calculation or reconciliation for the batch is in an unresolved state (`FAILED`,
+        `OUT_OF_LIMIT`, `OUT_OF_TOLERANCE`) — computed live from the rows themselves on every call, never
+        a stored/cached decision (AG-11). `by_device_unit` aggregates every reconciliation row that
+        carries a `device_unit_id`, summing `quantities` per unit while still listing every unresolved
+        row's id individually per unit (YLD-FR-026: "aggregate without losing exception visibility") — a
+        row with no `device_unit_id` (batch-level component reconciliation, or material/packaging/label
+        reconciliation) is excluded from this aggregation entirely, not folded into a batch-wide bucket.
+      x-requirement-ids: [YLD-FR-026, YLD-FR-028, YLD-FR-029]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/BatchSummary' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    ScopeType:
+      type: string
+      description: "`SCOPE_TYPES` in `app/modules/yield_reconciliation/models.py` (YLD-FR-005/025)."
+      x-requirement-ids: [YLD-FR-005, YLD-FR-025]
+      enum: [BATCH, PHASE, SUB_LOT, SERIAL_GROUP]
+
+    CalculationType:
+      type: string
+      description: "`CALCULATION_TYPES` in `app/modules/yield_reconciliation/models.py`."
+      x-requirement-ids: [YLD-FR-001, YLD-FR-015]
+      enum: [YIELD, POTENCY]
+
+    CalculationState:
+      type: string
+      description: >
+        `CALCULATION_STATES` in `app/modules/yield_reconciliation/models.py` — the source's own full
+        catalogue. `PENDING_INPUT`/`READY`/`VERIFICATION_REQUIRED`/`SUPERSEDED` are named states no
+        command in this contract ever writes: every calculation is created already `CALCULATED`,
+        `OUT_OF_LIMIT` or `FAILED` in one synchronous call, and `postVerifyRecord` is the only path to
+        `VERIFIED`. There is no correction/supersession command this pass (YLD-FR-022 is not built).
+      x-requirement-ids: [YLD-FR-004, CTR-FR-017]
+      enum: [PENDING_INPUT, READY, CALCULATED, VERIFICATION_REQUIRED, VERIFIED, FAILED, OUT_OF_LIMIT, SUPERSEDED]
+
+    ReconciliationType:
+      type: string
+      description: "`RECONCILIATION_TYPES` in `app/modules/yield_reconciliation/models.py`."
+      x-requirement-ids: [YLD-FR-009, YLD-FR-011, YLD-FR-012, YLD-FR-013]
+      enum: [MATERIAL, PACKAGING, LABEL, COMPONENT]
+
+    ReconciliationState:
+      type: string
+      description: >
+        `RECONCILIATION_STATES` — the source's own full catalogue. `SUPERSEDED` is named but never
+        written this pass (no correction command exists). Every reconciliation is created already
+        `ACCEPTABLE` or `OUT_OF_TOLERANCE`, never `CALCULATED` alone; `postVerifyRecord` is the only path
+        to `VERIFIED`; `FAILED` is not produced by any reconciliation command in this contract (it is
+        listed on `_UNRESOLVED_STATES` for calculations' benefit, not written by these commands).
+      x-requirement-ids: [YLD-FR-004, YLD-FR-019, YLD-FR-020, CTR-FR-017]
+      enum: [CALCULATED, ACCEPTABLE, OUT_OF_TOLERANCE, VERIFIED, FAILED, SUPERSEDED]
+
+    ToleranceRule:
+      type: object
+      description: Freeform tolerance specification, evaluated by `app/modules/yield_reconciliation/service.py`'s reconciliation engine (not a Document 08 rule reference — this module's own inline check, since no released tolerance rule exists yet for these entity types, SG-056).
+      x-requirement-ids: [YLD-FR-019]
+      required: [value]
+      properties:
+        type: { type: string, enum: [percentage, absolute], default: absolute, description: "percentage measures abs(variance)/issued*100; absolute measures abs(variance)." }
+        value: { type: string, description: Decimal string tolerance bound. }
+        inclusive: { type: boolean, default: true, description: Whether the boundary value itself counts as within tolerance. }
+
+    LossReasonEntry:
+      type: object
+      description: One documented reason behind a non-zero approved_loss (YLD-FR-021). Category vocabulary is deliberately not a closed enum — customer-controlled, no catalogue entity exists to validate against (SG-135).
+      x-requirement-ids: [YLD-FR-021]
+      required: [category, description]
+      properties:
+        category: { type: string, minLength: 1 }
+        description: { type: string, minLength: 1 }
+        quantity: { type: [string, "null"], description: "Decimal string. When every entry in the array carries one, they must sum to exactly approved_loss." }
+
+    ExternalReference:
+      type: object
+      description: YLD-FR-027's ERP/WMS comparison input — compared after the GxP calculation, never merged into it.
+      x-requirement-ids: [YLD-FR-027]
+      properties:
+        system: { type: [string, "null"] }
+        quantity: { type: [string, "null"], description: Decimal string. }
+        erp_run_id: { type: [string, "null"], description: "The Document 53 ERP reconciliation run this difference belongs to, if any. Without it the comparison still runs but has nowhere to flag a difference." }
+
+    ExternalComparisonResult:
+      type: object
+      description: The recorded outcome of an external-reference comparison (YLD-FR-027), never fed back into variance/state.
+      x-requirement-ids: [YLD-FR-027]
+      properties:
+        system: { type: [string, "null"] }
+        external_quantity: { type: string }
+        gxp_accounted: { type: string }
+        difference: { type: string }
+        uom: { type: string }
+        matched: { type: boolean }
+        compared_at: { type: string, format: date-time }
+        erp_difference_id: { type: [string, "null"], format: uuid }
+        flagged: { type: string, description: "Present only when a difference was found but no erp_run_id was supplied to attach it to." }
+
+    ManufacturingCalculation:
+      type: object
+      description: One calculation record (`app/modules/yield_reconciliation/commands.py:get_batch_summary`'s inline dict). A response schema, so not closed.
+      x-requirement-ids: [YLD-FR-001, YLD-FR-002, YLD-FR-003, YLD-FR-015, YLD-FR-023]
+      required: [id, calculation_type, scope_type, state, verified, version]
+      properties:
+        id: { type: string, format: uuid }
+        calculation_type: { $ref: '#/components/schemas/CalculationType' }
+        phase_code: { type: [string, "null"] }
+        scope_type: { $ref: '#/components/schemas/ScopeType' }
+        theoretical_quantity: { type: [string, "null"], description: Decimal string. Null for a POTENCY calculation. }
+        actual_quantity: { type: [string, "null"], description: Decimal string. Null for a POTENCY calculation. }
+        uom: { type: [string, "null"] }
+        uom_id: { type: [string, "null"], format: uuid, description: "SG-146 (MIG-FR-004 expand step) — resolves to a released rules.gxp_uom row when uom is a controlled code; null otherwise." }
+        result: { type: [object, "null"], description: "For YIELD: {yield_percent, raw_percent} decimal strings. For POTENCY: whatever the resolved rule's evaluate() returns." }
+        state: { $ref: '#/components/schemas/CalculationState' }
+        min_percent: { type: [string, "null"] }
+        max_percent: { type: [string, "null"] }
+        verified: { type: boolean, description: "True exactly when state == VERIFIED." }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+
+    ReconciliationRecord:
+      type: object
+      description: One reconciliation record (`get_batch_summary`'s inline dict). A response schema, so not closed.
+      x-requirement-ids: [YLD-FR-009, YLD-FR-011, YLD-FR-012, YLD-FR-013, YLD-FR-020]
+      required: [id, reconciliation_type, item_ref, quantities, state, verified, version]
+      properties:
+        id: { type: string, format: uuid }
+        reconciliation_type: { $ref: '#/components/schemas/ReconciliationType' }
+        item_ref: { type: object, description: "Freeform per reconciliation_type; carries device_unit_id/serial_number for COMPONENT, packaging_run_id/label_reconciliation_id/packaging_module_result/packaging_module_variance for LABEL." }
+        device_unit_id: { type: [string, "null"], format: uuid }
+        quantities: { type: object, description: "The mass-balance category map as supplied, plus a server-added accounted key (sum of the categories)." }
+        uom: { type: [string, "null"] }
+        uom_id: { type: [string, "null"], format: uuid, description: "SG-146 (MIG-FR-004 expand step)." }
+        tolerance_rule: { oneOf: [{ $ref: '#/components/schemas/ToleranceRule' }, { type: "null" }] }
+        variance: { type: [string, "null"], description: "Decimal string. issued - accounted." }
+        state: { $ref: '#/components/schemas/ReconciliationState' }
+        loss_reasons: { type: [array, "null"], items: { $ref: '#/components/schemas/LossReasonEntry' } }
+        linked_quality_event_id: { type: [string, "null"], format: uuid, description: "QMS's own quality_event_id for the linked deviation, when linked_deviation_id was supplied at write time." }
+        external_comparison: { oneOf: [{ $ref: '#/components/schemas/ExternalComparisonResult' }, { type: "null" }] }
+        verified: { type: boolean, description: "True exactly when state == VERIFIED." }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+
+    DeviceUnitReconciliationSummary:
+      type: object
+      description: One entry in getBatchSummary's by_device_unit array (YLD-FR-026).
+      x-requirement-ids: [YLD-FR-026]
+      required: [device_unit_id, record_count, totals, unresolved_record_ids]
+      properties:
+        device_unit_id: { type: string, format: uuid }
+        serial_number: { type: [string, "null"] }
+        record_count: { type: integer, minimum: 1 }
+        totals: { type: object, description: "Per-category summed quantities across every reconciliation row for this unit, as decimal strings." }
+        unresolved_record_ids: { type: array, items: { type: string, format: uuid }, description: "Every reconciliation_records.id for this unit whose state is FAILED/OUT_OF_LIMIT/OUT_OF_TOLERANCE — never hidden inside the totals." }
+
+    BatchSummary:
+      type: object
+      description: getBatchSummary's response.
+      x-requirement-ids: [YLD-FR-026, YLD-FR-028, YLD-FR-029]
+      required: [batch_id, release_blocked, by_device_unit, calculations, reconciliations]
+      properties:
+        batch_id: { type: string, format: uuid }
+        release_blocked: { type: boolean, description: "True when any calculation or reconciliation for this batch is FAILED/OUT_OF_LIMIT/OUT_OF_TOLERANCE — computed live, never cached (AG-11)." }
+        by_device_unit: { type: array, items: { $ref: '#/components/schemas/DeviceUnitReconciliationSummary' } }
+        calculations: { type: array, items: { $ref: '#/components/schemas/ManufacturingCalculation' } }
+        reconciliations: { type: array, items: { $ref: '#/components/schemas/ReconciliationRecord' } }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postYieldReconciliationSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string, description: "Always \"Verified\" for this endpoint." }
+        expires_at: { type: string, format: date-time }
+
+    VerifySignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: >
+        Closed request payload for the challenge-creation endpoint. Not a `CommandEnvelope` — it carries
+        no `idempotency_key` because it performs no regulated mutation of its own; it only creates a
+        time-boxed challenge a later `postVerifyRecord` call consumes.
+      x-requirement-ids: [SIG-FR-005]
+      required: [record_kind]
+      properties:
+        record_kind: { type: string, enum: [CALCULATION, RECONCILIATION] }
+
+    EvaluateYieldCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [YLD-FR-001, YLD-FR-003, YLD-FR-006, YLD-FR-007, YLD-FR-008, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, theoretical_quantity, actual_quantity, uom]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        scope_type: { $ref: '#/components/schemas/ScopeType' }
+        scope_id: { type: [string, "null"], format: uuid }
+        phase_code: { type: [string, "null"] }
+        theoretical_quantity: { type: string, description: Decimal string. }
+        actual_quantity: { type: string, description: Decimal string. }
+        uom: { type: string }
+        min_percent: { type: [string, "null"], description: Decimal string. }
+        max_percent: { type: [string, "null"], description: Decimal string. }
+        manual_source: { type: [string, "null"], description: Required together with manual_reason, or neither (YLD-FR-008). }
+        manual_reason: { type: [string, "null"] }
+        input_refs: { type: object, default: {} }
+
+    EvaluatePotencyCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [YLD-FR-015, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, rule_id, inputs]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        scope_type: { $ref: '#/components/schemas/ScopeType' }
+        scope_id: { type: [string, "null"], format: uuid }
+        phase_code: { type: [string, "null"] }
+        rule_id: { type: string, description: Must resolve to an effective released Document 08 rule. }
+        inputs: { type: object, description: Passed through verbatim to the rule engine. }
+        uom: { type: [string, "null"] }
+
+    EvaluateReconciliationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Shared by material and packaging reconciliation.
+      x-requirement-ids: [YLD-FR-009, YLD-FR-011, YLD-FR-018, YLD-FR-019, YLD-FR-021, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, reconciliation_type, item_ref, quantities, uom, tolerance_rule]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        reconciliation_type: { type: string, description: Must equal MATERIAL or PACKAGING to match the endpoint called. }
+        item_ref: { type: object }
+        quantities:
+          type: object
+          description: "issued (required) plus any of consumed/returned/samples/rejected/destroyed/approved_loss, decimal strings; unsupplied categories default to \"0\"."
+          properties:
+            issued: { type: string }
+        uom: { type: string }
+        tolerance_rule: { $ref: '#/components/schemas/ToleranceRule' }
+        external_reference: { oneOf: [{ $ref: '#/components/schemas/ExternalReference' }, { type: "null" }] }
+        loss_reasons: { type: [array, "null"], items: { $ref: '#/components/schemas/LossReasonEntry' } }
+        linked_deviation_id: { type: [string, "null"], format: uuid }
+
+    EvaluateLabelReconciliationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). No quantities — sourced from Document 16.
+      x-requirement-ids: [YLD-FR-012, YLD-FR-018, YLD-FR-019, YLD-FR-021, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, packaging_run_id, tolerance_rule]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        packaging_run_id: { type: string, format: uuid }
+        tolerance_rule: { $ref: '#/components/schemas/ToleranceRule' }
+        external_reference: { oneOf: [{ $ref: '#/components/schemas/ExternalReference' }, { type: "null" }] }
+        loss_reasons: { type: [array, "null"], items: { $ref: '#/components/schemas/LossReasonEntry' } }
+        linked_deviation_id: { type: [string, "null"], format: uuid }
+
+    EvaluateComponentReconciliationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [YLD-FR-013, YLD-FR-018, YLD-FR-019, YLD-FR-021, YLD-FR-026, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, item_ref, quantities, uom, tolerance_rule]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        reconciliation_type: { type: string, default: COMPONENT, description: Must equal COMPONENT. }
+        device_unit_id: { type: [string, "null"], format: uuid, description: "When supplied, must belong to batch_id (Document 12's device_unit)." }
+        item_ref: { type: object }
+        quantities:
+          type: object
+          description: "issued (required) plus any of consumed/returned/samples/rejected/destroyed/approved_loss/assembled/scrapped, decimal strings."
+          properties:
+            issued: { type: string }
+        uom: { type: string }
+        tolerance_rule: { $ref: '#/components/schemas/ToleranceRule' }
+        external_reference: { oneOf: [{ $ref: '#/components/schemas/ExternalReference' }, { type: "null" }] }
+        loss_reasons: { type: [array, "null"], items: { $ref: '#/components/schemas/LossReasonEntry' } }
+        linked_deviation_id: { type: [string, "null"], format: uuid }
+
+    MaterialDispensingReconciliationOutcome:
+      type: string
+      description: "NOT Document 17 — `outcome` on `materials.material_reconciliations` (SPEC-MAT-002D, CON-FR-020)."
+      x-requirement-ids: [CON-FR-020]
+      enum: [ACCEPTABLE, VARIANCE]
+
+    MaterialDispensingReconciliation:
+      type: object
+      description: "NOT Document 17 — one row of SPEC-MAT-002D's `material_reconciliations` (`app/modules/material/commands.py:get_material_reconciliation`). A response schema, so not closed."
+      x-requirement-ids: [CON-FR-019, CON-FR-020, CON-FR-021, CON-FR-025, CON-FR-026]
+      required: [id, batch_id, dispensed_total, consumed_total, returned_total, sampled_total, rejected_total, destroyed_total, approved_loss_total, unexplained_variance, tolerance_value, outcome, version, erp_posting_status, evaluated_at]
+      properties:
+        id: { type: string, format: uuid }
+        batch_id: { type: string, format: uuid, description: Resolves against ebmr.batches — not ebmr.gxp_batch. }
+        material_id: { type: [string, "null"], format: uuid }
+        dispensed_total: { type: string, description: Decimal string, 6dp. }
+        consumed_total: { type: string, description: Decimal string, 6dp. }
+        returned_total: { type: string, description: Decimal string, 6dp. }
+        sampled_total: { type: string, description: Decimal string, 6dp. }
+        rejected_total: { type: string, description: Decimal string, 6dp. }
+        destroyed_total: { type: string, description: Decimal string, 6dp. }
+        approved_loss_total: { type: string, description: "Decimal string, 6dp. SPILL and APPROVED_LOSS transaction types both roll into this single total." }
+        unexplained_variance: { type: string, description: "Decimal string, 2dp half-up (CC-4). dispensed_total minus the sum of every other category." }
+        tolerance_value: { type: string, description: "Decimal string. Caller-supplied at evaluation time — not a released Document 08/17 tolerance rule (SG-098)." }
+        outcome: { $ref: '#/components/schemas/MaterialDispensingReconciliationOutcome' }
+        version: { type: integer, minimum: 1, description: "A per-(batch_id, material_id) sequence number across this batch's reconciliation history — NOT an in-place-updated aggregate version; each evaluation inserts a new row (CON-FR-023)." }
+        linked_deviation_id: { type: [string, "null"], format: uuid, description: Set only when the evaluation that produced this row supplied both variance_severity and deviation_owner_user_id on a VARIANCE outcome. }
+        erp_posting_status: { type: string, description: "Always \"not_integrated\" — no ERP integration exists in this codebase yet (WP-07 not built, CON-FR-025/026)." }
+        evaluated_at: { type: string, format: date-time }
+
+    EvaluateMaterialDispensingReconciliationCommand:
+      type: object
+      additionalProperties: false
+      description: "NOT Document 17 — closed command payload for SPEC-MAT-002D's material dispensing reconciliation (MUT-FR-005 / Document 113 §3 F6)."
+      x-requirement-ids: [CON-FR-019, CON-FR-020, CON-FR-021, CON-FR-022, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, tolerance_value]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        material_id: { type: [string, "null"], format: uuid, description: Narrows the reconciliation to one material within the batch; omitted reconciles every dispensed container for the batch. }
+        tolerance_value: { type: string, description: Decimal string. Must not be negative. }
+        variance_severity: { type: [string, "null"], description: "Passed through verbatim to QMS's create_deviation on a VARIANCE outcome; only takes effect together with deviation_owner_user_id." }
+        deviation_owner_user_id: { type: [string, "null"], format: uuid }
+
+    VerifyRecordCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [YLD-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004, SIG-FR-006, SIG-FR-018]
+      required: [idempotency_key, record_kind, record_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        record_kind: { type: string, enum: [CALCULATION, RECONCILIATION], description: Must equal record_id's actual kind. }
+        record_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }

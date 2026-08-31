@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qms-010.json",
+  "title": "SPEC-QMS-010 \u2014 Complaint Management Events",
+  "description": "Document 113 event contract for the 7 event types Document 35's own module (app/modules/qms/complaint_commands.py) actually emits. All 7 declared SPEC-QMS-010 events in 07_EVENT_CATALOGUE.yaml are genuinely implemented -- no divergence for this module.\n\nREUSE NOTES: 'ComplaintReceived' is emitted by create_complaint() (id, complaint_number, is_potential_duplicate), triage_complaint() (id, state) and record_communication() (id, communication_id, communication_type) -- three unrelated transitions share this one event_type. 'ComplaintInvestigationRequired' is emitted by both investigation_decision() when investigation_required is true (id, investigation_required) and investigate_complaint() (id, state=\"REPORTABILITY_ASSESSMENT\") -- the investigation-decision and investigation-complete transitions are not distinguished by event_type. 'ComplaintInvestigationWaivedWithRationale' is the investigation_decision() sibling of the first case, emitted when investigation_required is false. All real, observed characteristics of the built code (complaint_commands.py:176/223/438, 253/261/307), not invented here.",
+  "x-requirement-ids": [
+    "CMP-FR-001",
+    "CMP-FR-003",
+    "CMP-FR-006",
+    "CMP-FR-007",
+    "CMP-FR-008",
+    "CMP-FR-009",
+    "CMP-FR-012",
+    "CMP-FR-017",
+    "CMP-FR-018",
+    "CMP-FR-019",
+    "CMP-FR-020",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "ComplaintReceivedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted by create_complaint() (id, complaint_number, is_potential_duplicate), triage_complaint() (id, state) and record_communication() (id, communication_id, communication_type) -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "complaint_number": {
+          "type": "string"
+        },
+        "is_potential_duplicate": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "../openapi/spec-qms-010.yaml#/components/schemas/ComplaintState"
+        },
+        "communication_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "communication_type": {
+          "$ref": "../openapi/spec-qms-010.yaml#/components/schemas/CommunicationType"
+        }
+      },
+      "x-requirement-ids": [
+        "CMP-FR-001",
+        "CMP-FR-003",
+        "CMP-FR-006",
+        "CMP-FR-019"
+      ]
+    },
+    "ComplaintInvestigationRequiredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted by investigation_decision() when investigation_required is true (id, investigation_required) and investigate_complaint() (id, state) -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "investigation_required": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string",
+          "const": "REPORTABILITY_ASSESSMENT"
+        }
+      },
+      "x-requirement-ids": [
+        "CMP-FR-007",
+        "CMP-FR-009"
+      ]
+    },
+    "ComplaintInvestigationWaivedWithRationalePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "investigation_required"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "investigation_required": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "x-requirement-ids": [
+        "CMP-FR-007",
+        "CMP-FR-008"
+      ]
+    },
+    "ComplaintReportabilityAssessmentCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "assessment_id",
+        "applicable_regimes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "assessment_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "applicable_regimes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-requirement-ids": [
+        "CMP-FR-012"
+      ]
+    },
+    "ComplaintCAPAOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted only when ReportabilityAssessmentCommand.capa_required is true.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "capa_rationale": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "CMP-FR-017"
+      ]
+    },
+    "ComplaintFieldActionAssessmentOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted only when ReportabilityAssessmentCommand.field_action_required is true.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "field_action_rationale": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "CMP-FR-018"
+      ]
+    },
+    "ComplaintClosedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "CMP-FR-020"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "ComplaintReceived",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-010",
+      "aggregate_type": "complaint_record",
+      "payload": {
+        "$ref": "#/$defs/ComplaintReceivedPayload"
+      },
+      "x-requirement-ids": [
+        "CMP-FR-001",
+        "CMP-FR-003",
+        "CMP-FR-006",
+        "CMP-FR-019"
+      ]
+    },
+    {
+      "event_type": "ComplaintInvestigationRequired",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-010",
+      "aggregate_type": "complaint_record",
+      "payload": {
+        "$ref": "#/$defs/ComplaintInvestigationRequiredPayload"
+      },
+      "x-requirement-ids": [
+        "CMP-FR-007",
+        "CMP-FR-009"
+      ]
+    },
+    {
+      "event_type": "ComplaintInvestigationWaivedWithRationale",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-010",
+      "aggregate_type": "complaint_record",
+      "payload": {
+        "$ref": "#/$defs/ComplaintInvestigationWaivedWithRationalePayload"
+      },
+      "x-requirement-ids": [
+        "CMP-FR-007",
+        "CMP-FR-008"
+      ]
+    },
+    {
+      "event_type": "ComplaintReportabilityAssessmentCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-010",
+      "aggregate_type": "complaint_record",
+      "payload": {
+        "$ref": "#/$defs/ComplaintReportabilityAssessmentCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "CMP-FR-012"
+      ]
+    },
+    {
+      "event_type": "ComplaintCAPAOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-010",
+      "aggregate_type": "complaint_record",
+      "payload": {
+        "$ref": "#/$defs/ComplaintCAPAOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "CMP-FR-017"
+      ]
+    },
+    {
+      "event_type": "ComplaintFieldActionAssessmentOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-010",
+      "aggregate_type": "complaint_record",
+      "payload": {
+        "$ref": "#/$defs/ComplaintFieldActionAssessmentOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "CMP-FR-018"
+      ]
+    },
+    {
+      "event_type": "ComplaintClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-010",
+      "aggregate_type": "complaint_record",
+      "payload": {
+        "$ref": "#/$defs/ComplaintClosedPayload"
+      },
+      "x-requirement-ids": [
+        "CMP-FR-020"
+      ]
+    }
+  ]
+}

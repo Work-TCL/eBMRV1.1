@@ -1,0 +1,100 @@
+openapi: 3.1.0
+info:
+  title: SPEC-SEC-006 — Network, Tenant, Deployment Isolation & Zero-Trust Architecture
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-10 Document 66 (`services/gxp-api/app/modules/security/netzero*`).
+    2 owned entities per the approved data-model catalogue: `network_flow_definition`,
+    `deployment_security_profile` — approved-baseline configuration, seeded and superseded.
+
+
+    Read-only module: Document 66 # 7 lists exactly two `GET` endpoints and no state-changing operation
+    (AG-06 / Document 113 §6). No signature (Document 106 has no SPEC-SEC-006 row). The 6 zero-trust
+    functions Document 66 # 4 names (`generateNetworkPolicySet`, `validateServiceFlow`,
+    `issueSiteScopedEdgeNetworkProfile`, `verifyTenantScopePropagation`, `testForbiddenNetworkPath`,
+    `validateDeploymentHardening`) are the `app/modules/security/netzero.py` library used by CI /
+    deploy-admission / segmentation tests, not request handlers.
+tags:
+  - name: security-netzero
+
+paths:
+  /security/v1/network-flows:
+    get:
+      operationId: getNetworkFlows
+      tags: [security-netzero]
+      summary: The approved inbound/outbound network-flow catalogue (NET-FR-027)
+      x-requirement-ids: [NET-FR-001, NET-FR-002, NET-FR-027]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deployment_profile, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: false, schema: { type: string, default: EFFECTIVE } }
+      responses:
+        '200': { description: Flow catalogue., content: { application/json: { schema: { $ref: '#/components/schemas/NetworkFlowList' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /security/v1/deployment-security-profile:
+    get:
+      operationId: getDeploymentSecurityProfile
+      tags: [security-netzero]
+      summary: The deployment zero-trust posture profile (NET-FR-016/017/020)
+      x-requirement-ids: [NET-FR-016, NET-FR-017, NET-FR-020, NET-FR-025]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: profile_name, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { description: Profile(s)., content: { application/json: { schema: { $ref: '#/components/schemas/DeploymentSecurityProfileList' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    NetworkFlowList:
+      type: object
+      additionalProperties: false
+      required: [count, flows]
+      x-requirement-ids: [NET-FR-027]
+      properties:
+        count: { type: integer }
+        flows:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id: { type: string, format: uuid }
+              deployment_profile: { type: string }
+              source: { type: object, properties: { zone: { type: string }, service: { type: string } } }
+              destination: { type: object, properties: { zone: { type: string }, service: { type: string } } }
+              protocol: { type: string }
+              port: { type: integer }
+              auth_mechanism: { type: string }
+              purpose: { type: string }
+              owner: { type: string }
+              state: { type: string }
+              version: { type: integer }
+
+    DeploymentSecurityProfileList:
+      type: object
+      additionalProperties: false
+      required: [count, profiles]
+      x-requirement-ids: [NET-FR-016, NET-FR-017]
+      properties:
+        count: { type: integer }
+        profiles:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              id: { type: string, format: uuid }
+              profile_name: { type: string }
+              deployment_profile: { type: string }
+              container_hardening: { type: object, additionalProperties: true }
+              admin_access_pattern: { type: string }
+              state: { type: string }
+              version: { type: integer }

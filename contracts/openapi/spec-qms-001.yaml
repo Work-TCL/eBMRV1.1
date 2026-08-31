@@ -1,0 +1,605 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QMS-001 — Deviation & Investigation Management
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-05 Document 26 slice actually built
+    (`services/gxp-api/app/modules/qms/`): the linear OPEN -> TRIAGE -> CONTAINMENT -> INVESTIGATION ->
+    IMPACT_ASSESSMENT -> DISPOSITION -> CLOSED pipeline plus CLOSED -> REOPENED, matching the module's
+    own 9-op API list exactly, plus the `signature-challenges` ceremony-entry-point endpoint every
+    signing module in this codebase exposes (SG-138 engineering half, not in Document 26's own list —
+    contracted because the router implements it, same as every other module's equivalent).
+
+
+    DEV-FR-002/022 (automatic candidate creation from other modules; wiring into the release module's
+    eligibility check), DEV-FR-014/015 (Change Control and training/qualification-action are a
+    flag + rationale only, no target entity exists yet), DEV-FR-016's own DRAFT->PREAPPROVED->ACTIVE
+    pre-approval workflow, DEV-FR-021 (recurrence search) and DEV-FR-024 (export) are deliberately not
+    built — Document 26's own 9-op API list has no operation for any of them. DEV-FR-023 (escalation) has
+    no notification/worker infrastructure anywhere in this codebase yet. See
+    docs/generated/18_SPEC_GAPS.md SG-059..SG-062. The `disposition`/`close` signature ceremony is
+    mechanism-only: SG-138 leaves the actual meaning/signer role/independence unresolved pending Document
+    106, so both actions return `SIGNATURE_POLICY_UNRESOLVED` in this baseline.
+tags:
+  - name: qms-deviations
+
+paths:
+  /qms/v1/deviations:
+    post:
+      operationId: postCreateDeviation
+      tags: [qms-deviations]
+      summary: Initiate a deviation from any of Document 26's declared sources (DEV-FR-001)
+      description: Requires the `qms_deviation.create` policy action. `source_type` must be one of batch/qc/material/equipment/environment/supplier/document/system; a planned deviation requires `planned_scope.scope/start_date/end_date`.
+      x-requirement-ids: [DEV-FR-001, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateDeviationCommand' } } }
+      responses:
+        '200': { description: Created, state OPEN. `aggregate_id` is the deviation id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (missing deviation_type/severity, incomplete planned_scope, duplicate deviation_number) or DEVIATION_SOURCE_INVALID.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+    get:
+      operationId: getDeviations
+      tags: [qms-deviations]
+      summary: Paginated, filterable deviation list (non-authoritative read, AG-11)
+      x-requirement-ids: [DEV-FR-001]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortBy' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/SortDir' }
+        - { name: site_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: state, in: query, required: false, schema: { $ref: '#/components/schemas/DeviationState' } }
+        - { name: severity, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DeviationListResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /qms/v1/deviations/{deviation_id}:
+    parameters:
+      - { name: deviation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getDeviationDetail
+      tags: [qms-deviations]
+      summary: One deviation with full detail, including its impact-link evidence graph (DEV-FR-009/011)
+      x-requirement-ids: [DEV-FR-001, DEV-FR-009, DEV-FR-011]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DeviationDetail' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /qms/v1/deviations/{deviation_id}/triage:
+    parameters:
+      - { name: deviation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postTriageDeviation
+      tags: [qms-deviations]
+      summary: Classify severity, product impact and investigation priority (DEV-FR-003)
+      description: Requires `qms_deviation.triage`. OPEN -> TRIAGE only.
+      x-requirement-ids: [DEV-FR-003, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TriageDeviationCommand' } } }
+      responses:
+        '200': { description: Triaged., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or PLANNED_DEVIATION_EXPIRED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (severity/investigation_priority required) or deviation_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/deviations/{deviation_id}/contain:
+    parameters:
+      - { name: deviation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postContainDeviation
+      tags: [qms-deviations]
+      summary: Record immediate correction and/or containment (DEV-FR-004/005)
+      description: >
+        Requires `qms_deviation.contain`. TRIAGE -> CONTAINMENT only. At least one of
+        `immediate_correction`/`containment` is required. Per Document 26 §9, containment is always a
+        record of what was done — this never writes into batch/material/equipment state.
+      x-requirement-ids: [DEV-FR-004, DEV-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ContainDeviationCommand' } } }
+      responses:
+        '200': { description: Contained., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, PLANNED_DEVIATION_EXPIRED, or CONTAINMENT_REQUIRED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: deviation_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/deviations/{deviation_id}/investigation:
+    parameters:
+      - { name: deviation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordInvestigation
+      tags: [qms-deviations]
+      summary: Assign investigator/due date, record plan/evidence/cross-batch links and root cause (DEV-FR-006/007/008/009/010)
+      description: >
+        Requires `qms_deviation.investigate`. CONTAINMENT/REOPENED -> INVESTIGATION (entering, requires
+        `investigator_subject_id`+`due_date`) or a re-invocation while already INVESTIGATION.
+        `root_cause.no_assignable_cause=true` requires `justification`; otherwise `method` is required.
+        `evidence_links` writes `deviation_impact_link` rows with `impact_category` NULL (DEV-FR-009's
+        evidence graph, distinct from the formal DEV-FR-011 impact links).
+      x-requirement-ids: [DEV-FR-006, DEV-FR-007, DEV-FR-008, DEV-FR-009, DEV-FR-010, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/InvestigationCommand' } } }
+      responses:
+        '200': { description: Recorded., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, or PLANNED_DEVIATION_EXPIRED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (investigator_subject_id/due_date required on entry, or root_cause.justification required when no_assignable_cause) or deviation_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/deviations/{deviation_id}/impact:
+    parameters:
+      - { name: deviation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAssessImpact
+      tags: [qms-deviations]
+      summary: Six-category impact assessment (DEV-FR-011)
+      description: >
+        Requires `qms_deviation.impact`. INVESTIGATION (entering, requires a concluded investigator +
+        root_cause) or IMPACT_ASSESSMENT/REOPENED -> IMPACT_ASSESSMENT. `impact_assessment` must supply
+        all six of quality_impact/patient_user_impact/released_distributed_product_impact/
+        validation_impact/data_integrity_impact/regulatory_impact. `impact_links` writes
+        `deviation_impact_link` rows with `impact_category` set (the formal counterpart to
+        `investigation`'s evidence-graph links).
+      x-requirement-ids: [DEV-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ImpactCommand' } } }
+      responses:
+        '200': { description: Assessed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, PLANNED_DEVIATION_EXPIRED, or INVESTIGATION_INCOMPLETE.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (one or more of the six impact categories missing) or deviation_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/deviations/{deviation_id}/disposition:
+    parameters:
+      - { name: deviation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postDispositionDeviation
+      tags: [qms-deviations]
+      summary: Disposition, CAPA/change/training-need flags — signed per Document 106 (DEV-FR-012/013/014/015/019)
+      description: >
+        Requires `qms_deviation.disposition`. IMPACT_ASSESSMENT (entering, requires a recorded impact
+        assessment) or DISPOSITION/REOPENED -> DISPOSITION. Containment must already be recorded.
+        `disposition_code` must be one of the eight Document 26 disposition outcomes. Resolves the
+        `deviation_record`/`disposition` Document 106 policy; a `challenge_id`+`reauth_password` pair is
+        required only when that policy resolves `signature_required=true` (currently unresolved — SG-138).
+      x-requirement-ids: [DEV-FR-012, DEV-FR-013, DEV-FR-014, DEV-FR-015, DEV-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DispositionCommand' } } }
+      responses:
+        '200': { description: "Dispositioned. If `capa_required` is true, a `DeviationCAPARequired` outbox event is also written.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, PLANNED_DEVIATION_EXPIRED, CONTAINMENT_REQUIRED, IMPACT_REQUIRED, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (unrecognized disposition_code, missing disposition_rationale/capa_rationale) or deviation_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qms/v1/deviations/{deviation_id}/signature-challenges:
+    parameters:
+      - { name: deviation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postDeviationSignatureChallenge
+      tags: [qms-deviations]
+      summary: Create the Part 11 signature challenge for disposition/close (SG-138 engineering half)
+      description: >
+        Not in Document 26's own 9-op API list; contracted because the router implements it (the same
+        signature-challenge-helper-endpoint pattern used throughout this codebase — see e.g. `POST
+        /batches/{batch_id}/signature-challenges`). Resolves the `deviation_record`/`{action}` Document
+        106 policy and binds a challenge to the current deviation id/version/hash; `meaning` is read
+        verbatim from the resolved policy, never invented. Returns `SIGNATURE_POLICY_UNRESOLVED` today for
+        both actions (SG-138's policy-data half is still open).
+      x-requirement-ids: [DEV-FR-019, SIG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DeviationSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SIGNATURE_POLICY_UNRESOLVED — no Document 106 policy row exists yet for this (record_type, action)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED — action is not one of disposition/close.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/deviations/{deviation_id}/extend:
+    parameters:
+      - { name: deviation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postExtendDeviation
+      tags: [qms-deviations]
+      summary: Extend the due date, preserving the old value in history (DEV-FR-017)
+      description: Requires `qms_deviation.extend`. Only from INVESTIGATION/IMPACT_ASSESSMENT/DISPOSITION/REOPENED, and only when a due date already exists. `new_due_date` must be later than the current one.
+      x-requirement-ids: [DEV-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ExtendCommand' } } }
+      responses:
+        '200': { description: Extended., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION (wrong state, or no due date to extend).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (reason/risk_review required, or new_due_date not later than the current one) or deviation_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /qms/v1/deviations/{deviation_id}/close:
+    parameters:
+      - { name: deviation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCloseDeviation
+      tags: [qms-deviations]
+      summary: QA closure, signed per Document 106 (DEV-FR-018/019)
+      description: >
+        Requires `qms_deviation.close`. DISPOSITION/REOPENED -> CLOSED only, and only once containment,
+        investigation, impact assessment and disposition are all recorded. Resolves the
+        `deviation_record`/`close` Document 106 policy the same way `disposition` does. `closed_at` is set
+        only on the *first* closure and never overwritten on a subsequent reopen->close cycle;
+        `closure_history` is appended to every time.
+      x-requirement-ids: [DEV-FR-018, DEV-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CloseCommand' } } }
+      responses:
+        '200': { description: Closed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, INVALID_TRANSITION, PLANNED_DEVIATION_EXPIRED, CONTAINMENT_REQUIRED, INVESTIGATION_INCOMPLETE, IMPACT_REQUIRED, DISPOSITION_REQUIRED, QA_CLOSURE_REQUIRED, or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: deviation_id path/body mismatch., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
+
+  /qms/v1/deviations/{deviation_id}/reopen:
+    parameters:
+      - { name: deviation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReopenDeviation
+      tags: [qms-deviations]
+      summary: Reopen a closed deviation on new evidence, preserving prior closure (DEV-FR-020)
+      description: Requires `qms_deviation.reopen`. CLOSED -> REOPENED only. `closed_at`/`closure_history` from the original closure are never rewritten; `reopen_history` is appended to.
+      x-requirement-ids: [DEV-FR-020, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReopenCommand' } } }
+      responses:
+        '200': { description: Reopened., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION, IDEMPOTENCY_CONFLICT, or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (reason/new_evidence required) or deviation_id path/body mismatch.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    DeviationState:
+      type: string
+      description: "`DEVIATION_STATES` in `app/modules/qms/models.py`, Document 26 §4's own notation verbatim."
+      x-requirement-ids: [DEV-FR-001, CTR-FR-017]
+      enum: [OPEN, TRIAGE, CONTAINMENT, INVESTIGATION, IMPACT_ASSESSMENT, DISPOSITION, CLOSED, REOPENED]
+
+    DeviationSourceType:
+      type: string
+      description: "`SOURCE_TYPES` — the eight sources Document 26 itself enumerates."
+      x-requirement-ids: [DEV-FR-001]
+      enum: [batch, qc, material, equipment, environment, supplier, document, system]
+
+    DispositionCode:
+      type: string
+      description: "`DISPOSITION_CODES` — the eight disposition outcomes Document 26 itself enumerates (DEV-FR-012)."
+      x-requirement-ids: [DEV-FR-012]
+      enum: [CONTINUE, HOLD, REJECT, REWORK, REPROCESS, ADDITIONAL_TEST, DESTROY, FIELD_ACTION_ASSESSMENT]
+
+    PlannedScope:
+      type: object
+      description: "DEV-FR-016: \"bounded by scope/date/batches\" — concrete keys taken directly from the requirement text, not guessed."
+      x-requirement-ids: [DEV-FR-016]
+      required: [scope, start_date, end_date]
+      properties:
+        scope: { type: string }
+        start_date: { type: string, format: date-time }
+        end_date: { type: string, format: date-time }
+        batch_ids: { type: array, items: { type: string, format: uuid } }
+
+    ImpactAssessment:
+      type: object
+      description: "DEV-FR-011's six required categories."
+      x-requirement-ids: [DEV-FR-011]
+      required: [quality_impact, patient_user_impact, released_distributed_product_impact, validation_impact, data_integrity_impact, regulatory_impact]
+      properties:
+        quality_impact: { type: string }
+        patient_user_impact: { type: string }
+        released_distributed_product_impact: { type: string }
+        validation_impact: { type: string }
+        data_integrity_impact: { type: string }
+        regulatory_impact: { type: string }
+
+    RootCause:
+      type: object
+      description: "DEV-FR-010: configurable root-cause methods and 'no assignable cause' when justified."
+      x-requirement-ids: [DEV-FR-010]
+      properties:
+        method: { type: string, description: Required unless no_assignable_cause is true. }
+        no_assignable_cause: { type: boolean, default: false }
+        justification: { type: string, description: Required when no_assignable_cause is true. }
+
+    ImpactLink:
+      type: object
+      description: One `deviation_impact_link` row (DEV-FR-009's evidence graph, or DEV-FR-011's formal impact link when impact_category is set).
+      x-requirement-ids: [DEV-FR-009, DEV-FR-011]
+      required: [impacted_record_type, impacted_record_id]
+      properties:
+        impacted_record_type: { type: string }
+        impacted_record_id: { type: string, format: uuid }
+        impacted_record_version: { type: [integer, "null"] }
+        impact_category: { type: [string, "null"] }
+        hold_disposition_reference: { type: [string, "null"] }
+
+    ImpactLinkView:
+      type: object
+      description: getDeviationDetail's rendering of one `deviation_impact_link` row.
+      x-requirement-ids: [DEV-FR-009, DEV-FR-011]
+      required: [id, impacted_record_type, impacted_record_id, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        impacted_record_type: { type: string }
+        impacted_record_id: { type: string, format: uuid }
+        impacted_record_version: { type: [integer, "null"] }
+        impact_category: { type: [string, "null"] }
+        hold_disposition_reference: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+
+    Deviation:
+      type: object
+      description: One deviation record (`app/modules/qms/router.py:_deviation_dict`). A response schema, so not closed.
+      x-requirement-ids: [DEV-FR-001, DEV-FR-003, DEV-FR-011, DEV-FR-012]
+      required: [id, site_id, quality_event_id, deviation_number, deviation_type, source_type, source_id, severity, state, owner_subject_id, planned, capa_required, change_control_required, training_required, version, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        quality_event_id: { type: string, format: uuid }
+        deviation_number: { type: string }
+        deviation_type: { type: string }
+        source_type: { $ref: '#/components/schemas/DeviationSourceType' }
+        source_id: { type: string, format: uuid }
+        source_version: { type: [integer, "null"] }
+        severity: { type: string }
+        state: { $ref: '#/components/schemas/DeviationState' }
+        owner_subject_id: { type: string, format: uuid }
+        investigator_subject_id: { type: [string, "null"], format: uuid }
+        planned: { type: boolean }
+        disposition_code: { oneOf: [{ $ref: '#/components/schemas/DispositionCode' }, { type: "null" }] }
+        capa_required: { type: [boolean, "null"] }
+        change_control_required: { type: boolean }
+        training_required: { type: boolean }
+        due_date: { type: [string, "null"], format: date-time }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        created_at: { type: string, format: date-time }
+        closed_at: { type: [string, "null"], format: date-time }
+
+    DeviationDetail:
+      type: object
+      description: getDeviationDetail's response — Deviation plus every semi-structured field and the impact-link graph.
+      x-requirement-ids: [DEV-FR-004, DEV-FR-005, DEV-FR-007, DEV-FR-008, DEV-FR-009, DEV-FR-010, DEV-FR-011, DEV-FR-013, DEV-FR-014, DEV-FR-015, DEV-FR-017, DEV-FR-018, DEV-FR-020]
+      allOf:
+        - $ref: '#/components/schemas/Deviation'
+        - type: object
+          required: [extension_history, closure_history, reopen_history, impact_links]
+          properties:
+            planned_scope: { oneOf: [{ $ref: '#/components/schemas/PlannedScope' }, { type: "null" }] }
+            immediate_correction: { type: [object, "null"] }
+            containment: { type: [object, "null"] }
+            investigation_plan: { type: [object, "null"] }
+            cross_batch_ids: { type: [array, "null"], items: { type: string, format: uuid } }
+            root_cause: { oneOf: [{ $ref: '#/components/schemas/RootCause' }, { type: "null" }] }
+            impact_assessment: { oneOf: [{ $ref: '#/components/schemas/ImpactAssessment' }, { type: "null" }] }
+            disposition_rationale: { type: [string, "null"] }
+            capa_rationale: { type: [string, "null"] }
+            change_control_rationale: { type: [string, "null"] }
+            training_rationale: { type: [string, "null"] }
+            extension_history: { type: array, items: { type: object } }
+            closure_history: { type: array, items: { type: object } }
+            reopen_history: { type: array, items: { type: object } }
+            impact_links: { type: array, items: { $ref: '#/components/schemas/ImpactLinkView' } }
+
+    DeviationListResult:
+      type: object
+      description: getDeviations's response — the shared page envelope plus items.
+      x-requirement-ids: [DEV-FR-001, CTR-FR-012]
+      allOf:
+        - $ref: 'spec-gxp-001.yaml#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/Deviation' } }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postDeviationSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    DeviationSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key, since it performs no regulated mutation of its own.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [disposition, close] }
+
+    CreateDeviationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DEV-FR-001, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, deviation_number, deviation_type, source_type, source_id, severity, owner_subject_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        deviation_number: { type: string }
+        deviation_type: { type: string }
+        source_type: { $ref: '#/components/schemas/DeviationSourceType' }
+        source_id: { type: string, format: uuid }
+        source_version: { type: [integer, "null"] }
+        severity: { type: string }
+        owner_subject_id: { type: string, format: uuid }
+        planned: { type: boolean, default: false }
+        planned_scope: { oneOf: [{ $ref: '#/components/schemas/PlannedScope' }, { type: "null" }], description: Required (scope/start_date/end_date) when planned is true. }
+
+    TriageDeviationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DEV-FR-003, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, deviation_id, expected_version, severity, investigation_priority]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        deviation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        severity: { type: string }
+        investigation_priority: { type: string }
+        product_impact: { type: [string, "null"] }
+        deviation_type: { type: [string, "null"] }
+
+    ContainDeviationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DEV-FR-004, DEV-FR-005, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, deviation_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        deviation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        immediate_correction: { type: [object, "null"], description: "{description, performed_by, performed_at}. At least one of immediate_correction/containment is required." }
+        containment: { type: [object, "null"], description: "List of {target_type, target_id, description}." }
+        reason: { type: [string, "null"] }
+
+    InvestigationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DEV-FR-006, DEV-FR-007, DEV-FR-008, DEV-FR-009, DEV-FR-010, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, deviation_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        deviation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        investigator_subject_id: { type: [string, "null"], format: uuid, description: Required when entering INVESTIGATION for the first time. }
+        due_date: { type: [string, "null"], format: date-time, description: Required when entering INVESTIGATION for the first time. }
+        investigation_plan: { type: [object, "null"] }
+        cross_batch_ids: { type: [array, "null"], items: { type: string, format: uuid } }
+        evidence_links: { type: [array, "null"], items: { $ref: '#/components/schemas/ImpactLink' }, description: "Writes deviation_impact_link rows with impact_category NULL (the evidence graph)." }
+        root_cause: { oneOf: [{ $ref: '#/components/schemas/RootCause' }, { type: "null" }] }
+        reason: { type: [string, "null"] }
+
+    ImpactCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DEV-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, deviation_id, expected_version, impact_assessment]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        deviation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        impact_assessment: { $ref: '#/components/schemas/ImpactAssessment' }
+        impact_links: { type: [array, "null"], items: { $ref: '#/components/schemas/ImpactLink' }, description: "Writes deviation_impact_link rows with impact_category set (the formal impact links)." }
+        reason: { type: [string, "null"] }
+
+    DispositionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DEV-FR-012, DEV-FR-013, DEV-FR-014, DEV-FR-015, DEV-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, deviation_id, expected_version, disposition_code, disposition_rationale, capa_required, capa_rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        deviation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        disposition_code: { $ref: '#/components/schemas/DispositionCode' }
+        disposition_rationale: { type: string }
+        capa_required: { type: boolean }
+        capa_rationale: { type: string }
+        change_control_required: { type: boolean, default: false }
+        change_control_rationale: { type: [string, "null"] }
+        training_required: { type: boolean, default: false }
+        training_rationale: { type: [string, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    ExtendCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DEV-FR-017, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, deviation_id, expected_version, new_due_date, reason, risk_review]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        deviation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        new_due_date: { type: string, format: date-time }
+        reason: { type: string }
+        risk_review: { type: string }
+
+    CloseCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DEV-FR-018, DEV-FR-019, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-006]
+      required: [idempotency_key, deviation_id, expected_version, conclusion]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        deviation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        conclusion: { type: string, description: Required non-empty final written conclusion (QA_CLOSURE_REQUIRED otherwise). }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    ReopenCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [DEV-FR-020, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, deviation_id, expected_version, reason, new_evidence]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        deviation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string }
+        new_evidence: { type: string }

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-data-007.json",
+  "title": "SPEC-DATA-007 — Caching, Search, Read Models, Reporting & Analytics Events",
+  "description": "Document 113 event contract for WP-11 Document 75 (services/gxp-api/app/modules/readmodels/*). SearchIndexRebuilt, ReadModelRefreshed and ExportGenerated are emitted transactionally through the Mutation Gateway outbox (commands.py, aggregate_type read_model_checkpoint). SearchDocumentIndexed, CacheInvalidated and ProjectionLagExceeded are best-effort monitoring signals (signals.py, aggregate_type read_model_pipeline) about the cache/search tier itself, not a domain state change.",
+  "x-requirement-ids": ["READ-FR-005", "READ-FR-007", "READ-FR-009", "READ-FR-012", "READ-FR-014", "READ-FR-016", "READ-FR-017", "READ-FR-029", "EVT-FR-001", "EVT-FR-002"],
+  "$defs": {
+    "SearchDocumentIndexedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["index_type", "entity_type", "entity_id", "source_version"],
+      "properties": {
+        "index_type": { "type": "string" },
+        "entity_type": { "type": "string" },
+        "entity_id": { "type": "string", "format": "uuid" },
+        "source_version": { "type": "integer" }
+      },
+      "x-requirement-ids": ["READ-FR-012"]
+    },
+    "SearchIndexRebuiltPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["model_name", "index_type", "state", "documents_reindexed"],
+      "properties": {
+        "model_name": { "type": "string" },
+        "index_type": { "type": "string" },
+        "state": { "type": "string" },
+        "documents_reindexed": { "type": "integer" },
+        "refreshed_at": { "type": "string", "format": "date-time" }
+      },
+      "x-requirement-ids": ["READ-FR-014"]
+    },
+    "ReadModelRefreshedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["model_name", "state"],
+      "properties": {
+        "model_name": { "type": "string" },
+        "state": { "type": "string" },
+        "source_max_version": { "type": "integer" },
+        "refreshed_at": { "type": "string", "format": "date-time" }
+      },
+      "x-requirement-ids": ["READ-FR-016"]
+    },
+    "CacheInvalidatedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cache_class", "scope_key", "entity_id", "entries_removed"],
+      "properties": {
+        "cache_class": { "type": "string" },
+        "scope_key": { "type": "string" },
+        "entity_id": { "type": "string" },
+        "entries_removed": { "type": "integer" }
+      },
+      "x-requirement-ids": ["READ-FR-007"]
+    },
+    "ProjectionLagExceededPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["model_name", "lag_seconds"],
+      "properties": {
+        "model_name": { "type": "string" },
+        "lag_seconds": { "type": "number" }
+      },
+      "x-requirement-ids": ["READ-FR-029"]
+    },
+    "ExportGeneratedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["report_name", "source_cutoff", "row_count", "manifest_hash"],
+      "properties": {
+        "report_name": { "type": "string" },
+        "source_cutoff": { "type": "string", "format": "date-time" },
+        "row_count": { "type": "integer" },
+        "manifest_hash": { "type": "string" }
+      },
+      "x-requirement-ids": ["READ-FR-017", "READ-FR-019"]
+    }
+  },
+  "events": [
+    { "event_type": "SearchDocumentIndexed", "schema_version": "1.0", "producer": "SPEC-DATA-007", "aggregate_type": "read_model_pipeline", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/SearchDocumentIndexedPayload" }, "x-requirement-ids": ["READ-FR-012"] },
+    { "event_type": "SearchIndexRebuilt", "schema_version": "1.0", "producer": "SPEC-DATA-007", "aggregate_type": "read_model_checkpoint", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/SearchIndexRebuiltPayload" }, "x-requirement-ids": ["READ-FR-014"] },
+    { "event_type": "ReadModelRefreshed", "schema_version": "1.0", "producer": "SPEC-DATA-007", "aggregate_type": "read_model_checkpoint", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ReadModelRefreshedPayload" }, "x-requirement-ids": ["READ-FR-016"] },
+    { "event_type": "CacheInvalidated", "schema_version": "1.0", "producer": "SPEC-DATA-007", "aggregate_type": "read_model_pipeline", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/CacheInvalidatedPayload" }, "x-requirement-ids": ["READ-FR-007"] },
+    { "event_type": "ProjectionLagExceeded", "schema_version": "1.0", "producer": "SPEC-DATA-007", "aggregate_type": "read_model_pipeline", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ProjectionLagExceededPayload" }, "x-requirement-ids": ["READ-FR-029"] },
+    { "event_type": "ExportGenerated", "schema_version": "1.0", "producer": "SPEC-DATA-007", "aggregate_type": "read_model_checkpoint", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ExportGeneratedPayload" }, "x-requirement-ids": ["READ-FR-017"] }
+  ]
+}

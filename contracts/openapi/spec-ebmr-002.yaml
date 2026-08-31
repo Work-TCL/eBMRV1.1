@@ -1,0 +1,523 @@
+openapi: 3.1.0
+info:
+  title: SPEC-EBMR-002 — Batch Execution Engine & State Machine
+  version: 0.1.0
+  description: >
+    Document 113 contract for the Document 11 slice actually built
+    (`services/gxp-api/app/modules/batch_execution/`): batch creation against a released product+recipe
+    version pair (BAT-FR-001/002), issue with a Vault execution snapshot and step instantiation
+    (BAT-FR-003/004/005/006), the buildable batch state machine (planned → issued → in_execution ⇄
+    on_hold, or → aborted from any non-terminal state), step claim/start (BAT-FR-007/008), and the
+    production-dashboard read views. `app/modules/batch` (an older module still referencing
+    `ebmr.products`/`ebmr.recipes`, the legacy pre-`product_master`/`recipe_master` schema) is a
+    *different, unrelated* module and is not covered by this contract — the same "two live
+    implementations sharing a similar name" pattern documented in `spec-ebmr-000.yaml`
+    (`product`/`product_master`) and `spec-ebmr-001.yaml` (`recipe`/`recipe_master`); this is the third
+    occurrence, and the original note migration `f264272f2f0b`'s docstring makes about it.
+
+
+    ONLY 2 OF 5 OWNED ENTITIES ARE BUILT: Document 11 names five entities; only `gxp_batch` and
+    `gxp_batch_step` are DDL-ready in `docs/generated/04_DATA_MODEL_CATALOGUE.md` today.
+    `gxp_step_result`, `gxp_step_evidence_link` and `gxp_batch_hold` are prose-only field lists with no
+    types (SG-047) and are not implemented — consequently there is no step-completion command, no
+    step-result/evidence capture, and no dedicated signed hold record in this contract; a `hold`/`resume`
+    only flips `Batch.state` and records `reason` on the audit event, with no independent Document 106
+    signature ceremony of its own (SG-048).
+
+
+    LIFECYCLE IS A NARROW SLICE OF BAT-FR-004: the full state list is Planned, Created/Snapshot Locked,
+    Issued, Ready, In Execution, On Hold, Exception Pending, Production Complete, QA Review,
+    Released/Rejected, Closed. This pass reaches only `planned`, `issued`, `in_execution`, `on_hold`,
+    `aborted` (`BATCH_STATES` in `app/modules/batch_execution/models.py`) — Ready/Exception
+    Pending/Production Complete/QA Review/Released/Rejected/Closed all depend on capabilities SG-047/
+    SG-048 defer (step results, exceptions, yield reconciliation, QA signatures). There is no release/
+    disposition endpoint for a batch in this contract at all.
+
+
+    STEP READINESS IS PREDECESSOR-ONLY (BAT-FR-006, narrow slice): at issue time a step with no
+    predecessor becomes `ready` immediately; any step with a predecessor starts `pending` and this pass
+    never advances it to `ready`, because that requires step completion (`gxp_step_result`, SG-047) which
+    does not exist yet. `postStartStep` can therefore only ever succeed against a root step.
+
+
+    SG-146 (UOM expand step, resolved 2026-08-27): `target_uom` is validated against the Document 110 §3
+    controlled UOM master best-effort at batch-creation time — an unresolved code does not fail the
+    request (the free-text column stays authoritative); see `target_uom_id` on `Batch` below.
+tags:
+  - name: batch_execution
+
+paths:
+  /batches/v1:
+    post:
+      operationId: postCreateBatch
+      tags: [batch_execution]
+      summary: Create a batch against a released product version + released recipe version pair (BAT-FR-001/002)
+      description: >
+        Requires the `batch_execution.create` policy action. Both the referenced `ProductVersion` and
+        `RecipeVersion` must be `released` — `VALIDATION_FAILED` otherwise — and the recipe version must
+        have been authored against exactly this `product_version_id` (`RecipeVersion.product_version_id`
+        match). `(site_id, batch_number)` is unique; a human batch number is never reused at a site
+        (BAT-FR-002).
+      x-requirement-ids: [BAT-FR-001, BAT-FR-002, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBatchCommand' }
+      responses:
+        '200':
+          description: Created, state `planned`. `aggregate_id` is the `batch_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `product_version_id` or `recipe_version_id` does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — the product/recipe version is not `released`, the recipe was not authored against this product version, or `batch_number` is already in use at this site.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+    get:
+      operationId: getBatchList
+      tags: [batch_execution]
+      summary: Active batches and hold count at a site — a partial production dashboard (BAT-FR-035)
+      description: >
+        Requires `batch_execution.view`. `site_id` is required; `state` optionally narrows to one
+        `BATCH_STATES` value. Bottlenecks, overdue timers and operator-assignment analytics are not built
+        this pass (SG-048) — this is the "active batches + on_hold count" slice only, not the full
+        dashboard BAT-FR-035 describes. Returns a plain object, not a paginated list (CTR-FR-012
+        deviation, same as the other list endpoints in this codebase) — bounded in practice by "batches
+        currently open at one site."
+      x-requirement-ids: [BAT-FR-035]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: site_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: state
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/BatchState' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/BatchListResult' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /batches/v1/{batch_id}:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getBatchDetail
+      tags: [batch_execution]
+      summary: One batch (BAT-FR-001/002/004)
+      description: Requires `batch_execution.view`.
+      x-requirement-ids: [BAT-FR-001, BAT-FR-002, BAT-FR-004]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/Batch' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /batches/v1/{batch_id}/issue:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postIssueBatch
+      tags: [batch_execution]
+      summary: Issue a planned batch — freezes an execution snapshot into the Vault and instantiates steps (BAT-FR-003/004/005/006)
+      description: >
+        Requires `batch_execution.issue`. Only `planned` may be issued. Fails `VALIDATION_FAILED` if the
+        released recipe version has no steps. Freezes the exact recipe graph (steps + dependencies +
+        each step's computed initial state) into an immutable Vault version
+        (`object_type="batch_execution_snapshot"`, VLT-FR-006/007) and instantiates one `BatchStep` row
+        per recipe step, each starting `ready` (no predecessor) or `pending` (has a predecessor — see the
+        contract-level note on the predecessor-only readiness slice, BAT-FR-006).
+      x-requirement-ids: [BAT-FR-003, BAT-FR-004, BAT-FR-005, BAT-FR-006, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018, VLT-FR-001, VLT-FR-006, VLT-FR-007]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueBatchCommand' }
+      responses:
+        '200':
+          description: Issued.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: IDEMPOTENCY_CONFLICT, CONCURRENT_VAULT_RELEASE, or INVALID_TRANSITION — the batch is not `planned`, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `batch_id` in path and body do not match, or the recipe version has no steps.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /batches/v1/{batch_id}/execution-view:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getBatchExecutionView
+      tags: [batch_execution]
+      summary: A batch with its steps and readiness blockers (BAT-FR-004/005/006)
+      description: >
+        Requires `batch_execution.view`. `blockers` is computed live (AG-11), never cached — one entry
+        per step currently `pending`, each carrying the fixed reason string `"predecessor not yet
+        completed"` (the only blocker this pass's predecessor-only readiness slice can express;
+        material/equipment/personnel/quality blockers described by the fuller BAT-FR-006 are SG-048).
+      x-requirement-ids: [BAT-FR-004, BAT-FR-005, BAT-FR-006]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/BatchExecutionView' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /batches/v1/{batch_id}/start:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postStartBatch
+      tags: [batch_execution]
+      summary: Move an issued batch to `in_execution` (BAT-FR-004)
+      description: Requires `batch_execution.execute`. Only `issued` may start. Sets `started_at`.
+      x-requirement-ids: [BAT-FR-004, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchTransitionCommand' }
+      responses:
+        '200':
+          description: Started.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: INVALID_TRANSITION — the batch is not `issued`, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `batch_id` in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/v1/{batch_id}/hold:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postHoldBatch
+      tags: [batch_execution]
+      summary: Put an in-execution batch `on_hold` (BAT-FR-019/020)
+      description: >
+        Requires `batch_execution.execute`. Only `in_execution` may be held. `reason` is optional at the
+        schema level but recorded on the audit event when supplied — there is no independent
+        `gxp_batch_hold` record or Document 106 signature ceremony for a hold this pass (SG-047/SG-048);
+        this endpoint is a state flip only.
+      x-requirement-ids: [BAT-FR-019, BAT-FR-020, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchTransitionCommand' }
+      responses:
+        '200':
+          description: Held.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: INVALID_TRANSITION — the batch is not `in_execution`, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `batch_id` in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/v1/{batch_id}/resume:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postResumeBatch
+      tags: [batch_execution]
+      summary: Return an on-hold batch to `in_execution` (BAT-FR-019/020)
+      description: Requires `batch_execution.execute`. Only `on_hold` may resume.
+      x-requirement-ids: [BAT-FR-019, BAT-FR-020, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchTransitionCommand' }
+      responses:
+        '200':
+          description: Resumed.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: INVALID_TRANSITION — the batch is not `on_hold`, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `batch_id` in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/v1/{batch_id}/abort:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postAbortBatch
+      tags: [batch_execution]
+      summary: Abort a batch from any non-terminal state (BAT-FR-004/031)
+      description: >
+        Requires `batch_execution.execute`. Allowed from `planned`, `issued`, `in_execution` or
+        `on_hold` (`ALLOWED_TRANSITIONS` in `app/modules/batch_execution/models.py`); `aborted` is
+        terminal — `ALLOWED_TRANSITIONS["aborted"]` is the empty set. `reason` is optional at the schema
+        level but recorded on the audit event when supplied.
+      x-requirement-ids: [BAT-FR-004, BAT-FR-031, MUT-FR-005, MUT-FR-008, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchTransitionCommand' }
+      responses:
+        '200':
+          description: Aborted.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: INVALID_TRANSITION — the batch is already `aborted`, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `batch_id` in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/v1/{batch_id}/steps/{step_id}/start:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: step_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postStartStep
+      tags: [batch_execution]
+      summary: Claim and start a ready step (BAT-FR-007/008)
+      description: >
+        Requires `batch_execution.execute`. The batch itself must be `in_execution` — `VALIDATION_FAILED`
+        otherwise. The step must be `ready` — `INVALID_TRANSITION` otherwise; given the predecessor-only
+        readiness slice this pass builds (BAT-FR-006), that means only a root step (no predecessor) can
+        ever be started. Assigns the calling actor as `assigned_subject_id` and records `started_at`.
+        There is no step-completion endpoint in this contract — completion requires `gxp_step_result`
+        (SG-047), not built this pass.
+      x-requirement-ids: [BAT-FR-007, BAT-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartStepCommand' }
+      responses:
+        '200':
+          description: Started. `aggregate_id` is the `step_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `batch_id` does not exist, or `step_id` does not exist or does not belong to `batch_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: INVALID_TRANSITION — the step is not `ready`, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `batch_id`/`step_id` in path and body do not match, or the batch is not `in_execution`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    BatchState:
+      type: string
+      description: >
+        The buildable subset of the batch lifecycle (BAT-FR-004): `BATCH_STATES` in
+        `app/modules/batch_execution/models.py`. `ALLOWED_TRANSITIONS` is the only transition table any
+        endpoint uses: planned→issued|aborted; issued→in_execution|aborted;
+        in_execution→on_hold|aborted; on_hold→in_execution|aborted; aborted is terminal. The full
+        Document 11 state list (Ready, Exception Pending, Production Complete, QA Review,
+        Released/Rejected, Closed) is not reached by this contract — see the file description.
+      x-requirement-ids: [BAT-FR-004, CTR-FR-017]
+      enum: [planned, issued, in_execution, on_hold, aborted]
+
+    BatchStepState:
+      type: string
+      description: >
+        `BATCH_STEP_STATES` in `app/modules/batch_execution/models.py`. `pending`→`ready` (predecessor
+        completion) is not reached by this pass (SG-047); only `postStartStep`'s `ready`→`in_progress`
+        transition is implemented. There is no `completed` state produced by anything in this contract.
+      x-requirement-ids: [BAT-FR-006, BAT-FR-007, CTR-FR-017]
+      enum: [pending, ready, in_progress]
+
+    Batch:
+      type: object
+      description: One batch (`app/modules/batch_execution/router.py:_batch_dict`). A response schema, so not closed.
+      x-requirement-ids: [BAT-FR-001, BAT-FR-002, BAT-FR-003, BAT-FR-004]
+      required: [batch_id, site_id, batch_number, product_version_id, recipe_version_id, target_qty, target_uom, state, version]
+      properties:
+        batch_id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        batch_number: { type: string, maxLength: 120, description: Unique together with site_id — never reused (BAT-FR-002). }
+        product_version_id: { type: string, format: uuid }
+        recipe_version_id: { type: string, format: uuid }
+        recipe_vault_object_id: { type: [string, "null"], format: uuid, description: Copied from RecipeVersion.released_vault_object_id at creation time. }
+        execution_snapshot_id: { type: [string, "null"], format: uuid, description: Set at issue (VLT-FR-006/007) — null before issue. }
+        target_qty: { type: string, description: Decimal string (Document 110 N1 — never a binary float). }
+        target_uom: { type: string, maxLength: 40, description: "Free text, still authoritative (SG-146). See target_uom_id." }
+        target_uom_id:
+          type: [string, "null"]
+          format: uuid
+          description: >
+            SG-146 (MIG-FR-004 expand step) — resolves to a released `rules.gxp_uom` row when
+            `target_uom` is a controlled code; null otherwise (no released UOM master data is seeded
+            anywhere in this baseline, so this is null for every value in a fresh environment).
+        state: { $ref: '#/components/schemas/BatchState' }
+        version: { type: integer, minimum: 1, description: Optimistic-concurrency aggregate version (MUT-FR-009). }
+        production_order_ref: { type: [string, "null"], maxLength: 160 }
+        issued_at: { type: [string, "null"], format: date-time }
+        started_at: { type: [string, "null"], format: date-time }
+
+    BatchStep:
+      type: object
+      description: One step instance (`app/modules/batch_execution/router.py:_step_dict`).
+      x-requirement-ids: [BAT-FR-005, BAT-FR-006, BAT-FR-007]
+      required: [step_id, batch_id, recipe_step_code, state, version]
+      properties:
+        step_id: { type: string, format: uuid }
+        batch_id: { type: string, format: uuid }
+        recipe_step_code: { type: string, description: Copied from RecipeStep.stable_step_code at issue time — survives even if the recipe is later amended. }
+        state: { $ref: '#/components/schemas/BatchStepState' }
+        version: { type: integer, minimum: 1 }
+        assigned_subject_id: { type: [string, "null"], format: uuid, description: Set by postStartStep — the claiming actor. }
+        started_at: { type: [string, "null"], format: date-time }
+
+    BatchListResult:
+      type: object
+      description: getBatchList's response.
+      x-requirement-ids: [BAT-FR-035]
+      required: [batches, on_hold_count]
+      properties:
+        batches: { type: array, items: { $ref: '#/components/schemas/Batch' } }
+        on_hold_count: { type: integer, minimum: 0 }
+
+    ExecutionBlocker:
+      type: object
+      description: One reason a step cannot yet be started (`get_execution_view`'s `blockers`).
+      x-requirement-ids: [BAT-FR-006]
+      required: [step_id, recipe_step_code, reason]
+      properties:
+        step_id: { type: string, format: uuid }
+        recipe_step_code: { type: string }
+        reason: { type: string, description: "Always \"predecessor not yet completed\" this pass — the only blocker the predecessor-only readiness slice can express (SG-048)." }
+
+    BatchExecutionView:
+      type: object
+      description: getBatchExecutionView's response.
+      x-requirement-ids: [BAT-FR-004, BAT-FR-005, BAT-FR-006]
+      required: [batch, steps, blockers]
+      properties:
+        batch: { $ref: '#/components/schemas/Batch' }
+        steps: { type: array, items: { $ref: '#/components/schemas/BatchStep' } }
+        blockers: { type: array, items: { $ref: '#/components/schemas/ExecutionBlocker' } }
+
+    CreateBatchCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [BAT-FR-001, BAT-FR-002, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, batch_number, product_version_id, recipe_version_id, target_qty, target_uom]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        batch_number: { type: string, maxLength: 120 }
+        product_version_id: { type: string, format: uuid }
+        recipe_version_id: { type: string, format: uuid }
+        target_qty: { type: string, description: Decimal string. }
+        target_uom: { type: string, maxLength: 40 }
+        production_order_ref: { type: [string, "null"], maxLength: 160 }
+
+    IssueBatchCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [BAT-FR-003, BAT-FR-004, BAT-FR-005, BAT-FR-006, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, batch_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+
+    BatchTransitionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Shared by start/hold/resume/abort — the only fields any of the four state transitions need.
+      x-requirement-ids: [BAT-FR-004, BAT-FR-019, BAT-FR-020, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, batch_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"], description: Not required at the schema level for any of the four transitions; recorded on the audit event when supplied. }
+
+    StartStepCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [BAT-FR-007, BAT-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, batch_id, step_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        step_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }

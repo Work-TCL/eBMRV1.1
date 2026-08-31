@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-data-001.json",
+  "title": "SPEC-DATA-001 — Enterprise Data Ownership, Persistence Topology & Data Lineage Events",
+  "description": "Document 113 event contract for WP-11 Document 69 (app/modules/dataops/*). Four are emitted transactionally through the Mutation Gateway outbox in the same PostgreSQL transaction as the domain write (EVT-FR-002): ProjectionRebuilt + ProjectionUpdateRequested (aggregate projection_checkpoint), MigrationProvenanceRecorded (aggregate migration_batch), DataClassRegistered (aggregate data_ownership_registry). Two are operational signals detected on a read path and written best-effort in their own committed transaction (app/modules/dataops/signals.py, same self-committing pattern as security telemetry): ProjectionStaleDetected, CrossStoreMismatchDetected.",
+  "x-requirement-ids": ["DATA-FR-006", "DATA-FR-008", "DATA-FR-011", "DATA-FR-024", "DATA-FR-028", "DATA-FR-029", "EVT-FR-001", "EVT-FR-002"],
+  "$defs": {
+    "ProjectionRebuiltPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["projection_type", "source_stream", "state", "last_source_version", "version"],
+      "properties": {
+        "projection_type": { "type": "string" },
+        "source_stream": { "type": "string" },
+        "state": { "type": "string" },
+        "last_source_version": { "type": "integer" },
+        "projected_at": { "type": "string", "format": "date-time" },
+        "authoritative_max_version": { "type": "integer" },
+        "version": { "type": "integer" }
+      },
+      "x-requirement-ids": ["DATA-FR-011", "DATA-FR-028"]
+    },
+    "ProjectionUpdateRequestedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projection_type", "to_source_version"],
+      "properties": {
+        "projection_type": { "type": "string" },
+        "to_source_version": { "type": "integer" }
+      },
+      "x-requirement-ids": ["DATA-FR-006"]
+    },
+    "ProjectionStaleDetectedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["projection_type", "entity_id", "stale"],
+      "properties": {
+        "projection_type": { "type": "string" },
+        "entity_id": { "type": "string", "format": "uuid" },
+        "projected_source_version": { "type": "integer" },
+        "authoritative_version": { "type": ["integer", "null"] },
+        "stale": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["DATA-FR-008"]
+    },
+    "CrossStoreMismatchDetectedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["projection_type", "source_stream", "version_lag", "consistent"],
+      "properties": {
+        "projection_type": { "type": "string" },
+        "source_stream": { "type": "string" },
+        "projected_source_version": { "type": "integer" },
+        "authoritative_max_version": { "type": "integer" },
+        "authoritative_aggregate_count": { "type": "integer" },
+        "version_lag": { "type": "integer" },
+        "consistent": { "type": "boolean" },
+        "repair_action": { "type": ["string", "null"] }
+      },
+      "x-requirement-ids": ["DATA-FR-028"]
+    },
+    "MigrationProvenanceRecordedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["batch_ref", "source_system", "source_hash", "transform_version", "reconciliation_status"],
+      "properties": {
+        "batch_ref": { "type": "string" },
+        "source_system": { "type": "string" },
+        "source_hash": { "type": "string" },
+        "transform_version": { "type": "string" },
+        "reconciliation_status": { "type": "string", "enum": ["PENDING", "RECONCILED", "MISMATCH"] },
+        "source_row_count": { "type": ["integer", "null"] },
+        "loaded_row_count": { "type": ["integer", "null"] },
+        "approver": { "type": "string" }
+      },
+      "x-requirement-ids": ["DATA-FR-024"]
+    },
+    "DataClassRegisteredPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["entity_type", "authoritative_service", "authoritative_store", "version"],
+      "properties": {
+        "entity_type": { "type": "string" },
+        "authoritative_service": { "type": "string" },
+        "authoritative_store": { "type": "string" },
+        "projection_targets": { "type": "array", "items": { "type": "string" } },
+        "classification": { "type": "string" },
+        "version": { "type": "integer" }
+      },
+      "x-requirement-ids": ["DATA-FR-001", "DATA-FR-021", "DATA-FR-027"]
+    }
+  },
+  "events": [
+    { "event_type": "ProjectionRebuilt", "schema_version": "1.0", "producer": "SPEC-DATA-001", "aggregate_type": "projection_checkpoint", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ProjectionRebuiltPayload" }, "x-requirement-ids": ["DATA-FR-011"] },
+    { "event_type": "ProjectionUpdateRequested", "schema_version": "1.0", "producer": "SPEC-DATA-001", "aggregate_type": "projection_checkpoint", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ProjectionUpdateRequestedPayload" }, "x-requirement-ids": ["DATA-FR-006"] },
+    { "event_type": "ProjectionStaleDetected", "schema_version": "1.0", "producer": "SPEC-DATA-001", "aggregate_type": "projection_checkpoint", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ProjectionStaleDetectedPayload" }, "x-requirement-ids": ["DATA-FR-008"] },
+    { "event_type": "CrossStoreMismatchDetected", "schema_version": "1.0", "producer": "SPEC-DATA-001", "aggregate_type": "projection_checkpoint", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/CrossStoreMismatchDetectedPayload" }, "x-requirement-ids": ["DATA-FR-028"] },
+    { "event_type": "MigrationProvenanceRecorded", "schema_version": "1.0", "producer": "SPEC-DATA-001", "aggregate_type": "migration_batch", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/MigrationProvenanceRecordedPayload" }, "x-requirement-ids": ["DATA-FR-024"] },
+    { "event_type": "DataClassRegistered", "schema_version": "1.0", "producer": "SPEC-DATA-001", "aggregate_type": "data_ownership_registry", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/DataClassRegisteredPayload" }, "x-requirement-ids": ["DATA-FR-001"] }
+  ]
+}

@@ -1,0 +1,302 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qms-002.json",
+  "title": "SPEC-QMS-002 \u2014 CAPA Management Events",
+  "description": "Document 113 event contract for the 8 event types Document 27's own module (app/modules/qms/capa_commands.py) actually emits. All 8 declared SPEC-QMS-002 events in 07_EVENT_CATALOGUE.yaml are genuinely implemented -- no divergence for this module.\n\nREUSE NOTES: 'CAPAOpened' is emitted by both create_capa() (id, capa_number) and extend_capa() (id, new_target_date) -- extend does not get its own event_type. 'CAPAClosed' is emitted by both the close path (id) and the cancel path (id, state=\"CANCELLED\") -- cancellation is not a distinct event_type either. 'CAPAActionCompleted' is emitted TWICE per call when an action closes the last open action on its CAPA: once with aggregate_type=capa_action (id, capa_id) and once with aggregate_type=capa_record (id, state) -- two rows, same event_type name, different aggregate. All three are real, observed characteristics of the built code (capa_commands.py:489, capa_commands.py:502/574, capa_commands.py:343/348), not invented here.",
+  "x-requirement-ids": [
+    "CAPA-FR-001",
+    "CAPA-FR-005",
+    "CAPA-FR-007",
+    "CAPA-FR-009",
+    "CAPA-FR-010",
+    "CAPA-FR-013",
+    "CAPA-FR-015",
+    "CAPA-FR-016",
+    "CAPA-FR-017",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "CAPAOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted by create_capa() (id, capa_number) and extend_capa() (id, new_target_date) -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "capa_number": {
+          "type": "string"
+        },
+        "new_target_date": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-001",
+        "CAPA-FR-013"
+      ]
+    },
+    "CAPAPlanApprovedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-005",
+        "CAPA-FR-006"
+      ]
+    },
+    "CAPAActionAssignedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "action_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "action_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-007"
+      ]
+    },
+    "CAPAActionCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Two shapes depending on which of the two emissions this is -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "capa_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Present on the capa_action-aggregate emission."
+        },
+        "state": {
+          "$ref": "../openapi/spec-qms-002.yaml#/components/schemas/CapaState",
+          "description": "Present on the capa_record-aggregate emission."
+        }
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-007",
+        "CAPA-FR-009"
+      ]
+    },
+    "CAPAEffectivenessStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "check_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "check_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-010"
+      ]
+    },
+    "CAPAEffectivenessFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "check_id",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "check_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result": {
+          "$ref": "../openapi/spec-qms-002.yaml#/components/schemas/EffectivenessResult"
+        }
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-011",
+        "CAPA-FR-012"
+      ]
+    },
+    "CAPAClosedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string",
+          "const": "CANCELLED",
+          "description": "Present only on the cancel path."
+        }
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-015",
+        "CAPA-FR-016"
+      ]
+    },
+    "CAPAReopenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-012",
+        "CAPA-FR-017"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "CAPAOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-002",
+      "aggregate_type": "capa_record",
+      "payload": {
+        "$ref": "#/$defs/CAPAOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-001",
+        "CAPA-FR-013"
+      ]
+    },
+    {
+      "event_type": "CAPAPlanApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-002",
+      "aggregate_type": "capa_record",
+      "payload": {
+        "$ref": "#/$defs/CAPAPlanApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-005",
+        "CAPA-FR-006"
+      ]
+    },
+    {
+      "event_type": "CAPAActionAssigned",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-002",
+      "aggregate_type": "capa_record",
+      "payload": {
+        "$ref": "#/$defs/CAPAActionAssignedPayload"
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-007"
+      ]
+    },
+    {
+      "event_type": "CAPAActionCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-002",
+      "aggregate_type": "capa_action | capa_record",
+      "payload": {
+        "$ref": "#/$defs/CAPAActionCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-007",
+        "CAPA-FR-009"
+      ]
+    },
+    {
+      "event_type": "CAPAEffectivenessStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-002",
+      "aggregate_type": "capa_record",
+      "payload": {
+        "$ref": "#/$defs/CAPAEffectivenessStartedPayload"
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-010"
+      ]
+    },
+    {
+      "event_type": "CAPAEffectivenessFailed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-002",
+      "aggregate_type": "capa_record",
+      "payload": {
+        "$ref": "#/$defs/CAPAEffectivenessFailedPayload"
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-011",
+        "CAPA-FR-012"
+      ]
+    },
+    {
+      "event_type": "CAPAClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-002",
+      "aggregate_type": "capa_record",
+      "payload": {
+        "$ref": "#/$defs/CAPAClosedPayload"
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-015",
+        "CAPA-FR-016"
+      ]
+    },
+    {
+      "event_type": "CAPAReopened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-002",
+      "aggregate_type": "capa_record",
+      "payload": {
+        "$ref": "#/$defs/CAPAReopenedPayload"
+      },
+      "x-requirement-ids": [
+        "CAPA-FR-012",
+        "CAPA-FR-017"
+      ]
+    }
+  ]
+}

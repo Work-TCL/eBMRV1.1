@@ -1,0 +1,167 @@
+openapi: 3.1.0
+info:
+  title: SPEC-SEC-008 — Secure SDLC, Software Supply Chain, SBOM, Vulnerability & Release Security
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-10 Document 68 (`services/gxp-api/app/modules/security/supplychain*`).
+    3 owned entities per the approved data-model catalogue: `software_component_inventory`,
+    `vulnerability_record`, `release_security_evidence`.
+
+
+    Signature: `POST /security/v1/vulnerabilities/{id}/exceptions` is Part 11 signed per Document 106
+    row 141 (`Approved`, "Elevated authority defined by the record class", MUST be independent of the
+    requester) — but that row's role is **unresolvable**, the identical shape to Document 61 row 133
+    (SG-161). Following that established precedent this operation **fails closed with
+    SIGNATURE_POLICY_UNRESOLVED (409)**: no signature policy row is seeded. See SG-165.
+    `POST /security/v1/vulnerabilities` and `.../assess` are RBAC-gated + mandatory reason, no
+    signature. `GET /security/v1/releases/{id}/security-evidence` is read-only. The CI release-gate /
+    artifact-verification functions (`evaluateSecurityReleaseGate`, `verifyDeploymentArtifact`,
+    `generateReleaseSBOM`) are the `app/modules/security/supplychain.py` library, not endpoints.
+tags:
+  - name: security-supplychain
+
+paths:
+  /security/v1/vulnerabilities:
+    post:
+      operationId: postRegisterVulnerability
+      tags: [security-supplychain]
+      summary: Register a vulnerability finding (SDLC-FR-018)
+      x-requirement-ids: [SDLC-FR-018, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RegisterVulnerabilityCommand' } } }
+      responses:
+        '200': { description: Registered (state OPEN)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: IDEMPOTENCY_CONFLICT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/vulnerabilities/{vulnerability_id}/assess:
+    post:
+      operationId: postAssessVulnerabilitySeverity
+      tags: [security-supplychain]
+      summary: Assess a vulnerability's severity / KEV status / GxP impact (SDLC-FR-019/020/021)
+      x-requirement-ids: [SDLC-FR-019, SDLC-FR-020, SDLC-FR-021, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: vulnerability_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AssessVulnerabilitySeverityCommand' } } }
+      responses:
+        '200': { description: Assessed (state ASSESSED)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/vulnerabilities/{vulnerability_id}/exceptions:
+    post:
+      operationId: postApproveVulnerabilityException
+      tags: [security-supplychain]
+      summary: Approve a time-bounded vulnerability exception (Document 106 row 141 — UNRESOLVED, SG-165)
+      description: >
+        Signed per Document 106 row 141, but the row's "Elevated authority defined by the record class"
+        role is unresolvable (same as SG-161). This operation fails closed with
+        SIGNATURE_POLICY_UNRESOLVED (409) until SG-165 is resolved and a signature policy row exists.
+      x-requirement-ids: [SDLC-FR-021, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: vulnerability_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveVulnerabilityExceptionCommand' } } }
+      responses:
+        '200': { description: Approved (unreachable until SG-165 resolved)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "SIGNATURE_POLICY_UNRESOLVED (SG-165) / STALE_VERSION / INVALID_TRANSITION / VULNERABILITY_EXCEPTION_CONFLICT.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/releases/{release_id}/security-evidence:
+    get:
+      operationId: getReleaseSecurityEvidence
+      tags: [security-supplychain]
+      summary: The release provenance bundle — SBOM, scans, pen tests, exceptions, gate result, signature (SDLC-FR-013/034)
+      x-requirement-ids: [SDLC-FR-013, SDLC-FR-030, SDLC-FR-034]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: release_id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Evidence bundle., content: { application/json: { schema: { $ref: '#/components/schemas/ReleaseSecurityEvidence' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    RegisterVulnerabilityCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, vulnerability_id, source, component, reason]
+      x-requirement-ids: [SDLC-FR-018]
+      properties:
+        idempotency_key: { type: string, minLength: 1 }
+        vulnerability_id: { type: string, minLength: 1, maxLength: 80 }
+        source: { type: string, enum: [INTERNAL_SCAN, SCA, CONTAINER_SCAN, CUSTOMER_REPORT, RESEARCHER, VENDOR_ADVISORY] }
+        component:
+          type: object
+          required: [name]
+          properties: { name: { type: string }, version: { type: string }, digest: { type: string } }
+        affected_releases: { type: array, items: { type: string } }
+        reason: { type: string, minLength: 1 }
+
+    AssessVulnerabilitySeverityCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, vulnerability_id, expected_version, severity, kev_status, gxp_impact, remediation_due, assessment, reason]
+      x-requirement-ids: [SDLC-FR-019, SDLC-FR-020, SDLC-FR-021]
+      properties:
+        idempotency_key: { type: string, minLength: 1 }
+        vulnerability_id: { type: string, format: uuid }
+        expected_version: { type: integer, minimum: 1 }
+        severity: { type: string, enum: [LOW, MEDIUM, HIGH, CRITICAL] }
+        kev_status: { type: boolean }
+        gxp_impact: { type: object, additionalProperties: true }
+        remediation_due: { type: string, format: date-time }
+        assessment: { type: object, additionalProperties: true }
+        reason: { type: string, minLength: 1 }
+
+    ApproveVulnerabilityExceptionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, vulnerability_id, expected_version, rationale, compensating_controls, expiry, reason]
+      x-requirement-ids: [SDLC-FR-021]
+      properties:
+        idempotency_key: { type: string, minLength: 1 }
+        vulnerability_id: { type: string, format: uuid }
+        expected_version: { type: integer, minimum: 1 }
+        rationale: { type: string, minLength: 1 }
+        compensating_controls: { type: array, items: { type: string }, minItems: 1 }
+        expiry: { type: string, format: date-time }
+        reason: { type: string, minLength: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    ReleaseSecurityEvidence:
+      type: object
+      additionalProperties: true
+      required: [release_id, commit_sha, gate_result]
+      x-requirement-ids: [SDLC-FR-013]
+      properties:
+        release_id: { type: string }
+        commit_sha: { type: string }
+        build_provenance: { type: object, additionalProperties: true }
+        sbom_ref: { type: [string, "null"] }
+        scan_reports: { type: object, additionalProperties: true }
+        pentest_refs: { type: array, items: { type: string } }
+        security_test_refs: { type: array, items: { type: string } }
+        accepted_exceptions: { type: array, items: { type: object, additionalProperties: true } }
+        gate_result: { type: string, enum: [PASS, WARN, BLOCK, NOT_EVALUATED] }
+        artifact_digest: { type: [string, "null"] }
+        signature_ref: { type: [string, "null"] }
+        version: { type: integer }

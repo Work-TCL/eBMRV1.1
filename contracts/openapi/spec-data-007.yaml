@@ -1,0 +1,179 @@
+openapi: 3.1.0
+info:
+  title: SPEC-DATA-007 — Caching, Search, Read Models, Reporting Projections & Analytics Data Access
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-11 Document 75 (`services/gxp-api/app/modules/readmodels/*`).
+    2 owned entities per the approved data-model catalogue: `projection_document_metadata`,
+    `read_model_checkpoint` — both "Redis / search / read models (rebuildable, NON-AUTHORITATIVE)".
+
+
+    Phase 1 has no live Redis/OpenSearch: `readmodels/cache.py` is a genuine in-process versioned TTL
+    cache (READ-FR-008's "pluggable" default is itself Postgres-backed
+    `projection_document_metadata` + `ILIKE`/JSONB query, not an external engine placeholder). No
+    signature anywhere — Document 106 has no SPEC-DATA-007 row and Document 106 # 10 exempts rebuilds
+    and reads.
+tags:
+  - name: readmodels-search
+  - name: readmodels-reports
+  - name: readmodels-status
+
+paths:
+  /search/v1/{index_type}:
+    get:
+      operationId: getSearchQuery
+      tags: [readmodels-search]
+      summary: Authorized search query over an index (READ-FR-010/022)
+      x-requirement-ids: [READ-FR-010, READ-FR-022]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: index_type, in: path, required: true, schema: { type: string } }
+        - { name: sort, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        '200': { description: Search results (IDs re-authorized on fetch)., content: { application/json: { schema: { $ref: '#/components/schemas/SearchResultList' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: "SEARCH_FILTER_NOT_ALLOWED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /search/v1/{index_type}/{entity_id}:
+    get:
+      operationId: getSearchResultDetail
+      tags: [readmodels-search]
+      summary: Authoritative-checked result detail (READ-FR-011/013)
+      x-requirement-ids: [READ-FR-011, READ-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: index_type, in: path, required: true, schema: { type: string } }
+        - { name: entity_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Result detail with freshness flag., content: { application/json: { schema: { $ref: '#/components/schemas/SearchResultDetail' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /search/v1/indexes/{index_type}:rebuild:
+    post:
+      operationId: postRebuildSearchIndex
+      tags: [readmodels-search]
+      summary: Rebuild a search index from the authoritative source (READ-FR-014)
+      x-requirement-ids: [READ-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: index_type, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RebuildSearchIndexCommand' } } }
+      responses:
+        '200': { description: Rebuilt; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: "STALE_VERSION / INVALID_TRANSITION / IDEMPOTENCY_CONFLICT.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /reports/v1/exports:
+    post:
+      operationId: postGenerateAsyncExport
+      tags: [readmodels-reports]
+      summary: Generate a frozen-cutoff async report export (READ-FR-017/019/023)
+      x-requirement-ids: [READ-FR-017, READ-FR-019, READ-FR-023, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GenerateAsyncExportCommand' } } }
+      responses:
+        '200': { description: Generated; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: "STALE_VERSION / IDEMPOTENCY_CONFLICT.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /platform/v1/read-models/{name}/status:
+    get:
+      operationId: getReadModelStatus
+      tags: [readmodels-status]
+      summary: Read-model / index / export checkpoint freshness (READ-FR-016)
+      x-requirement-ids: [READ-FR-016]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Checkpoint status., content: { application/json: { schema: { $ref: '#/components/schemas/ReadModelStatus' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    RebuildSearchIndexCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, index_type]
+      x-requirement-ids: [READ-FR-014, MUT-FR-005, MUT-FR-010]
+      properties:
+        idempotency_key: { type: string }
+        index_type: { type: string }
+        source_stream: { type: [string, 'null'], description: "Required only when first registering an index_type." }
+        allowed_fields: { type: array, items: { type: string } }
+        expected_version: { type: [integer, 'null'] }
+        reason: { type: [string, 'null'] }
+
+    GenerateAsyncExportCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, report_name, source_stream, reason]
+      x-requirement-ids: [READ-FR-017, READ-FR-019]
+      properties:
+        idempotency_key: { type: string }
+        report_name: { type: string }
+        source_stream: { type: string }
+        expected_version: { type: [integer, 'null'] }
+        reason: { type: string }
+
+    SearchResultList:
+      type: object
+      additionalProperties: false
+      required: [index_type, count, results]
+      x-requirement-ids: [READ-FR-010]
+      properties:
+        index_type: { type: string }
+        count: { type: integer }
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              entity_id: { type: string, format: uuid }
+              source_version: { type: integer }
+              indexed_fields: { type: object, additionalProperties: true }
+              state: { type: string }
+              projected_at: { type: [string, 'null'], format: date-time }
+
+    SearchResultDetail:
+      type: object
+      additionalProperties: false
+      required: [entity_id, index_type, indexed_source_version, stale]
+      x-requirement-ids: [READ-FR-011, READ-FR-013]
+      properties:
+        entity_id: { type: string, format: uuid }
+        index_type: { type: string }
+        indexed_source_version: { type: integer }
+        authoritative_version: { type: [integer, 'null'] }
+        indexed_fields: { type: object, additionalProperties: true }
+        projected_at: { type: [string, 'null'], format: date-time }
+        stale: { type: boolean }
+
+    ReadModelStatus:
+      type: object
+      additionalProperties: false
+      required: [model_name, source_stream, state, version]
+      x-requirement-ids: [READ-FR-016]
+      properties:
+        model_name: { type: string }
+        source_stream: { type: string }
+        state: { type: string, enum: [FRESH, REFRESHING, STALE, ERROR] }
+        source_cutoff: { type: [string, 'null'], format: date-time }
+        refreshed_at: { type: [string, 'null'], format: date-time }
+        version: { type: integer }

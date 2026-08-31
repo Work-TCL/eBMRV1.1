@@ -1,0 +1,291 @@
+openapi: 3.1.0
+info:
+  title: SPEC-SEC-003 — Privileged Access, Support Access, Break-Glass & Administrative Security
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-10 Document 63 (`services/gxp-api/app/modules/security/
+    privileged_access_*`). 3 owned entities per the approved data-model catalogue:
+    `privileged_access_request`, `privileged_grant`, `privileged_session`.
+
+
+    `evaluatePrivilegedGrant()` and `reviewPrivilegedSession()` are named functions with their own
+    events/errors in Document 63's contract catalogue but missing from its terse 6-op `# 7` list —
+    contracted here as extra operations, same precedent Documents 54/58/61/62 used for their own extra
+    operations.
+
+
+    Document 106 rows 134-136 resolve for real (unlike Document 61's SG-161): rows 135/136's "approve"/
+    "close" family defaults map to the existing **QA Releaser** role — the same non-QMS mapping precedent
+    `scripts/seed.py` already established for `inventory_adjustment_request.approve`/`oos_record.close`.
+    Independence (Document 106's "MUST be independent of the author"/"...of the investigator/owner") is
+    enforced in code (requester != approver on `approve`, opener != closer on `close`) since these are
+    genuinely separate calls, unlike SG-160's same-transaction cases.
+
+
+    PAM-FR-002/012: nothing in this surface can grant GxP/signature/QA-release authority. Break-glass
+    (`POST /security/v1/break-glass`) has no approval gate by design (Document 63 `# 5`: EMERGENCY ->
+    BREAK_GLASS_ACTIVE) and always forces `review_status=PENDING` (mandatory post-use review, PAM-FR-011).
+tags:
+  - name: security-privileged-access
+
+paths:
+  /security/v1/privileged-access/requests:
+    post:
+      operationId: postRequestPrivilegedAccess
+      tags: [security-privileged-access]
+      summary: Request just-in-time privileged access (PAM-FR-005/016/017)
+      x-requirement-ids: [PAM-FR-005, PAM-FR-016, PAM-FR-017, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RequestPrivilegedAccessCommand' } } }
+      responses:
+        '200': { description: Created, state PENDING_APPROVAL., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/privileged-access/requests/{request_id}/approve:
+    post:
+      operationId: postApprovePrivilegedAccess
+      tags: [security-privileged-access]
+      summary: Approve or deny a privileged access request (PAM-FR-016, Document 106 row 135)
+      description: Requester cannot approve their own request (422); on APPROVED, creates a time-bound `privileged_grant`.
+      x-requirement-ids: [PAM-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: request_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApprovePrivilegedAccessCommand' } } }
+      responses:
+        '200': { description: Decided., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (self-approval attempt).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/privileged-access/evaluate:
+    get:
+      operationId: getEvaluatePrivilegedGrant
+      tags: [security-privileged-access]
+      summary: Evaluate whether an active grant authorizes a subject/role/resource right now (PAM-FR-005/017)
+      x-requirement-ids: [PAM-FR-005, PAM-FR-017]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: subject_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: requested_role, in: query, required: true, schema: { type: string } }
+        - { name: resource, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { description: Allowed., content: { application/json: { schema: { $ref: '#/components/schemas/PrivilegedDecision' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { description: PRIVILEGED_ACCESS_DENIED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/support-sessions:
+    post:
+      operationId: postOpenSupportSession
+      tags: [security-privileged-access]
+      summary: Open a read-only support session against an active grant (PAM-FR-006/007/008/020)
+      x-requirement-ids: [PAM-FR-006, PAM-FR-007, PAM-FR-008, PAM-FR-020, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OpenSupportSessionCommand' } } }
+      responses:
+        '200': { description: Opened, read-only by default., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: INVALID_TRANSITION (grant not ACTIVE)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/break-glass:
+    post:
+      operationId: postActivateBreakGlass
+      tags: [security-privileged-access]
+      summary: Activate emergency break-glass access (PAM-FR-011/012/026)
+      description: No approval gate by design. Never grants GxP/signature/QA-release authority. Always forces review_status=PENDING.
+      x-requirement-ids: [PAM-FR-011, PAM-FR-012, PAM-FR-026, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ActivateBreakGlassCommand' } } }
+      responses:
+        '200': { description: Activated., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: "VALIDATION_FAILED (missing incident_ref/reason).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/admin-commands/{command_code}:execute:
+    post:
+      operationId: postExecuteControlledAdminCommand
+      tags: [security-privileged-access]
+      summary: Execute an allowlisted admin command (PAM-FR-009/010/013/018, Document 106 row 134)
+      description: command_code must be on the CONTROLLED_ADMIN_COMMANDS allowlist — never arbitrary SQL/code (PAM-FR-018, Doc 63 `# 14`).
+      x-requirement-ids: [PAM-FR-009, PAM-FR-010, PAM-FR-013, PAM-FR-018, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: command_code, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ExecuteControlledAdminCommandCommand' } } }
+      responses:
+        '200': { description: Executed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { description: "PRIVILEGED_ACCESS_DENIED (no active grant).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: INVALID_TRANSITION (session not ACTIVE)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: ADMIN_COMMAND_NOT_ALLOWED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/privileged-sessions/{privileged_session_id}/close:
+    post:
+      operationId: postClosePrivilegedSession
+      tags: [security-privileged-access]
+      summary: Close a privileged session (Document 106 row 136)
+      description: Closer must be independent of the session's own opener, except a break-glass session's own emergency operator (the mandatory review step, not close, is where break-glass independence is required).
+      x-requirement-ids: [PAM-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: privileged_session_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ClosePrivilegedSessionCommand' } } }
+      responses:
+        '200': { description: Closed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (closer is the opener).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/privileged-sessions/{privileged_session_id}/review:
+    post:
+      operationId: postReviewPrivilegedSession
+      tags: [security-privileged-access]
+      summary: Record a closed session's review (PAM-FR-011/013/024)
+      x-requirement-ids: [PAM-FR-011, PAM-FR-013, PAM-FR-024, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: privileged_session_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReviewPrivilegedSessionCommand' } } }
+      responses:
+        '200': { description: Reviewed., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION or INVALID_TRANSITION (not closed, or already reviewed).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (reviewer is the opener).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  schemas:
+    RequestPrivilegedAccessCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PAM-FR-005, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, requested_role, scope, reason, requested_start, requested_end]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        requested_role: { type: string }
+        scope: { type: object }
+        reason: { type: string }
+        requested_start: { type: string, format: date-time }
+        requested_end: { type: string, format: date-time }
+        ticket_ref: { type: [string, "null"] }
+
+    ApprovePrivilegedAccessCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PAM-FR-016, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, request_id, expected_version, decision, comments]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        request_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        decision: { type: string, enum: [APPROVED, DENIED] }
+        comments: { type: string }
+        duration_minutes: { type: integer, default: 240 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    PrivilegedDecision:
+      type: object
+      x-requirement-ids: [PAM-FR-005, PAM-FR-017]
+      properties:
+        allow: { type: boolean }
+        grant_id: { type: string, format: uuid }
+        role: { type: string }
+        expiry: { type: string, format: date-time }
+
+    OpenSupportSessionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PAM-FR-007, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, grant_id, support_case_ref]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        grant_id: { type: string, format: uuid }
+        support_case_ref: { type: string }
+        customer_scope_ref: { type: [string, "null"] }
+        connection_source: { type: [object, "null"] }
+        reason: { type: [string, "null"] }
+
+    ActivateBreakGlassCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PAM-FR-011, PAM-FR-026, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, requested_role, incident_ref, reason]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        requested_role: { type: string }
+        incident_ref: { type: string }
+        reason: { type: string }
+        duration_minutes: { type: integer, default: 60 }
+        scope: { type: object }
+
+    ExecuteControlledAdminCommandCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PAM-FR-018, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, privileged_session_id, command_code]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        privileged_session_id: { type: string, format: uuid }
+        command_code: { type: string, enum: [LIST_ACTIVE_SESSIONS, FORCE_REVOKE_SESSION] }
+        parameters: { type: object }
+        reason: { type: [string, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    ClosePrivilegedSessionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PAM-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, privileged_session_id, expected_version, outcome]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        privileged_session_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        outcome: { type: string }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    ReviewPrivilegedSessionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PAM-FR-011, PAM-FR-024, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, privileged_session_id, expected_version, findings]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        privileged_session_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        findings: { type: string }
+        outcome: { type: string, default: NO_ISSUES }

@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-pm-001.json",
+  "title": "SPEC-PM-001 — Postmarket Surveillance, Safety Case & Signal Management Events",
+  "description": "Document 113 event contract for the 9 event types Document 58's own module (app/modules/postmarket/commands.py) actually emits. All 9 declared Document 58 # 10 events are implemented -- no divergence for this module. calculateSurveillanceMetric()/buildPeriodicSafetyDataset() persist through the Vault and do not emit a domain event of their own beyond the generic vault release path.",
+  "x-requirement-ids": [
+    "PMS-FR-002",
+    "PMS-FR-004",
+    "PMS-FR-016",
+    "PMS-FR-020",
+    "PMS-FR-021",
+    "PMS-FR-022",
+    "PMS-FR-024",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "PostmarketSourceRegisteredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "source_type"],
+      "properties": {
+        "source_id": { "type": "string", "format": "uuid" },
+        "source_type": { "type": "string" }
+      },
+      "x-requirement-ids": ["PMS-FR-001"]
+    },
+    "SafetyCaseCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "safety_case_number", "source_record_type", "source_record_id"],
+      "properties": {
+        "case_id": { "type": "string", "format": "uuid" },
+        "safety_case_number": { "type": "string" },
+        "source_record_type": { "type": "string" },
+        "source_record_id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["PMS-FR-002"]
+    },
+    "SafetyProductResolvedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "identity_resolution_state"],
+      "properties": {
+        "case_id": { "type": "string", "format": "uuid" },
+        "identity_resolution_state": { "type": "string", "enum": ["RESOLVED", "UNKNOWN_QUEUE"] }
+      },
+      "x-requirement-ids": ["PMS-FR-004", "PMS-FR-005"]
+    },
+    "SafetyCaseClassifiedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "classification_version"],
+      "properties": {
+        "case_id": { "type": "string", "format": "uuid" },
+        "classification_version": { "type": "integer" }
+      },
+      "x-requirement-ids": ["PMS-FR-016", "PMS-FR-017"]
+    },
+    "SafetyCaseFollowupReceivedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "followup_no"],
+      "properties": {
+        "case_id": { "type": "string", "format": "uuid" },
+        "followup_no": { "type": "integer" }
+      },
+      "x-requirement-ids": ["PMS-FR-016"]
+    },
+    "SafetyCasesLinkedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonical_case_id", "duplicate_case_ids"],
+      "properties": {
+        "canonical_case_id": { "type": "string", "format": "uuid" },
+        "duplicate_case_ids": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+      },
+      "x-requirement-ids": ["PMS-FR-015"]
+    },
+    "SafetySignalOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signal_id", "signal_code"],
+      "properties": {
+        "signal_id": { "type": "string", "format": "uuid" },
+        "signal_code": { "type": "string" }
+      },
+      "x-requirement-ids": ["PMS-FR-021"]
+    },
+    "SafetySignalAssessedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signal_id", "state"],
+      "properties": {
+        "signal_id": { "type": "string", "format": "uuid" },
+        "state": { "type": "string" }
+      },
+      "x-requirement-ids": ["PMS-FR-022", "PMS-FR-023"]
+    },
+    "SafetySignalEscalatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signal_id", "target_module", "target_aggregate_id"],
+      "properties": {
+        "signal_id": { "type": "string", "format": "uuid" },
+        "target_module": { "type": "string" },
+        "target_aggregate_id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["PMS-FR-024"]
+    }
+  },
+  "events": [
+    {
+      "event_type": "PostmarketSourceRegistered",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-001",
+      "aggregate_type": "postmarket_source",
+      "payload": { "$ref": "#/$defs/PostmarketSourceRegisteredPayload" },
+      "x-requirement-ids": ["PMS-FR-001"]
+    },
+    {
+      "event_type": "SafetyCaseCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-001",
+      "aggregate_type": "safety_case",
+      "payload": { "$ref": "#/$defs/SafetyCaseCreatedPayload" },
+      "x-requirement-ids": ["PMS-FR-002"]
+    },
+    {
+      "event_type": "SafetyProductResolved",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-001",
+      "aggregate_type": "safety_case",
+      "payload": { "$ref": "#/$defs/SafetyProductResolvedPayload" },
+      "x-requirement-ids": ["PMS-FR-004", "PMS-FR-005"]
+    },
+    {
+      "event_type": "SafetyCaseClassified",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-001",
+      "aggregate_type": "safety_case",
+      "payload": { "$ref": "#/$defs/SafetyCaseClassifiedPayload" },
+      "x-requirement-ids": ["PMS-FR-016", "PMS-FR-017"]
+    },
+    {
+      "event_type": "SafetyCaseFollowupReceived",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-001",
+      "aggregate_type": "safety_case",
+      "payload": { "$ref": "#/$defs/SafetyCaseFollowupReceivedPayload" },
+      "x-requirement-ids": ["PMS-FR-016"]
+    },
+    {
+      "event_type": "SafetyCasesLinked",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-001",
+      "aggregate_type": "safety_case",
+      "payload": { "$ref": "#/$defs/SafetyCasesLinkedPayload" },
+      "x-requirement-ids": ["PMS-FR-015"]
+    },
+    {
+      "event_type": "SafetySignalOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-001",
+      "aggregate_type": "safety_signal",
+      "payload": { "$ref": "#/$defs/SafetySignalOpenedPayload" },
+      "x-requirement-ids": ["PMS-FR-021"]
+    },
+    {
+      "event_type": "SafetySignalAssessed",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-001",
+      "aggregate_type": "safety_signal",
+      "payload": { "$ref": "#/$defs/SafetySignalAssessedPayload" },
+      "x-requirement-ids": ["PMS-FR-022", "PMS-FR-023"]
+    },
+    {
+      "event_type": "SafetySignalEscalated",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-001",
+      "aggregate_type": "safety_signal",
+      "payload": { "$ref": "#/$defs/SafetySignalEscalatedPayload" },
+      "x-requirement-ids": ["PMS-FR-024"]
+    }
+  ]
+}

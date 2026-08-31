@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qms-007.json",
+  "title": "SPEC-QMS-007 \u2014 Supplier Corrective Action Request (SCAR) Events",
+  "description": "Document 113 event contract for the 6 event types Document 32's own module (app/modules/qms/scar_commands.py) actually emits. All 6 declared SPEC-QMS-007 events in 07_EVENT_CATALOGUE.yaml are genuinely implemented -- no divergence for this module.\n\nDUAL-AGGREGATE EMISSIONS: 'SCARIssued' and 'SCARClosed' are each written TWICE per call -- once on the scar_record aggregate (the full payload) and once on the supplier_quality_case aggregate (a smaller {case_id/id, scar_id} cross-reference), because issuing or closing a SCAR also changes its parent case's state (scar_commands.py:303-313, 522-532). Real, observed characteristic of the built code, not invented here.\n\nREUSE NOTE: 'SCARResponseReceived' is emitted from three call sites on the scar_record aggregate -- record_supplier_response() (id only), review_scar() when rejected (id, decision), and record_effectiveness() when the result is \"fail\" (id, result) -- none of which get their own event_type.",
+  "x-requirement-ids": [
+    "SCAR-FR-001",
+    "SCAR-FR-004",
+    "SCAR-FR-005",
+    "SCAR-FR-008",
+    "SCAR-FR-009",
+    "SCAR-FR-010",
+    "SCAR-FR-011",
+    "SCAR-FR-014",
+    "SCAR-FR-016",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "SupplierQualityCaseOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "case_number"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "case_number": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-001"
+      ]
+    },
+    "SCARIssuedOnScarPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "case_id",
+        "scar_number",
+        "is_repeat_issue"
+      ],
+      "description": "The scar_record-aggregate emission.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "case_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "scar_number": {
+          "type": "string"
+        },
+        "is_repeat_issue": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-004",
+        "SCAR-FR-014"
+      ]
+    },
+    "SCARIssuedOnCasePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "scar_id"
+      ],
+      "description": "The supplier_quality_case-aggregate emission (cross-reference only).",
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "scar_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-004"
+      ]
+    },
+    "SCARResponseReceivedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted by record_supplier_response() (id only), review_scar() when rejected (id, decision) and record_effectiveness() when result=\"fail\" (id, result) -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "decision": {
+          "type": "string",
+          "const": "rejected"
+        },
+        "result": {
+          "type": "string",
+          "const": "fail"
+        }
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-005",
+        "SCAR-FR-008",
+        "SCAR-FR-009"
+      ]
+    },
+    "SCAREffectivenessPassedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result": {
+          "type": "string",
+          "const": "pass"
+        }
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-009"
+      ]
+    },
+    "SCARClosedOnScarPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_status_decision"
+      ],
+      "description": "The scar_record-aggregate emission.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "source_status_decision": {
+          "$ref": "../openapi/spec-qms-007.yaml#/components/schemas/SourceStatusDecision"
+        }
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-010",
+        "SCAR-FR-016"
+      ]
+    },
+    "SCARClosedOnCasePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "scar_id"
+      ],
+      "description": "The supplier_quality_case-aggregate emission (cross-reference only; 'id' here is the case id).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "scar_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-016"
+      ]
+    },
+    "SupplierSourceSuspendedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "supplier_id"
+      ],
+      "description": "Emitted only when source_status_decision is \"suspend\" (scar_commands.py:534-538).",
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "supplier_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-011"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "SupplierQualityCaseOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-007",
+      "aggregate_type": "supplier_quality_case",
+      "payload": {
+        "$ref": "#/$defs/SupplierQualityCaseOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-001"
+      ]
+    },
+    {
+      "event_type": "SCARIssued",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-007",
+      "aggregate_type": "scar_record",
+      "payload": {
+        "$ref": "#/$defs/SCARIssuedOnScarPayload"
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-004",
+        "SCAR-FR-014"
+      ]
+    },
+    {
+      "event_type": "SCARIssued",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-007",
+      "aggregate_type": "supplier_quality_case",
+      "payload": {
+        "$ref": "#/$defs/SCARIssuedOnCasePayload"
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-004"
+      ]
+    },
+    {
+      "event_type": "SCARResponseReceived",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-007",
+      "aggregate_type": "scar_record",
+      "payload": {
+        "$ref": "#/$defs/SCARResponseReceivedPayload"
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-005",
+        "SCAR-FR-008",
+        "SCAR-FR-009"
+      ]
+    },
+    {
+      "event_type": "SCAREffectivenessPassed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-007",
+      "aggregate_type": "scar_record",
+      "payload": {
+        "$ref": "#/$defs/SCAREffectivenessPassedPayload"
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-009"
+      ]
+    },
+    {
+      "event_type": "SCARClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-007",
+      "aggregate_type": "scar_record",
+      "payload": {
+        "$ref": "#/$defs/SCARClosedOnScarPayload"
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-010",
+        "SCAR-FR-016"
+      ]
+    },
+    {
+      "event_type": "SCARClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-007",
+      "aggregate_type": "supplier_quality_case",
+      "payload": {
+        "$ref": "#/$defs/SCARClosedOnCasePayload"
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-016"
+      ]
+    },
+    {
+      "event_type": "SupplierSourceSuspended",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-007",
+      "aggregate_type": "supplier_quality_case",
+      "payload": {
+        "$ref": "#/$defs/SupplierSourceSuspendedPayload"
+      },
+      "x-requirement-ids": [
+        "SCAR-FR-011"
+      ]
+    }
+  ]
+}

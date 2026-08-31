@@ -9,14 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import verify_password
 from app.modules.batch.models import ALLOWED_TRANSITIONS, Batch, BatchRelease, BatchReview, BatchStep
 from app.modules.iam.models import User
-from app.modules.iam.service import require_role
+from app.modules.policy.service import evaluate_policy
 from app.modules.recipe.models import RecipeStep
+from app.modules.rules import commands as rules_commands
+from app.modules.rules import service as rules_service
 from app.modules.signature import service as signature_service
+from app.modules.vault import service as vault_service
 from app.mutation.errors import (
     InvalidTransitionError,
     MissingSignatureError,
     NotFoundError,
     StaleVersionError,
+    UomUnknownError,
     ValidationFailedError,
 )
 from app.mutation.gateway import (
@@ -50,6 +54,18 @@ def _assert_transition(batch: Batch, new_status: str) -> None:
             current_status=batch.status,
             requested_status=new_status,
         )
+
+
+async def _resolve_uom_id(session: AsyncSession, uom: str | None) -> uuid.UUID | None:
+    """SG-146 (remainder, module 4 of 8), MIG-FR-004 expand step — same best-effort dual-write
+    discipline as every prior module (`yield_reconciliation`/`qc`/`material`)."""
+    if not uom:
+        return None
+    try:
+        row = await rules_service.resolve_uom(session, uom)
+    except UomUnknownError:
+        return None
+    return row.uom_id
 
 
 def batch_record_hash(batch: Batch) -> str:
@@ -90,6 +106,7 @@ async def create_batch(
         status="planned",
         target_quantity=cmd.target_quantity,
         uom=cmd.uom,
+        uom_id=await _resolve_uom_id(session, cmd.uom),
         version=1,
     )
     session.add(batch)
@@ -190,7 +207,7 @@ async def start_step(
     if batch.status not in ("issued", "in_execution"):
         raise InvalidTransitionError("Batch is not in an executable state", current_status=batch.status)
 
-    await require_role(session, actor_user_id, site_id, "Operator", "Supervisor")
+    await evaluate_policy(session, actor_user_id, action="batch_step.start", site_id=site_id)
 
     step = await session.get(BatchStep, cmd.batch_step_id)
     if step is None or step.batch_id != batch.id:
@@ -251,12 +268,18 @@ async def complete_step(
         raise InvalidTransitionError("Step is not in progress", current_status=step.status)
 
     recipe_step = await session.get(RecipeStep, step.recipe_step_id)
+    policy = await signature_service.resolve_signature_requirement(
+        session, record_type="batch_step", action="complete_step"
+    )
+    # Policy floor and recipe flag combine: the recipe may raise the requirement above the floor
+    # (a customer tightening it) but may never lower it (REMEDIATION_R1 FIX 1 / Doc 106 SIGP-FR-004).
+    signature_required = policy.signature_required or recipe_step.requires_signature
     signature_id = None
-    if recipe_step.requires_signature:
+    if signature_required:
         if cmd.challenge_id is None or not cmd.reauth_password:
             raise MissingSignatureError(
                 "This step requires a signature",
-                required_meaning=recipe_step.signature_meaning,
+                required_meaning=recipe_step.signature_meaning or policy.meaning,
             )
         signature_id = await _verify_reauth_and_consume(
             session, actor_user_id, cmd.challenge_id, cmd.reauth_password, batch
@@ -376,10 +399,15 @@ async def review_batch(
     if cmd.decision not in ("approved", "rejected"):
         raise ValidationFailedError("decision must be 'approved' or 'rejected'")
 
-    await require_role(session, actor_user_id, site_id, "QA Reviewer")
-    signature_id = await _verify_reauth_and_consume(
-        session, actor_user_id, cmd.challenge_id, cmd.reauth_password, batch
+    await evaluate_policy(session, actor_user_id, action="batch.review", site_id=site_id)
+    policy = await signature_service.resolve_signature_requirement(
+        session, record_type="batch", action="review"
     )
+    signature_id = None
+    if policy.signature_required:
+        signature_id = await _verify_reauth_and_consume(
+            session, actor_user_id, cmd.challenge_id, cmd.reauth_password, batch
+        )
 
     session.add(
         BatchReview(
@@ -443,15 +471,33 @@ async def release_batch(
     if latest_review is None or latest_review.decision != "approved":
         raise InvalidTransitionError("Batch has not been approved by QA review")
 
-    await require_role(session, actor_user_id, site_id, "QA Releaser")
+    await evaluate_policy(session, actor_user_id, action="batch.release", site_id=site_id)
     if actor_user_id == latest_review.reviewer_user_id:
         raise InvalidTransitionError(
             "Releaser must be independent of the reviewer for this batch (SoD)"
         )
 
-    signature_id = await _verify_reauth_and_consume(
-        session, actor_user_id, cmd.challenge_id, cmd.reauth_password, batch
+    # MUT-FR-014/RUL-FR-016: optional release-gating rule. A no-op until a deployment authors and
+    # releases a rule at this rule_id -- see app/modules/rules/commands.py::evaluate_release_gate.
+    if cmd.decision == "released":
+        await rules_commands.evaluate_release_gate(
+            session,
+            rule_id=f"batch-release-eligibility:{batch.product_id}",
+            inputs={"target_quantity": str(batch.target_quantity)},
+            aggregate_type="batch",
+            aggregate_id=batch.id,
+            aggregate_version=batch.version,
+            actor_user_id=actor_user_id,
+        )
+
+    policy = await signature_service.resolve_signature_requirement(
+        session, record_type="batch", action="release"
     )
+    signature_id = None
+    if policy.signature_required:
+        signature_id = await _verify_reauth_and_consume(
+            session, actor_user_id, cmd.challenge_id, cmd.reauth_password, batch
+        )
 
     session.add(
         BatchRelease(
@@ -466,6 +512,47 @@ async def release_batch(
     old_status = batch.status
     batch.status = cmd.decision
     batch.version += 1
+
+    # Document 06 (VLT-FR-001/006): a batch disposition is a "regulated final record" — it gets an
+    # immutable vault snapshot in the same transaction as the release itself, not a second disconnected
+    # write path. Authorization/signature for the release itself already happened above; this call is
+    # not itself signature-gated (release_master never is — see app/modules/vault/service.py).
+    steps = (
+        await session.execute(
+            select(BatchStep, RecipeStep)
+            .join(RecipeStep, RecipeStep.id == BatchStep.recipe_step_id)
+            .where(BatchStep.batch_id == batch.id)
+            .order_by(RecipeStep.step_number)
+        )
+    ).all()
+    await vault_service.release_master(
+        session,
+        object_type="batch",
+        business_id=batch.batch_number,
+        site_id=batch.site_id,
+        actor_user_id=actor_user_id,
+        canonical_payload={
+            "batch_id": str(batch.id),
+            "batch_number": batch.batch_number,
+            "product_id": str(batch.product_id),
+            "recipe_id": str(batch.recipe_id),
+            "recipe_version": batch.recipe_version,
+            "target_quantity": str(batch.target_quantity),
+            "uom": batch.uom,
+            "decision": cmd.decision,
+            "signature_id": str(signature_id) if signature_id else None,
+            "steps": [
+                {
+                    "batch_step_id": str(bs.id),
+                    "step_number": rs.step_number,
+                    "name": rs.name,
+                    "status": bs.status,
+                    "data": bs.data,
+                }
+                for bs, rs in steps
+            ],
+        },
+    )
 
     return await _commit_batch_mutation(
         session,

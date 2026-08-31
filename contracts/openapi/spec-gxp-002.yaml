@@ -1,0 +1,219 @@
+openapi: 3.1.0
+info:
+  title: SPEC-GXP-002 — Part 11 Electronic Signature (ceremony schemas)
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 04. Like SPEC-GXP-001 this file is **components-only**: the
+    signature service as built (`services/gxp-api/app/modules/signature/`) has no router and no HTTP
+    prefix of its own. The Part 11 ceremony is hosted on the *owning* module's surface — 26
+    `POST .../signature-challenges` endpoints across batch, material, QC, QMS, equipment, edge, ERP and
+    machine-integration — because a challenge must be bound to that module's record id, version and hash
+    before it can be issued (SIG-FR-005/010).
+
+
+    DIVERGENCE FROM 06_API_CATALOGUE.yaml (recorded, not invented): the catalogue declares three
+    SPEC-GXP-002 operations — `POST /signature/v1/challenges`, `POST /signature/v1/challenges/{id}/verify`
+    and `POST /signature/v1/signatures/{id}/consume`. **None is implemented**, and a generic
+    challenge-creation endpoint would in fact be unsafe: it would accept the record type, id, version and
+    hash to bind to from the client, which is precisely the client-asserted-signature-target pattern
+    AG-07 forbids. No schema is invented for the three. See SG-013 and SG-139.
+
+
+    WHAT IS BUILT: a two-call ceremony. (1) `POST <owning-module-path>/signature-challenges` with the
+    intended action returns a `SignatureChallengeResponse`; the server resolves the required meaning from
+    Document 106 policy data (`signature_policies`, never a code conditional) and binds the challenge to
+    the record's current id/version/hash with a single-use nonce and an expiry. (2) The module's own
+    command endpoint is then called with `challenge_id` + `reauth_password` (the `SignatureProof` fields
+    below). The challenge is consumed exactly once, is rejected after expiry, is rejected if it belongs
+    to a different actor, and is rejected if the record changed after it was created
+    (SIG-FR-012/013/014).
+
+
+    NOT BUILT THIS PASS: WebAuthn/passkey and IdP-federated step-up (the built proof is a password
+    re-authentication against the actor's own credential, `auth_context = {"method":"password_reauth"}`);
+    signature manifestation rendering and the signature inspection/export query (SIG-FR-015/030); and
+    ordered multi-signature chains as a single command — Document 106's two-signer ceremonies are
+    modelled as two separate signed commands (see spec-qc-001's correct/approve pair). See SG-013.
+tags:
+  - name: signature
+
+components:
+  schemas:
+    SignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: >
+        The request body every `POST .../signature-challenges` endpoint accepts. The *only* client input
+        is which action is about to be signed; every other binding — signer subject, record type, record
+        id, record version, record hash and signature meaning — is resolved server-side from the
+        authenticated actor, the addressed record and Document 106 policy data. A client may not assert
+        what it is signing (AG-07, SIG-FR-005/010, MUT-FR-002).
+
+
+        The `action` enum is closed and module-specific: each owning module's contract declares its own
+        permitted values (e.g. spec-qc-001 declares `release`, `review`, `correct_request`,
+        `correct_approve`). This schema is the shape they all conform to, not a union of them.
+      x-requirement-ids: [SIG-FR-004, SIG-FR-005, SIG-FR-010, SIG-FR-011, MUT-FR-002, MUT-FR-012]
+      required: [action]
+      properties:
+        action:
+          type: string
+          description: >
+            The regulated action about to be signed. Resolved together with the record type against the
+            signature policy table; an action with no policy row fails closed with
+            SIGNATURE_POLICY_UNRESOLVED rather than committing unsigned (Document 106 SIGP-FR-004).
+
+    SignatureChallengeResponse:
+      type: object
+      additionalProperties: false
+      description: >
+        The issued challenge. The nonce itself is never returned to the client — it is server-side replay
+        state, and the `challenge_id` is what the follow-up command presents (SIG-FR-012).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-012, SIG-FR-013, SIG-FR-026]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        meaning:
+          $ref: '#/components/schemas/SignatureMeaning'
+        expires_at:
+          type: string
+          format: date-time
+          description: >
+            RFC 3339 UTC with `Z` (Document 113 §3 F3). After this instant the challenge cannot be
+            completed and a new one must be created against the record's then-current version
+            (SIG-FR-013).
+
+    SignatureMeaning:
+      type: string
+      description: >
+        The controlled signature-meaning catalogue (SIG-FR-003). Carried as a closed enum: adding a
+        meaning is a minor version, removing one is breaking (Document 113 §3 F7). A signature meaning is
+        never free text (Document 04 forbidden patterns).
+
+
+        `Performed`, `Verified`, `Reviewed`, `Approved`, `Released` and `Rejected` are the six values the
+        26 built challenge endpoints actually emit. `Authored` and `Witnessed` are in Document 04's
+        SIG-FR-003 catalogue but no code path emits them yet; they are listed so a consumer written
+        against this contract does not break when the first module that needs them ships.
+
+
+        `Disposition` is emitted by `app/modules/material/router.py` (`_LOT_CHALLENGE_MEANINGS`) and is
+        **not** in Document 04's catalogue. SIG-FR-003 permits "customer-approved extensions", but no
+        approval record exists for this one and Document 106 does not list it. It is declared here
+        because the running system produces it — omitting it would make the contract false — and raised
+        as SG-141.
+      x-requirement-ids: [SIG-FR-003, SIG-FR-011, CTR-FR-017]
+      enum:
+        - Performed
+        - Verified
+        - Reviewed
+        - Approved
+        - Released
+        - Rejected
+        - Authored
+        - Witnessed
+        - Disposition
+
+    SignatureProof:
+      type: object
+      additionalProperties: false
+      description: >
+        The two fields a signed command carries. Owning modules do not `$ref` this object directly —
+        they declare `challenge_id` and `reauth_password` inline as required properties of their own
+        closed command schema, because a signed command is one flat closed payload, not a nested one.
+        This schema is the normative definition of those two fields' semantics and the thing a contract
+        test asserts against.
+
+
+        `reauth_password` is a fresh step-up credential, verified against the actor's own stored hash at
+        command time (SIG-FR-006). It is a write-only secret: it is never stored, never returned and
+        never logged (CTR-FR-018). An authenticated session alone is not a signature (AG-07).
+      x-requirement-ids: [SIG-FR-006, SIG-FR-009, SIG-FR-012, SIG-FR-019, CTR-FR-018]
+      required: [challenge_id, reauth_password]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+          description: The challenge issued for this exact record, version, hash and action. Single use.
+        reauth_password:
+          type: string
+          format: password
+          writeOnly: true
+          description: Fresh step-up authentication. Never persisted, returned or logged.
+
+    SignatureReceipt:
+      type: object
+      additionalProperties: false
+      description: >
+        The persisted signature record (`signatures` table). Not returned by any endpoint today — a
+        signed command returns a `MutationReceipt` carrying only `signature_id`. This schema is declared
+        because the row is the Part 11 record of the signature and SIG-FR-027 requires its content to be
+        contract-visible; the read/manifestation endpoint that would return it is not built (SIG-FR-015/
+        030, SG-013). Historical signatures are never deleted, edited or transferred to another record
+        (SIG-FR-016/028) — the tables carry no UPDATE/DELETE path.
+      x-requirement-ids: [SIG-FR-001, SIG-FR-009, SIG-FR-010, SIG-FR-016, SIG-FR-025, SIG-FR-027]
+      required: [signature_id, challenge_id, user_id, signed_at, meaning, record_type, record_id, record_version, record_hash]
+      properties:
+        signature_id: { type: string, format: uuid }
+        challenge_id: { type: string, format: uuid }
+        user_id:
+          type: string
+          format: uuid
+          description: >
+            Immutable signer subject. A display name may change historically; the subject is never
+            reassigned (SIG-FR-001). A service, integration or device identity can never appear here
+            (SIG-FR-023).
+        signed_at:
+          type: string
+          format: date-time
+          description: Assigned server-side in UTC; local time is presentation metadata only (SIG-FR-025).
+        meaning: { $ref: '#/components/schemas/SignatureMeaning' }
+        record_type: { type: string, maxLength: 100 }
+        record_id: { type: string, format: uuid }
+        record_version:
+          type: integer
+          minimum: 1
+          description: The exact record version signed. A signature never carries over to a later version (SIG-FR-028).
+        record_hash:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: SHA-256 over the canonical representation of the signed record (SIG-FR-010).
+        auth_context:
+          type: [object, "null"]
+          description: >
+            Captured authentication context (SIG-FR-009). Today `{"method": "password_reauth"}`; IdP
+            issuer/subject/AMR/ACR capture arrives with federated step-up (SG-013).
+
+    SignaturePolicyDecision:
+      type: object
+      additionalProperties: false
+      description: >
+        The resolved signature requirement for a (record_type, action) pair, from the `signature_policies`
+        table seeded from Document 106. Not exposed by any endpoint; declared because it is the input
+        every signed operation's behaviour depends on, and a contract test asserts the fail-closed rule
+        against it. Absence of a row is an error (SIGNATURE_POLICY_UNRESOLVED), never an implicit
+        permission to commit unsigned.
+      x-requirement-ids: [SIG-FR-004, SIG-FR-017, SIG-FR-018, MUT-FR-012]
+      required: [record_type, action, meaning, signature_required, signature_count, policy_source]
+      properties:
+        record_type: { type: string, maxLength: 100 }
+        action: { type: string, maxLength: 100 }
+        meaning: { $ref: '#/components/schemas/SignatureMeaning' }
+        signature_required: { type: boolean }
+        signature_count:
+          type: integer
+          minimum: 1
+          description: Ordered or independent signature chains (SIG-FR-017).
+        requires_independent_signer:
+          type: boolean
+          description: Signer must differ from the performer/author/previous signer (SIG-FR-018, Document 107 SoD).
+        required_role_id: { type: [string, "null"], format: uuid }
+        reason_required: { type: boolean }
+        policy_source:
+          type: string
+          enum: [PLATFORM_FLOOR, CUSTOMER_OVERRIDE]
+          description: >
+            Document 106 distinguishes the approved platform floor from a customer configuration that may
+            only tighten it. Closed enum (Document 113 §3 F7).

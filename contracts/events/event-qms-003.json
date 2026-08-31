@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qms-003.json",
+  "title": "SPEC-QMS-003 \u2014 Nonconformance Management Events",
+  "description": "Document 113 event contract for the 6 event types Document 28's own module (app/modules/qms/ncr_commands.py) actually emits. All 6 declared SPEC-QMS-003 events in 07_EVENT_CATALOGUE.yaml are genuinely implemented -- no divergence for this module.\n\nREUSE NOTE: 'NonconformanceOpened' is emitted by both create_ncr() (id, ncr_number) and evaluate_ncr() (id, state=\"EVALUATION\") -- evaluation does not get its own event_type. Real, observed characteristic of the built code (ncr_commands.py:166/252), not invented here.",
+  "x-requirement-ids": [
+    "NCR-FR-001",
+    "NCR-FR-003",
+    "NCR-FR-005",
+    "NCR-FR-006",
+    "NCR-FR-008",
+    "NCR-FR-009",
+    "NCR-FR-015",
+    "EVT-FR-001",
+    "CTRC-FR-008",
+    "CTRC-FR-009"
+  ],
+  "$defs": {
+    "NonconformanceOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "Emitted by create_ncr() (id, ncr_number) and evaluate_ncr() (id, state) -- see the module-level reuse note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "ncr_number": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "const": "EVALUATION"
+        }
+      },
+      "x-requirement-ids": [
+        "NCR-FR-001",
+        "NCR-FR-005"
+      ]
+    },
+    "NonconformingProductSegregatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "NCR-FR-003"
+      ]
+    },
+    "NCRDispositionApprovedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "disposition_id",
+        "disposition_type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "disposition_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "disposition_type": {
+          "$ref": "../openapi/spec-qms-003.yaml#/components/schemas/NcrDispositionType"
+        }
+      },
+      "x-requirement-ids": [
+        "NCR-FR-006",
+        "NCR-FR-015"
+      ]
+    },
+    "NCRReworkStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "disposition_id"
+      ],
+      "description": "Emitted only when disposition_type is REWORK or REPAIR (REWORK_LIKE_DISPOSITIONS, ncr_commands.py:325-332).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "disposition_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "NCR-FR-008"
+      ]
+    },
+    "NCRReinspectionCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "NCR-FR-009"
+      ]
+    },
+    "NCRClosedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "NCR-FR-015"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "NonconformanceOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-003",
+      "aggregate_type": "nonconformance_record",
+      "payload": {
+        "$ref": "#/$defs/NonconformanceOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "NCR-FR-001",
+        "NCR-FR-005"
+      ]
+    },
+    {
+      "event_type": "NonconformingProductSegregated",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-003",
+      "aggregate_type": "nonconformance_record",
+      "payload": {
+        "$ref": "#/$defs/NonconformingProductSegregatedPayload"
+      },
+      "x-requirement-ids": [
+        "NCR-FR-003"
+      ]
+    },
+    {
+      "event_type": "NCRDispositionApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-003",
+      "aggregate_type": "nonconformance_record",
+      "payload": {
+        "$ref": "#/$defs/NCRDispositionApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "NCR-FR-006",
+        "NCR-FR-015"
+      ]
+    },
+    {
+      "event_type": "NCRReworkStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-003",
+      "aggregate_type": "nonconformance_record",
+      "payload": {
+        "$ref": "#/$defs/NCRReworkStartedPayload"
+      },
+      "x-requirement-ids": [
+        "NCR-FR-008"
+      ]
+    },
+    {
+      "event_type": "NCRReinspectionCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-003",
+      "aggregate_type": "nonconformance_record",
+      "payload": {
+        "$ref": "#/$defs/NCRReinspectionCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "NCR-FR-009"
+      ]
+    },
+    {
+      "event_type": "NCRClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QMS-003",
+      "aggregate_type": "nonconformance_record",
+      "payload": {
+        "$ref": "#/$defs/NCRClosedPayload"
+      },
+      "x-requirement-ids": [
+        "NCR-FR-015"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,557 @@
+openapi: 3.1.0
+info:
+  title: SPEC-QC-001 — Native Basic QC & Sampling Specification
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-04 Document 23 slice actually built this pass: test specification
+    draft/release (scope_type product/in_process/device only — material scope depends on SG-057), sample
+    create/receive, test order create/start, raw data + result recording with acceptance/trend-rule-driven
+    PASS/OOS/OOT/pending classification (reusing the existing `rules` module), analyst completion, signed
+    second-person review, and the 2-signature result correction ceremony (Document 106 row 57). Dashboard/
+    export/instrument-eligibility/method-modification/OOS-OOT-record-creation are deferred — see
+    docs/generated/18_SPEC_GAPS.md SG-057/SG-063.
+tags:
+  - name: qc
+
+paths:
+  /qc/v1/specifications/drafts:
+    post:
+      operationId: postCreateTestSpecificationDraft
+      tags: [qc]
+      summary: Create a draft test specification (QC-FR-001/002)
+      x-requirement-ids: [QC-FR-001, QC-FR-002]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTestSpecificationDraftCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /qc/v1/specifications/{specification_id}/signature-challenges:
+    parameters:
+      - { name: specification_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postSpecificationSignatureChallenge
+      tags: [qc]
+      summary: Create the Part 11 signature challenge for releasing this specification
+      x-requirement-ids: [QC-FR-002]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [action], properties: { action: { type: string, enum: [release] } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /qc/v1/specifications/{specification_id}/release:
+    parameters:
+      - { name: specification_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReleaseTestSpecification
+      tags: [qc]
+      summary: >
+        Release a draft specification — signed per Document 106 row 58 (meaning Released, QA Approver/
+        Batch Release role, independent of every production performer) (QC-FR-002)
+      x-requirement-ids: [QC-FR-002]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseTestSpecificationCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '428': { $ref: '#/components/responses/MissingSignature' }
+
+  /qc/v1/samples:
+    post:
+      operationId: postCreateSample
+      tags: [qc]
+      summary: Create a sample (QC-FR-005..009)
+      x-requirement-ids: [QC-FR-005, QC-FR-006, QC-FR-007, QC-FR-008, QC-FR-009]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSampleCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /qc/v1/samples/{sample_id}/receive:
+    parameters:
+      - { name: sample_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReceiveSample
+      tags: [qc]
+      summary: Receive a sample into the lab (QC-FR-006)
+      x-requirement-ids: [QC-FR-006]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReceiveSampleCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /qc/v1/samples/{sample_id}/record:
+    parameters:
+      - { name: sample_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getSampleRecord
+      tags: [qc]
+      summary: Read the complete sample + test order + result record (QC-FR-037's spirit for what's built)
+      x-requirement-ids: [QC-FR-037]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /qc/v1/release-readiness:
+    get:
+      operationId: getReleaseReadiness
+      tags: [qc]
+      summary: Per-test-order completion/outcome readiness for a sample's release-blocking tests (QC-FR-030)
+      x-requirement-ids: [QC-FR-030]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: sample_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /qc/v1/test-orders:
+    post:
+      operationId: postCreateTestOrder
+      tags: [qc]
+      summary: Create a test order from a received sample + released specification's test definition (QC-FR-010)
+      x-requirement-ids: [QC-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTestOrderCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /qc/v1/test-orders/{test_order_id}/start:
+    parameters:
+      - { name: test_order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postStartTestOrder
+      tags: [qc]
+      summary: "Start a test order (QC-FR-011). Not signed this pass (Doc 106: only if flagged critical)"
+      x-requirement-ids: [QC-FR-011]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartTestOrderCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /qc/v1/test-orders/{test_order_id}/raw-data:
+    parameters:
+      - { name: test_order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordRawData
+      tags: [qc]
+      summary: Record a test run's raw data/evidence (QC-FR-013..017)
+      x-requirement-ids: [QC-FR-013, QC-FR-014, QC-FR-015, QC-FR-016, QC-FR-017]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordRawDataCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /qc/v1/test-orders/{test_order_id}/results:
+    parameters:
+      - { name: test_order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordResult
+      tags: [qc]
+      summary: >
+        Record a result; classified pass/oos/oot/pending via an existing released acceptance/trend rule
+        if one resolves, else pending (QC-FR-018..020/025/026/032/033)
+      x-requirement-ids: [QC-FR-018, QC-FR-019, QC-FR-020, QC-FR-025, QC-FR-026, QC-FR-032, QC-FR-033]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordResultCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /qc/v1/test-orders/{test_order_id}/complete:
+    parameters:
+      - { name: test_order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCompleteTestOrder
+      tags: [qc]
+      summary: Analyst completion — blocked if a required test definition has no recorded result (QC-FR-022/031)
+      x-requirement-ids: [QC-FR-022, QC-FR-031]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteTestOrderCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422':
+          description: RAW_DATA_REQUIRED — a required test definition has no recorded result
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+
+  /qc/v1/test-orders/{test_order_id}/signature-challenges:
+    parameters:
+      - { name: test_order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postTestOrderSignatureChallenge
+      tags: [qc]
+      summary: Create the Part 11 signature challenge for reviewing this test order
+      x-requirement-ids: [QC-FR-023]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [action], properties: { action: { type: string, enum: [review] } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /qc/v1/test-orders/{test_order_id}/review:
+    parameters:
+      - { name: test_order_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReviewTestOrder
+      tags: [qc]
+      summary: >
+        Second-person review — signed per Document 106 row 61 (meaning Reviewed, QA Reviewer, independent
+        of the performer) (QC-FR-023)
+      x-requirement-ids: [QC-FR-023]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewTestOrderCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '428': { $ref: '#/components/responses/MissingSignature' }
+
+  /qc/v1/results/{result_id}/signature-challenges:
+    parameters:
+      - { name: result_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postResultSignatureChallenge
+      tags: [qc]
+      summary: Create the Part 11 signature challenge for either step of a result correction
+      x-requirement-ids: [QC-FR-024]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties: { action: { type: string, enum: [correct_request, correct_approve] } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /qc/v1/results/{result_id}/correct:
+    parameters:
+      - { name: result_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRequestResultCorrection
+      tags: [qc]
+      summary: >
+        Step 1 of the 2-signature correction ceremony (Document 106 row 57) — the corrector signs and
+        requests a correction with a mandatory reason. Step 2 is `POST /qc/v1/corrections/{id}/approve`,
+        necessarily a separate endpoint since a single HTTP request can only carry one authenticated
+        identity and Document 106 requires two independent signers (QC-FR-024)
+      x-requirement-ids: [QC-FR-024]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequestResultCorrectionCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '428': { $ref: '#/components/responses/MissingSignature' }
+
+  /qc/v1/corrections/{correction_id}/approve:
+    parameters:
+      - { name: correction_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postApproveResultCorrection
+      tags: [qc]
+      summary: Step 2 of the correction ceremony — an independent approver signs and finalizes (QC-FR-024)
+      x-requirement-ids: [QC-FR-024]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApproveResultCorrectionCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Correction not awaiting approval, or the approver is not independent of the corrector (SoD)
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+        '428': { $ref: '#/components/responses/MissingSignature' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  responses:
+    NotFound: { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+    Forbidden: { description: Actor's roles do not grant this action, or no signature policy resolved, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+    Conflict: { description: Stale version or invalid state transition, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+    ValidationFailed: { description: Request failed schema or business validation, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+    MissingSignature: { description: Fresh step-up authentication failed, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [CTR-FR-006]
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          examples: [VALIDATION_FAILED, NOT_FOUND, STALE_VERSION, INVALID_TRANSITION, ROLE_MISSING, MISSING_SIGNATURE, TEST_SPEC_NOT_EFFECTIVE, RAW_DATA_REQUIRED]
+        message: { type: string }
+        details: { type: object }
+
+    MutationReceipt:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MUT-FR-019]
+      required: [command_id, aggregate_id, resulting_version, audit_event_id, correlation_id]
+      properties:
+        command_id: { type: string, format: uuid }
+        aggregate_id: { type: string, format: uuid }
+        resulting_version: { type: integer }
+        audit_event_id: { type: string, format: uuid }
+        signature_id: { type: [string, "null"], format: uuid }
+        correlation_id: { type: string, format: uuid }
+
+    SignatureChallengeResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    TestDefinitionInput:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-001, QC-FR-002]
+      required: [test_code, test_name, result_data_type]
+      properties:
+        test_code: { type: string }
+        test_name: { type: string }
+        method_version: { type: [string, "null"] }
+        result_data_type: { type: string }
+        uom: { type: [string, "null"] }
+        acceptance_rule_business_id: { type: [string, "null"] }
+        trend_rule_business_id: { type: [string, "null"] }
+        required: { type: boolean, default: true }
+        release_blocking: { type: boolean, default: true }
+        review_policy: { type: [string, "null"] }
+
+    CreateTestSpecificationDraftCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-001, QC-FR-002, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, spec_code, scope_type, scope_version_id]
+      properties:
+        idempotency_key: { type: string }
+        spec_code: { type: string }
+        scope_type: { type: string, enum: [product, in_process, device, material] }
+        scope_version_id: { type: string, format: uuid }
+        sampling_plan: { type: [object, "null"] }
+        test_definitions: { type: array, items: { $ref: '#/components/schemas/TestDefinitionInput' }, default: [] }
+
+    ReleaseTestSpecificationCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-002, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, specification_id, expected_version, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        specification_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    CreateSampleCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-005, QC-FR-006, QC-FR-007, QC-FR-008, QC-FR-009, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, sample_number, sample_type, source_type]
+      properties:
+        idempotency_key: { type: string }
+        sample_number: { type: string }
+        sample_type: { type: string }
+        source_type: { type: string, enum: [material_lot, batch, batch_step, device_unit, reserve, environmental, investigation] }
+        source_id: { type: [string, "null"], format: uuid }
+        source_location_ref: { type: [string, "null"] }
+        lot_batch_serial_ref: { type: [string, "null"] }
+        sample_quantity: { type: [string, "null"] }
+        sample_uom: { type: [string, "null"] }
+        sampled_at: { type: [string, "null"], format: date-time }
+        stability_study_ref: { type: [string, "null"] }
+
+    ReceiveSampleCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-006, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, sample_id, expected_version]
+      properties:
+        idempotency_key: { type: string }
+        sample_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+
+    CreateTestOrderCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-010, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, sample_id, test_definition_id]
+      properties:
+        idempotency_key: { type: string }
+        sample_id: { type: string, format: uuid }
+        test_definition_id: { type: string, format: uuid }
+        assigned_analyst_id: { type: [string, "null"], format: uuid }
+
+    StartTestOrderCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, test_order_id, expected_version]
+      properties:
+        idempotency_key: { type: string }
+        test_order_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        analyst_id: { type: [string, "null"], format: uuid }
+
+    RecordRawDataCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-013, QC-FR-014, QC-FR-015, QC-FR-016, QC-FR-017, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, test_order_id]
+      properties:
+        idempotency_key: { type: string }
+        test_order_id: { type: string, format: uuid }
+        method_version: { type: [string, "null"] }
+        instrument_ref: { type: [string, "null"] }
+        sample_amount: { type: [string, "null"] }
+        reference_standards: { type: [object, "null"] }
+        system_suitability: { type: [object, "null"] }
+        raw_evidence_vault_ids: { type: array, items: { type: string }, default: [] }
+
+    RecordResultCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-018, QC-FR-019, QC-FR-020, QC-FR-025, QC-FR-026, QC-FR-032, QC-FR-033, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, test_order_id, test_run_id, result_type]
+      properties:
+        idempotency_key: { type: string }
+        test_order_id: { type: string, format: uuid }
+        test_run_id: { type: string, format: uuid }
+        result_type: { type: string, enum: [numeric_single, numeric_replicate, calculated, qualitative_enum, pass_fail, text, count, range, device_structured] }
+        value_decimal: { type: [string, "null"] }
+        value_text: { type: [string, "null"] }
+        value_json: { type: [object, "null"] }
+        uom: { type: [string, "null"] }
+
+    CompleteTestOrderCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-022, QC-FR-031, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, test_order_id, expected_version]
+      properties:
+        idempotency_key: { type: string }
+        test_order_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+
+    ReviewTestOrderCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-023, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, test_order_id, expected_version, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        test_order_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    RequestResultCorrectionCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-024, MUT-FR-005, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, result_id, reason_text, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        result_id: { type: string, format: uuid }
+        reason_text: { type: string }
+        corrected_value_decimal: { type: [string, "null"] }
+        corrected_value_text: { type: [string, "null"] }
+        corrected_value_json: { type: [object, "null"] }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    ApproveResultCorrectionCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-024, MUT-FR-005, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, correction_id, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        correction_id: { type: string, format: uuid }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

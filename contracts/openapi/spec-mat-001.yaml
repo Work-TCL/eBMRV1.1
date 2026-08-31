@@ -1,0 +1,530 @@
+openapi: 3.1.0
+info:
+  title: SPEC-MAT-001 — Procurement & Supplier Quality Specification
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-04 Document 18 slice actually built this pass: supplier + site
+    master (SUP-FR-001/002/029), qualification request (SUP-FR-003/004/005/009/013), signed
+    qualification approval (SUP-FR-007/009/012), and the supplier list/detail read views. `approved_
+    supplier_material`, `purchase_requisition` and `purchase_order_ref` — and the 7 operations that
+    depend on them — are deferred; see docs/generated/18_SPEC_GAPS.md SG-057/SG-058 for what's open and
+    why.
+
+
+    Contract-cleanup pass (2026-08-29, part of the WP-04 contract-hygiene sweep started after the WP-02/
+    WP-03 authoring pass): added the two supplier list/detail GETs that were already implemented in
+    `app/modules/supplier_quality/router.py` but missing from this file (`tooling/contracts/validate.py`
+    CTRC-FR-001), and `x-requirement-ids` on every schema that lacked one (CTRC-FR-009).
+
+
+    Follow-up pass (2026-08-29, later the same day): closed the one gap the note above deferred —
+    `getSupplierQualification` (`GET /supplier-qualifications/{qualification_id}`) is now contracted.
+    `--strict-coverage` confirms zero remaining gap anywhere in this module's routing surface.
+tags:
+  - name: supplier_quality
+
+paths:
+  /suppliers/v1:
+    post:
+      operationId: postCreateSupplier
+      tags: [supplier_quality]
+      summary: Create a supplier and its site(s) (SUP-FR-001/002/029)
+      x-requirement-ids: [SUP-FR-001, SUP-FR-002, SUP-FR-029]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupplierCommand'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MutationReceipt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: A likely-duplicate supplier legal identity was detected (SUP-FR-029)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    get:
+      operationId: getSuppliers
+      tags: [supplier_quality]
+      summary: Paginated, filterable, sortable supplier list (SUP-FR-001)
+      description: >
+        Requires the `supplier.view` policy action. `status` optionally narrows to one supplier status
+        value; `q` free-text searches `supplier_code`/`legal_name`. Genuinely paginated
+        (`app/core/pagination.py`), unlike most list endpoints across this codebase.
+      x-requirement-ids: [SUP-FR-001]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+        - name: sort_by
+          in: query
+          required: false
+          schema: { type: string }
+        - name: sort_dir
+          in: query
+          required: false
+          schema: { type: string, enum: [asc, desc], default: asc }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupplierPage' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /suppliers/{supplier_id}/qualifications:
+    parameters:
+      - name: supplier_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postCreateSupplierQualification
+      tags: [supplier_quality]
+      summary: >
+        Request a supplier qualification, moving the supplier to UNDER_QUALIFICATION
+        (SUP-FR-003/004/005/009/013)
+      x-requirement-ids: [SUP-FR-003, SUP-FR-004, SUP-FR-005, SUP-FR-009, SUP-FR-013]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupplierQualificationCommand'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MutationReceipt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Supplier, supplier site or a referenced vault object was not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: The supplier is disqualified and cannot be requalified through this path
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /suppliers/v1/{supplier_id}:
+    parameters:
+      - name: supplier_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getSupplierDetail
+      tags: [supplier_quality]
+      summary: One supplier with its sites and qualifications (SUP-FR-001/002/003)
+      description: Requires `supplier.view`.
+      x-requirement-ids: [SUP-FR-001, SUP-FR-002, SUP-FR-003]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupplierDetail' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Supplier not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /supplier-qualifications/{qualification_id}/signature-challenges:
+    parameters:
+      - name: qualification_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postSupplierQualificationSignatureChallenge
+      tags: [supplier_quality]
+      summary: Create the Part 11 signature challenge for approving this qualification (Document 04)
+      x-requirement-ids: [SUP-FR-007]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties:
+                action: { type: string, enum: [approve] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignatureChallengeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Supplier qualification not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /supplier-qualifications/{qualification_id}/approve:
+    parameters:
+      - name: qualification_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postApproveSupplierQualification
+      tags: [supplier_quality]
+      summary: >
+        Approve, conditionally approve, or reject a supplier qualification — signed per Document 106
+        row 43 (meaning Approved, 1 signature, independent of the requester). Approval/conditional
+        approval cascades the supplier to APPROVED (SUP-FR-007/009/012).
+      x-requirement-ids: [SUP-FR-007, SUP-FR-009, SUP-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveSupplierQualificationCommand'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MutationReceipt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            Actor's effective roles do not grant supplier_qualification.approve (code ROLE_MISSING), or
+            no signature policy is resolved for this action (should never happen once the platform floor
+            is seeded — code SIGNATURE_POLICY_UNRESOLVED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: Supplier qualification not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: >
+            Stale version (code STALE_VERSION), qualification not in an approvable state
+            (code INVALID_TRANSITION), or the approver is not independent of the requester — SoD
+            (code INVALID_TRANSITION)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          description: Fresh step-up authentication failed (code MISSING_SIGNATURE)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /supplier-qualifications/{qualification_id}:
+    parameters:
+      - name: qualification_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getSupplierQualification
+      tags: [supplier_quality]
+      summary: Qualification detail with its evidence list
+      description: >
+        Closes a previously-deferred gap (see the file description above): implemented in
+        `app/modules/supplier_quality/router.py` but left uncontracted by the 2026-08-29 hygiene pass
+        because it is a distinct routing surface from `/supplier-qualifications/{id}/approve` and
+        `/supplier-qualifications/{id}/signature-challenges` that only `--strict-coverage` flags.
+        Requires `supplier.view`.
+      x-requirement-ids: [SUP-FR-003, SUP-FR-004, SUP-FR-009]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupplierQualificationDetail' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Supplier qualification not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: No or invalid bearer token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ValidationFailed:
+      description: Request failed schema or business validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [CTR-FR-006]
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          examples:
+            [
+              VALIDATION_FAILED, NOT_FOUND, STALE_VERSION, INVALID_TRANSITION, ROLE_MISSING,
+              SIGNATURE_POLICY_UNRESOLVED, MISSING_SIGNATURE, DUPLICATE_SUPPLIER_CANDIDATE,
+            ]
+        message: { type: string }
+        details: { type: object }
+
+    MutationReceipt:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [MUT-FR-019]
+      required: [command_id, aggregate_id, resulting_version, audit_event_id, correlation_id]
+      properties:
+        command_id: { type: string, format: uuid }
+        aggregate_id: { type: string, format: uuid }
+        resulting_version: { type: integer }
+        audit_event_id: { type: string, format: uuid }
+        signature_id: { type: [string, "null"], format: uuid }
+        correlation_id: { type: string, format: uuid }
+
+    SignatureChallengeResponse:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    SupplierSiteInput:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [SUP-FR-001]
+      required: [site_name]
+      properties:
+        site_name: { type: string }
+        address_line1: { type: [string, "null"] }
+        address_line2: { type: [string, "null"] }
+        city: { type: [string, "null"] }
+        state_province: { type: [string, "null"] }
+        postal_code: { type: [string, "null"] }
+        country: { type: [string, "null"] }
+        manufacturer_flag: { type: boolean, default: false }
+        certification_refs: { type: [object, "null"] }
+
+    CreateSupplierCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [SUP-FR-001, SUP-FR-002, SUP-FR-029, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, supplier_code, legal_name, role_type]
+      properties:
+        idempotency_key: { type: string }
+        supplier_code: { type: string }
+        legal_name: { type: string }
+        role_type: { type: string, enum: [supplier, manufacturer, both] }
+        country: { type: [string, "null"] }
+        external_mappings: { type: [object, "null"] }
+        sites:
+          type: array
+          items: { $ref: '#/components/schemas/SupplierSiteInput' }
+          default: []
+
+    QualificationEvidenceInput:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [SUP-FR-005]
+      required: [vault_object_id, evidence_category]
+      properties:
+        vault_object_id: { type: string, format: uuid }
+        evidence_category: { type: string }
+
+    CreateSupplierQualificationCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [SUP-FR-003, SUP-FR-004, SUP-FR-005, SUP-FR-009, SUP-FR-013, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, supplier_id, supplier_site_id]
+      properties:
+        idempotency_key: { type: string }
+        supplier_id: { type: string, format: uuid }
+        supplier_site_id: { type: string, format: uuid }
+        scope: { type: [object, "null"] }
+        risk_class: { type: [string, "null"] }
+        effective_from: { type: [string, "null"], format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+        quality_agreement_vault_id: { type: [string, "null"], format: uuid }
+        evidence:
+          type: array
+          items: { $ref: '#/components/schemas/QualificationEvidenceInput' }
+          default: []
+
+    Supplier:
+      type: object
+      description: One supplier (`app/modules/supplier_quality/router.py:_supplier_dict`). A response schema, so not closed.
+      x-requirement-ids: [SUP-FR-001, SUP-FR-002, SUP-FR-029]
+      required: [id, supplier_code, legal_name, role_type, status, version, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        supplier_code: { type: string }
+        legal_name: { type: string }
+        role_type: { type: string, enum: [supplier, manufacturer, both] }
+        status: { type: string }
+        country: { type: [string, "null"] }
+        external_mappings: { type: [object, "null"] }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+
+    SupplierPage:
+      type: object
+      description: getSuppliers's response. This module defines its own page envelope locally (total/page/page_size/total_pages) rather than $ref'ing spec-gxp-001.yaml's shared PageEnvelope — same shape, kept local to match this file's existing no-cross-file-$ref style.
+      x-requirement-ids: [SUP-FR-001, CTR-FR-012]
+      required: [total, page, page_size, total_pages, items]
+      properties:
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1, maximum: 100 }
+        total_pages: { type: integer, minimum: 1 }
+        items: { type: array, items: { $ref: '#/components/schemas/Supplier' } }
+
+    SupplierSite:
+      type: object
+      description: One supplier site, as returned inline by getSupplierDetail.
+      x-requirement-ids: [SUP-FR-001]
+      required: [id, site_name, manufacturer_flag, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_name: { type: string }
+        address_line1: { type: [string, "null"] }
+        address_line2: { type: [string, "null"] }
+        city: { type: [string, "null"] }
+        state_province: { type: [string, "null"] }
+        postal_code: { type: [string, "null"] }
+        country: { type: [string, "null"] }
+        manufacturer_flag: { type: boolean }
+        certification_refs: { type: [object, "null"] }
+        status: { type: string }
+        version: { type: integer, minimum: 1 }
+
+    SupplierQualificationSummary:
+      type: object
+      description: One qualification, as returned inline by getSupplierDetail (`app/modules/supplier_quality/router.py:_qualification_dict`).
+      x-requirement-ids: [SUP-FR-003, SUP-FR-004, SUP-FR-009]
+      required: [id, supplier_site_id, requested_by_user_id, status, version, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        supplier_site_id: { type: string, format: uuid }
+        requested_by_user_id: { type: string, format: uuid }
+        scope: { type: [object, "null"] }
+        risk_class: { type: [string, "null"] }
+        status: { type: string }
+        justification: { type: [string, "null"] }
+        effective_from: { type: [string, "null"], format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+        quality_agreement_vault_id: { type: [string, "null"], format: uuid }
+        approval_signatures: { type: [object, "null"] }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+
+    SupplierQualificationDetail:
+      type: object
+      description: getSupplierQualification's response — SupplierQualificationSummary's fields plus the evidence list (`app/modules/supplier_quality/router.py:get_supplier_qualification`).
+      x-requirement-ids: [SUP-FR-003, SUP-FR-004, SUP-FR-009]
+      allOf:
+        - $ref: '#/components/schemas/SupplierQualificationSummary'
+        - type: object
+          required: [evidence]
+          properties:
+            evidence:
+              type: array
+              items:
+                type: object
+                required: [id, vault_object_id, evidence_category, added_at]
+                properties:
+                  id: { type: string, format: uuid }
+                  vault_object_id: { type: string, format: uuid }
+                  evidence_category: { type: string }
+                  added_at: { type: string, format: date-time }
+
+    SupplierDetail:
+      type: object
+      description: getSupplierDetail's response — Supplier plus its sites and qualifications.
+      x-requirement-ids: [SUP-FR-001, SUP-FR-002, SUP-FR-003]
+      allOf:
+        - $ref: '#/components/schemas/Supplier'
+        - type: object
+          required: [sites, qualifications]
+          properties:
+            sites: { type: array, items: { $ref: '#/components/schemas/SupplierSite' } }
+            qualifications: { type: array, items: { $ref: '#/components/schemas/SupplierQualificationSummary' } }
+
+    ApproveSupplierQualificationCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [SUP-FR-007, SUP-FR-009, SUP-FR-012, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, qualification_id, expected_version, decision, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        qualification_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        decision: { type: string, enum: [approved, conditional, rejected] }
+        justification:
+          type: [string, "null"]
+          description: Required when decision=conditional (SUP-FR-012)
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

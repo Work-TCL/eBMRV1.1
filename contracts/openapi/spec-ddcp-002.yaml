@@ -1,0 +1,531 @@
+openapi: 3.1.0
+info:
+  title: SPEC-DDCP-002 — Autoinjector, Pen Injector & Cartridge-Based DDCP Manufacturing Profile
+  version: 0.1.0
+  description: >
+    Document 113 contract for Document 55 (`services/gxp-api/app/modules/ddcp/injector_router.py` +
+    `injector_commands.py`). SG-150 (`docs/generated/18_SPEC_GAPS.md`): no Document 112 schema exists for
+    this document -- it reuses six of Document 54's own tables/functions unchanged or with an extended
+    documented vocabulary (`ddcp_profile_version`, `constituent_requirement`, `constituent_handoff`,
+    `device_assembly_record`, `device_functional_test_link`, `ddcp_release_checkpoint`,
+    `batch_evidence_manifest`) per the DDCP Platform Rule ("configure and extend the common engines...
+    shall not fork core GxP services"), and adds three new tables this pass:
+    `ddcp_process_operation` (the injector assembly run), `ddcp_unit_binding` (drug-container-to-injector-
+    unit binding, INJ-FR-008/009) and `reusable_device_pairing` (INJ-FR-018).
+
+
+    `release_injectable_profile_version` (Document 54's own function, already fully generic) and
+    `record_constituent_handoff`/`decide_constituent_handoff` are reused verbatim -- their operations are
+    contracted in `spec-ddcp-001.yaml` and not re-declared here; this document's own release/handoff-decide
+    endpoints below are new URL paths that call those same shared functions.
+
+
+    RBAC: reuses Document 54's already-seeded `ddcp_profile.*`/`ddcp_fill.*`/`ddcp_device.*`/
+    `ddcp_release.*` action codes for the conceptually equivalent operation (SG-150) rather than adding new
+    unseeded codes.
+tags:
+  - name: ddcp-autoinjector
+
+paths:
+  /ddcp/v1/autoinjector/profiles:
+    post:
+      operationId: postCreateInjectorProfile
+      tags: [ddcp-autoinjector]
+      summary: Author an injector DDCP profile draft (INJ-FR-001/002/003)
+      x-requirement-ids: [INJ-FR-001, INJ-FR-002, INJ-FR-003, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInjectorProfileVersionCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422':
+          description: PROFILE_SCHEMA_INVALID
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/autoinjector/profiles/{profile_id}/release:
+    parameters:
+      - { name: profile_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReleaseInjectorProfile
+      tags: [ddcp-autoinjector]
+      summary: Release an injector DDCP profile version (calls Document 54's shared release_injectable_profile_version)
+      description: Same shared `ddcp_profile_version` release function `spec-ddcp-001.yaml` already contracts, exposed under this document's own URL.
+      x-requirement-ids: [INJ-FR-001, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: 'spec-ddcp-001.yaml#/components/schemas/ReleaseInjectableProfileVersionCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: PROFILE_RELEASE_BLOCKED / VALIDATION_FAILED
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/autoinjector/batches/{batch_id}/readiness:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: profile_version_id, in: query, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getInjectorAssemblyReadiness
+      tags: [ddcp-autoinjector]
+      summary: Assembly readiness composition, without transitioning state (INJ-FR-005/006)
+      x-requirement-ids: [INJ-FR-005, INJ-FR-006]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/InjectorAssemblyReadiness' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '422':
+          description: INJECTOR_PROFILE_NOT_EFFECTIVE
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/autoinjector/assembly-operations:
+    post:
+      operationId: postStartInjectorAssemblyOperation
+      tags: [ddcp-autoinjector]
+      summary: Start an injector assembly operation (INJ-FR-006/007)
+      description: >
+        No dedicated "start" function is named in Document 55's own 9-function catalogue --
+        recordAssemblyParameter()'s own precondition ("Active assembly operation") requires one to exist,
+        so this is derived the same way Document 54's DeviceAssemblyRecord commands were derived.
+      x-requirement-ids: [INJ-FR-006, INJ-FR-007, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartInjectorAssemblyOperationCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409':
+          description: existing active operation for this batch
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: INJECTOR_PROFILE_NOT_EFFECTIVE / readiness not satisfied
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/autoinjector/assembly-operations/{operation_id}/parameters:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecordAssemblyParameter
+      tags: [ddcp-autoinjector]
+      summary: Record an assembly process parameter reading (INJ-FR-007)
+      x-requirement-ids: [INJ-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordAssemblyParameterCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+
+  /ddcp/v1/autoinjector/assembly-operations/{operation_id}/complete:
+    parameters:
+      - { name: operation_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCompleteInjectorAssemblyOperation
+      tags: [ddcp-autoinjector]
+      summary: Complete an injector assembly operation (INJ-FR-006/025)
+      description: >
+        Structural completeness only (at least one ASSEMBLED unit recorded, no unresolved hold) -- no
+        numeric reconciliation tolerance is baselined anywhere, same SG-148/SG-150 posture as Document 54's
+        own complete_filling_stage().
+      x-requirement-ids: [INJ-FR-006, INJ-FR-025, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteInjectorAssemblyOperationCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: INJECTOR_RECONCILIATION_FAILED
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/autoinjector/drug-container-bindings:
+    post:
+      operationId: postBindDrugContainerToInjectorUnit
+      tags: [ddcp-autoinjector]
+      summary: Bind a released drug container to an injector unit serial (INJ-FR-008/009)
+      description: >
+        Application-level uniqueness on the drug_container reference prevents CONTAINER_ALREADY_USED
+        (SG-150, same JSONB-uniqueness-in-code discipline as `ConstituentHandoff`).
+      x-requirement-ids: [INJ-FR-008, INJ-FR-009, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BindDrugContainerToInjectorUnitCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: CONTAINER_ALREADY_USED
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/autoinjector/functional-tests:
+    post:
+      operationId: postExecuteInjectorFunctionalTest
+      tags: [ddcp-autoinjector]
+      summary: Record a device functional test result (INJ-FR-012..017)
+      x-requirement-ids: [INJ-FR-012, INJ-FR-013, INJ-FR-014, INJ-FR-016, INJ-FR-017, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExecuteInjectorFunctionalTestCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/autoinjector/dose-delivery-results:
+    post:
+      operationId: postEvaluateDoseDeliveryResult
+      tags: [ddcp-autoinjector]
+      summary: Evaluate a dose-delivery/dose-accuracy result through a released rule (INJ-FR-011/012/015)
+      description: >
+        SG-148/SG-150 pattern: no dose-accuracy acceptance range is baselined anywhere, so the caller
+        supplies a released rules-engine rule id, same as Document 54's fill-weight IPC (PFS-FR-011).
+      x-requirement-ids: [INJ-FR-011, INJ-FR-012, INJ-FR-015, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateDoseDeliveryResultCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/autoinjector/unit-dispositions:
+    post:
+      operationId: postRecordUnitDisposition
+      tags: [ddcp-autoinjector]
+      summary: Record a final unit disposition — PASS/REJECT/REWORK (INJ-FR-021/022)
+      description: >
+        Reuses `device_assembly_record` with `assembly_step=FINAL_DISPOSITION`. REWORK requires an explicit
+        released-procedure reference (REWORK_ROUTE_REQUIRED, reused from PFS-FR-027's default-disallow
+        discipline) -- INJ-FR-022's own "only through released route" text.
+      x-requirement-ids: [INJ-FR-021, INJ-FR-022, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordUnitDispositionCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: REWORK_ROUTE_REQUIRED
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — reason required for REJECT/REWORK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/autoinjector/batches/{batch_id}/release-readiness:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postEvaluateInjectorReleaseReadiness
+      tags: [ddcp-autoinjector]
+      summary: Evaluate DRUG_CONSTITUENT/DEVICE_CONSTITUENT/COMBINED_PRODUCT checkpoints (INJ-FR-026/027)
+      x-requirement-ids: [INJ-FR-026, INJ-FR-027, MUT-FR-005, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-ddcp-001.yaml#/components/schemas/PfsReleaseReadiness' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/autoinjector/batches/{batch_id}/evidence-package:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCreateInjectorBatchEvidencePackage
+      tags: [ddcp-autoinjector]
+      summary: Generate a reproducible injector batch evidence package (INJ-FR-030)
+      x-requirement-ids: [INJ-FR-030, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInjectorBatchEvidencePackageCommand' }
+      responses:
+        '200':
+          description: Created — a new manifest_version, state FROZEN.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — batch_id in path and body must match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /ddcp/v1/autoinjector/complaint-trace/{finished_serial}:
+    parameters:
+      - { name: finished_serial, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getComplaintTrace
+      tags: [ddcp-autoinjector]
+      summary: Trace a finished serial back to its drug container and device constituents (INJ-FR-025/030)
+      x-requirement-ids: [INJ-FR-025, INJ-FR-030]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/ComplaintTraceGraph' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /ddcp/v1/autoinjector/reusable-device-pairings:
+    post:
+      operationId: postRecordReusableDevicePairing
+      tags: [ddcp-autoinjector]
+      summary: Record a reusable-device/cartridge compatibility pairing decision (INJ-FR-018)
+      description: >
+        "For reusable injector + cartridge, model compatibility/approved pairing and cartridge lot
+        genealogy without assuming permanent single unit relationship." No function is named for this in
+        Document 55's own 9-function catalogue -- derived the same way Document 54's DeviceAssemblyRecord
+        commands were derived. batch_id is required this pass (a batch-independent pairing-authoring flow
+        is not yet implemented, SG-150).
+      x-requirement-ids: [INJ-FR-018, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordReusableDevicePairingCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — unrecognized compatibility_status, or batch_id omitted
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateInjectorProfileVersionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INJ-FR-001, INJ-FR-002, INJ-FR-003, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, profile_code, injector_type]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        profile_code: { type: string }
+        injector_type: { type: string, enum: [AUTOINJECTOR, PEN_SINGLE_USE, PEN_REUSABLE, CARTRIDGE_SYSTEM] }
+        device_bom_version_id: { type: [string, "null"] }
+        unit_serialization: { type: boolean, default: false }
+        constituent_architecture: { type: object, default: {} }
+        required_controls: { type: object, default: {} }
+        release_checkpoint_set: { type: object }
+        constituent_requirements: { type: array, items: { type: object } }
+
+    StartInjectorAssemblyOperationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INJ-FR-006, INJ-FR-007, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, profile_version_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        profile_version_id: { type: string, format: uuid }
+        line_id: { type: [string, "null"], format: uuid }
+        equipment_id: { type: [string, "null"], format: uuid }
+        program_id: { type: [string, "null"] }
+        program_version: { type: [string, "null"] }
+
+    RecordAssemblyParameterCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INJ-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, operation_id, expected_version, parameter_code, value]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        operation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        parameter_code: { type: string }
+        value: { type: string, description: Decimal-as-string. }
+        uom: { type: [string, "null"] }
+        source: { type: string, default: MANUAL }
+
+    CompleteInjectorAssemblyOperationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INJ-FR-006, INJ-FR-025, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, operation_id, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        operation_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"] }
+
+    BindDrugContainerToInjectorUnitCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INJ-FR-008, INJ-FR-009, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, drug_container_reference, injector_unit_serial]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        drug_container_reference: { type: object }
+        injector_unit_serial: { type: string }
+
+    ExecuteInjectorFunctionalTestCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INJ-FR-012, INJ-FR-013, INJ-FR-014, INJ-FR-016, INJ-FR-017, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, test_type, qc_record_reference]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        test_type: { type: string }
+        qc_record_reference: { type: object }
+        sample_plan_reference: { type: [object, "null"] }
+        method_reference: { type: [object, "null"] }
+        result_state: { type: string, enum: [PENDING, PASS, FAIL, OOS], default: PENDING }
+
+    EvaluateDoseDeliveryResultCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INJ-FR-011, INJ-FR-012, INJ-FR-015, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id, sample_id, actual_value, uom, acceptance_rule_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        sample_id: { type: string }
+        actual_value: { type: string, description: Decimal-as-string. }
+        uom: { type: string }
+        acceptance_rule_id: { type: string }
+        qc_record_reference: { type: object, default: {} }
+
+    RecordUnitDispositionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INJ-FR-021, INJ-FR-022, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, batch_id, unit_identifier, result]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+        unit_identifier: { type: string }
+        result: { type: string, enum: [PASS, REJECT, REWORK] }
+        reason: { type: [string, "null"], description: Required when result is REJECT or REWORK. }
+        ncr_reference: { type: [object, "null"] }
+        rework_procedure_reference: { type: [object, "null"], description: Required when result is REWORK. }
+
+    CreateInjectorBatchEvidencePackageCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INJ-FR-030, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, batch_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid }
+
+    InjectorAssemblyReadiness:
+      type: object
+      description: "`evaluate_injector_assembly_readiness` in `app/modules/ddcp/injector_commands.py` — pure read, no writes."
+      x-requirement-ids: [INJ-FR-005, INJ-FR-006]
+      required: [batch_id, profile_version_id, ready, blockers]
+      properties:
+        batch_id: { type: string, format: uuid }
+        profile_version_id: { type: string, format: uuid }
+        ready: { type: boolean }
+        blockers: { type: array, items: { type: object } }
+
+    ComplaintTraceGraph:
+      type: object
+      description: "`trace_complaint_serial` in `app/modules/ddcp/injector_commands.py` — pure read, no writes."
+      x-requirement-ids: [INJ-FR-025, INJ-FR-030]
+      required: [finished_serial, batch_ids, device_assembly_records, drug_container_bindings, functional_test_links]
+      properties:
+        finished_serial: { type: string }
+        batch_ids: { type: array, items: { type: string, format: uuid } }
+        device_assembly_records: { type: array, items: { type: object } }
+        drug_container_bindings: { type: array, items: { type: object } }
+        functional_test_links: { type: array, items: { type: object } }
+
+    RecordReusableDevicePairingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INJ-FR-018, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, reusable_device_reference, cartridge_lot_reference, batch_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        reusable_device_reference: { type: object }
+        cartridge_lot_reference: { type: object }
+        compatibility_status: { type: string, enum: [COMPATIBLE, INCOMPATIBLE, PENDING_REVIEW], default: PENDING_REVIEW }
+        rationale: { type: [string, "null"] }
+        batch_id: { type: string, format: uuid, description: "Required this pass — see summary." }

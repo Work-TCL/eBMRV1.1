@@ -1,0 +1,935 @@
+openapi: 3.1.0
+info:
+  title: SPEC-LEGACY-001 — Legacy Product / Recipe / Batch Execution
+  version: 0.1.0
+  description: >
+    Document 113 contract for `app/modules/product`, `app/modules/recipe` and `app/modules/batch` — the
+    original, pre-WP-02 product/recipe/batch implementation that predates and coexists with the
+    `product_master` (Document 09, `spec-ebmr-000.yaml`), `recipe_master` (Document 10,
+    `spec-ebmr-001.yaml`) and `batch_execution` (Document 11, `spec-ebmr-002.yaml`) rebuilds. Both sets
+    are live, both are fully functional, and neither is dead code: this trio is a simpler, flat
+    product→recipe→batch model with no version-locked issue snapshot, no execution-snapshot freeze at
+    issue, and — for `batch` specifically — a genuinely complete, independently-signed review→release
+    lifecycle with its own Vault release (unlike `batch_execution`'s narrower buildable-subset lifecycle,
+    see `spec-ebmr-002.yaml`'s own description). No numbered Document 02-105 owns this trio; requirement
+    IDs below trace to the closest-fit architecture-level entity (C-012 Product Master, MAT-021-adjacent
+    genealogy) and platform mutation/signature/SoD requirements (MUT-FR-*, SIG-FR-*) rather than any
+    single spec document — this file exists because the code exists (Document 113's "contract the code
+    that exists" discipline, same as `spec-legacy-*`-class gaps elsewhere), not because a spec calls for
+    it.
+
+
+    NO OPTIMISTIC CONCURRENCY ON `product`/`recipe` (deviates from MUT-FR-009): neither carries a
+    `version` column consumers can supply as `expected_version`; every product/recipe command calls the
+    gateway with `expected_version=None`. `batch`/`batch_step` DO carry `version` and DO enforce
+    `expected_version` — reported as-is, not silently harmonized.
+
+
+    RECIPE STEP EDIT LOCK: `postUpdateRecipe`/`deleteRecipe` refuse once any batch has ever referenced the
+    recipe (`_assert_recipe_unused`) — a batch that already executed against a recipe must never have its
+    steps silently rewritten out from under it; the only path forward is `postCreateRecipe` for a new
+    `(product_id, version)`, this trio's own supersession mechanism (no immutable Vault snapshot exists
+    here the way `recipe_master`/`spec-ebmr-001.yaml`'s `postReleaseRecipeVersion` provides).
+
+
+    BATCH SIGNATURE FLOOR COMBINES POLICY AND RECIPE (SIGP-FR-004): `postCompleteStep`'s signature
+    requirement is `policy.signature_required OR recipe_step.requires_signature` — the recipe-authored
+    flag can only ever raise the requirement above the Document 106 floor, never lower it.
+    `postReviewBatch`/`postReleaseBatch` are independently signed against their own Document 106 rows
+    (`record_type="batch", action="review"|"release"`); `postReleaseBatch` additionally enforces a hard
+    SoD check — the releaser may never be the same user as the batch's own latest reviewer — and calls
+    the same optional release-gating rule hook (`rules_commands.evaluate_release_gate`, a real, documented
+    no-op until a deployment authors a rule at that id) and the same Vault `release_master` call
+    `spec-ebmr-002.yaml`'s `postReleaseBatch` documents.
+tags:
+  - name: product
+  - name: recipe
+  - name: batch
+
+paths:
+  /products:
+    post:
+      operationId: postCreateProduct
+      tags: [product]
+      summary: Create a legacy product record (C-012)
+      description: Unsigned. No uniqueness check on code alone — the DB constraint is (site_id, code); a duplicate code at the same site surfaces as a 500 from the unhandled IntegrityError, not a VALIDATION_FAILED (real gap, not guessed around).
+      x-requirement-ids: [C-012, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProductCommand' }
+      responses:
+        '200':
+          description: Created at status active.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+    get:
+      operationId: listProducts
+      tags: [product]
+      summary: Paginated, searchable product list
+      description: "`q` free-text searches code/name."
+      x-requirement-ids: [C-012, CTR-FR-012]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/ProductPage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+  /products/{product_id}:
+    parameters:
+      - { name: product_id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      operationId: patchProduct
+      tags: [product]
+      summary: Update a product's name/status
+      description: code and site_id are immutable through this operation — not accepted in the payload.
+      x-requirement-ids: [C-012, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProductCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: "VALIDATION_FAILED — product_id in path/body mismatch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+    delete:
+      operationId: deleteProduct
+      tags: [product]
+      summary: Delete a product
+      description: Requires platform.administer. Refuses if any recipe or batch still references the product (find_blocking_reference).
+      x-requirement-ids: [C-012, MUT-FR-005, MUT-FR-010, DATA-FR-023]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteProductCommand' }
+      responses:
+        '200':
+          description: Deleted.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: "VALIDATION_FAILED — product_id in path/body mismatch, or the product is still referenced by a recipe/batch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /recipes:
+    post:
+      operationId: postCreateRecipe
+      tags: [recipe]
+      summary: Create a recipe version with its steps (C-012-adjacent)
+      description: >
+        Unsigned. Step numbers must form a contiguous sequence starting at 1; a step with
+        `requires_signature: true` must also declare `signature_meaning`. `(product_id, version)` is
+        unique.
+      x-requirement-ids: [MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRecipeCommand' }
+      responses:
+        '200':
+          description: Created at status active.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '422':
+          description: "VALIDATION_FAILED — empty steps, non-contiguous step_number sequence, or requires_signature without signature_meaning."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+    get:
+      operationId: listRecipes
+      tags: [recipe]
+      summary: Paginated, searchable recipe list, joined to product code/name
+      description: "`q` free-text searches the joined product's code/name, not any recipe field directly."
+      x-requirement-ids: [CTR-FR-012]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/RecipePage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+  /recipes/{recipe_id}:
+    parameters:
+      - { name: recipe_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getRecipe
+      tags: [recipe]
+      summary: Recipe detail with steps
+      description: >
+        No NOT_FOUND handling exists in this operation — an unknown recipe_id currently 500s on
+        `recipe.id` access against `None` rather than raising a controlled 404 (real gap, not guessed
+        around; contrast every other module's `NotFoundError` convention).
+      x-requirement-ids: [C-012]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/RecipeDetail' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+    patch:
+      operationId: patchRecipe
+      tags: [recipe]
+      summary: Replace a recipe's steps
+      description: Refuses (VALIDATION_FAILED) once any batch has ever referenced this recipe — create a new (product_id, version) via postCreateRecipe instead. Deletes and fully replaces every RecipeStep row.
+      x-requirement-ids: [MUT-FR-005, MUT-FR-010, BAT-FR-003]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateRecipeCommand' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: "VALIDATION_FAILED — recipe_id in path/body mismatch, invalid step sequence/signature declaration, or the recipe is already referenced by a batch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+    delete:
+      operationId: deleteRecipe
+      tags: [recipe]
+      summary: Delete a recipe and its steps
+      description: Same "never referenced by a batch" guard as patchRecipe.
+      x-requirement-ids: [MUT-FR-005, MUT-FR-010, DATA-FR-023, BAT-FR-003]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteRecipeCommand' }
+      responses:
+        '200':
+          description: Deleted.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: "VALIDATION_FAILED — recipe_id in path/body mismatch, or the recipe is already referenced by a batch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches:
+    post:
+      operationId: postCreateLegacyBatch
+      tags: [batch]
+      summary: Create a batch at status planned, instantiating one BatchStep per RecipeStep
+      description: Unsigned. Refuses if the referenced recipe has no steps.
+      x-requirement-ids: [BAT-FR-001, BAT-FR-002, BAT-FR-005, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBatchCommand' }
+      responses:
+        '200':
+          description: Created at status planned.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '422':
+          description: VALIDATION_FAILED — the referenced recipe has no steps.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+    get:
+      operationId: listBatches
+      tags: [batch]
+      summary: Paginated, searchable batch list, joined to product code/name
+      description: "`q` free-text searches batch_number and the joined product's code/name."
+      x-requirement-ids: [BAT-FR-001, CTR-FR-012]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Page' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/PageSize' }
+        - { $ref: 'spec-gxp-001.yaml#/components/parameters/Query' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/BatchPage' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+  /batches/{batch_id}:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getBatch
+      tags: [batch]
+      summary: Batch detail with every step's status
+      x-requirement-ids: [BAT-FR-001, BAT-FR-005]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/BatchDetail' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /batches/{batch_id}/issue:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postIssueLegacyBatch
+      tags: [batch]
+      summary: Issue a planned batch (BAT-FR-003-adjacent — no execution snapshot freeze in this trio)
+      description: Only valid from status planned. Marks the first step ready.
+      x-requirement-ids: [BAT-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueBatchCommand' }
+      responses:
+        '200':
+          description: Issued.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — only status planned can be issued."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — batch_id in path/body mismatch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/{batch_id}/steps/{batch_step_id}/start:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: batch_step_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postStartLegacyStep
+      tags: [batch]
+      summary: Claim/start a ready step (BAT-FR-007)
+      description: Requires batch_step.start permission (site-scoped to the batch's own site). Only valid when the batch is issued/in_execution and the step is ready. Moves the batch to in_execution.
+      x-requirement-ids: [BAT-FR-006, BAT-FR-007, MUT-FR-005, MUT-FR-006, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartStepCommand' }
+      responses:
+        '200':
+          description: Started.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: "Batch not found, or the referenced batch_step_id does not belong to this batch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: "STALE_VERSION; INVALID_TRANSITION — the batch is not issued/in_execution, or the step is not ready."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — batch_id/batch_step_id in path/body mismatch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/{batch_id}/submit-for-review:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postSubmitForReview
+      tags: [batch]
+      summary: Submit a batch for QA review once every step is completed
+      description: Refuses (INVALID_TRANSITION, reporting the incomplete count) unless every BatchStep is status completed.
+      x-requirement-ids: [BAT-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitForReviewCommand' }
+      responses:
+        '200':
+          description: Moved to qa_review.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — one or more steps are not yet completed, or the batch is not in a state that can submit for review."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — batch_id in path/body mismatch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/{batch_id}/signature-challenges:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postBatchSignatureChallenge
+      tags: [batch]
+      summary: Create the signature challenge for postCompleteStep, postReviewBatch or postReleaseBatch
+      description: >
+        `action: complete_step` requires `batch_step_id` and checks both the recipe step's own
+        `requires_signature` flag and the resolved Document 106 policy floor for
+        `batch_step`/`complete_step` — rejected if neither demands a signature. Meaning is the recipe
+        step's own `signature_meaning` if set, else the policy's meaning. `action: review` always uses
+        meaning `"Reviewed"`; `action: release` always uses meaning `"Released"` — neither checks a
+        policy row here (the mutating operations themselves resolve whether a signature is actually
+        required).
+      x-requirement-ids: [SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: "Batch not found, or (complete_step) the referenced batch_step_id does not belong to this batch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — action is not complete_step/review/release; complete_step without batch_step_id; or complete_step when neither the recipe step nor policy requires a signature."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/{batch_id}/steps/{batch_step_id}/complete:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: batch_step_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postCompleteStep
+      tags: [batch]
+      summary: Complete an in-progress step (BAT-FR-007, SIGP-FR-004 policy/recipe signature floor)
+      description: >
+        Only valid when the step is in_progress. Signature required when
+        `policy.signature_required OR recipe_step.requires_signature` — the recipe flag can only raise
+        the floor, never lower it. Advances the next step to ready, or moves the batch to
+        production_complete if this was the last step.
+      x-requirement-ids: [BAT-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004, SIGP-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteStepCommand' }
+      responses:
+        '200':
+          description: Completed.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: "Batch not found, or the referenced batch_step_id does not belong to this batch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — the step is not in_progress."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — batch_id/batch_step_id in path/body mismatch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE — the step requires a signature but no valid challenge/reauth was supplied, or fresh step-up authentication failed.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/{batch_id}/review:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReviewBatch
+      tags: [batch]
+      summary: QA review decision (approve/reject) on a batch pending review
+      description: Only valid from status qa_review. Requires batch.review permission. Does not itself change batch status — only unblocks postReleaseBatch on an approved decision. Signature is conditional on the current Document 106 policy row for batch/review.
+      x-requirement-ids: [MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, MUT-FR-012, MUT-FR-015, MUT-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewBatchCommand' }
+      responses:
+        '200':
+          description: Reviewed.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION, or INVALID_TRANSITION — the batch is not awaiting QA review (status qa_review)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — batch_id in path/body mismatch, or decision not approved/rejected."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/{batch_id}/release:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReleaseBatch
+      tags: [batch]
+      summary: Release or reject a QA-approved batch, with Vault snapshot (BAT-FR-004, VLT-FR-001/006)
+      description: >
+        Only valid from status qa_review, and only once the latest BatchReview decision is approved.
+        Requires batch.release permission. Hard SoD: the releaser must not be the same user as that
+        latest review's reviewer (INVALID_TRANSITION otherwise) — no override path. On `decision:
+        released`, calls the optional release-gating rule hook (`rule_id="batch-release-eligibility:
+        {product_id}"`, a real documented no-op until a deployment authors/releases a rule there — see
+        `spec-ebmr-002.yaml`'s equivalent for `batch_execution`). Signature is conditional on the current
+        Document 106 policy row for batch/release. Writes an immutable Vault snapshot
+        (`object_type="batch"`) of the full batch + every step's data in the same transaction as the
+        release itself, regardless of decision (a rejection is also vaulted).
+      x-requirement-ids: [MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-014, MUT-FR-015, MUT-FR-018, SIG-FR-004, SIG-FR-018, VLT-FR-001, VLT-FR-006]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseBatchCommand' }
+      responses:
+        '200':
+          description: released or rejected.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: "STALE_VERSION; INVALID_TRANSITION — the batch is not awaiting release, has no approved review, or the releaser is the same user as the reviewer (SoD)."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — batch_id in path/body mismatch, or decision not released/rejected."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '428':
+          description: MISSING_SIGNATURE.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/{batch_id}/material-issues:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postIssueMaterialToBatch
+      tags: [batch]
+      summary: Issue a material lot quantity to this batch (MAT-015/MAT-021 minimal form)
+      description: Delegates entirely to `material.commands.issue_material_to_batch` — the material module remains the sole authoritative owner of lot/consumption state (AG-05); this operation exists on the batch router purely as a URL convenience.
+      x-requirement-ids: [MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueMaterialToBatchCommand' }
+      responses:
+        '200':
+          description: Issued.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: Batch not found, or (from the material module) the referenced material lot does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: STALE_VERSION on the material lot.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: "VALIDATION_FAILED — batch_id in path/body mismatch."
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+    get:
+      operationId: listBatchMaterialIssues
+      tags: [batch]
+      summary: List material issues recorded against this batch, joined to lot/material identity
+      x-requirement-ids: [BAT-FR-005]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/BatchMaterialIssue' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    ProductStatus:
+      type: string
+      x-requirement-ids: [C-012]
+      enum: [active, inactive]
+
+    RecipeStatus:
+      type: string
+      x-requirement-ids: [CTR-FR-017]
+      enum: [active, superseded]
+
+    BatchStatus:
+      type: string
+      description: "`BATCH_STATES` / `ALLOWED_TRANSITIONS` in `app/modules/batch/models.py`."
+      x-requirement-ids: [BAT-FR-004, CTR-FR-017]
+      enum: [planned, issued, in_execution, on_hold, production_complete, qa_review, released, rejected, closed]
+
+    BatchStepStatus:
+      type: string
+      x-requirement-ids: [BAT-FR-005, BAT-FR-006]
+      enum: [pending, ready, in_progress, completed, skipped]
+
+    Product:
+      type: object
+      x-requirement-ids: [C-012]
+      required: [id, site_id, code, name, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        status: { $ref: '#/components/schemas/ProductStatus' }
+        version: { type: integer, minimum: 1, description: "Present on the entity but never used as expected_version by this trio's commands (no optimistic concurrency)." }
+
+    ProductPage:
+      type: object
+      x-requirement-ids: [C-012, CTR-FR-012]
+      required: [total, page, page_size, total_pages, items]
+      properties:
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1 }
+        total_pages: { type: integer, minimum: 1 }
+        items: { type: array, items: { $ref: '#/components/schemas/Product' } }
+
+    RecipeStepDetail:
+      type: object
+      x-requirement-ids: [BAT-FR-005]
+      required: [id, step_number, name, requires_signature]
+      properties:
+        id: { type: string, format: uuid }
+        step_number: { type: integer, minimum: 1 }
+        name: { type: string }
+        instructions: { type: [string, "null"] }
+        requires_signature: { type: boolean }
+        signature_meaning: { type: [string, "null"] }
+
+    RecipeSummary:
+      type: object
+      description: listRecipes's item shape, joined to product code/name.
+      x-requirement-ids: [CTR-FR-012]
+      required: [id, product_id, product_code, product_name, version, status]
+      properties:
+        id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        product_code: { type: string }
+        product_name: { type: string }
+        version: { type: integer, minimum: 1 }
+        status: { $ref: '#/components/schemas/RecipeStatus' }
+
+    RecipePage:
+      type: object
+      x-requirement-ids: [CTR-FR-012]
+      required: [total, page, page_size, total_pages, items]
+      properties:
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1 }
+        total_pages: { type: integer, minimum: 1 }
+        items: { type: array, items: { $ref: '#/components/schemas/RecipeSummary' } }
+
+    RecipeDetail:
+      type: object
+      x-requirement-ids: [C-012]
+      required: [id, product_id, version, status, steps]
+      properties:
+        id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        status: { $ref: '#/components/schemas/RecipeStatus' }
+        steps: { type: array, items: { $ref: '#/components/schemas/RecipeStepDetail' } }
+
+    BatchSummary:
+      type: object
+      description: listBatches's item shape, joined to product code/name.
+      x-requirement-ids: [BAT-FR-001, CTR-FR-012]
+      required: [id, batch_number, status, product_id, product_code, product_name, target_quantity, uom, version]
+      properties:
+        id: { type: string, format: uuid }
+        batch_number: { type: string }
+        status: { $ref: '#/components/schemas/BatchStatus' }
+        product_id: { type: string, format: uuid }
+        product_code: { type: string }
+        product_name: { type: string }
+        target_quantity: { type: string, description: Decimal string. }
+        uom: { type: string }
+        version: { type: integer, minimum: 1 }
+
+    BatchPage:
+      type: object
+      x-requirement-ids: [CTR-FR-012]
+      required: [total, page, page_size, total_pages, items]
+      properties:
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1 }
+        total_pages: { type: integer, minimum: 1 }
+        items: { type: array, items: { $ref: '#/components/schemas/BatchSummary' } }
+
+    BatchStepDetail:
+      type: object
+      x-requirement-ids: [BAT-FR-005, BAT-FR-006]
+      required: [batch_step_id, recipe_step_id, step_number, name, status, requires_signature]
+      properties:
+        batch_step_id: { type: string, format: uuid }
+        recipe_step_id: { type: string, format: uuid }
+        step_number: { type: integer, minimum: 1 }
+        name: { type: string }
+        status: { $ref: '#/components/schemas/BatchStepStatus' }
+        requires_signature: { type: boolean }
+        signature_meaning: { type: [string, "null"] }
+        data: { type: [object, "null"] }
+
+    BatchDetail:
+      type: object
+      x-requirement-ids: [BAT-FR-001, BAT-FR-005]
+      required: [id, site_id, batch_number, status, version, product_id, recipe_id, target_quantity, uom, steps]
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid }
+        batch_number: { type: string }
+        status: { $ref: '#/components/schemas/BatchStatus' }
+        version: { type: integer, minimum: 1 }
+        product_id: { type: string, format: uuid }
+        recipe_id: { type: string, format: uuid }
+        target_quantity: { type: string, description: Decimal string. }
+        uom: { type: string }
+        steps: { type: array, items: { $ref: '#/components/schemas/BatchStepDetail' } }
+
+    BatchMaterialIssue:
+      type: object
+      x-requirement-ids: [BAT-FR-005]
+      required: [id, material_lot_id, internal_lot, material_code, material_name, quantity, uom, issued_at]
+      properties:
+        id: { type: string, format: uuid }
+        material_lot_id: { type: string, format: uuid }
+        internal_lot: { type: string }
+        material_code: { type: string }
+        material_name: { type: string }
+        batch_step_id: { type: [string, "null"], format: uuid }
+        quantity: { type: string, description: Decimal string. }
+        uom: { type: string }
+        issued_at: { type: string, format: date-time }
+
+    SignatureChallengeResponse:
+      type: object
+      description: postBatchSignatureChallenge's response.
+      x-requirement-ids: [SIG-FR-005]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    BatchSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Closed request payload. Not a CommandEnvelope — no idempotency_key.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [complete_step, review, release] }
+        batch_step_id: { type: [string, "null"], format: uuid, description: Required when action is complete_step. }
+
+    CreateProductCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [C-012, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, code, name]
+      properties:
+        idempotency_key: { type: string }
+        site_id: { type: string, format: uuid }
+        code: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+
+    UpdateProductCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [C-012, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, product_id, name, status]
+      properties:
+        idempotency_key: { type: string }
+        product_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        name: { type: string, minLength: 1 }
+        status: { $ref: '#/components/schemas/ProductStatus' }
+
+    DeleteProductCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [C-012, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, product_id]
+      properties:
+        idempotency_key: { type: string }
+        product_id: { type: string, format: uuid, description: Must equal the path parameter. }
+
+    RecipeStepInput:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [BAT-FR-005]
+      required: [step_number, name]
+      properties:
+        step_number: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1 }
+        instructions: { type: [string, "null"] }
+        requires_signature: { type: boolean, default: false }
+        signature_meaning: { type: [string, "null"], description: Required when requires_signature is true. }
+
+    CreateRecipeCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, product_id, version, steps]
+      properties:
+        idempotency_key: { type: string }
+        product_id: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        steps: { type: array, items: { $ref: '#/components/schemas/RecipeStepInput' }, minItems: 1 }
+
+    UpdateRecipeCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Full-replace semantics for steps, not incremental.
+      x-requirement-ids: [MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, recipe_id, steps]
+      properties:
+        idempotency_key: { type: string }
+        recipe_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        steps: { type: array, items: { $ref: '#/components/schemas/RecipeStepInput' }, minItems: 1 }
+
+    DeleteRecipeCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, recipe_id]
+      properties:
+        idempotency_key: { type: string }
+        recipe_id: { type: string, format: uuid, description: Must equal the path parameter. }
+
+    CreateBatchCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [BAT-FR-001, BAT-FR-002, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, site_id, product_id, recipe_id, recipe_version, batch_number, target_quantity, uom]
+      properties:
+        idempotency_key: { type: string }
+        site_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        recipe_id: { type: string, format: uuid }
+        recipe_version: { type: integer, minimum: 1 }
+        batch_number: { type: string, minLength: 1 }
+        target_quantity: { type: string, description: Decimal string. Must be positive. }
+        uom: { type: string }
+
+    IssueBatchCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, batch_id, expected_version]
+      properties:
+        idempotency_key: { type: string }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+
+    StartStepCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, batch_id, expected_version, batch_step_id]
+      properties:
+        idempotency_key: { type: string }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        batch_step_id: { type: string, format: uuid, description: Must equal the path parameter. }
+
+    CompleteStepCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are optional — required only when policy.signature_required OR recipe_step.requires_signature.
+      x-requirement-ids: [MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, batch_id, expected_version, batch_step_id]
+      properties:
+        idempotency_key: { type: string }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        batch_step_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        data: { type: object, default: {} }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    SubmitForReviewCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, batch_id, expected_version]
+      properties:
+        idempotency_key: { type: string }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+
+    ReviewBatchCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are always required (the policy decides at runtime whether they are enforced).
+      x-requirement-ids: [MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-011, SIG-FR-004]
+      required: [idempotency_key, batch_id, expected_version, decision, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        decision: { type: string, enum: [approved, rejected] }
+        reason: { type: [string, "null"] }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    ReleaseBatchCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). challenge_id/reauth_password are always required (the policy decides at runtime whether they are enforced).
+      x-requirement-ids: [MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, SIG-FR-004, SIG-FR-018]
+      required: [idempotency_key, batch_id, expected_version, decision, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        decision: { type: string, enum: [released, rejected] }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string, format: password, writeOnly: true }
+
+    IssueMaterialToBatchCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Owned by the material module (`app/modules/material/commands.py`); listed here because the operation is mounted on the batch router.
+      x-requirement-ids: [MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, lot_id, expected_version, batch_id, quantity]
+      properties:
+        idempotency_key: { type: string }
+        lot_id: { type: string, format: uuid }
+        expected_version: { type: integer, minimum: 1 }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        batch_step_id: { type: [string, "null"], format: uuid }
+        quantity: { type: string, description: Decimal string. }

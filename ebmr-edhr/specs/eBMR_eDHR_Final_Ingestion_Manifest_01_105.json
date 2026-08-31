@@ -1,0 +1,744 @@
+{
+  "project": "US eBMR / eDHR Regulated Manufacturing Platform",
+  "baseline": "Documents 01-105",
+  "construction_instruction": "ClaudeCode_Master_Project_Construction_Instructions_v1.7_FINAL_Documents_01_105.md",
+  "generated_date": "2026-08-20",
+  "document_count": 105,
+  "documents": [
+    {
+      "document_number": 1,
+      "filename": "Document_01_US_eBMR_eDHR_Master_Product_Compliance_Architecture_Bible_v1.1_FROZEN.md",
+      "specification_id": null,
+      "bytes": 94204,
+      "sha256": "1dcba2a2a185aa977d5dfc3d9abb7331b554ec819262eac6a9edd3ebb4bcc55b"
+    },
+    {
+      "document_number": 2,
+      "filename": "Document_02_System_Architecture_GxP_Core_Technical_Specification_v1.0.md",
+      "specification_id": null,
+      "bytes": 73838,
+      "sha256": "2f362f3b7d56375bb0d5dc09f5f6f31b2570a4c2fd4df76b630d84a8966fb581"
+    },
+    {
+      "document_number": 3,
+      "filename": "Document_03_GxP_Mutation_Gateway_Specification_v1.1_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-GXP-001",
+      "bytes": 26981,
+      "sha256": "94cbc03586a6434f5ef5c834207b3b7a503c1a9719b75c5752a519b2f689fec7"
+    },
+    {
+      "document_number": 4,
+      "filename": "Document_04_Part_11_Electronic_Signature_Specification_v1.1_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-GXP-002",
+      "bytes": 22961,
+      "sha256": "04491648319cca81290132fa5d2b5d4c9daa6b8b809a03e6fa73e5805b931e44"
+    },
+    {
+      "document_number": 5,
+      "filename": "Document_05_Immutable_Audit_Ledger_and_Audit_Review_Specification_v1.1_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-GXP-003",
+      "bytes": 20730,
+      "sha256": "e595704980505e048db08699333084756a87fb08ffa32d238d4eda3fa60d86bc"
+    },
+    {
+      "document_number": 6,
+      "filename": "Document_06_Record_Version_Vault_Locking_Amendment_Correction_Specification_v1.1_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-GXP-004",
+      "bytes": 19818,
+      "sha256": "994f9ee6c157dd0e25a1e614e47ce981a69d60da52ee2c4945da89beb9c5e882"
+    },
+    {
+      "document_number": 7,
+      "filename": "Document_07_Identity_Authorization_RBAC_Qualification_SoD_Specification_v1.1_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-IAM-001",
+      "bytes": 20119,
+      "sha256": "f35de0dbfdfbfa488fa78d35e6ede0f9d54b4cf99bd71f67b32ab84037793ca2"
+    },
+    {
+      "document_number": 8,
+      "filename": "Document_08_Regulatory_Rules_and_Calculation_Engine_Specification_v1.1_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-GXP-006",
+      "bytes": 21133,
+      "sha256": "8cd228783ecf24d3d6977b32a0b90f8ce21d5689aa3d431e69f76476a0fdc825"
+    },
+    {
+      "document_number": 9,
+      "filename": "Document_09_Product_Constituent_Regulatory_Profile_Master_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EBMR-000",
+      "bytes": 18627,
+      "sha256": "cceea6dc95d7b06408ce9d2bc92c7cbe43574e804a730ef2a0555e909f47dee5"
+    },
+    {
+      "document_number": 10,
+      "filename": "Document_10_Master_Recipe_Master_Manufacturing_Record_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EBMR-001",
+      "bytes": 17554,
+      "sha256": "50fee63764387b5f72efd18d244720034099d7b6d4d86f04f571a5a2e7db8fd8"
+    },
+    {
+      "document_number": 11,
+      "filename": "Document_11_Batch_Execution_Engine_State_Machine_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EBMR-002",
+      "bytes": 17264,
+      "sha256": "71501e46707046f840c794b92a19301c3980553a024683781ba62c3cafbad164"
+    },
+    {
+      "document_number": 12,
+      "filename": "Document_12_eDHR_Device_Production_History_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EBMR-003",
+      "bytes": 13275,
+      "sha256": "47eba74f80d0afeb45ac27a227076392e507a248170e12bedf09c10e05d2c026"
+    },
+    {
+      "document_number": 13,
+      "filename": "Document_13_Genealogy_Traceability_Engine_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EBMR-004",
+      "bytes": 13296,
+      "sha256": "9351e99c11e73377acd72cb53090ad1761f785ff14c7a77ab82c4579b0fc2864"
+    },
+    {
+      "document_number": 14,
+      "filename": "Document_14_Review_by_Exception_QA_Review_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EBMR-005",
+      "bytes": 13276,
+      "sha256": "e20b4c044925059e825e908af8940b08d241ac9ba3670efa4b15383ff10d32bc"
+    },
+    {
+      "document_number": 15,
+      "filename": "Document_15_Release_Disposition_Engine_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EBMR-006",
+      "bytes": 13682,
+      "sha256": "1db5fd07943a4512d627fe4aa93d265346292a8b1fe818ab6d89cdf998ac1d4f"
+    },
+    {
+      "document_number": 16,
+      "filename": "Document_16_Packaging_Labeling_Reconciliation_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EBMR-007",
+      "bytes": 13042,
+      "sha256": "1800ad648e42f2b44b306e4afb4d2f071c9394bce6b5d0d98da8e6db60d526c8"
+    },
+    {
+      "document_number": 17,
+      "filename": "Document_17_Yield_Calculations_Manufacturing_Reconciliation_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EBMR-008",
+      "bytes": 13322,
+      "sha256": "56e49d5374dd2379cd56f966ff0de0b634be4b12de89b0a97d20888df68634f2"
+    },
+    {
+      "document_number": 18,
+      "filename": "Document_18_Procurement_Supplier_Quality_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-MAT-001",
+      "bytes": 14276,
+      "sha256": "2486b1a1b98afda520163d0e8f1f9837c80f866198cdf5a8f2065673167c36df"
+    },
+    {
+      "document_number": 19,
+      "filename": "Document_19_Material_Receipt_Quarantine_Quality_Status_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-MAT-002A",
+      "bytes": 13307,
+      "sha256": "27720c0eeacb34eefdc7e157bbcd56f4ac92e5a4c0a42e3e24675bb3dc79e54d"
+    },
+    {
+      "document_number": 20,
+      "filename": "Document_20_Inventory_Lot_Container_Warehouse_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-MAT-002B",
+      "bytes": 12529,
+      "sha256": "2c349574259e568a4a03a001bb399ac2b67083ae70d277e82c10bdd28c9239ff"
+    },
+    {
+      "document_number": 21,
+      "filename": "Document_21_Material_Dispensing_Weighing_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-MAT-002C",
+      "bytes": 12579,
+      "sha256": "cc4588201ea904e5ff430dc185b1ffdf4a63c3e244ca396483f8d799e1e8a68f"
+    },
+    {
+      "document_number": 22,
+      "filename": "Document_22_Material_Consumption_Return_Adjustment_Destruction_Reconciliation_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-MAT-002D",
+      "bytes": 13277,
+      "sha256": "f3fa32372204873d14d6dcaf609bdc4e700765c5393adc8ffeada5dcc4c75971"
+    },
+    {
+      "document_number": 23,
+      "filename": "Document_23_Native_Basic_QC_Sampling_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QC-001",
+      "bytes": 17986,
+      "sha256": "898f2642b0f3965ba0d73d2b01e7a9ff4331c91e3031c043393f38a8615170e1"
+    },
+    {
+      "document_number": 24,
+      "filename": "Document_24_LIMS_Integration_Generic_Adapter_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QC-002",
+      "bytes": 15083,
+      "sha256": "2773d4c561d62d690fd1a3d4902e145fb96d243f43d81176fa7d73e690d99ad2"
+    },
+    {
+      "document_number": 25,
+      "filename": "Document_25_OOS_OOT_Management_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QC-003",
+      "bytes": 19785,
+      "sha256": "69a8ecc72fb3d6ef2d623bba6179e662198ba5ec67a50008ee7caf7eea374387"
+    },
+    {
+      "document_number": 26,
+      "filename": "Document_26_Deviation_Investigation_Management_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QMS-001",
+      "bytes": 9945,
+      "sha256": "4655a560b7c24976c7bb08e5180bd571e2d03769acd6f89ded928b906f80d36d"
+    },
+    {
+      "document_number": 27,
+      "filename": "Document_27_CAPA_Management_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QMS-002",
+      "bytes": 8726,
+      "sha256": "c705d844576623abbc5648bae1f8701f563f6cb6df0cf67c9937ab2885503f7e"
+    },
+    {
+      "document_number": 28,
+      "filename": "Document_28_Nonconformance_Management_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QMS-003",
+      "bytes": 7951,
+      "sha256": "84f0dcdcac041b812b5f3aea57d3bc53db08eda6820839eee21a0b2dba313f0f"
+    },
+    {
+      "document_number": 29,
+      "filename": "Document_29_Change_Control_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QMS-004",
+      "bytes": 9156,
+      "sha256": "2a11fffc2566c7d2db58afa495ddcd1bcc5a44a0d401f3bf06a8ccf66c7cf487"
+    },
+    {
+      "document_number": 30,
+      "filename": "Document_30_Document_Control_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QMS-005",
+      "bytes": 8131,
+      "sha256": "65968fd3753774af84119760beb028f7677614535d02243adc4656aa1ce8b9ca"
+    },
+    {
+      "document_number": 31,
+      "filename": "Document_31_Training_Personnel_Qualification_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QMS-006",
+      "bytes": 7972,
+      "sha256": "2f5855d6e51dbc1eb3c5b07b8df4bd52ff2695473256ebc39e9e91b18382c5ee"
+    },
+    {
+      "document_number": 32,
+      "filename": "Document_32_Supplier_Quality_SCAR_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QMS-007",
+      "bytes": 6783,
+      "sha256": "bc2875c8a226e04dff1ac2ba9c3a898c888d33ec5c60f07270362e763fd76edd"
+    },
+    {
+      "document_number": 33,
+      "filename": "Document_33_Risk_Management_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QMS-008",
+      "bytes": 6576,
+      "sha256": "f3621c6ba8797ba6968961d978b4afea0e45565fcf8ff7e50808345e45ad9c16"
+    },
+    {
+      "document_number": 34,
+      "filename": "Document_34_Internal_Audit_Management_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QMS-009",
+      "bytes": 7598,
+      "sha256": "954004592986d24c48c1021b1a5972d4dfff2b29efc090ec4d88bfcbc40fbc88"
+    },
+    {
+      "document_number": 35,
+      "filename": "Document_35_Complaint_Management_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QMS-010",
+      "bytes": 9885,
+      "sha256": "55d928d5371e71854d4ab87d662372f9b73d8fa4159149e2f1339698d794ec5b"
+    },
+    {
+      "document_number": 36,
+      "filename": "Document_36_Recall_Field_Action_Management_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QMS-011",
+      "bytes": 9335,
+      "sha256": "161119c51b40107afc6a60a885e4becf0f7d41ef33fe574a753614ed29ec109d"
+    },
+    {
+      "document_number": 37,
+      "filename": "Document_37_Quality_Metrics_Trending_Effectiveness_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-QMS-012",
+      "bytes": 9201,
+      "sha256": "490fa1daed4bfd9244fa5f687c09354e0104d6e09dadc3545366116146e46b40"
+    },
+    {
+      "document_number": 38,
+      "filename": "Document_38_Equipment_Calibration_Qualification_Maintenance_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EQP-001",
+      "bytes": 14079,
+      "sha256": "7d94e27adfa799e73bea6aa91555ede2a277e1168eed1c5836ffb19b102f9c20"
+    },
+    {
+      "document_number": 39,
+      "filename": "Document_39_Cleaning_Sanitization_Line_Clearance_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EQP-002",
+      "bytes": 12751,
+      "sha256": "f1be8ff2f8ecb5aac3d50709292c7be0217b749eed43ddbf024200379099c2b4"
+    },
+    {
+      "document_number": 40,
+      "filename": "Document_40_Sterile_Aseptic_Manufacturing_Operations_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EQP-003",
+      "bytes": 13277,
+      "sha256": "417f99412e55d516a305ebf6552d8c204853752b73998059a0a130ba73319ad2"
+    },
+    {
+      "document_number": 41,
+      "filename": "Document_41_Environmental_Monitoring_Cleanroom_State_Control_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EQP-004",
+      "bytes": 12500,
+      "sha256": "42f06cb1f1d1cde4b2e09a1a4344d54ca4c729e89985eadba147fa47e181794f"
+    },
+    {
+      "document_number": 42,
+      "filename": "Document_42_Sterilization_CIP_SIP_Sterile_Filtration_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EQP-005",
+      "bytes": 14050,
+      "sha256": "7cca655ae8ac3fafa35ddf0235bad2d34fe6cd661335781835ac995cb36e4aa9"
+    },
+    {
+      "document_number": 43,
+      "filename": "Document_43_Edge_Gateway_Runtime_Architecture_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EDGE-001",
+      "bytes": 20292,
+      "sha256": "5521f88a5e0bc8b9aca9a784fe5a7f445d31d068b5def927b1be45304fe39c89"
+    },
+    {
+      "document_number": 44,
+      "filename": "Document_44_Industrial_Device_Protocol_Connectivity_Drivers_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EDGE-002",
+      "bytes": 14278,
+      "sha256": "5244e2a582d7fbf9a78e35c761147a2453a04606a04d3674ca0a273b916256ca"
+    },
+    {
+      "document_number": 45,
+      "filename": "Document_45_Store_Forward_Offline_Buffering_Time_Data_Quality_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EDGE-003",
+      "bytes": 13445,
+      "sha256": "938b740ef85954861adcac0b7cd5b697feba20d9574cd8ec7d85a654cdb0e5d9"
+    },
+    {
+      "document_number": 46,
+      "filename": "Document_46_Barcode_Scanner_Balance_Printer_Tester_Peripheral_Integration_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EDGE-004",
+      "bytes": 13821,
+      "sha256": "daab339818b32fe544dde2558e4774ed5a64c47b4b9ed3085151d2433ceaae44"
+    },
+    {
+      "document_number": 47,
+      "filename": "Document_47_PLC_SCADA_Data_Acquisition_Evidence_Mapping_Command_Boundary_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-EDGE-005",
+      "bytes": 16530,
+      "sha256": "3451a574f4dd078518cd66cfce5eccf6b1bb2a707765a568c3d4a7cc42b3a28c"
+    },
+    {
+      "document_number": 48,
+      "filename": "Document_48_Enterprise_ERP_Integration_Architecture_Provider_Contract_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ERP-001",
+      "bytes": 17725,
+      "sha256": "54331aae4c5cee647223fe925ca432836469571f0845bd9297922094c9c1d9e5"
+    },
+    {
+      "document_number": 49,
+      "filename": "Document_49_ERPNext_Adapter_Detailed_Contract_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ERP-002",
+      "bytes": 13077,
+      "sha256": "a62a6c0f827a6dd0f5214ab314b8a36320e683b470c69b76dd79ebb7a17327ec"
+    },
+    {
+      "document_number": 50,
+      "filename": "Document_50_SAP_S4HANA_Adapter_Contract_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ERP-003",
+      "bytes": 12491,
+      "sha256": "eb12a2472e93b9b302c36962b1949ceb70ec68bae5ee8492fc859407942df4a4"
+    },
+    {
+      "document_number": 51,
+      "filename": "Document_51_Oracle_Dynamics_Custom_ERP_Adapter_Contracts_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ERP-004",
+      "bytes": 13299,
+      "sha256": "d5522b2aa85de1a0c004b51f26447809fa585da6191236c136faf1040c4568d9"
+    },
+    {
+      "document_number": 52,
+      "filename": "Document_52_Master_Data_Synchronization_Mapping_Reconciliation_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ERP-005",
+      "bytes": 13284,
+      "sha256": "abcb081c480ca68b2fa79c9118b357689f6691941cd44f2f664c2ba10bac0f77"
+    },
+    {
+      "document_number": 53,
+      "filename": "Document_53_Integration_Error_Retry_Idempotency_Reconciliation_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ERP-006",
+      "bytes": 15328,
+      "sha256": "af8bbe9790019b387261b2cd05d0635007b6f4602a301ca0c51da2d62d5d1423"
+    },
+    {
+      "document_number": 54,
+      "filename": "Document_54_Prefilled_Syringe_Injectable_DDCP_Profile_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DDCP-001",
+      "bytes": 18143,
+      "sha256": "cc2d2891a4d411a44b733b23a479720c8a8ca70d6662cec74274e6d8ba18f4fb"
+    },
+    {
+      "document_number": 55,
+      "filename": "Document_55_Autoinjector_Pen_Cartridge_DDCP_Profile_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DDCP-002",
+      "bytes": 16254,
+      "sha256": "4115c36a1b51ae2e647f2d6e0696d601a334076f7ac04431d10e6bc2f46da45c"
+    },
+    {
+      "document_number": 56,
+      "filename": "Document_56_Inhalation_MDI_DPI_DDCP_Profile_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DDCP-003",
+      "bytes": 14895,
+      "sha256": "0aadce0128da61736fd440442b9980a62014fadb89c431f1d0cef2be0cabdb86"
+    },
+    {
+      "document_number": 57,
+      "filename": "Document_57_Drug_Eluting_Coated_Device_DDCP_Profile_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DDCP-004",
+      "bytes": 16165,
+      "sha256": "63d5dc9216629ba7849c7f39fead3f261180eda33748960e121071c164777385"
+    },
+    {
+      "document_number": 58,
+      "filename": "Document_58_Postmarket_Surveillance_Safety_Case_Signal_Management_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-PM-001",
+      "bytes": 17912,
+      "sha256": "562be4feb0f93a375a71ccc03447da2114ff3275fc286eade7f61ac57450a1de"
+    },
+    {
+      "document_number": 59,
+      "filename": "Document_59_Regulatory_Reportability_Electronic_Safety_Submission_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-PM-002",
+      "bytes": 18780,
+      "sha256": "fa32d079bebb3b29f025fe94560d3cab5cd5290efd69a6f071da7a5e861ab539"
+    },
+    {
+      "document_number": 60,
+      "filename": "Document_60_Combination_Product_Postmarket_Regulatory_Coordination_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-PM-003",
+      "bytes": 19964,
+      "sha256": "80ec37e9d222f9b50af9eb23fbe2aeb02f1ae23003ebe97586a91598c7293d7e"
+    },
+    {
+      "document_number": 61,
+      "filename": "Document_61_Security_Architecture_Threat_Model_Control_Framework_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-SEC-001",
+      "bytes": 14379,
+      "sha256": "f2e9fc4ba107e464d6660510ead966115d422ede422a5a9ebd597163d1f64e3d"
+    },
+    {
+      "document_number": 62,
+      "filename": "Document_62_Identity_Federation_SSO_MFA_Sessions_Service_Identities_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-SEC-002",
+      "bytes": 13565,
+      "sha256": "c49a1c99a98ef1cd7890953a63396b65e33e83ef8837ab5ba0e8fddaad088bb6"
+    },
+    {
+      "document_number": 63,
+      "filename": "Document_63_Privileged_Support_BreakGlass_Admin_Security_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-SEC-003",
+      "bytes": 13361,
+      "sha256": "f55c4a87dc324175f7b42e9bd2be61bfa250509e0f2e59326cb21ca695faccdc"
+    },
+    {
+      "document_number": 64,
+      "filename": "Document_64_Application_API_UI_Secure_Runtime_Engineering_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-SEC-004",
+      "bytes": 13997,
+      "sha256": "61d0d87d26949eebeb9c9a67614dfc330e8ae4f5df419faf546ab25ef657fc55"
+    },
+    {
+      "document_number": 65,
+      "filename": "Document_65_Secrets_PKI_Cryptography_Key_Lifecycle_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-SEC-005",
+      "bytes": 13369,
+      "sha256": "36db8401400e05851aa6eff61b8cfcc4f1776fce80913da129bb31b390ae1d04"
+    },
+    {
+      "document_number": 66,
+      "filename": "Document_66_Network_Tenant_Deployment_Isolation_Zero_Trust_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-SEC-006",
+      "bytes": 13257,
+      "sha256": "3e28a837349e8954b80107fdc413e11054dad8f3e49c2b00e6eae7152ece5e09"
+    },
+    {
+      "document_number": 67,
+      "filename": "Document_67_Security_Logging_Monitoring_Incident_Response_Forensics_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-SEC-007",
+      "bytes": 14460,
+      "sha256": "10bc7bff6aaa809bd466041eb1a189d5c2bf41f8445e78564dfdb3de011ed3d1"
+    },
+    {
+      "document_number": 68,
+      "filename": "Document_68_Secure_SDLC_Software_Supply_Chain_SBOM_Vulnerability_Release_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-SEC-008",
+      "bytes": 15095,
+      "sha256": "b18ef5ee8c46a06ac8ae8258496044a3cabde06e7bd4f2e2e1d88b9140509c81"
+    },
+    {
+      "document_number": 69,
+      "filename": "Document_69_Data_Ownership_Persistence_Topology_Lineage_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DATA-001",
+      "bytes": 15639,
+      "sha256": "0483fca9bdf21853897689b8965a86660d20fc8e2b4e26843e733d847c134ac2"
+    },
+    {
+      "document_number": 70,
+      "filename": "Document_70_PostgreSQL_GxP_Database_Schema_Partitioning_Concurrency_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DATA-002",
+      "bytes": 16689,
+      "sha256": "9dce76ab332197e7747c5e2ac1c3d3d5f8264978fcd28b2865e7a1a23597ae63"
+    },
+    {
+      "document_number": 71,
+      "filename": "Document_71_Frappe_MariaDB_Operational_Projection_UI_Data_Architecture_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DATA-003",
+      "bytes": 14263,
+      "sha256": "b6b20f552e76b275c9bc9cccf22fbaf63988e54093110eaf5f21791c3643e376"
+    },
+    {
+      "document_number": 72,
+      "filename": "Document_72_Immutable_Evidence_Object_Storage_WORM_Archive_File_Lifecycle_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DATA-004",
+      "bytes": 15401,
+      "sha256": "f597edfaa92a301c81a7cfccaffb1ad7be3ac35cdb174a428e32c466b5f13e47"
+    },
+    {
+      "document_number": 73,
+      "filename": "Document_73_NATS_JetStream_Transactional_Outbox_Async_Contracts_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DATA-005",
+      "bytes": 15109,
+      "sha256": "d45d62ca121a2e0ceff0fb0820c2f10cc7a07d1674d48cc813944ca72b9cde75"
+    },
+    {
+      "document_number": 74,
+      "filename": "Document_74_Temporal_Durable_Workflow_Orchestration_Architecture_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DATA-006",
+      "bytes": 15020,
+      "sha256": "d181020818a2d5f7bf4dfcbd5e4f02b985a42a11b5136478db9258d7f4cd8fad"
+    },
+    {
+      "document_number": 75,
+      "filename": "Document_75_Caching_Search_Read_Models_Reporting_Analytics_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DATA-007",
+      "bytes": 14444,
+      "sha256": "d09ea5b789da2c494134dfe2fe617768fcd6569b86a44e9b08b3151dec266969"
+    },
+    {
+      "document_number": 76,
+      "filename": "Document_76_Backup_Restore_PITR_Disaster_Recovery_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DATA-008",
+      "bytes": 15529,
+      "sha256": "cf9309ceb008aec16100c925f83ef040531d9a10a273c385768fa8a57c2eb75d"
+    },
+    {
+      "document_number": 77,
+      "filename": "Document_77_Cloud_Neutral_Kubernetes_OnPrem_Deployment_Upgrade_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DATA-009",
+      "bytes": 16012,
+      "sha256": "1384c2c57918b7ca43879724e5510e77dd415bf92ddfae37f38fe0dae138f5e1"
+    },
+    {
+      "document_number": 78,
+      "filename": "Document_78_Performance_Capacity_Observability_SLO_SRE_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-DATA-010",
+      "bytes": 16478,
+      "sha256": "31bfaafa683c8d86883ba60be190aef8a01372bf23454f12318a4afa13a04f15"
+    },
+    {
+      "document_number": 79,
+      "filename": "Document_79_Validation_Master_Plan_CSA_Strategy_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-001",
+      "bytes": 12553,
+      "sha256": "dbe78fa97c8ac79db62255e5c6eb7253920686004acd698282d7ded7da4c70ba"
+    },
+    {
+      "document_number": 80,
+      "filename": "Document_80_Intended_Use_GxP_Criticality_Function_Risk_Classification_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-002",
+      "bytes": 10621,
+      "sha256": "255e978900970aead567f7edde374b50221c1d339465a0b8ce95fe3894c5c836"
+    },
+    {
+      "document_number": 81,
+      "filename": "Document_81_Requirements_Design_Inputs_Validation_Traceability_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-003",
+      "bytes": 10698,
+      "sha256": "78d282f669658662f0a3aa886645c6fa63bec552217ca116134d5144f2425916"
+    },
+    {
+      "document_number": 82,
+      "filename": "Document_82_Validation_Test_Strategy_Methods_Objective_Evidence_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-004",
+      "bytes": 11189,
+      "sha256": "4055fc34ee29f6a7d62b4c9d86c211ebfbe9e5558c9c9260e68873576317868e"
+    },
+    {
+      "document_number": 83,
+      "filename": "Document_83_Installation_Qualification_IQ_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-005",
+      "bytes": 9970,
+      "sha256": "b2e73169676250a85d590b5a93339f952da5f4d96a3a54702e5cba4173d22e3a"
+    },
+    {
+      "document_number": 84,
+      "filename": "Document_84_Operational_Qualification_OQ_Functional_Verification_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-006",
+      "bytes": 9271,
+      "sha256": "3b6d3ade0d72e3ba2541c4f9c857af7022987128abbcfc80c7c55a9c57b00df2"
+    },
+    {
+      "document_number": 85,
+      "filename": "Document_85_Performance_Qualification_PQ_UAT_Business_Process_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-007",
+      "bytes": 10084,
+      "sha256": "f21465a7de74806997198227f3424bb37399f740405c8ad06ea8f552b4bc721b"
+    },
+    {
+      "document_number": 86,
+      "filename": "Document_86_Infrastructure_Cloud_Platform_Environment_Qualification_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-008",
+      "bytes": 10033,
+      "sha256": "93e5b25e64509894a51604e59279afed15e56345523007a3761a8adbcbc158ac"
+    },
+    {
+      "document_number": 87,
+      "filename": "Document_87_Data_Migration_Conversion_Cutover_Reconciliation_Validation_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-009",
+      "bytes": 10475,
+      "sha256": "bba1502506668adf96d65830a286b3f288635109a1b4e956c857a4d91d42f2e2"
+    },
+    {
+      "document_number": 88,
+      "filename": "Document_88_21CFR_Part11_Electronic_Records_Signature_Validation_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-010",
+      "bytes": 10895,
+      "sha256": "8ce8a209bebbc3ceab77e7a8e8b1ab5f61ae52956ef0b77f592a2a8fa303614d"
+    },
+    {
+      "document_number": 89,
+      "filename": "Document_89_Audit_Vault_Data_Integrity_Validation_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-011",
+      "bytes": 10486,
+      "sha256": "15e0973663efdeaacf067f23fdc6c09650c881dd5de128ecf64908c4d7672c68"
+    },
+    {
+      "document_number": 90,
+      "filename": "Document_90_Integration_Edge_Device_Interface_Validation_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-012",
+      "bytes": 10541,
+      "sha256": "6f00ad6e20a0ba5c4c937d5446b53ee008b80b9203552354419f709ced9e7bdd"
+    },
+    {
+      "document_number": 91,
+      "filename": "Document_91_Backup_Restore_PITR_DR_Qualification_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-013",
+      "bytes": 9837,
+      "sha256": "06c3fcdb2c478ed5d20c340f4869fa476a0a4663bbfa052afef6654685f2c7d6"
+    },
+    {
+      "document_number": 92,
+      "filename": "Document_92_Security_Qualification_Vulnerability_Penetration_Testing_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-014",
+      "bytes": 10336,
+      "sha256": "b08ba275be76503a0400aa9a52e8339a74d8c10e20c6695ad35a4494def84ba2"
+    },
+    {
+      "document_number": 93,
+      "filename": "Document_93_Performance_Load_Capacity_Reliability_Qualification_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-015",
+      "bytes": 10157,
+      "sha256": "923377af8b8a67e0020652d996d5763dc96879fd30b0507e56fdc86eb5a16b0e"
+    },
+    {
+      "document_number": 94,
+      "filename": "Document_94_Validation_Defect_Deviation_Exception_Remediation_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-016",
+      "bytes": 10329,
+      "sha256": "4adfccdae98ae3d43bb9ab9d43af228b5b41d42d60c1db1541ea01bd6b499278"
+    },
+    {
+      "document_number": 95,
+      "filename": "Document_95_Validation_Summary_Release_GoLive_Authorization_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-017",
+      "bytes": 10859,
+      "sha256": "2ee202ce0eab1e4f52afdee8666bc6de12c14eb8c2ddbb8f62122c7af06ecc78"
+    },
+    {
+      "document_number": 96,
+      "filename": "Document_96_Periodic_Review_Change_Impact_Revalidation_Validated_State_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-VAL-018",
+      "bytes": 11839,
+      "sha256": "1d79a1c9ee121a21db8b82f48a2a5dfc6aa3508a4d90e7ec39c2d3af11194a53"
+    },
+    {
+      "document_number": 97,
+      "filename": "Document_97_Coding_Standards_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ENG-001",
+      "bytes": 13626,
+      "sha256": "7101cdc5da8f20d084f6c69638602834f26a86400f491a3b5e6bbd1bfff1c0b0"
+    },
+    {
+      "document_number": 98,
+      "filename": "Document_98_Architecture_Rules_ClaudeCode_Codex_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ENG-002",
+      "bytes": 13132,
+      "sha256": "ffbb7c980cb57618174197f1dd6916492ce65f1a63e23f4a580be9406422a7b6"
+    },
+    {
+      "document_number": 99,
+      "filename": "Document_99_Repository_Branching_Standard_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ENG-003",
+      "bytes": 11344,
+      "sha256": "0fa19b8636dd1bc552567c780394a53938ff449bad73ddc85463fe6094164a46"
+    },
+    {
+      "document_number": 100,
+      "filename": "Document_100_Database_Migration_Standard_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ENG-004",
+      "bytes": 11472,
+      "sha256": "5cc342ef466c146005b26199181b2228e2b6e3d3ceb39e476f6def837d36e397"
+    },
+    {
+      "document_number": 101,
+      "filename": "Document_101_API_Event_Contract_Standard_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ENG-005",
+      "bytes": 11840,
+      "sha256": "ca643fd53286b0698fb771d7c65ba948d48b3d437709c3e3485dfd324f3095d1"
+    },
+    {
+      "document_number": 102,
+      "filename": "Document_102_Testing_Strategy_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ENG-006",
+      "bytes": 12691,
+      "sha256": "32300d2d49d9677452190516ec7bb62481270215247d3569fb085fe50407e2f5"
+    },
+    {
+      "document_number": 103,
+      "filename": "Document_103_CI_CD_Release_Process_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ENG-007",
+      "bytes": 11807,
+      "sha256": "d364a74ae5b7ed34f6d23d267653a917795ae8e0037b10840506af2c0d15790e"
+    },
+    {
+      "document_number": 104,
+      "filename": "Document_104_SBOM_Third_Party_License_Management_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-ENG-008",
+      "bytes": 11455,
+      "sha256": "74edb77176a885a3f2a33be4ca9fb135f136f1a3331561f2d5d7d4f2028a0ddf"
+    },
+    {
+      "document_number": 105,
+      "filename": "Document_105_AI_Governance_Regulated_Manufacturing_v1.0_IMPLEMENTATION_READY.md",
+      "specification_id": "SPEC-AI-001",
+      "bytes": 21511,
+      "sha256": "68effab3880bd1a5ab829a83db61ff7137818f9bd75aa2f49d54d9feeb9133e9"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-data-002.json",
+  "title": "SPEC-DATA-002 — PostgreSQL GxP Database Architecture, Partitioning & Concurrency Events",
+  "description": "Document 113 event contract for WP-11 Document 70 (services/gxp-api/app/modules/dbops/*). Six operational/infrastructure signals (Document 70 # 9). Document 70 owns no entities and no HTTP API; these events are emitted best-effort in their own committed transaction (app/modules/dbops/signals.py::emit_db_signal, aggregate_type 'database_health') by DBA automation, the migration runner and the connection pool -- the same self-committing pattern as security telemetry. The runtime feeds for ReplicaLagExceeded / ConnectionPoolExhausted are deployment-profile metrics wiring (single-primary Phase 1 has no replica); the mechanism, payload shapes and stable error codes (DEADLOCK_DETECTED / PARTITION_GAP_DETECTED / DB_INTEGRITY_FAILURE / PRIMARY_UNAVAILABLE / REPLICA_TOO_STALE / PARTITION_CREATE_FAILED / OUTBOX_DUPLICATE) are in place.",
+  "x-requirement-ids": ["PG-FR-008", "PG-FR-012", "PG-FR-014", "PG-FR-016", "PG-FR-023", "PG-FR-030", "PG-FR-031", "PG-FR-032", "EVT-FR-001"],
+  "$defs": {
+    "DatabaseIntegrityFailurePayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["database", "checksum_failures"],
+      "properties": {
+        "database": { "type": "string" },
+        "checksum_failures": { "type": "integer" },
+        "index_failures": { "type": "array", "items": { "type": "string" } },
+        "checked_at": { "type": "string", "format": "date-time" }
+      },
+      "x-requirement-ids": ["PG-FR-023", "PG-FR-032"]
+    },
+    "PartitionGapDetectedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["table", "gap_from"],
+      "properties": {
+        "table": { "type": "string" },
+        "gap_from": { "type": "string" },
+        "horizon_months": { "type": "integer" }
+      },
+      "x-requirement-ids": ["PG-FR-030"]
+    },
+    "ReplicaLagExceededPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["lag_seconds", "max_staleness_seconds"],
+      "properties": {
+        "lag_seconds": { "type": "number" },
+        "max_staleness_seconds": { "type": "number" },
+        "consumer": { "type": ["string", "null"] }
+      },
+      "x-requirement-ids": ["PG-FR-031"]
+    },
+    "MigrationAppliedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["revision", "down_revision"],
+      "properties": {
+        "revision": { "type": "string" },
+        "down_revision": { "type": ["string", "null"] },
+        "environment": { "type": ["string", "null"] },
+        "runner": { "type": ["string", "null"] },
+        "started_at": { "type": ["string", "null"], "format": "date-time" },
+        "finished_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "x-requirement-ids": ["PG-FR-006", "PG-FR-029"]
+    },
+    "DeadlockDetectedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attempts"],
+      "properties": {
+        "attempts": { "type": "integer" },
+        "operation": { "type": ["string", "null"] },
+        "sqlstate": { "type": ["string", "null"] }
+      },
+      "x-requirement-ids": ["PG-FR-012"]
+    },
+    "ConnectionPoolExhaustedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pool", "in_use", "size"],
+      "properties": {
+        "pool": { "type": "string" },
+        "in_use": { "type": "integer" },
+        "size": { "type": "integer" },
+        "overflow": { "type": ["integer", "null"] }
+      },
+      "x-requirement-ids": ["PG-FR-025"]
+    }
+  },
+  "events": [
+    { "event_type": "DatabaseIntegrityFailure", "schema_version": "1.0", "producer": "SPEC-DATA-002", "aggregate_type": "database_health", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/DatabaseIntegrityFailurePayload" }, "x-requirement-ids": ["PG-FR-032"] },
+    { "event_type": "PartitionGapDetected", "schema_version": "1.0", "producer": "SPEC-DATA-002", "aggregate_type": "database_health", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/PartitionGapDetectedPayload" }, "x-requirement-ids": ["PG-FR-030"] },
+    { "event_type": "ReplicaLagExceeded", "schema_version": "1.0", "producer": "SPEC-DATA-002", "aggregate_type": "database_health", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ReplicaLagExceededPayload" }, "x-requirement-ids": ["PG-FR-031"] },
+    { "event_type": "MigrationApplied", "schema_version": "1.0", "producer": "SPEC-DATA-002", "aggregate_type": "database_health", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/MigrationAppliedPayload" }, "x-requirement-ids": ["PG-FR-006"] },
+    { "event_type": "DeadlockDetected", "schema_version": "1.0", "producer": "SPEC-DATA-002", "aggregate_type": "database_health", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/DeadlockDetectedPayload" }, "x-requirement-ids": ["PG-FR-012"] },
+    { "event_type": "ConnectionPoolExhausted", "schema_version": "1.0", "producer": "SPEC-DATA-002", "aggregate_type": "database_health", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ConnectionPoolExhaustedPayload" }, "x-requirement-ids": ["PG-FR-025"] }
+  ]
+}

@@ -1,0 +1,225 @@
+contract files parsed          : 12
+operations committed in them   : 87
+operations implemented in code : 434
+  in a surface with a contract : 89
+  in a surface with no contract: 344  (SG-013 backlog)
+
+FAIL  107 violation(s): CTRC-FR-001=22, CTRC-FR-009=84, parse=1
+
+  [CTRC-FR-001] spec-edge-005.yaml  GET /machine-integration/v1/machine-commands/{request_id}
+      implemented operation is missing from the committed contract for /machine-integration/v1
+  [CTRC-FR-001] spec-edge-005.yaml  POST /machine-integration/v1/batch-contexts/{context_id}/close
+      implemented operation is missing from the committed contract for /machine-integration/v1
+  [CTRC-FR-001] spec-edge-005.yaml  POST /machine-integration/v1/machine-commands/{request_id}/finalize
+      implemented operation is missing from the committed contract for /machine-integration/v1
+  [CTRC-FR-001] spec-edge-005.yaml  POST /machine-integration/v1/machine-sources/{source_id}/cycle-evidence-manifests
+      implemented operation is missing from the committed contract for /machine-integration/v1
+  [CTRC-FR-001] spec-edge-005.yaml  POST /machine-integration/v1/machine-sources/{source_id}/evidence:ingest
+      implemented operation is missing from the committed contract for /machine-integration/v1
+  [CTRC-FR-001] spec-edge-005.yaml  POST /machine-integration/v1/signal-mappings/{mapping_id}/release
+      implemented operation is missing from the committed contract for /machine-integration/v1
+  [CTRC-FR-001] spec-edge-005.yaml  POST /machine-integration/v1/sites/{site_id}/evidence-replays
+      implemented operation is missing from the committed contract for /machine-integration/v1
+  [CTRC-FR-001] spec-mat-001.yaml  GET /suppliers/v1
+      implemented operation is missing from the committed contract for /suppliers/v1
+  [CTRC-FR-001] spec-mat-001.yaml  GET /suppliers/v1/{supplier_id}
+      implemented operation is missing from the committed contract for /suppliers/v1
+  [CTRC-FR-001] spec-qc-003.yaml  GET /quality/oos/v1/{oos_id}
+      implemented operation is missing from the committed contract for /quality/oos
+  [CTRC-FR-001] spec-qc-003.yaml  POST /quality/oos/v1/from-result/{result_id}
+      implemented operation is missing from the committed contract for /quality/oos
+  [CTRC-FR-001] spec-qc-003.yaml  POST /quality/oos/v1/{oos_id}/classify-lab-cause
+      implemented operation is missing from the committed contract for /quality/oos
+  [CTRC-FR-001] spec-qc-003.yaml  POST /quality/oos/v1/{oos_id}/close
+      implemented operation is missing from the committed contract for /quality/oos
+  [CTRC-FR-001] spec-qc-003.yaml  POST /quality/oos/v1/{oos_id}/disposition
+      implemented operation is missing from the committed contract for /quality/oos
+  [CTRC-FR-001] spec-qc-003.yaml  POST /quality/oos/v1/{oos_id}/extended-investigation
+      implemented operation is missing from the committed contract for /quality/oos
+  [CTRC-FR-001] spec-qc-003.yaml  POST /quality/oos/v1/{oos_id}/impact
+      implemented operation is missing from the committed contract for /quality/oos
+  [CTRC-FR-001] spec-qc-003.yaml  POST /quality/oos/v1/{oos_id}/lab-investigation
+      implemented operation is missing from the committed contract for /quality/oos
+  [CTRC-FR-001] spec-qc-003.yaml  POST /quality/oos/v1/{oos_id}/resample-plans
+      implemented operation is missing from the committed contract for /quality/oos
+  [CTRC-FR-001] spec-qc-003.yaml  POST /quality/oos/v1/{oos_id}/retest-plans
+      implemented operation is missing from the committed contract for /quality/oos
+  [CTRC-FR-001] spec-qc-003.yaml  POST /quality/oos/v1/{oos_id}/signature-challenges
+      implemented operation is missing from the committed contract for /quality/oos
+  [CTRC-FR-001] spec-qc-003.yaml  POST /quality/oot/v1/{oot_id}/close
+      implemented operation is missing from the committed contract for /quality/oot
+  [CTRC-FR-001] spec-qc-003.yaml  POST /quality/oot/v1/{oot_id}/signature-challenges
+      implemented operation is missing from the committed contract for /quality/oot
+  [CTRC-FR-009] spec-edge-001.yaml  components.schemas.AcceptObservationBatchCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-001.yaml  components.schemas.EnrollGatewayCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-001.yaml  components.schemas.ErrorResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-001.yaml  components.schemas.MutationReceipt
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-001.yaml  components.schemas.ObservationEnvelopeIn
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-001.yaml  components.schemas.ReportHealthCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-001.yaml  components.schemas.ReportSecurityEventCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-001.yaml  components.schemas.RotateGatewayCertificateCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-001.yaml  components.schemas.SignatureChallengeResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-005.yaml  components.schemas.BuildCycleEvidenceManifestCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-005.yaml  components.schemas.CloseBatchContextCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-005.yaml  components.schemas.ErrorResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-005.yaml  components.schemas.FinalizeMachineCommandCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-005.yaml  components.schemas.IngestMachineEvidenceCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-005.yaml  components.schemas.IngestMachineEvidenceResult
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-005.yaml  components.schemas.MutationReceipt
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-005.yaml  components.schemas.OpenBatchContextCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-005.yaml  components.schemas.ReleaseSignalMappingCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-005.yaml  components.schemas.ReplayHistoricalEvidenceCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-005.yaml  components.schemas.SignatureChallengeResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-edge-005.yaml  components.schemas.SubmitApprovedMachineCommandCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  GET /integration/v1/commands/{command_id}
+      operation has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  GET /integration/v1/instances/{instance_id}
+      operation has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  POST /integration/v1/reconciliation-runs/{run_id}/complete
+      operation has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.AdvanceSyncCheckpointCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.ApplyExternalChangeCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.ApproveMappingCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.CancelPendingERPCommandCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.CompleteReconciliationRunCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.CreateCorrectedCommandCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.CreateReconciliationRunCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.ERPCapabilities
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.ErpInstanceView
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.ErrorResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.IngestERPEventCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.IntegrationCommandView
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.MutationReceipt
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.ProposeMappingCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.QueueERPCommandCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.RecordReconciliationDifferenceCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.RegisterERPInstanceCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.ResolveMasterConflictCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.ResolveReconciliationDifferenceCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-erp-006.yaml  components.schemas.RetryERPCommandCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-iam-001.yaml  components.schemas.ErrorResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-iam-001.yaml  components.schemas.MutationReceipt
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-iam-001.yaml  components.schemas.Permission
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-iam-001.yaml  components.schemas.PolicyDecisionRequest
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-iam-001.yaml  components.schemas.PolicyDecisionResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-iam-001.yaml  components.schemas.SetRolePermissionsCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-mat-001.yaml  components.schemas.ApproveSupplierQualificationCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-mat-001.yaml  components.schemas.CreateSupplierCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-mat-001.yaml  components.schemas.CreateSupplierQualificationCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-mat-001.yaml  components.schemas.ErrorResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-mat-001.yaml  components.schemas.MutationReceipt
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-mat-001.yaml  components.schemas.QualificationEvidenceInput
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-mat-001.yaml  components.schemas.SignatureChallengeResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-mat-001.yaml  components.schemas.SupplierSiteInput
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-002.yaml  components.schemas.CancelLimsSampleCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-002.yaml  components.schemas.ErrorResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-002.yaml  components.schemas.IngestLimsResultCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-002.yaml  components.schemas.IngestLimsStatusCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-002.yaml  components.schemas.MutationReceipt
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-002.yaml  components.schemas.ReconcileLimsInstanceCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-002.yaml  components.schemas.RequestLimsSampleCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-002.yaml  components.schemas.SignatureChallengeResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  GET /quality/oos/v1/{oosId}
+      operation has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  POST /quality/oos/v1/{oosId}/signature-challenges
+      operation has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  POST /quality/oot/v1/{ootId}/close
+      operation has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  POST /quality/oot/v1/{ootId}/signature-challenges
+      operation has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.ApproveDispositionCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.AuthorizeResamplePlanCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.AuthorizeRetestPlanCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.ClassifyLabCauseCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.CloseOosCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.CloseOotCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.ErrorResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.EvaluateOotCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.MutationReceipt
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.OpenOosFromResultCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.RecordImpactAssessmentCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.RecordLabInvestigationCommand
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.SignatureChallengeResponse
+      schema has no x-requirement-ids
+  [CTRC-FR-009] spec-qc-003.yaml  components.schemas.StartExtendedInvestigationCommand
+      schema has no x-requirement-ids
+  [parse] spec-qc-001.yaml  -
+      not parseable as YAML: mapping values are not allowed here
+  in "<unicode string>", line 159, column 77:
+     ... ). Not signed this pass (Doc 106: only if flagged critical)
+                                         ^
