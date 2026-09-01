@@ -1,0 +1,112 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-011 — Audit Trail, Record Version Vault & Data Integrity Validation
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 89 (`services/gxp-api/app/modules/validation/
+    commands_integrity.py`). 2 owned entities: `data_integrity_test_profile`, `tamper_test_execution`.
+    Document 106 row 155: `data-integrity/{id}/approve` requires an `Approved` signature from an
+    independent QA Releaser, reason mandatory — binds to the profile (the overall qualification
+    verdict). The one write operation (`tamper-tests`) covers three declared event shapes
+    (`AuditTamperTestCompleted`/`VaultCanonicalizationVerified`/`ArchiveRetrievalVerified`) selected by
+    `tamper_action`.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/data-integrity/suites:
+    post:
+      operationId: postValidationDataIntegritySuites
+      tags: [validation]
+      summary: Define a data integrity test profile (DIV-FR-001)
+      x-requirement-ids: [DIV-FR-001, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateDataIntegrityProfileCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /validation/v1/data-integrity/tamper-tests:
+    post:
+      operationId: postValidationDataIntegrityTamperTests
+      tags: [validation]
+      summary: Record a tamper/canonicalization/archive-retrieval integrity test (DIV-FR-003..005/007/021)
+      x-requirement-ids: [DIV-FR-003, DIV-FR-004, DIV-FR-005, DIV-FR-007, DIV-FR-021]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordTamperTestCommand' } } }
+      responses:
+        '200': { description: Recorded; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /validation/v1/data-integrity/{profile_id}/approve:
+    post:
+      operationId: postValidationDataIntegrityApprove
+      tags: [validation]
+      summary: Approve a data integrity qualification (DIV-FR-001)
+      x-requirement-ids: [DIV-FR-001, SIG-FR-004, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: profile_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveDataIntegrityProfileCommand' } } }
+      responses:
+        '200': { description: Approved; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateDataIntegrityProfileCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, data_class, lifecycle]
+      x-requirement-ids: [DIV-FR-001]
+      properties:
+        idempotency_key: { type: string }
+        data_class: { type: string }
+        lifecycle: { type: string }
+        threats: { type: array, items: { type: string } }
+        controls: { type: array, items: { type: string } }
+        tests: { type: array, items: { type: string } }
+
+    RecordTamperTestCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, profile_id, isolated_snapshot_ref, tamper_action, verifier_version]
+      x-requirement-ids: [DIV-FR-003, DIV-FR-005]
+      properties:
+        idempotency_key: { type: string }
+        profile_id: { type: string, format: uuid }
+        isolated_snapshot_ref: { type: string }
+        tamper_action: { type: string }
+        verifier_version: { type: string }
+        detected: { type: [boolean, 'null'] }
+        detection_evidence: { type: object }
+
+    ApproveDataIntegrityProfileCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, profile_id, expected_version, reason, challenge_id, reauth_password]
+      x-requirement-ids: [DIV-FR-001]
+      properties:
+        idempotency_key: { type: string }
+        profile_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

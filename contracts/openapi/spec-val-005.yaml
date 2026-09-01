@@ -1,0 +1,146 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-005 — Installation Qualification (IQ) & Installed Baseline Verification
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 83 (`services/gxp-api/app/modules/validation/
+    commands_iq.py`). 2 owned entities: `iq_protocol`, `iq_execution`. Document 106 row 149:
+    `executions/{id}/complete` requires a `Performed` signature from the qualified performer. Row 148:
+    `executions/{id}/approve` requires an `Approved` signature from an independent QA Releaser, reason
+    mandatory.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/iq/protocols:
+    post:
+      operationId: postValidationIqProtocols
+      tags: [validation]
+      summary: Define an IQ protocol (IQ-FR-001/002/004/005)
+      x-requirement-ids: [IQ-FR-001, IQ-FR-002, IQ-FR-004, IQ-FR-005, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateIqProtocolCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /validation/v1/iq/executions:
+    post:
+      operationId: postValidationIqExecutions
+      tags: [validation]
+      summary: Start an IQ execution and capture installed inventory (IQ-FR-003/006..018)
+      x-requirement-ids: [IQ-FR-003, IQ-FR-006, IQ-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/StartIqExecutionCommand' } } }
+      responses:
+        '200': { description: Started; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/iq/executions/{execution_id}/complete:
+    post:
+      operationId: postValidationIqExecutionComplete
+      tags: [validation]
+      summary: Complete an IQ execution (IQ-FR-020)
+      x-requirement-ids: [IQ-FR-020, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CompleteIqExecutionCommand' } } }
+      responses:
+        '200': { description: Completed; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/iq/executions/{execution_id}/approve:
+    post:
+      operationId: postValidationIqExecutionApprove
+      tags: [validation]
+      summary: Approve an IQ execution (IQ-FR-021)
+      x-requirement-ids: [IQ-FR-021, SIG-FR-004, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveIqExecutionCommand' } } }
+      responses:
+        '200': { description: Approved; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateIqProtocolCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, environment, release_ref, deployment_profile, acceptance_criteria]
+      x-requirement-ids: [IQ-FR-001, IQ-FR-002, IQ-FR-005]
+      properties:
+        idempotency_key: { type: string }
+        environment: { type: string }
+        release_ref: { type: string }
+        deployment_profile: { type: string }
+        expected_components: { type: array, items: { type: object } }
+        checks: { type: array, items: { type: object } }
+        acceptance_criteria: { type: string }
+
+    StartIqExecutionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, protocol_id, installed_inventory]
+      x-requirement-ids: [IQ-FR-003, IQ-FR-006, IQ-FR-018]
+      properties:
+        idempotency_key: { type: string }
+        protocol_id: { type: string, format: uuid }
+        installed_inventory: { type: object }
+        check_results: { type: array, items: { type: object } }
+        is_delta_iq: { type: boolean, default: false }
+        performer_user_id: { type: [string, 'null'], format: uuid }
+
+    CompleteIqExecutionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, execution_id, expected_version, result, challenge_id, reauth_password]
+      x-requirement-ids: [IQ-FR-020]
+      properties:
+        idempotency_key: { type: string }
+        execution_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        evidence_manifest: { type: array, items: { type: object } }
+        result: { type: string, enum: [PASS, FAIL] }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    ApproveIqExecutionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, execution_id, expected_version, reason, challenge_id, reauth_password]
+      x-requirement-ids: [IQ-FR-021]
+      properties:
+        idempotency_key: { type: string }
+        execution_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

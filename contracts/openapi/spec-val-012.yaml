@@ -1,0 +1,145 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-012 — Integration, Edge, Device, Peripheral & Interface Validation
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 90 (`services/gxp-api/app/modules/validation/
+    commands_interface.py`). 2 owned entities: `interface_validation_profile`,
+    `interface_test_execution`. Document 106 row 156: `interfaces/{id}/approve` requires an `Approved`
+    signature from an independent QA Releaser, reason mandatory.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/interfaces/profiles:
+    post:
+      operationId: postValidationInterfacesProfiles
+      tags: [validation]
+      summary: Define an interface validation profile (IFV-FR-001..007)
+      x-requirement-ids: [IFV-FR-001, IFV-FR-002, IFV-FR-003, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateInterfaceProfileCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/interfaces/tests:
+    post:
+      operationId: postValidationInterfacesTests
+      tags: [validation]
+      summary: Record an interface contract test scenario (IFV-FR-004..009/021)
+      x-requirement-ids: [IFV-FR-004, IFV-FR-008, IFV-FR-009, IFV-FR-021]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordInterfaceTestCommand' } } }
+      responses:
+        '200': { description: Recorded; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /validation/v1/interfaces/edge-outage-tests:
+    post:
+      operationId: postValidationInterfacesEdgeOutageTests
+      tags: [validation]
+      summary: Record an edge store-and-forward outage test scenario (IFV-FR-010/011)
+      x-requirement-ids: [IFV-FR-010, IFV-FR-011]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordEdgeOutageTestCommand' } } }
+      responses:
+        '200': { description: Recorded; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /validation/v1/interfaces/{profile_id}/approve:
+    post:
+      operationId: postValidationInterfacesApprove
+      tags: [validation]
+      summary: Approve an interface qualification (IFV-FR-001)
+      x-requirement-ids: [IFV-FR-001, SIG-FR-004, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: profile_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveInterfaceProfileCommand' } } }
+      responses:
+        '200': { description: Approved; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateInterfaceProfileCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, provider_or_device, contract_ref, contract_version, intended_use, risk_category, auth_expectation]
+      x-requirement-ids: [IFV-FR-001, IFV-FR-002, IFV-FR-003]
+      properties:
+        idempotency_key: { type: string }
+        provider_or_device: { type: string }
+        contract_ref: { type: string }
+        contract_version: { type: string }
+        intended_use: { type: string }
+        risk_category: { type: string, enum: [HIGHER-PROCESS-RISK, STANDARD-RISK] }
+        auth_expectation: { type: string }
+        source_time_quality_expectation: { type: object }
+        failure_scenarios: { type: array, items: { type: string } }
+
+    RecordInterfaceTestCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, profile_id, scenario]
+      x-requirement-ids: [IFV-FR-004, IFV-FR-008]
+      properties:
+        idempotency_key: { type: string }
+        profile_id: { type: string, format: uuid }
+        scenario: { type: string }
+        raw_inputs: { type: object }
+        canonical_outputs: { type: object }
+        gxp_result: { type: object }
+        external_reconciliation: { type: object }
+        status: { type: string, default: PASS, enum: [IN_PROGRESS, PASS, FAIL] }
+
+    RecordEdgeOutageTestCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, profile_id]
+      x-requirement-ids: [IFV-FR-010, IFV-FR-011]
+      properties:
+        idempotency_key: { type: string }
+        profile_id: { type: string, format: uuid }
+        scenario: { type: string, default: edge_outage }
+        raw_inputs: { type: object }
+        canonical_outputs: { type: object }
+        gxp_result: { type: object }
+        external_reconciliation: { type: object }
+        status: { type: string, default: PASS, enum: [IN_PROGRESS, PASS, FAIL] }
+
+    ApproveInterfaceProfileCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, profile_id, expected_version, reason, challenge_id, reauth_password]
+      x-requirement-ids: [IFV-FR-001]
+      properties:
+        idempotency_key: { type: string }
+        profile_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

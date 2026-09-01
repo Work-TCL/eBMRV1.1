@@ -279,6 +279,18 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
   );
 }
 
+interface CompatibilityRow {
+  id: string;
+  compatibility_code: string;
+  version_no: number;
+  drug_constituent_version_id: string;
+  device_constituent_version_id: string;
+  interface_constraints: Record<string, unknown> | null;
+  status: string;
+  effective_from: string | null;
+  effective_to: string | null;
+}
+
 function VersionDetailModal({
   productVersionId,
   onClose,
@@ -291,6 +303,7 @@ function VersionDetailModal({
   const { me } = useMe();
   const [version, setVersion] = useState<ProductVersion | null>(null);
   const [eligibility, setEligibility] = useState<{ eligible: boolean; checks: Record<string, unknown> } | null>(null);
+  const [compatibility, setCompatibility] = useState<CompatibilityRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -300,12 +313,14 @@ function VersionDetailModal({
   }, [productVersionId]);
 
   async function refresh() {
-    const [v, e] = await Promise.all([
+    const [v, e, c] = await Promise.all([
       api.get<ProductVersion>(`/products/v1/${productVersionId}`),
       api.get<{ eligible: boolean; checks: Record<string, unknown> }>(`/products/v1/${productVersionId}/issue-eligibility`),
+      api.get<CompatibilityRow[]>(`/products/v1/${productVersionId}/compatibility`).catch(() => [] as CompatibilityRow[]),
     ]);
     setVersion(v);
     setEligibility(e);
+    setCompatibility(c);
   }
 
   async function runAction(action: () => Promise<unknown>) {
@@ -424,6 +439,43 @@ function VersionDetailModal({
           </tbody>
         </Table>
       )}
+
+      <div className="mt-4">
+        <p className="fs-1 text-muted mb-1">DDCP constituent compatibility</p>
+        {compatibility.length === 0 ? (
+          <p className="hint mb-3">
+            No cross-constituent compatibility record references this version.
+          </p>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Ver</th>
+                <th>Status</th>
+                <th>Effective</th>
+                <th>Interface constraints</th>
+              </tr>
+            </thead>
+            <tbody>
+              {compatibility.map((c) => (
+                <tr key={c.id}>
+                  <td className="tabular">{c.compatibility_code}</td>
+                  <td className="tabular">v{c.version_no}</td>
+                  <td>{c.status}</td>
+                  <td className="fs-2 tabular">
+                    {c.effective_from ? new Date(c.effective_from).toLocaleDateString() : "—"}
+                    {c.effective_to ? ` → ${new Date(c.effective_to).toLocaleDateString()}` : ""}
+                  </td>
+                  <td className="fs-1 tabular" style={{ wordBreak: "break-word" }}>
+                    {c.interface_constraints ? JSON.stringify(c.interface_constraints) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </div>
 
       {eligibility && (
         <div className="mt-4">

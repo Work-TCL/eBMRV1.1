@@ -43,6 +43,8 @@ const HAS_SIGNATURE_OPTIONS = [
 export default function AuditLedgerPage() {
   const { sites } = useSites();
   const [aggregateType, setAggregateType] = useState("");
+  const [aggregateId, setAggregateId] = useState("");
+  const [actorId, setActorId] = useState("");
   const [siteId, setSiteId] = useState("");
   const [hasSignature, setHasSignature] = useState("");
   const [occurredFrom, setOccurredFrom] = useState("");
@@ -58,6 +60,8 @@ export default function AuditLedgerPage() {
     if (query.q) search.set("q", query.q);
     search.set("sort_by", query.sort_by ?? "occurred_at");
     if (aggregateType) search.set("aggregate_type", aggregateType);
+    if (aggregateId.trim()) search.set("aggregate_id", aggregateId.trim());
+    if (actorId.trim()) search.set("actor_id", actorId.trim());
     if (siteId) search.set("site_id", siteId);
     if (hasSignature) search.set("has_signature", hasSignature);
     if (occurredFrom) search.set("occurred_from", new Date(occurredFrom).toISOString());
@@ -111,6 +115,22 @@ export default function AuditLedgerPage() {
       />
 
       <div className="flex items-end gap-4 mb-4" style={{ flexWrap: "wrap" }}>
+        <Field label="Record ID" hint="One record's full timeline.">
+          <Input
+            value={aggregateId}
+            onChange={(e) => setAggregateId(e.target.value)}
+            placeholder="aggregate UUID"
+            style={{ maxWidth: 210 }}
+          />
+        </Field>
+        <Field label="Actor ID" hint="One user's activity.">
+          <Input
+            value={actorId}
+            onChange={(e) => setActorId(e.target.value)}
+            placeholder="subject UUID"
+            style={{ maxWidth: 210 }}
+          />
+        </Field>
         <Field label="Record type">
           <Input
             value={aggregateType}
@@ -149,7 +169,7 @@ export default function AuditLedgerPage() {
       <Card>
         <CardHeader title="Events" />
         <DataTable
-          key={`${aggregateType}|${siteId}|${hasSignature}|${occurredFrom}|${occurredTo}`}
+          key={`${aggregateType}|${aggregateId}|${actorId}|${siteId}|${hasSignature}|${occurredFrom}|${occurredTo}`}
           columns={columns}
           fetchPage={fetchEvents}
           rowKey={(e) => e.id}

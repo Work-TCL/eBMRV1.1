@@ -11,6 +11,12 @@ const SECTIONS: { href: string; label: string; description: string; icon: IconNa
   { href: "/admin/sites", label: "Sites", description: "Create, edit, and delete manufacturing sites.", icon: "building" },
   { href: "/admin/users", label: "Users", description: "Create users, edit details, and assign roles per site.", icon: "users" },
   { href: "/admin/roles", label: "Roles", description: "Create, edit, and delete roles.", icon: "users" },
+  {
+    href: "/admin/access-review",
+    label: "Access review",
+    description: "Review who holds which role at which site, and check live authorization decisions.",
+    icon: "shield-check",
+  },
 ];
 
 export default function AdminLandingPage() {

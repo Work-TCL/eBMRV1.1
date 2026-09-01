@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError, canCorrectVault, newIdempotencyKey } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
@@ -167,6 +167,7 @@ function ObjectDetailModal({
   const [integrity, setIntegrity] = useState<{ digest_valid: boolean; link_valid: boolean } | null>(null);
   const [checking, setChecking] = useState(false);
   const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   async function checkIntegrity() {
     setChecking(true);
@@ -229,8 +230,25 @@ function ObjectDetailModal({
         )}
       </div>
 
-      <p className="fs-1 text-muted mb-1">Canonical payload</p>
+      <div className="flex items-center gap-3 mb-3">
+        <p className="fs-1 text-muted" style={{ margin: 0 }}>
+          Canonical payload
+        </p>
+        {object.supersedes_object_id && (
+          <Button size="sm" variant="ghost" onClick={() => setCompareOpen(true)}>
+            <Icon name="arrow-left" /> Compare with previous version
+          </Button>
+        )}
+      </div>
       <pre style={preStyle}>{JSON.stringify(object.canonical_payload, null, 2)}</pre>
+
+      {compareOpen && object.supersedes_object_id && (
+        <CompareModal
+          current={object}
+          previousObjectId={object.supersedes_object_id}
+          onClose={() => setCompareOpen(false)}
+        />
+      )}
 
       {correctionOpen && (
         <RequestCorrectionModal
@@ -313,6 +331,89 @@ function RequestCorrectionModal({
           </Button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function CompareModal({
+  current,
+  previousObjectId,
+  onClose,
+}: {
+  current: VaultObject;
+  previousObjectId: string;
+  onClose: () => void;
+}) {
+  const [previous, setPrevious] = useState<VaultObject | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<VaultObject>(`/vault/v1/objects/${previousObjectId}`)
+      .then((o) => {
+        if (!cancelled) setPrevious(o);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not load previous version");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [previousObjectId]);
+
+  const changedKeys = previous
+    ? Array.from(
+        new Set([...Object.keys(previous.canonical_payload), ...Object.keys(current.canonical_payload)])
+      ).filter(
+        (k) =>
+          JSON.stringify(previous.canonical_payload[k]) !== JSON.stringify(current.canonical_payload[k])
+      )
+    : [];
+
+  const preStyle: React.CSSProperties = {
+    background: "var(--surface-sunken)",
+    border: "1px solid var(--border-hairline)",
+    borderRadius: "var(--radius-sm)",
+    padding: "var(--space-2)",
+    fontSize: "var(--fs-1)",
+    overflowX: "auto",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      large
+      title={`Compare — ${current.object_type} / ${current.business_id}`}
+    >
+      {error && <p className="error-text mb-3">{error}</p>}
+      {!previous && !error && <p className="text-muted">Loading previous version…</p>}
+      {previous && (
+        <>
+          <p className="fs-2 mb-3">
+            {changedKeys.length === 0 ? (
+              "Canonical payloads are identical."
+            ) : (
+              <>
+                Changed keys: <span className="tabular">{changedKeys.join(", ")}</span>
+              </>
+            )}
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="fs-1 text-muted mb-1">Previous — v{previous.internal_version}</p>
+              <pre style={preStyle}>{JSON.stringify(previous.canonical_payload, null, 2)}</pre>
+            </div>
+            <div>
+              <p className="fs-1 text-muted mb-1">Current — v{current.internal_version}</p>
+              <pre style={preStyle}>{JSON.stringify(current.canonical_payload, null, 2)}</pre>
+            </div>
+          </div>
+        </>
+      )}
     </Modal>
   );
 }

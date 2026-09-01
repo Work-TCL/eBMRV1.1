@@ -1,0 +1,138 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-008 — Infrastructure, Cloud, Platform & Environment Qualification
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 86 (`services/gxp-api/app/modules/validation/
+    commands_infra.py`). 2 owned entities: `infrastructure_qualification_profile`,
+    `infrastructure_fingerprint`. Document 106 row 152: `infrastructure/{id}/approve` requires an
+    `Approved` signature from an independent QA Releaser, reason mandatory — binds to the fingerprint
+    (the actually-executed check), not the profile.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/infrastructure/profiles:
+    post:
+      operationId: postValidationInfrastructureProfiles
+      tags: [validation]
+      summary: Define an infrastructure qualification profile (INFQ-FR-001..003)
+      x-requirement-ids: [INFQ-FR-001, INFQ-FR-002, INFQ-FR-003, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateInfrastructureProfileCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /validation/v1/infrastructure/fingerprints:
+    post:
+      operationId: postValidationInfrastructureFingerprints
+      tags: [validation]
+      summary: Capture an infrastructure fingerprint (INFQ-FR-004..016)
+      x-requirement-ids: [INFQ-FR-004, INFQ-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CaptureInfrastructureFingerprintCommand' } } }
+      responses:
+        '200': { description: Captured; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /validation/v1/infrastructure/tests:
+    post:
+      operationId: postValidationInfrastructureTests
+      tags: [validation]
+      summary: Re-evaluate a fingerprint's control tests for drift (INFQ-FR-018/019/020)
+      x-requirement-ids: [INFQ-FR-018, INFQ-FR-019, INFQ-FR-020]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RunInfrastructureControlTestsCommand' } } }
+      responses:
+        '200': { description: Evaluated; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/infrastructure/{fingerprint_id}/approve:
+    post:
+      operationId: postValidationInfrastructureApprove
+      tags: [validation]
+      summary: Approve an infrastructure fingerprint (INFQ-FR-001)
+      x-requirement-ids: [INFQ-FR-001, SIG-FR-004, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: fingerprint_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveInfrastructureFingerprintCommand' } } }
+      responses:
+        '200': { description: Approved; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateInfrastructureProfileCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, deployment_profile, provider]
+      x-requirement-ids: [INFQ-FR-001, INFQ-FR-002]
+      properties:
+        idempotency_key: { type: string }
+        deployment_profile: { type: string }
+        provider: { type: string }
+        required_components: { type: array, items: { type: object } }
+        control_tests: { type: array, items: { type: object } }
+        supplier_evidence_refs: { type: array, items: { type: object } }
+        change_triggers: { type: array, items: { type: string } }
+
+    CaptureInfrastructureFingerprintCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, profile_id, captured_versions]
+      x-requirement-ids: [INFQ-FR-004]
+      properties:
+        idempotency_key: { type: string }
+        profile_id: { type: string, format: uuid }
+        captured_versions: { type: object }
+        config_hashes: { type: object }
+        resource_sizing: { type: object }
+        network_security_refs: { type: object }
+        time_backup_refs: { type: object }
+
+    RunInfrastructureControlTestsCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, fingerprint_id, expected_version]
+      x-requirement-ids: [INFQ-FR-018]
+      properties:
+        idempotency_key: { type: string }
+        fingerprint_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+
+    ApproveInfrastructureFingerprintCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, fingerprint_id, expected_version, reason, challenge_id, reauth_password]
+      x-requirement-ids: [INFQ-FR-001]
+      properties:
+        idempotency_key: { type: string }
+        fingerprint_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

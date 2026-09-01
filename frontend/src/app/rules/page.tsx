@@ -157,7 +157,209 @@ export default function RulesPage() {
           }}
         />
       )}
+
+      <div className="mt-6">
+        <UomSection />
+      </div>
     </div>
+  );
+}
+
+// --- Units of measure (Document 08 "Units / Precision / Rounding") -------------------------------
+
+interface Uom {
+  uom_id: string;
+  code: string;
+  dimension: string;
+  base_unit: string;
+  factor: string;
+  offset: string;
+  precision_dp: number;
+  status: string;
+  version: number;
+}
+
+function UomSection() {
+  const [code, setCode] = useState("");
+  const [versions, setVersions] = useState<Uom[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  const [draftOpen, setDraftOpen] = useState(false);
+
+  async function lookup() {
+    if (!code.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      setVersions(await api.get<Uom[]>(`/rules/v1/uom/${encodeURIComponent(code.trim())}/versions`));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setUnavailable(true);
+        setVersions(null);
+      } else {
+        setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Lookup failed");
+        setVersions(null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Units of measure"
+        meta={
+          <Button size="sm" variant="secondary" onClick={() => setDraftOpen(true)}>
+            <Icon name="plus" /> New UOM draft
+          </Button>
+        }
+      />
+      <div style={{ padding: "var(--space-3) var(--space-4)" }}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            lookup();
+          }}
+          className="flex items-end gap-4"
+        >
+          <Field label="UOM code">
+            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. mg, mL, %w/w" style={{ minWidth: 220 }} />
+          </Field>
+          <Button type="submit" variant="secondary" disabled={loading || !code.trim()}>
+            <Icon name="search" /> {loading ? "Looking up…" : "Look up versions"}
+          </Button>
+        </form>
+
+        {error && <p className="error-text mt-3">{error}</p>}
+
+        {unavailable && (
+          <p className="hint mt-3">
+            The unit-of-measure registry endpoints are not enabled in this deployment build.
+          </p>
+        )}
+
+        {versions && !error && (
+          <div className="mt-3">
+            {versions.length === 0 ? (
+              <EmptyState icon="scale">No versions exist for this UOM code yet.</EmptyState>
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <th>Version</th>
+                    <th>Status</th>
+                    <th>Dimension</th>
+                    <th>Base unit</th>
+                    <th>Factor</th>
+                    <th>Offset</th>
+                    <th>Precision</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {versions.map((u) => (
+                    <tr key={u.uom_id}>
+                      <td className="font-semibold tabular">v{u.version}</td>
+                      <td>{u.status}</td>
+                      <td>{u.dimension}</td>
+                      <td className="tabular">{u.base_unit}</td>
+                      <td className="tabular">{u.factor}</td>
+                      <td className="tabular">{u.offset}</td>
+                      <td className="tabular">{u.precision_dp}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </div>
+        )}
+      </div>
+
+      {draftOpen && (
+        <UomDraftModal
+          onClose={() => setDraftOpen(false)}
+          onDone={(newCode) => {
+            setDraftOpen(false);
+            setCode(newCode);
+            setVersions(null);
+          }}
+        />
+      )}
+    </Card>
+  );
+}
+
+function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: (code: string) => void }) {
+  const [code, setCode] = useState("");
+  const [dimension, setDimension] = useState("mass");
+  const [baseUnit, setBaseUnit] = useState("kg");
+  const [factor, setFactor] = useState("1");
+  const [offset, setOffset] = useState("0");
+  const [precisionDp, setPrecisionDp] = useState("3");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post("/rules/v1/uom/drafts", {
+        idempotency_key: newIdempotencyKey(),
+        code: code.trim(),
+        dimension: dimension.trim(),
+        base_unit: baseUnit.trim(),
+        factor: factor.trim(),
+        offset: offset.trim(),
+        precision_dp: Number(precisionDp),
+      });
+      onDone(code.trim());
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed to create UOM draft");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="New unit of measure — draft">
+      <form onSubmit={onSubmit}>
+        <div className="grid grid-cols-3 gap-4">
+          <Field label="Code" required>
+            <Input value={code} onChange={(e) => setCode(e.target.value)} required autoFocus />
+          </Field>
+          <Field label="Dimension" required>
+            <Input value={dimension} onChange={(e) => setDimension(e.target.value)} required />
+          </Field>
+          <Field label="Base unit" required>
+            <Input value={baseUnit} onChange={(e) => setBaseUnit(e.target.value)} required />
+          </Field>
+          <Field label="Factor" required hint="Multiplier to base unit (exact decimal string).">
+            <Input value={factor} onChange={(e) => setFactor(e.target.value)} required />
+          </Field>
+          <Field label="Offset">
+            <Input value={offset} onChange={(e) => setOffset(e.target.value)} />
+          </Field>
+          <Field label="Precision (dp)" required>
+            <Input type="number" min={0} value={precisionDp} onChange={(e) => setPrecisionDp(e.target.value)} required />
+          </Field>
+        </div>
+        {error && <p className="error-text mt-2">{error}</p>}
+        <p className="hint mt-2 mb-3">
+          Releasing a UOM needs a signature policy this deployment hasn&apos;t defined yet (Document 106) —
+          the draft is stored; release will correctly fail closed until one exists.
+        </p>
+        <div className="flex justify-between gap-3 mt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !code.trim()}>
+            {busy ? "Creating…" : "Create draft"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

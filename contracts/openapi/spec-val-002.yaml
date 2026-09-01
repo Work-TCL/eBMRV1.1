@@ -1,0 +1,145 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-002 — Intended Use, GxP Criticality & Software Function Risk Classification
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 80 (`services/gxp-api/app/modules/validation/
+    commands_risk.py`). 2 owned entities: `intended_use`, `function_risk_assessment`. `risk_category`/
+    `assurance_method` are mechanically derived from Document 111 section 1's approved derivation rule —
+    never a free-text opinion. Document 106 row 145: `approve` requires an `Approved` signature from an
+    independent QA Releaser, reason mandatory.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/intended-use:
+    post:
+      operationId: postValidationIntendedUse
+      tags: [validation]
+      summary: Document intended use at system/module/function level (RISK-FR-001/007/008/009)
+      x-requirement-ids: [RISK-FR-001, RISK-FR-007, RISK-FR-008, RISK-FR-009, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateIntendedUseCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/function-risks:
+    post:
+      operationId: postValidationFunctionRisks
+      tags: [validation]
+      summary: Create a function risk classification (RISK-FR-002..006/010/011/017/019/020)
+      x-requirement-ids: [RISK-FR-002, RISK-FR-003, RISK-FR-004, RISK-FR-005, RISK-FR-006, RISK-FR-010, RISK-FR-011, RISK-FR-020]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateFunctionRiskAssessmentCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/function-risks/{assessment_id}/approve:
+    post:
+      operationId: postValidationFunctionRiskApprove
+      tags: [validation]
+      summary: Approve a function risk classification (RISK-FR-019)
+      x-requirement-ids: [RISK-FR-019, SIG-FR-004, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: assessment_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveFunctionRiskAssessmentCommand' } } }
+      responses:
+        '200': { description: Approved; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/functions/{function_ref}/assurance:
+    get:
+      operationId: getValidationFunctionAssurance
+      tags: [validation]
+      summary: Latest risk/assurance classification for a function (RISK-FR-011)
+      x-requirement-ids: [RISK-FR-011]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: function_ref, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Assurance view., content: { application/json: { schema: { $ref: '#/components/schemas/AssuranceView' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateIntendedUseCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, scope_ref, scope_version, regulated_process]
+      x-requirement-ids: [RISK-FR-001, RISK-FR-007, RISK-FR-008]
+      properties:
+        idempotency_key: { type: string }
+        scope_ref: { type: string }
+        scope_version: { type: string }
+        regulated_process: { type: string }
+        users: { type: array, items: { type: string } }
+        record_relevance: { type: boolean, default: false }
+        signature_relevance: { type: boolean, default: false }
+
+    CreateFunctionRiskAssessmentCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, function_ref, function_version, detectability, automation_role]
+      x-requirement-ids: [RISK-FR-002, RISK-FR-004, RISK-FR-005, RISK-FR-006, RISK-FR-010]
+      properties:
+        idempotency_key: { type: string }
+        function_ref: { type: string }
+        function_version: { type: string }
+        failure_modes: { type: array, items: { type: string } }
+        impacts: { type: object }
+        detectability: { type: string, enum: [LOW, MEDIUM, HIGH] }
+        automation_role: { type: string, enum: [enforcement_gating, calculation, enforcement, advisory, informational] }
+        has_release_or_disposition: { type: boolean, default: false }
+        has_signature_role: { type: boolean, default: false }
+        has_audit_immutability_role: { type: boolean, default: false }
+        has_enforcement_role: { type: boolean, default: false }
+        controls: { type: array, items: { type: string } }
+
+    ApproveFunctionRiskAssessmentCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, assessment_id, expected_version, reason, challenge_id, reauth_password]
+      x-requirement-ids: [RISK-FR-019]
+      properties:
+        idempotency_key: { type: string }
+        assessment_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        residual_risk: { type: [string, 'null'] }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    AssuranceView:
+      type: object
+      additionalProperties: false
+      required: [function_ref, state, risk_category, assurance_method]
+      x-requirement-ids: [RISK-FR-011]
+      properties:
+        function_ref: { type: string }
+        state: { type: string }
+        risk_category: { type: string, enum: [HIGHER-PROCESS-RISK, STANDARD-RISK] }
+        assurance_method: { type: string }
+        residual_risk: { type: [string, 'null'] }

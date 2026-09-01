@@ -1,0 +1,150 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-015 — Performance, Load, Capacity & Reliability Qualification
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 93 (`services/gxp-api/app/modules/validation/
+    commands_performance.py`). 2 owned entities: `performance_qualification_scenario`,
+    `performance_run`. Document 106 rows 159-161: unlike every other WP-12 document, all three POST
+    operations require a `Performed` signature from the qualified performer (no dedicated role/
+    independence/reason) — even scenario definition itself is signed here.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/performance/scenarios:
+    post:
+      operationId: postValidationPerformanceScenarios
+      tags: [validation]
+      summary: Define a performance qualification scenario (PERFQ-FR-001/005/006/023)
+      x-requirement-ids: [PERFQ-FR-001, PERFQ-FR-005, PERFQ-FR-006, PERFQ-FR-021, PERFQ-FR-023, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreatePerformanceScenarioCommand' } } }
+      responses:
+        '200': { description: Defined; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/performance/runs:
+    post:
+      operationId: postValidationPerformanceRuns
+      tags: [validation]
+      summary: Record a performance run's measured metrics (PERFQ-FR-002..004/007..020/022)
+      x-requirement-ids: [PERFQ-FR-002, PERFQ-FR-003, PERFQ-FR-012, PERFQ-FR-022, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordPerformanceRunCommand' } } }
+      responses:
+        '200': { description: Recorded; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/performance/{run_id}/evaluate:
+    post:
+      operationId: postValidationPerformanceEvaluate
+      tags: [validation]
+      summary: Evaluate a run's acceptance against its scenario thresholds (PERFQ-FR-021/024)
+      x-requirement-ids: [PERFQ-FR-021, PERFQ-FR-024, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: run_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EvaluatePerformanceRunCommand' } } }
+      responses:
+        '200': { description: Evaluated; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/performance/sizing:
+    get:
+      operationId: getValidationPerformanceSizing
+      tags: [validation]
+      summary: Deployment sizing derived from the latest evaluated run (PERFQ-FR-019)
+      x-requirement-ids: [PERFQ-FR-019]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: scenario_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Sizing view., content: { application/json: { schema: { $ref: '#/components/schemas/SizingView' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreatePerformanceScenarioCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, release_ref, environment, load_model, planned_duration_seconds, thresholds, challenge_id, reauth_password]
+      x-requirement-ids: [PERFQ-FR-001, PERFQ-FR-021]
+      properties:
+        idempotency_key: { type: string }
+        release_ref: { type: string }
+        environment: { type: string }
+        load_model: { type: object }
+        data_cardinality: { type: object }
+        planned_duration_seconds: { type: integer, minimum: 1 }
+        thresholds: { type: object }
+        nfr_requirement_refs: { type: array, items: { type: string } }
+        new_record_id: { type: [string, 'null'], format: uuid }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    RecordPerformanceRunCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, scenario_id, build_ref, harness_ref, started_at, completed_at, metrics, challenge_id, reauth_password]
+      x-requirement-ids: [PERFQ-FR-002, PERFQ-FR-022]
+      properties:
+        idempotency_key: { type: string }
+        scenario_id: { type: string, format: uuid }
+        build_ref: { type: string }
+        harness_ref: { type: string }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        metrics: { type: object }
+        errors: { type: array, items: { type: object } }
+        resource_usage: { type: object }
+        new_record_id: { type: [string, 'null'], format: uuid }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    EvaluatePerformanceRunCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, run_id, expected_version, challenge_id, reauth_password]
+      x-requirement-ids: [PERFQ-FR-021, PERFQ-FR-024]
+      properties:
+        idempotency_key: { type: string }
+        run_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        headroom_basis_points: { type: [integer, 'null'] }
+        bottleneck: { type: [string, 'null'] }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    SizingView:
+      type: object
+      additionalProperties: false
+      required: [scenario_id, acceptance_result]
+      x-requirement-ids: [PERFQ-FR-019]
+      properties:
+        scenario_id: { type: string, format: uuid }
+        acceptance_result: { type: string }
+        headroom_basis_points: { type: [integer, 'null'] }
+        bottleneck: { type: [string, 'null'] }

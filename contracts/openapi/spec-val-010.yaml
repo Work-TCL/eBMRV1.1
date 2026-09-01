@@ -1,0 +1,144 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-010 — 21 CFR Part 11 Electronic Records & Electronic Signature Validation
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 88 (`services/gxp-api/app/modules/validation/
+    commands_part11.py`). 2 owned entities: `part11_scope_assessment`, `part11_control_evidence`.
+    Document 106 row 154: `part11/{id}/approve` requires an `Approved` signature from an independent QA
+    Releaser, reason mandatory — binds to the scope assessment (the overall qualification verdict).
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/part11/assessments:
+    post:
+      operationId: postValidationPart11Assessments
+      tags: [validation]
+      summary: Create a Part 11 scope assessment (P11-FR-001/024/025)
+      x-requirement-ids: [P11-FR-001, P11-FR-024, P11-FR-025, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreatePart11ScopeAssessmentCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/part11/{assessment_id}/test-suite:
+    post:
+      operationId: postValidationPart11TestSuite
+      tags: [validation]
+      summary: Derive the control-citation test suite for an assessment (P11-FR-026)
+      x-requirement-ids: [P11-FR-026]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: assessment_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DerivePart11TestSuiteCommand' } } }
+      responses:
+        '200': { description: Derived; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/part11/control-results:
+    post:
+      operationId: postValidationPart11ControlResults
+      tags: [validation]
+      summary: Record one control citation's test result (P11-FR-002..023)
+      x-requirement-ids: [P11-FR-002, P11-FR-008, P11-FR-009, P11-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordPart11ControlResultCommand' } } }
+      responses:
+        '200': { description: Recorded; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/part11/{assessment_id}/approve:
+    post:
+      operationId: postValidationPart11Approve
+      tags: [validation]
+      summary: Approve a Part 11 qualification (P11-FR-026)
+      x-requirement-ids: [P11-FR-026, SIG-FR-004, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: assessment_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApprovePart11AssessmentCommand' } } }
+      responses:
+        '200': { description: Approved; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreatePart11ScopeAssessmentCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, record_or_signature_type, predicate_use, system_component]
+      x-requirement-ids: [P11-FR-001, P11-FR-024]
+      properties:
+        idempotency_key: { type: string }
+        record_or_signature_type: { type: string }
+        predicate_use: { type: string }
+        system_component: { type: string }
+        context: { type: string, default: CLOSED, enum: [CLOSED, OPEN] }
+        applicable: { type: boolean, default: true }
+        customer_responsibilities: { type: [string, 'null'] }
+
+    DerivePart11TestSuiteCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, assessment_id, control_citations]
+      x-requirement-ids: [P11-FR-026]
+      properties:
+        idempotency_key: { type: string }
+        assessment_id: { type: string, format: uuid }
+        control_citations: { type: array, minItems: 1, items: { type: string } }
+
+    RecordPart11ControlResultCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, control_evidence_id, expected_version, result]
+      x-requirement-ids: [P11-FR-002, P11-FR-008]
+      properties:
+        idempotency_key: { type: string }
+        control_evidence_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        result: { type: string, enum: [PASS, FAIL] }
+        test_ref: { type: [string, 'null'] }
+        evidence_manifest: { type: array, items: { type: object } }
+        configuration_ref: { type: [string, 'null'] }
+        procedure_ref: { type: [string, 'null'] }
+        deviation_ref: { type: [string, 'null'] }
+
+    ApprovePart11AssessmentCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, assessment_id, expected_version, reason, challenge_id, reauth_password]
+      x-requirement-ids: [P11-FR-026]
+      properties:
+        idempotency_key: { type: string }
+        assessment_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

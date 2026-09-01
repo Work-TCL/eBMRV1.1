@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-009.json",
+  "title": "SPEC-VAL-009 — Data Migration, Conversion, Cutover & Reconciliation Validation Events",
+  "description": "Document 113 event contract for WP-14 Document 87 (app/modules/validation/commands_migration.py). Every event is emitted transactionally through the Mutation Gateway outbox in the same PostgreSQL transaction as the domain write (EVT-FR-002). MigrationSourceProfiled is emitted from createMigrationValidationPlan() when a source profile is supplied (profileMigrationSource, FN-0842, has no dedicated §7 endpoint). MigrationDryRunCompleted covers both DRY_RUN and CUTOVER runs (executeMigrationDryRun).",
+  "x-requirement-ids": ["MIGV-FR-001", "MIGV-FR-003", "MIGV-FR-016", "MIGV-FR-020", "EVT-FR-001", "EVT-FR-002"],
+  "$defs": {
+    "MigrationValidationPlanCreatedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["plan_number", "source_system", "source_snapshot_hash"],
+      "properties": {
+        "plan_number": { "type": "string" },
+        "source_system": { "type": "string" },
+        "source_snapshot_hash": { "type": "string" },
+        "profiled": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["MIGV-FR-001", "MIGV-FR-002"]
+    },
+    "MigrationSourceProfiledPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_snapshot_hash"],
+      "properties": {
+        "source_snapshot_hash": { "type": "string" },
+        "row_counts": {},
+        "duplicates": {},
+        "orphans": {}
+      },
+      "x-requirement-ids": ["MIGV-FR-003"]
+    },
+    "MigrationDryRunCompletedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["plan_id", "run_type", "run_number", "status"],
+      "properties": {
+        "plan_id": { "type": "string", "format": "uuid" },
+        "run_type": { "type": "string", "enum": ["DRY_RUN", "CUTOVER"] },
+        "run_number": { "type": "integer", "minimum": 1 },
+        "is_delta": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["COMPLETED", "FAILED", "INTERRUPTED"] },
+        "rejected_count": { "type": "integer", "minimum": 0 }
+      },
+      "x-requirement-ids": ["MIGV-FR-016", "MIGV-FR-017", "MIGV-FR-018"]
+    },
+    "MigrationReconciledPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["run_id", "outcome"],
+      "properties": {
+        "run_id": { "type": "string", "format": "uuid" },
+        "outcome": { "type": "string", "enum": ["PASS", "FAIL"] },
+        "critical_field_mismatches": { "type": "integer", "minimum": 0 },
+        "orphans": { "type": "integer", "minimum": 0 },
+        "undispositioned_deviations": { "type": "integer", "minimum": 0 }
+      },
+      "x-requirement-ids": ["MIGV-FR-008", "MIGV-FR-009", "MIGV-FR-010"]
+    },
+    "MigrationAcceptedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "reconciliation_id"],
+      "properties": {
+        "state": { "type": "string", "enum": ["ACCEPTED"] },
+        "reconciliation_id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["MIGV-FR-020"]
+    }
+  },
+  "events": [
+    { "event_type": "MigrationValidationPlanCreated", "schema_version": "1.0", "producer": "SPEC-VAL-009", "aggregate_type": "migration_validation_plan", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/MigrationValidationPlanCreatedPayload" }, "x-requirement-ids": ["MIGV-FR-001"] },
+    { "event_type": "MigrationSourceProfiled", "schema_version": "1.0", "producer": "SPEC-VAL-009", "aggregate_type": "migration_validation_plan", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/MigrationSourceProfiledPayload" }, "x-requirement-ids": ["MIGV-FR-003"] },
+    { "event_type": "MigrationDryRunCompleted", "schema_version": "1.0", "producer": "SPEC-VAL-009", "aggregate_type": "migration_run", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/MigrationDryRunCompletedPayload" }, "x-requirement-ids": ["MIGV-FR-016"] },
+    { "event_type": "MigrationReconciled", "schema_version": "1.0", "producer": "SPEC-VAL-009", "aggregate_type": "migration_reconciliation", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/MigrationReconciledPayload" }, "x-requirement-ids": ["MIGV-FR-008"] },
+    { "event_type": "MigrationAccepted", "schema_version": "1.0", "producer": "SPEC-VAL-009", "aggregate_type": "migration_run", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/MigrationAcceptedPayload" }, "x-requirement-ids": ["MIGV-FR-020"] }
+  ]
+}

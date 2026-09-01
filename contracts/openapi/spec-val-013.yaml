@@ -1,0 +1,145 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-013 — Backup, Restore, PITR & Disaster Recovery Qualification
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 91 (`services/gxp-api/app/modules/validation/
+    commands_dr.py`). 2 owned entities: `dr_qualification_scenario`, `dr_qualification_execution`.
+    RPO/RTO achieved values are measured, never invented. Document 106 row 157: `dr/{id}/approve`
+    requires an `Approved` signature from an independent QA Releaser, reason mandatory — binds to the
+    execution directly.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/dr/scenarios:
+    post:
+      operationId: postValidationDrScenarios
+      tags: [validation]
+      summary: Define a DR qualification scenario (DRV-FR-001)
+      x-requirement-ids: [DRV-FR-001, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateDrScenarioCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/dr/executions:
+    post:
+      operationId: postValidationDrExecutions
+      tags: [validation]
+      summary: Record a DR qualification drill execution (DRV-FR-002/003)
+      x-requirement-ids: [DRV-FR-002, DRV-FR-003]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordDrExecutionCommand' } } }
+      responses:
+        '200': { description: Recorded; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/dr/{execution_id}/measure:
+    post:
+      operationId: postValidationDrMeasure
+      tags: [validation]
+      summary: Measure achieved RPO/RTO and GxP smoke result for an execution (DRV-FR-004..007/018/019)
+      x-requirement-ids: [DRV-FR-004, DRV-FR-005, DRV-FR-006, DRV-FR-018, DRV-FR-019]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MeasureDrObjectivesCommand' } } }
+      responses:
+        '200': { description: Measured; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/dr/{execution_id}/approve:
+    post:
+      operationId: postValidationDrApprove
+      tags: [validation]
+      summary: Approve a DR qualification execution (DRV-FR-022)
+      x-requirement-ids: [DRV-FR-022, SIG-FR-004, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveDrExecutionCommand' } } }
+      responses:
+        '200': { description: Approved; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateDrScenarioCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, failure_type, components, recovery_method, target_rto_seconds, acceptance_criteria]
+      x-requirement-ids: [DRV-FR-001]
+      properties:
+        idempotency_key: { type: string }
+        failure_type: { type: string }
+        components: { type: array, minItems: 1, items: { type: string } }
+        recovery_method: { type: string }
+        target_rpo_seconds: { type: [integer, 'null'], minimum: 0 }
+        target_rto_seconds: { type: integer, minimum: 0 }
+        restore_order: { type: array, items: { type: string } }
+        acceptance_criteria: { type: string }
+
+    RecordDrExecutionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, scenario_id, backup_set_ref, started_at, completed_at, integrity_checks]
+      x-requirement-ids: [DRV-FR-002, DRV-FR-003]
+      properties:
+        idempotency_key: { type: string }
+        scenario_id: { type: string, format: uuid }
+        backup_set_ref: { type: string }
+        restore_point: { type: [string, 'null'], format: date-time }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        integrity_checks: { type: object, additionalProperties: { type: boolean } }
+
+    MeasureDrObjectivesCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, execution_id, expected_version]
+      x-requirement-ids: [DRV-FR-004, DRV-FR-005, DRV-FR-006]
+      properties:
+        idempotency_key: { type: string }
+        execution_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        gxp_smoke_results: { type: object, additionalProperties: { type: boolean } }
+        deviations: { type: array, items: { type: object } }
+
+    ApproveDrExecutionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, execution_id, expected_version, reason, challenge_id, reauth_password]
+      x-requirement-ids: [DRV-FR-022]
+      properties:
+        idempotency_key: { type: string }
+        execution_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

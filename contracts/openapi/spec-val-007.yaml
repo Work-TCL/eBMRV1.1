@@ -1,0 +1,169 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-007 — Performance Qualification (PQ), UAT & Business Process Verification
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-14 Document 85 (`services/gxp-api/app/modules/validation/
+    commands_pq.py`, `router_wp14.py`). 2 owned entities: `pq_scenario`, `pq_execution`. Document 106
+    row 151: `pq/{id}/approve` requires an `Approved` signature from an independent QA Releaser,
+    reason mandatory. `recordPQUsabilityObservation()` (FN-0826) has no dedicated §7 endpoint --
+    usability observations (PQ-FR-015) are captured inside `pq/executions` and each emits its own
+    `PQUsabilityObservationRecorded` event.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/pq/scenarios:
+    post:
+      operationId: postValidationV1PqScenarios
+      tags: [validation]
+      summary: Create a controlled PQ scenario (PQ-FR-001..006/014/016/017/020)
+      x-requirement-ids: [PQ-FR-001, PQ-FR-002, PQ-FR-003, PQ-FR-004, PQ-FR-005, PQ-FR-006, PQ-FR-014, PQ-FR-016, PQ-FR-017, PQ-FR-020, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreatePqScenarioCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/pq/scenarios/{scenario_id}/participants:
+    post:
+      operationId: postValidationV1PqScenariosIdParticipants
+      tags: [validation]
+      summary: Assign trained participants to a PQ scenario (PQ-FR-004/005)
+      x-requirement-ids: [PQ-FR-004, PQ-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: scenario_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AssignPqParticipantsCommand' } } }
+      responses:
+        '200': { description: Assigned; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION | INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/pq/executions:
+    post:
+      operationId: postValidationV1PqExecutions
+      tags: [validation]
+      summary: Execute a PQ scenario, capturing results, deviations and usability observations (PQ-FR-003/007..013/015/016/018)
+      x-requirement-ids: [PQ-FR-003, PQ-FR-007, PQ-FR-008, PQ-FR-009, PQ-FR-010, PQ-FR-011, PQ-FR-012, PQ-FR-013, PQ-FR-015, PQ-FR-016, PQ-FR-018, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ExecutePqScenarioCommand' } } }
+      responses:
+        '200': { description: Recorded; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED (includes untrained participant / unfinalized evidence)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/pq/{scenario_id}/approve:
+    post:
+      operationId: postValidationV1PqIdApprove
+      tags: [validation]
+      summary: Approve or reject PQ / site acceptance (PQ-FR-018/019) — Document 106 row 151 signature
+      x-requirement-ids: [PQ-FR-018, PQ-FR-019, SIG-FR-004, SIG-FR-006, SIG-FR-018, MUT-FR-009, MUT-FR-012, MUT-FR-013, MUT-FR-015]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: scenario_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApprovePqCommand' } } }
+      responses:
+        '200': { description: Approved/rejected; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION | INVALID_TRANSITION | SIGNATURE_CHALLENGE_INVALID., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED (go-live blocker present, missing reason)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  schemas:
+    CreatePqScenarioCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [PQ-FR-001, PQ-FR-002, PQ-FR-006, PQ-FR-017, PQ-FR-020]
+      required: [idempotency_key, scenario_number, process_area, intended_workflow, acceptance_criteria]
+      properties:
+        idempotency_key: { type: string }
+        scenario_number: { type: string }
+        process_area:
+          type: string
+          enum: [material_flow, qc_flow, deviation_flow, signature_flow, edge_device_flow, erp_lims_flow, shift_handoff, business_process, exception_recovery]
+        intended_workflow: { type: string }
+        acceptance_criteria: { type: string }
+        product_profile:
+          type: [string, "null"]
+          enum: [prefilled_syringe, injector, inhalation, coated_device, null]
+        representative_roles: { type: array, items: { type: string } }
+        training_prerequisites: { type: array, items: { type: object } }
+        prerequisites: { type: array, items: { type: object } }
+        steps: { type: array, items: { type: object } }
+        interfaces_equipment: { type: array, items: { type: object } }
+        exception_paths: { type: array, items: { type: object } }
+        is_uat: { type: boolean }
+        vmp_equivalence_ref: { type: [string, "null"] }
+        is_template: { type: boolean }
+        retention_class: { type: [string, "null"] }
+    AssignPqParticipantsCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [PQ-FR-004, PQ-FR-005]
+      required: [idempotency_key, scenario_id, expected_version, participants]
+      properties:
+        idempotency_key: { type: string }
+        scenario_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        participants:
+          type: array
+          items:
+            type: object
+            properties:
+              user_id: { type: string, format: uuid }
+              role: { type: string }
+              training_refs: { type: array, items: { type: string } }
+              trained: { type: boolean }
+    ExecutePqScenarioCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [PQ-FR-003, PQ-FR-015, PQ-FR-016, PQ-FR-018]
+      required: [idempotency_key, scenario_id, environment, config_ref, participant_identities, result]
+      properties:
+        idempotency_key: { type: string }
+        scenario_id: { type: string, format: uuid }
+        environment: { type: string }
+        config_ref: { type: string }
+        participant_identities: { type: array, items: { type: string } }
+        dataset_ref: { type: [string, "null"] }
+        step_results: { type: array, items: { type: object } }
+        observations: { type: array, items: { type: object } }
+        deviations: { type: array, items: { type: object } }
+        evidence_manifest: { type: array, items: { type: object } }
+        result: { type: string, enum: [COMPLETED, FAILED, INTERRUPTED] }
+        prior_execution_id: { type: [string, "null"], format: uuid }
+    ApprovePqCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [PQ-FR-018, PQ-FR-019, SIG-FR-004]
+      required: [idempotency_key, scenario_id, expected_version, reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        scenario_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        decision: { type: string, enum: [ACCEPTED, REJECTED] }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

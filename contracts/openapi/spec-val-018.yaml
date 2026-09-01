@@ -1,0 +1,202 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-018 — Periodic Review, Change Impact, Revalidation & Validated-State Maintenance
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 96 (`services/gxp-api/app/modules/validation/
+    commands_periodic.py`). 3 owned entities: `validated_state_baseline`, `validation_change_impact`,
+    `periodic_validation_review`. Document 106 rows 170/171: both `periodic-reviews` (create) and
+    `periodic-reviews/{id}/decision` require a `Reviewed` signature from a QA Reviewer independent of
+    the performer, no mandatory reason. `change-impacts`, `revalidation-plans`, `revalidations` and
+    `decommission` carry no Document 106 row — unsigned.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/change-impacts:
+    post:
+      operationId: postValidationChangeImpacts
+      tags: [validation]
+      summary: Assess a change's validation impact (VSM-FR-002/003/004/006)
+      x-requirement-ids: [VSM-FR-002, VSM-FR-003, VSM-FR-004, VSM-FR-006, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateChangeImpactCommand' } } }
+      responses:
+        '200': { description: Assessed; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/revalidation-plans:
+    post:
+      operationId: postValidationRevalidationPlans
+      tags: [validation]
+      summary: Approve a change impact's revalidation plan (VSM-FR-004)
+      x-requirement-ids: [VSM-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveRevalidationPlanCommand' } } }
+      responses:
+        '200': { description: Approved; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/revalidations:
+    post:
+      operationId: postValidationRevalidations
+      tags: [validation]
+      summary: Complete a change impact's revalidation (VSM-FR-004)
+      x-requirement-ids: [VSM-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CompleteRevalidationCommand' } } }
+      responses:
+        '200': { description: Completed; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/periodic-reviews:
+    post:
+      operationId: postValidationPeriodicReviews
+      tags: [validation]
+      summary: Create a periodic validated-state review (VSM-FR-011/012)
+      x-requirement-ids: [VSM-FR-011, VSM-FR-012, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreatePeriodicReviewCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/periodic-reviews/{review_id}/decision:
+    post:
+      operationId: postValidationPeriodicReviewDecision
+      tags: [validation]
+      summary: Record a periodic review's validated-state decision (VSM-FR-021)
+      x-requirement-ids: [VSM-FR-021, SIG-FR-004, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: review_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DecidePeriodicReviewCommand' } } }
+      responses:
+        '200': { description: Decided; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/decommission:
+    post:
+      operationId: postValidationDecommission
+      tags: [validation]
+      summary: Decommission a validated-state baseline (VSM-FR-026)
+      x-requirement-ids: [VSM-FR-026]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DecommissionValidatedSystemCommand' } } }
+      responses:
+        '200': { description: Decommissioned; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateChangeImpactCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, change_ref, change_type, revalidation_level, rationale]
+      x-requirement-ids: [VSM-FR-002, VSM-FR-004]
+      properties:
+        idempotency_key: { type: string }
+        change_ref: { type: string }
+        change_type: { type: string }
+        affected_trace_artifacts: { type: array, items: { type: object } }
+        is_emergency: { type: boolean, default: false }
+        revalidation_level: { type: string, enum: [NONE_WITH_RATIONALE, DOC_REVIEW, TARGETED_TEST, PARTIAL, FULL_REQUALIFICATION] }
+        rationale: { type: string }
+
+    ApproveRevalidationPlanCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, change_impact_id, expected_version, revalidation_ref]
+      x-requirement-ids: [VSM-FR-004]
+      properties:
+        idempotency_key: { type: string }
+        change_impact_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        revalidation_ref: { type: string }
+
+    CompleteRevalidationCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, change_impact_id, expected_version, evidence_ref]
+      x-requirement-ids: [VSM-FR-004]
+      properties:
+        idempotency_key: { type: string }
+        change_impact_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        evidence_ref: { type: string }
+
+    CreatePeriodicReviewCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, release_ref, period_start, period_end, inputs_considered, challenge_id, reauth_password]
+      x-requirement-ids: [VSM-FR-011, VSM-FR-012]
+      properties:
+        idempotency_key: { type: string }
+        release_ref: { type: string }
+        period_start: { type: string, format: date-time }
+        period_end: { type: string, format: date-time }
+        inputs_considered: { type: object }
+        findings: { type: array, items: { type: object } }
+        actions: { type: array, items: { type: object } }
+        new_record_id: { type: [string, 'null'], format: uuid }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    DecidePeriodicReviewCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, review_id, expected_version, decision, challenge_id, reauth_password]
+      x-requirement-ids: [VSM-FR-021]
+      properties:
+        idempotency_key: { type: string }
+        review_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        decision: { type: string, enum: [VALIDATED_CONFIRMED, ACTION_REQUIRED, REVALIDATION_REQUIRED, SUSPENDED] }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    DecommissionValidatedSystemCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, baseline_id, expected_version, decommission_evidence]
+      x-requirement-ids: [VSM-FR-026]
+      properties:
+        idempotency_key: { type: string }
+        baseline_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        decommission_evidence: { type: object }

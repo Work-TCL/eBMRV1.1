@@ -1,0 +1,134 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-006 — Operational Qualification (OQ) & Functional Control Verification
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 84 (`services/gxp-api/app/modules/validation/
+    commands_oq.py`). 2 owned entities: `oq_suite`, `oq_execution`. Coverage is integer basis points
+    (never `float`). Document 106 row 150: `oq/{id}/approve` requires an `Approved` signature from an
+    independent QA Releaser, reason mandatory.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/oq:suites:
+    post:
+      operationId: postValidationOqSuites
+      tags: [validation]
+      summary: Derive an OQ suite from a frozen baseline (OQ-FR-001/012/013)
+      x-requirement-ids: [OQ-FR-001, OQ-FR-012, OQ-FR-013, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateOqSuiteCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/oq/executions:
+    post:
+      operationId: postValidationOqExecutions
+      tags: [validation]
+      summary: Record an OQ execution against a suite (OQ-FR-002..011/014..016)
+      x-requirement-ids: [OQ-FR-002, OQ-FR-009, OQ-FR-016]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordOqExecutionCommand' } } }
+      responses:
+        '200': { description: Recorded; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/oq/{execution_id}/coverage:
+    get:
+      operationId: getValidationOqCoverage
+      tags: [validation]
+      summary: Coverage (basis points) for an OQ execution (OQ-FR-016)
+      x-requirement-ids: [OQ-FR-016]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Coverage view., content: { application/json: { schema: { $ref: '#/components/schemas/CoverageView' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /validation/v1/oq/{execution_id}/approve:
+    post:
+      operationId: postValidationOqApprove
+      tags: [validation]
+      summary: Approve an OQ execution (OQ-FR-017/018)
+      x-requirement-ids: [OQ-FR-017, OQ-FR-018, SIG-FR-004, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveOqExecutionCommand' } } }
+      responses:
+        '200': { description: Approved; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateOqSuiteCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, baseline_id, selected_test_refs]
+      x-requirement-ids: [OQ-FR-001, OQ-FR-012]
+      properties:
+        idempotency_key: { type: string }
+        baseline_id: { type: string, format: uuid }
+        selected_test_refs: { type: array, minItems: 1, items: { type: object } }
+        selected_evidence_refs: { type: array, items: { type: object } }
+        exclusions: { type: array, items: { type: object } }
+        environment_fingerprint: { type: object }
+
+    RecordOqExecutionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, suite_id, executed_test_refs]
+      x-requirement-ids: [OQ-FR-002, OQ-FR-016]
+      properties:
+        idempotency_key: { type: string }
+        suite_id: { type: string, format: uuid }
+        executed_test_refs: { type: array, minItems: 1, items: { type: object } }
+        deviations: { type: array, items: { type: object } }
+
+    CoverageView:
+      type: object
+      additionalProperties: false
+      required: [execution_id, coverage_basis_points, status, deviation_count]
+      x-requirement-ids: [OQ-FR-016]
+      properties:
+        execution_id: { type: string, format: uuid }
+        coverage_basis_points: { type: integer }
+        status: { type: string }
+        deviation_count: { type: integer }
+
+    ApproveOqExecutionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, execution_id, expected_version, reason, challenge_id, reauth_password]
+      x-requirement-ids: [OQ-FR-017, OQ-FR-018]
+      properties:
+        idempotency_key: { type: string }
+        execution_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }

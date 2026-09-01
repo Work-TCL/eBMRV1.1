@@ -431,6 +431,17 @@ export const canHoldEquipment = (me: Me | null) =>
 export const canReturnEquipmentToService = (me: Me | null) =>
   holdsAnyRole(me, ["Admin", "QA Reviewer", "Engineering Manager"]);
 
+// OOS/OOT (Document 25) — investigation work is broad; extended-investigation is QA Reviewer;
+// disposition + close are QA Releaser (per scripts/seed.py).
+export const canInvestigateOos = (me: Me | null) =>
+  holdsAnyRole(me, ["Admin", "QC Reviewer", "QA Reviewer"]);
+export const canExtendOos = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer"]);
+export const canDispositionOos = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Releaser"]);
+
+// yield/reconciliation (Document 17) — evaluate: Operator/Supervisor/Admin; verify: QA Reviewer/Admin.
+export const canEvaluateYield = (me: Me | null) => holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
+export const canVerifyReconciliation = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer"]);
+
 export const canViewRelease = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
 export const canEvaluateRelease = (me: Me | null) =>
   holdsAnyRole(me, ["Admin", "QA Reviewer", "QA Releaser"]);
@@ -441,6 +452,8 @@ export const canExecuteQaReview = (me: Me | null) => holdsAnyRole(me, ["Admin", 
 
 export const canViewGenealogy = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
 export const canViewDevices = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
+// device.create (Document 12) — Admin + Supervisor per scripts/seed.py.
+export const canCreateDevice = (me: Me | null) => holdsAnyRole(me, ["Admin", "Supervisor"]);
 export const canExecutePackaging = (me: Me | null) =>
   holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
 export const canApproveSupplier = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Releaser"]);

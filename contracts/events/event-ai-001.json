@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-ai-001.json",
+  "title": "SPEC-AI-001 — AI Governance for Regulated Manufacturing Events",
+  "description": "Document 113 event contract for WP-13 Document 105 (app/modules/ai_governance/*). All 15 are emitted transactionally through the Mutation Gateway outbox in the same PostgreSQL transaction as the domain write (EVT-FR-002), except AIContextBuilt and AIGovernancePackageGenerated which are audit-logged against the ai_use_case aggregate without their own dedicated table (see app/modules/ai_governance/ARCHITECTURE.md).",
+  "x-requirement-ids": ["AI-FR-001", "AI-FR-003", "AI-FR-007", "AI-FR-009", "AI-FR-014", "AI-FR-018", "AI-FR-024", "AI-FR-028", "AI-FR-034", "AI-FR-041", "AI-FR-047", "AI-FR-053", "AI-FR-054", "EVT-FR-001", "EVT-FR-002"],
+  "$defs": {
+    "AIUseCaseRegisteredPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["use_case_id", "name", "state"],
+      "properties": {
+        "use_case_id": { "type": "string", "format": "uuid" },
+        "name": { "type": "string" },
+        "state": { "type": "string", "enum": ["DRAFT"] }
+      },
+      "x-requirement-ids": ["AI-FR-001"]
+    },
+    "AIUseCaseRiskAssessedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["use_case_id", "risk_assessment_id", "state"],
+      "properties": {
+        "use_case_id": { "type": "string", "format": "uuid" },
+        "risk_assessment_id": { "type": "string", "format": "uuid" },
+        "state": { "type": "string", "enum": ["RISK_ASSESSED"] }
+      },
+      "x-requirement-ids": ["AI-FR-003"]
+    },
+    "AIModelDeploymentApprovedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["deployment_id", "provider", "model", "model_version", "state"],
+      "properties": {
+        "deployment_id": { "type": "string", "format": "uuid" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "model_version": { "type": "string" },
+        "state": { "type": "string", "enum": ["APPROVED"] }
+      },
+      "x-requirement-ids": ["AI-FR-007", "AI-FR-047"]
+    },
+    "AIContextBuiltPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["ref_count"],
+      "properties": { "ref_count": { "type": "integer", "minimum": 0 } },
+      "x-requirement-ids": ["AI-FR-031"]
+    },
+    "AIAdvisoryGeneratedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["advisory_id", "output_hash", "status"],
+      "properties": {
+        "advisory_id": { "type": "string", "format": "uuid" },
+        "output_hash": { "type": "string" },
+        "status": { "type": "string", "enum": ["GENERATED"] }
+      },
+      "x-requirement-ids": ["AI-FR-018", "AI-FR-028"]
+    },
+    "AIOutputInvalidPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["reason"],
+      "properties": { "reason": { "type": "string" } },
+      "x-requirement-ids": ["AI-FR-041"]
+    },
+    "AIToolCallAllowedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["tool_name", "decision"],
+      "properties": {
+        "tool_name": { "type": "string" },
+        "decision": { "type": "string", "enum": ["ALLOWED"] }
+      },
+      "x-requirement-ids": ["AI-FR-009"]
+    },
+    "AIToolCallDeniedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["tool_name", "reason"],
+      "properties": {
+        "tool_name": { "type": "string" },
+        "reason": { "type": "string" }
+      },
+      "x-requirement-ids": ["AI-FR-003", "AI-FR-009"]
+    },
+    "AIAdvisoryDispositionRecordedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["advisory_id", "disposition"],
+      "properties": {
+        "advisory_id": { "type": "string", "format": "uuid" },
+        "disposition": { "type": "string", "enum": ["ACCEPTED_AS_INPUT", "REJECTED", "EDITED", "NOT_USED"] }
+      },
+      "x-requirement-ids": ["AI-FR-034"]
+    },
+    "AIEvaluationCompletedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["report_id", "passed", "critical_failures"],
+      "properties": {
+        "report_id": { "type": "string", "format": "uuid" },
+        "passed": { "type": "boolean" },
+        "critical_failures": { "type": "array", "items": { "type": "string" } }
+      },
+      "x-requirement-ids": ["AI-FR-022", "AI-FR-024"]
+    },
+    "AIReleaseGateEvaluatedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["gate_id", "decision"],
+      "properties": {
+        "gate_id": { "type": "string", "format": "uuid" },
+        "decision": { "type": "string", "enum": ["PASS", "BLOCK", "REVIEW"] }
+      },
+      "x-requirement-ids": ["AI-FR-021", "AI-FR-024"]
+    },
+    "PromptInjectionDetectedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["detected", "action_taken"],
+      "properties": {
+        "detected": { "type": "boolean" },
+        "action_taken": { "type": "string", "enum": ["ALLOWED", "BLOCKED"] }
+      },
+      "x-requirement-ids": ["AI-FR-014", "AI-FR-025"]
+    },
+    "AIProviderProfileChangedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["use_case_id", "to_model_deployment_id"],
+      "properties": {
+        "use_case_id": { "type": "string", "format": "uuid" },
+        "to_model_deployment_id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["AI-FR-054"]
+    },
+    "AIUseCaseRetiredPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["use_case_id", "state"],
+      "properties": {
+        "use_case_id": { "type": "string", "format": "uuid" },
+        "state": { "type": "string", "enum": ["RETIRED"] }
+      },
+      "x-requirement-ids": ["AI-FR-053"]
+    },
+    "AIGovernancePackageGeneratedPayload": {
+      "type": "object", "additionalProperties": true,
+      "required": ["evaluation_count", "gate_count"],
+      "properties": {
+        "evaluation_count": { "type": "integer", "minimum": 0 },
+        "gate_count": { "type": "integer", "minimum": 0 }
+      },
+      "x-requirement-ids": ["AI-FR-028", "AI-FR-052"]
+    }
+  },
+  "events": [
+    { "event_type": "AIUseCaseRegistered", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_use_case", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIUseCaseRegisteredPayload" }, "x-requirement-ids": ["AI-FR-001"] },
+    { "event_type": "AIUseCaseRiskAssessed", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_use_case", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIUseCaseRiskAssessedPayload" }, "x-requirement-ids": ["AI-FR-003"] },
+    { "event_type": "AIModelDeploymentApproved", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_model_deployment", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIModelDeploymentApprovedPayload" }, "x-requirement-ids": ["AI-FR-007"] },
+    { "event_type": "AIContextBuilt", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_use_case", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIContextBuiltPayload" }, "x-requirement-ids": ["AI-FR-031"] },
+    { "event_type": "AIAdvisoryGenerated", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_advisory_log", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIAdvisoryGeneratedPayload" }, "x-requirement-ids": ["AI-FR-018"] },
+    { "event_type": "AI_OUTPUT_INVALID", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_advisory_log", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIOutputInvalidPayload" }, "x-requirement-ids": ["AI-FR-041"] },
+    { "event_type": "AIToolCallAllowed", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_tool_decision", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIToolCallAllowedPayload" }, "x-requirement-ids": ["AI-FR-009"] },
+    { "event_type": "AIToolCallDenied", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_tool_decision", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIToolCallDeniedPayload" }, "x-requirement-ids": ["AI-FR-003"] },
+    { "event_type": "AIAdvisoryDispositionRecorded", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_disposition", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIAdvisoryDispositionRecordedPayload" }, "x-requirement-ids": ["AI-FR-034"] },
+    { "event_type": "AIEvaluationCompleted", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_evaluation_report", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIEvaluationCompletedPayload" }, "x-requirement-ids": ["AI-FR-022"] },
+    { "event_type": "AIReleaseGateEvaluated", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_release_gate", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIReleaseGateEvaluatedPayload" }, "x-requirement-ids": ["AI-FR-021"] },
+    { "event_type": "PromptInjectionDetected", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_prompt_injection_event", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/PromptInjectionDetectedPayload" }, "x-requirement-ids": ["AI-FR-014"] },
+    { "event_type": "AIProviderProfileChanged", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_provider_switch", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIProviderProfileChangedPayload" }, "x-requirement-ids": ["AI-FR-054"] },
+    { "event_type": "AIUseCaseRetired", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_use_case", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIUseCaseRetiredPayload" }, "x-requirement-ids": ["AI-FR-053"] },
+    { "event_type": "AIGovernancePackageGenerated", "schema_version": "1.0", "producer": "SPEC-AI-001", "aggregate_type": "ai_use_case", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/AIGovernancePackageGeneratedPayload" }, "x-requirement-ids": ["AI-FR-052"] }
+  ]
+}

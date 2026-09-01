@@ -8,6 +8,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
+import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -174,6 +175,7 @@ export default function RecipeMasterPage() {
       {selectedId && (
         <VersionDetailModal
           recipeVersionId={selectedId}
+          allVersions={versions ?? []}
           onClose={() => setSelectedId(null)}
           onChanged={() => {
             setSelectedId(null);
@@ -285,12 +287,19 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (recipeF
   );
 }
 
+interface RecipeDiff {
+  sections: { added: string[]; removed: string[]; changed: { code: string; changes: Record<string, { from: string; to: string }> }[] };
+  steps: { added: string[]; removed: string[]; changed: { code: string; changes: Record<string, { from: string; to: string }> }[] };
+}
+
 function VersionDetailModal({
   recipeVersionId,
+  allVersions,
   onClose,
   onChanged,
 }: {
   recipeVersionId: string;
+  allVersions: RecipeVersion[];
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -300,6 +309,20 @@ function VersionDetailModal({
   const [simResult, setSimResult] = useState<{ complete: boolean; findings: string[] } | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [compareTo, setCompareTo] = useState("");
+  const [diff, setDiff] = useState<RecipeDiff | null>(null);
+  const [diffError, setDiffError] = useState<string | null>(null);
+
+  async function runCompare() {
+    if (!compareTo) return;
+    setDiffError(null);
+    setDiff(null);
+    try {
+      setDiff(await api.get<RecipeDiff>(`/recipes/v2/versions/${recipeVersionId}/compare/${compareTo}`));
+    } catch (err) {
+      setDiffError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Compare failed");
+    }
+  }
 
   useEffect(() => {
     refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load"));
@@ -450,6 +473,65 @@ function VersionDetailModal({
           </p>
         </div>
       )}
+
+      <div className="mt-4">
+        <p className="fs-1 text-muted mb-1">Compare with another version</p>
+        <div className="flex items-end gap-3">
+          <Select value={compareTo} onChange={(e) => setCompareTo(e.target.value)} style={{ minWidth: 220 }}>
+            <option value="">— pick a version —</option>
+            {allVersions
+              .filter((v) => v.recipe_version_id !== recipeVersionId)
+              .map((v) => (
+                <option key={v.recipe_version_id} value={v.recipe_version_id}>
+                  v{v.version_no} ({v.lifecycle_state})
+                </option>
+              ))}
+          </Select>
+          <Button size="sm" variant="secondary" onClick={runCompare} disabled={!compareTo}>
+            Compare
+          </Button>
+        </div>
+        {diffError && <p className="error-text fs-2 mt-2">{diffError}</p>}
+        {diff && (
+          <div className="mt-3">
+            {(["sections", "steps"] as const).map((kind) => {
+              const d = diff[kind];
+              const empty = d.added.length === 0 && d.removed.length === 0 && d.changed.length === 0;
+              return (
+                <div key={kind} className="mb-3">
+                  <p className="fs-2 font-semibold" style={{ textTransform: "capitalize" }}>
+                    {kind}
+                  </p>
+                  {empty ? (
+                    <p className="fs-2 text-muted">No differences.</p>
+                  ) : (
+                    <ul className="fs-2" style={{ paddingLeft: "1.2em" }}>
+                      {d.added.map((c) => (
+                        <li key={`a-${c}`}>
+                          <span className="tabular">{c}</span> — added
+                        </li>
+                      ))}
+                      {d.removed.map((c) => (
+                        <li key={`r-${c}`}>
+                          <span className="tabular">{c}</span> — removed
+                        </li>
+                      ))}
+                      {d.changed.map((c) => (
+                        <li key={`c-${c.code}`}>
+                          <span className="tabular">{c.code}</span> —{" "}
+                          {Object.entries(c.changes)
+                            .map(([f, { from, to }]) => `${f}: ${from} → ${to}`)
+                            .join("; ")}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {error && <p className="error-text mt-3">{error}</p>}
 

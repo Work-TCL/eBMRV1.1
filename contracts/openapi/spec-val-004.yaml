@@ -1,0 +1,182 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-004 — Validation Test Strategy, Test Methods & Objective Evidence Governance
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 82 (`services/gxp-api/app/modules/validation/
+    commands_test.py`). 2 owned entities: `validation_test_definition`, `validation_test_execution`.
+    Document 106 row 147: `tests/{id}/approve` requires an `Approved` signature from an independent QA
+    Releaser, reason mandatory. Row 146: `executions/{id}/complete` requires a `Performed` signature
+    from the qualified performer.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/tests:
+    post:
+      operationId: postValidationTests
+      tags: [validation]
+      summary: Author a validation test definition (TST-FR-001..007)
+      x-requirement-ids: [TST-FR-001, TST-FR-002, TST-FR-004, TST-FR-005, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateTestDefinitionCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/tests/{test_id}/approve:
+    post:
+      operationId: postValidationTestApprove
+      tags: [validation]
+      summary: Approve a validation test definition (TST-FR-003/011/017)
+      x-requirement-ids: [TST-FR-003, TST-FR-011, TST-FR-017, SIG-FR-004, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: test_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveTestDefinitionCommand' } } }
+      responses:
+        '200': { description: Approved; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/executions:
+    post:
+      operationId: postValidationExecutions
+      tags: [validation]
+      summary: Start a validation test execution (TST-FR-004/008)
+      x-requirement-ids: [TST-FR-004, TST-FR-008]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/StartTestExecutionCommand' } } }
+      responses:
+        '200': { description: Started; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/executions/{execution_id}/complete:
+    post:
+      operationId: postValidationExecutionComplete
+      tags: [validation]
+      summary: Complete a validation test execution (TST-FR-009/010/013..016/018/020..022)
+      x-requirement-ids: [TST-FR-010, TST-FR-013, TST-FR-014, TST-FR-015, TST-FR-016, TST-FR-018, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CompleteTestExecutionCommand' } } }
+      responses:
+        '200': { description: Completed; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/automated-evidence:
+    post:
+      operationId: postValidationAutomatedEvidence
+      tags: [validation]
+      summary: Import automated/CI evidence into a test execution (TST-FR-009)
+      x-requirement-ids: [TST-FR-009]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ImportAutomatedEvidenceCommand' } } }
+      responses:
+        '200': { description: Imported; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateTestDefinitionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, test_code, method, procedure, expected_results]
+      x-requirement-ids: [TST-FR-001, TST-FR-004, TST-FR-005]
+      properties:
+        idempotency_key: { type: string }
+        test_code: { type: string }
+        method: { type: string, enum: [AUTOMATED, SCRIPTED_MANUAL, EXPLORATORY, REVIEW_INSPECTION, ANALYSIS, SUPPLIER_EVIDENCE] }
+        requirement_refs: { type: array, items: { type: object } }
+        preconditions: { type: object }
+        procedure: { type: string }
+        expected_results: { type: string }
+        independent_review_required: { type: boolean, default: false }
+
+    ApproveTestDefinitionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, test_id, expected_version, reason, challenge_id, reauth_password]
+      x-requirement-ids: [TST-FR-003, TST-FR-011]
+      properties:
+        idempotency_key: { type: string }
+        test_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    StartTestExecutionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, test_definition_id]
+      x-requirement-ids: [TST-FR-004, TST-FR-008]
+      properties:
+        idempotency_key: { type: string }
+        test_definition_id: { type: string, format: uuid }
+        environment_fingerprint: { type: object }
+        ci_run_ref: { type: [string, 'null'] }
+        performer_user_id: { type: [string, 'null'], format: uuid }
+
+    CompleteTestExecutionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, execution_id, expected_version, actual_result, status, challenge_id, reauth_password]
+      x-requirement-ids: [TST-FR-010, TST-FR-013, TST-FR-014]
+      properties:
+        idempotency_key: { type: string }
+        execution_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        observations: { type: [string, 'null'] }
+        actual_result: { type: string }
+        status: { type: string, enum: [PASS, FAIL, BLOCKED, SKIPPED] }
+        blocked_reason: { type: [string, 'null'] }
+        evidence_manifest: { type: array, items: { type: object } }
+        reviewer_user_id: { type: [string, 'null'], format: uuid }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    ImportAutomatedEvidenceCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, execution_id, expected_version, ci_run_ref, result, evidence_manifest]
+      x-requirement-ids: [TST-FR-009]
+      properties:
+        idempotency_key: { type: string }
+        execution_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        ci_run_ref: { type: string }
+        result: { type: string, enum: [PASS, FAIL] }
+        evidence_manifest: { type: array, items: { type: object } }

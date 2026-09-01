@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-017.json",
+  "title": "SPEC-VAL-017 — Validation Summary Report, Release-to-Production & Go-Live Authorization Events",
+  "description": "Document 113 event contract for WP-14 Document 95 (app/modules/validation/commands_vsr.py). Every event is emitted transactionally through the Mutation Gateway outbox in the same PostgreSQL transaction as the domain write (EVT-FR-002). GoLiveReadinessEvaluated is emitted from issueValidatedReleaseAuthorization() alongside ValidatedReleaseAuthorized (the readiness GET endpoint is a pure read and emits nothing). PostGoLiveVerificationCompleted comes from recordPostGoLiveVerification() at releases/{id}/post-go-live-verification.",
+  "x-requirement-ids": ["VSR-FR-001", "VSR-FR-015", "VSR-FR-018", "VSR-FR-019", "VSR-FR-022", "VSR-FR-023", "EVT-FR-001", "EVT-FR-002"],
+  "$defs": {
+    "ValidationSummaryGeneratedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["report_number", "release_ref", "recommendation"],
+      "properties": {
+        "report_number": { "type": "string" },
+        "release_ref": { "type": "string" },
+        "recommendation": { "type": "string", "enum": ["RECOMMENDED", "RECOMMENDED_WITH_CONDITIONS", "NOT_RECOMMENDED"] }
+      },
+      "x-requirement-ids": ["VSR-FR-001", "VSR-FR-014"]
+    },
+    "GoLiveReadinessEvaluatedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ready", "blockers"],
+      "properties": {
+        "ready": { "type": "boolean" },
+        "blockers": { "type": "array", "items": { "type": "string" } }
+      },
+      "x-requirement-ids": ["VSR-FR-015"]
+    },
+    "ValidationSummaryApprovedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "decision"],
+      "properties": {
+        "state": { "type": "string", "enum": ["APPROVED", "REJECTED"] },
+        "decision": { "type": "string", "enum": ["APPROVED", "CONDITIONAL", "REJECTED"] }
+      },
+      "x-requirement-ids": ["VSR-FR-018", "VSR-FR-019"]
+    },
+    "ValidatedReleaseAuthorizedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authorization_number", "decision", "config_fingerprint"],
+      "properties": {
+        "authorization_number": { "type": "string" },
+        "decision": { "type": "string", "enum": ["APPROVED", "CONDITIONAL", "REJECTED"] },
+        "config_fingerprint": { "type": "string" },
+        "ready": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["VSR-FR-016", "VSR-FR-017", "VSR-FR-019"]
+    },
+    "DeploymentMatchesValidatedReleasePayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "matches"],
+      "properties": {
+        "state": { "type": "string", "enum": ["DEPLOYMENT_VERIFIED"] },
+        "matches": { "type": "boolean", "enum": [true] }
+      },
+      "x-requirement-ids": ["VSR-FR-022"]
+    },
+    "PostGoLiveVerificationCompletedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "outcome"],
+      "properties": {
+        "state": { "type": "string", "enum": ["GO_LIVE_VERIFIED", "ROLLED_BACK"] },
+        "outcome": { "type": "string", "enum": ["PASS", "FAIL"] }
+      },
+      "x-requirement-ids": ["VSR-FR-023", "VSR-FR-024"]
+    }
+  },
+  "events": [
+    { "event_type": "ValidationSummaryGenerated", "schema_version": "1.0", "producer": "SPEC-VAL-017", "aggregate_type": "validation_summary_report", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ValidationSummaryGeneratedPayload" }, "x-requirement-ids": ["VSR-FR-001"] },
+    { "event_type": "GoLiveReadinessEvaluated", "schema_version": "1.0", "producer": "SPEC-VAL-017", "aggregate_type": "validated_release_authorization", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/GoLiveReadinessEvaluatedPayload" }, "x-requirement-ids": ["VSR-FR-015"] },
+    { "event_type": "ValidationSummaryApproved", "schema_version": "1.0", "producer": "SPEC-VAL-017", "aggregate_type": "validation_summary_report", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ValidationSummaryApprovedPayload" }, "x-requirement-ids": ["VSR-FR-018"] },
+    { "event_type": "ValidatedReleaseAuthorized", "schema_version": "1.0", "producer": "SPEC-VAL-017", "aggregate_type": "validated_release_authorization", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/ValidatedReleaseAuthorizedPayload" }, "x-requirement-ids": ["VSR-FR-019"] },
+    { "event_type": "DeploymentMatchesValidatedRelease", "schema_version": "1.0", "producer": "SPEC-VAL-017", "aggregate_type": "validated_release_authorization", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/DeploymentMatchesValidatedReleasePayload" }, "x-requirement-ids": ["VSR-FR-022"] },
+    { "event_type": "PostGoLiveVerificationCompleted", "schema_version": "1.0", "producer": "SPEC-VAL-017", "aggregate_type": "validated_release_authorization", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/PostGoLiveVerificationCompletedPayload" }, "x-requirement-ids": ["VSR-FR-023"] }
+  ]
+}

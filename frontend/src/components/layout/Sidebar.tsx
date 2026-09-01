@@ -7,64 +7,148 @@ import {
   canAuthorRules,
   canReviewAudit,
   canReviewVault,
-  canViewEquipment,
   canViewProduct,
   canViewQms,
   canViewRecipe,
   isAdminAnywhere,
   logout,
+  type Me,
 } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 
-const PRODUCTION_NAV: { href: string; label: string; icon: IconName }[] = [
-  { href: "/products", label: "Products", icon: "package" },
-  { href: "/recipes", label: "Recipes", icon: "database" },
-  { href: "/batches", label: "Batches", icon: "flask" },
-];
+interface NavItem {
+  href: string;
+  label: string;
+  icon: IconName;
+  /** Per-item gate. Defaults to the section gate. */
+  show?: (me: Me | null) => boolean;
+}
 
-const MATERIALS_NAV: { href: string; label: string; icon: IconName }[] = [
-  { href: "/materials", label: "Materials", icon: "scale" },
-  { href: "/material-lots", label: "Material lots", icon: "list-checks" },
-  { href: "/inventory", label: "Inventory", icon: "inbox" },
-  { href: "/dispensing", label: "Dispensing", icon: "droplet" },
-  { href: "/qc", label: "QC testing", icon: "flask" },
-];
+interface NavSection {
+  label: string;
+  show: (me: Me | null) => boolean;
+  items: NavItem[];
+}
 
-const QUALITY_NAV: { href: string; label: string; icon: IconName }[] = [
-  { href: "/deviations", label: "Deviations", icon: "alert-triangle" },
-  { href: "/capa", label: "CAPA", icon: "shield-check" },
-  { href: "/nonconformances", label: "Nonconformances", icon: "cross-medical" },
-  { href: "/changes", label: "Change control", icon: "refresh" },
-  { href: "/complaints", label: "Complaints", icon: "bell" },
-  { href: "/field-actions", label: "Field actions", icon: "flag" },
-  { href: "/audits", label: "Internal audits", icon: "clipboard" },
-  { href: "/risks", label: "Risk register", icon: "gauge" },
-  { href: "/supplier-cases", label: "Supplier cases", icon: "building" },
-  { href: "/documents", label: "Documents", icon: "file-text" },
-  { href: "/training", label: "Training", icon: "users" },
-  { href: "/quality-metrics", label: "Quality metrics", icon: "gauge" },
-];
+const signedIn = (me: Me | null) => me !== null;
 
-const OPERATIONS_NAV: { href: string; label: string; icon: IconName }[] = [
-  { href: "/batch-execution", label: "Batch execution", icon: "play" },
-  { href: "/equipment", label: "Equipment", icon: "scan" },
-  { href: "/packaging", label: "Packaging", icon: "package" },
-  { href: "/qa-review", label: "QA review", icon: "clipboard" },
-  { href: "/release", label: "Release", icon: "badge-check" },
-  { href: "/genealogy", label: "Genealogy", icon: "layers" },
-  { href: "/devices", label: "Devices", icon: "scan" },
-  { href: "/suppliers", label: "Suppliers", icon: "building" },
-];
-
-const RULES_NAV: { href: string; label: string; icon: IconName }[] = [
-  { href: "/rules", label: "Rules", icon: "gauge" },
-];
-
-const ADMIN_NAV: { href: string; label: string; icon: IconName }[] = [
-  { href: "/admin/company", label: "Company", icon: "building" },
-  { href: "/admin/sites", label: "Sites", icon: "building" },
-  { href: "/admin/users", label: "Users", icon: "users" },
-  { href: "/admin/roles", label: "Roles", icon: "users" },
+/** The navigation model. Each section and item can gate itself on the signed-in user's roles.
+ * Order top-to-bottom is render order. */
+const SECTIONS: NavSection[] = [
+  {
+    label: "Production",
+    show: signedIn,
+    items: [
+      { href: "/products", label: "Products", icon: "package" },
+      { href: "/recipes", label: "Recipes", icon: "database" },
+      { href: "/batches", label: "Batches", icon: "flask" },
+      { href: "/product-master", label: "Product master", icon: "package", show: canViewProduct },
+      { href: "/recipe-master", label: "Recipe master", icon: "database", show: canViewRecipe },
+      { href: "/ddcp", label: "DDCP profiles", icon: "layers" },
+    ],
+  },
+  {
+    label: "Materials & QC",
+    show: signedIn,
+    items: [
+      { href: "/materials", label: "Materials", icon: "scale" },
+      { href: "/material-lots", label: "Material lots", icon: "list-checks" },
+      { href: "/inventory", label: "Inventory", icon: "inbox" },
+      { href: "/dispensing", label: "Dispensing", icon: "droplet" },
+      { href: "/qc", label: "QC testing", icon: "flask" },
+      { href: "/quality/oos", label: "OOS / OOT", icon: "alert-triangle" },
+    ],
+  },
+  {
+    label: "Operations",
+    // Every operational role can reach at least one of these; individual pages enforce their own access.
+    show: signedIn,
+    items: [
+      { href: "/batch-execution", label: "Batch execution", icon: "play" },
+      { href: "/equipment", label: "Equipment", icon: "scan" },
+      { href: "/cleaning", label: "Cleaning", icon: "droplet" },
+      { href: "/sterilization", label: "Sterilization", icon: "flask" },
+      { href: "/aseptic", label: "Aseptic operations", icon: "shield-check" },
+      { href: "/em", label: "Environmental monitoring", icon: "gauge" },
+      { href: "/packaging", label: "Packaging", icon: "package" },
+      { href: "/qa-review", label: "QA review", icon: "clipboard" },
+      { href: "/release", label: "Release", icon: "badge-check" },
+      { href: "/yield", label: "Yield & reconciliation", icon: "gauge" },
+      { href: "/genealogy", label: "Genealogy", icon: "layers" },
+      { href: "/devices", label: "Devices", icon: "scan" },
+      { href: "/suppliers", label: "Suppliers", icon: "building" },
+    ],
+  },
+  {
+    label: "Quality system",
+    show: canViewQms,
+    items: [
+      { href: "/deviations", label: "Deviations", icon: "alert-triangle" },
+      { href: "/capa", label: "CAPA", icon: "shield-check" },
+      { href: "/nonconformances", label: "Nonconformances", icon: "cross-medical" },
+      { href: "/changes", label: "Change control", icon: "refresh" },
+      { href: "/complaints", label: "Complaints", icon: "bell" },
+      { href: "/field-actions", label: "Field actions", icon: "flag" },
+      { href: "/audits", label: "Internal audits", icon: "clipboard" },
+      { href: "/risks", label: "Risk register", icon: "gauge" },
+      { href: "/supplier-cases", label: "Supplier cases", icon: "building" },
+      { href: "/documents", label: "Documents", icon: "file-text" },
+      { href: "/training", label: "Training", icon: "users" },
+      { href: "/quality-metrics", label: "Quality metrics", icon: "gauge" },
+    ],
+  },
+  {
+    label: "Integrations",
+    show: signedIn,
+    items: [
+      { href: "/integrations/lims", label: "LIMS", icon: "refresh" },
+      { href: "/integrations/erp", label: "ERP", icon: "refresh" },
+    ],
+  },
+  {
+    label: "Postmarket",
+    show: canViewQms,
+    items: [{ href: "/postmarket", label: "Safety & reporting", icon: "bell" }],
+  },
+  {
+    label: "Validation",
+    show: canViewQms,
+    items: [
+      { href: "/validation", label: "Validation platform", icon: "clipboard" },
+      { href: "/validation/go-live", label: "Deployment · PQ · go-live", icon: "badge-check" },
+    ],
+  },
+  {
+    label: "AI",
+    show: canViewQms,
+    items: [{ href: "/ai", label: "AI governance", icon: "shield-check" }],
+  },
+  {
+    label: "Compliance",
+    show: (me) => canReviewAudit(me) || canReviewVault(me),
+    items: [
+      { href: "/audit", label: "Audit ledger", icon: "history", show: canReviewAudit },
+      { href: "/vault", label: "Vault", icon: "lock", show: canReviewVault },
+    ],
+  },
+  {
+    label: "Engineering",
+    show: canAuthorRules,
+    items: [{ href: "/rules", label: "Rules", icon: "gauge" }],
+  },
+  {
+    label: "Admin",
+    show: isAdminAnywhere,
+    items: [
+      { href: "/admin/company", label: "Company", icon: "building" },
+      { href: "/admin/sites", label: "Sites", icon: "building" },
+      { href: "/admin/users", label: "Users", icon: "users" },
+      { href: "/admin/roles", label: "Roles", icon: "users" },
+      { href: "/admin/access-review", label: "Access review", icon: "shield-check" },
+      { href: "/security", label: "Security", icon: "lock" },
+      { href: "/platform", label: "Platform ops", icon: "database" },
+    ],
+  },
 ];
 
 export function Sidebar({ open }: { open: boolean }) {
@@ -86,121 +170,25 @@ export function Sidebar({ open }: { open: boolean }) {
         </div>
       </div>
       <nav className="sidebar-nav scrollbar-thin">
-        <div className="sidebar-section">Production</div>
-        {PRODUCTION_NAV.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="sidebar-link"
-            aria-current={pathname.startsWith(item.href) ? "page" : undefined}
-          >
-            <Icon name={item.icon} /> {item.label}
-          </Link>
-        ))}
-        {canViewProduct(me) && (
-          <Link
-            href="/product-master"
-            className="sidebar-link"
-            aria-current={pathname.startsWith("/product-master") ? "page" : undefined}
-          >
-            <Icon name="package" /> Product Master
-          </Link>
-        )}
-        {canViewRecipe(me) && (
-          <Link
-            href="/recipe-master"
-            className="sidebar-link"
-            aria-current={pathname.startsWith("/recipe-master") ? "page" : undefined}
-          >
-            <Icon name="database" /> Recipe Master
-          </Link>
-        )}
-        <div className="sidebar-section">Materials &amp; QC</div>
-        {MATERIALS_NAV.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="sidebar-link"
-            aria-current={pathname.startsWith(item.href) ? "page" : undefined}
-          >
-            <Icon name={item.icon} /> {item.label}
-          </Link>
-        ))}
-        {canViewEquipment(me) && (
-          <>
-            <div className="sidebar-section">Operations</div>
-            {OPERATIONS_NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="sidebar-link"
-                aria-current={pathname.startsWith(item.href) ? "page" : undefined}
-              >
-                <Icon name={item.icon} /> {item.label}
-              </Link>
-            ))}
-          </>
-        )}
-        {canViewQms(me) && (
-          <>
-            <div className="sidebar-section">Quality system</div>
-            {QUALITY_NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="sidebar-link"
-                aria-current={pathname.startsWith(item.href) ? "page" : undefined}
-              >
-                <Icon name={item.icon} /> {item.label}
-              </Link>
-            ))}
-          </>
-        )}
-        {(canReviewAudit(me) || canReviewVault(me)) && (
-          <>
-            <div className="sidebar-section">Compliance</div>
-            {canReviewAudit(me) && (
-              <Link href="/audit" className="sidebar-link" aria-current={pathname.startsWith("/audit") ? "page" : undefined}>
-                <Icon name="history" /> Audit ledger
-              </Link>
-            )}
-            {canReviewVault(me) && (
-              <Link href="/vault" className="sidebar-link" aria-current={pathname.startsWith("/vault") ? "page" : undefined}>
-                <Icon name="lock" /> Vault
-              </Link>
-            )}
-          </>
-        )}
-        {canAuthorRules(me) && (
-          <>
-            <div className="sidebar-section">Engineering</div>
-            {RULES_NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="sidebar-link"
-                aria-current={pathname.startsWith(item.href) ? "page" : undefined}
-              >
-                <Icon name={item.icon} /> {item.label}
-              </Link>
-            ))}
-          </>
-        )}
-        {isAdminAnywhere(me) && (
-          <>
-            <div className="sidebar-section">Admin</div>
-            {ADMIN_NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="sidebar-link"
-                aria-current={pathname.startsWith(item.href) ? "page" : undefined}
-              >
-                <Icon name={item.icon} /> {item.label}
-              </Link>
-            ))}
-          </>
-        )}
+        {SECTIONS.filter((section) => section.show(me)).map((section) => {
+          const items = section.items.filter((item) => (item.show ?? section.show)(me));
+          if (items.length === 0) return null;
+          return (
+            <div key={section.label}>
+              <div className="sidebar-section">{section.label}</div>
+              {items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="sidebar-link"
+                  aria-current={pathname.startsWith(item.href) ? "page" : undefined}
+                >
+                  <Icon name={item.icon} /> {item.label}
+                </Link>
+              ))}
+            </div>
+          );
+        })}
       </nav>
       <div className="sidebar-foot">
         {me && (
@@ -210,8 +198,7 @@ export function Sidebar({ open }: { open: boolean }) {
           </div>
         )}
         <button
-          className="sidebar-link"
-          style={{ width: "100%", border: "none", background: "none", cursor: "pointer", font: "inherit", textAlign: "left" }}
+          className="sidebar-link sidebar-link--btn"
           onClick={() => {
             logout();
             router.push("/login");

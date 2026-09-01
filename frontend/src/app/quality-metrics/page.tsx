@@ -17,6 +17,7 @@ import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 
 interface MetricRow {
   definition_id: string;
@@ -172,6 +173,14 @@ export default function QualityMetricsPage() {
               </div>
             ))}
         </Card>
+      )}
+
+      {canApproveQms(me) && siteId && (
+        <ManagementReviewCard
+          siteId={siteId}
+          metrics={metrics}
+          onDone={() => setReloadToken((n) => n + 1)}
+        />
       )}
 
       {defineOpen && (
@@ -362,5 +371,84 @@ function CalculateModal({
         </div>
       </form>
     </Modal>
+  );
+}
+
+function ManagementReviewCard({
+  siteId,
+  metrics,
+  onDone,
+}: {
+  siteId: string;
+  metrics: MetricRow[];
+  onDone: () => void;
+}) {
+  const withSnapshots = metrics.filter((m) => m.latest_snapshot?.id);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [sigOpen, setSigOpen] = useState(false);
+
+  function toggle(id: string) {
+    setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  }
+
+  return (
+    <Card pad className="mt-4">
+      <CardHeader title="Management review package" />
+      <p className="fs-2 text-muted mb-3">
+        Freezes the selected metric snapshots into one signed management-review package (Document 37). The
+        snapshot values themselves stay authoritative.
+      </p>
+      {withSnapshots.length === 0 ? (
+        <p className="hint">No calculated snapshots to include yet.</p>
+      ) : (
+        <>
+          <div className="mb-3">
+            {withSnapshots.map((m) => (
+              <label key={m.definition_id} className="flex items-center gap-2 fs-2" style={{ padding: "3px 0" }}>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(m.latest_snapshot!.id)}
+                  onChange={() => toggle(m.latest_snapshot!.id)}
+                />
+                <span className="tabular font-semibold">{m.metric_code}</span>
+                <span className="text-muted">
+                  {formatDate(m.latest_snapshot!.period_start)} – {formatDate(m.latest_snapshot!.period_end)}
+                </span>
+              </label>
+            ))}
+          </div>
+          <Button variant="primary" disabled={selected.length === 0} onClick={() => setSigOpen(true)}>
+            Freeze &amp; sign package ({selected.length})
+          </Button>
+        </>
+      )}
+
+      {sigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setSigOpen(false)}
+          onDone={() => {
+            setSigOpen(false);
+            setSelected([]);
+            onDone();
+          }}
+          challengePath="/quality-metrics/v1/management-review-packages/signature-challenges"
+          challengeBody={{ action: "management_review", snapshot_ids: selected }}
+          action="management_review"
+          title="Freeze management review package"
+          summary={`${selected.length} snapshot(s) will be frozen into an immutable, signed package.`}
+          submitLabel="Sign & freeze"
+          onSign={(p) =>
+            api.post("/quality-metrics/v1/management-review-packages", {
+              idempotency_key: p.idempotency_key,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+              site_id: siteId,
+              snapshot_ids: selected,
+            })
+          }
+        />
+      )}
+    </Card>
   );
 }

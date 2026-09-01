@@ -1,0 +1,191 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-016 — Validation Defect, Deviation, Test Exception & Remediation Management
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 94 (`services/gxp-api/app/modules/validation/
+    commands_exception.py`). 1 owned entity: `validation_exception`. Document 106 rows 162/164/165
+    ("Elevated authority defined by the record class") were resolved 2026-09-01 (SG-167) to `QA
+    Releaser` — `create`/`triage`/`retest-plan` all require an `Approved` signature from a QA Releaser
+    independent of `requested_by_user_id`. Row 163 (`disposition`) resolves for real too: `Released`
+    signature from an independent QA Releaser, reason mandatory.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/exceptions:
+    post:
+      operationId: postValidationExceptions
+      tags: [validation]
+      summary: Raise a validation exception (VEX-FR-001..003)
+      x-requirement-ids: [VEX-FR-001, VEX-FR-002, VEX-FR-003, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateExceptionCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: "SIGNATURE_POLICY_UNRESOLVED / SIGNATURE_INVALID.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (including signer not independent of requested_by_user_id).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/exceptions/{exception_id}/triage:
+    post:
+      operationId: postValidationExceptionTriage
+      tags: [validation]
+      summary: Triage a validation exception (VEX-FR-004/010)
+      x-requirement-ids: [VEX-FR-004, VEX-FR-010, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: exception_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TriageExceptionCommand' } } }
+      responses:
+        '200': { description: Triaged; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION / SIGNATURE_POLICY_UNRESOLVED / SIGNATURE_INVALID.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/exceptions/{exception_id}/retest-plan:
+    post:
+      operationId: postValidationExceptionRetestPlan
+      tags: [validation]
+      summary: Define a validation exception's retest plan (VEX-FR-011/012)
+      x-requirement-ids: [VEX-FR-011, VEX-FR-012, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: exception_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DefineRetestScopeCommand' } } }
+      responses:
+        '200': { description: Defined; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION / SIGNATURE_POLICY_UNRESOLVED / SIGNATURE_INVALID.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/exceptions/{exception_id}/disposition:
+    post:
+      operationId: postValidationExceptionDisposition
+      tags: [validation]
+      summary: Disposition a validation exception (VEX-FR-014..017)
+      x-requirement-ids: [VEX-FR-014, VEX-FR-015, VEX-FR-016, VEX-FR-017, SIG-FR-004, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: exception_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DispositionExceptionCommand' } } }
+      responses:
+        '200': { description: Dispositioned; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/releases/{release_ref}/exception-gate:
+    get:
+      operationId: getValidationExceptionGate
+      tags: [validation]
+      summary: Open blocking validation exceptions for a release (VEX-FR-016/022)
+      x-requirement-ids: [VEX-FR-016, VEX-FR-022]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: release_ref, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Gate view., content: { application/json: { schema: { $ref: '#/components/schemas/ExceptionGateView' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    CreateExceptionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, exception_type, source_execution_type, source_execution_id, original_evidence, severity, requested_by_user_id, challenge_id, reauth_password]
+      x-requirement-ids: [VEX-FR-001, VEX-FR-003, SIG-FR-004, SIG-FR-018]
+      properties:
+        idempotency_key: { type: string }
+        release_ref: { type: [string, 'null'] }
+        exception_type: { type: string, enum: [DEFECT, TEST_FAILURE, PROTOCOL_DEVIATION, ENVIRONMENT_DEVIATION, EVIDENCE_ISSUE, REQUIREMENT_GAP] }
+        source_execution_type: { type: string }
+        source_execution_id: { type: string, format: uuid }
+        original_evidence: { type: object }
+        affected_requirement_refs: { type: array, items: { type: string } }
+        severity: { type: string, enum: [LOW, MEDIUM, HIGH, CRITICAL] }
+        gxp_impact: { type: boolean, default: false }
+        release_impact: { type: string, default: BLOCKING, enum: [BLOCKING, NON_BLOCKING] }
+        # SG-167 resolved: Document 106 row 162 signs this create action itself (Approved, QA Releaser,
+        # MUST be independent of the requester) -- requested_by_user_id names the requester the signing
+        # actor must differ from; new_record_id lets the caller pre-generate the id so the signature
+        # challenge can bind to the record before it exists (same shape as CreatePerformanceScenarioCommand).
+        requested_by_user_id: { type: string, format: uuid }
+        new_record_id: { type: [string, 'null'], format: uuid }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    TriageExceptionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, exception_id, expected_version, severity, gxp_impact, release_impact, challenge_id, reauth_password]
+      x-requirement-ids: [VEX-FR-004]
+      properties:
+        idempotency_key: { type: string }
+        exception_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        severity: { type: string, enum: [LOW, MEDIUM, HIGH, CRITICAL] }
+        gxp_impact: { type: boolean }
+        release_impact: { type: string, enum: [BLOCKING, NON_BLOCKING] }
+        root_cause: { type: [string, 'null'] }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    DefineRetestScopeCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, exception_id, expected_version, retest_plan, challenge_id, reauth_password]
+      x-requirement-ids: [VEX-FR-011, VEX-FR-012]
+      properties:
+        idempotency_key: { type: string }
+        exception_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        retest_plan: { type: object }
+        fix_ref: { type: [string, 'null'] }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    DispositionExceptionCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, exception_id, expected_version, disposition, reason, challenge_id, reauth_password]
+      x-requirement-ids: [VEX-FR-014, VEX-FR-015]
+      properties:
+        idempotency_key: { type: string }
+        exception_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        disposition: { type: string, enum: [OPEN, FIX, RETEST, ACCEPTED_WITH_RATIONALE, DEFERRED_BLOCKING, CLOSED] }
+        residual_risk_rationale: { type: [string, 'null'] }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    ExceptionGateView:
+      type: object
+      additionalProperties: false
+      required: [release_ref, gate_state, blockers, accepted_with_rationale]
+      x-requirement-ids: [VEX-FR-016, VEX-FR-022]
+      properties:
+        release_ref: { type: string }
+        gate_state: { type: string, enum: [PASSED, BLOCKED] }
+        blockers: { type: array, items: { type: string } }
+        accepted_with_rationale: { type: array, items: { type: string } }

@@ -1,0 +1,175 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-001 — Validation Master Plan & Computer Software Assurance Strategy
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 79 (`services/gxp-api/app/modules/validation/
+    commands_plan.py`, `models.py`). 3 owned entities: `validation_master_plan`,
+    `validation_deliverable_requirement`, `validation_release_gate` — all PostgreSQL (GxP Core,
+    authoritative).
+
+
+    Document 106 row 144: `release` requires a `Released` signature from an independent QA Releaser,
+    reason mandatory. `create` carries no Document 106 row — RBAC-gated only. The release gate is
+    evaluated and recorded inside `release` itself (Document 79's own API list gives this entity only a
+    GET); the GET below recomputes it live.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/master-plans:
+    post:
+      operationId: postValidationMasterPlans
+      tags: [validation]
+      summary: Author or update a draft Validation Master Plan (VAL-FR-001..012)
+      x-requirement-ids: [VAL-FR-001, VAL-FR-005, VAL-FR-006, VAL-FR-007, VAL-FR-008, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateOrUpdateMasterPlanCommand' } } }
+      responses:
+        '200': { description: Created/updated; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/master-plans/{plan_id}/release:
+    post:
+      operationId: postValidationMasterPlanRelease
+      tags: [validation]
+      summary: Release a Validation Master Plan (VAL-FR-020/022/024)
+      x-requirement-ids: [VAL-FR-020, VAL-FR-022, VAL-FR-024, SIG-FR-004, MUT-FR-012, MUT-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: plan_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReleaseMasterPlanCommand' } } }
+      responses:
+        '200': { description: Released; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION / INVALID_TRANSITION / RELEASE_BLOCKERS_PRESENT., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/releases/{plan_id}/gate:
+    get:
+      operationId: getValidationReleaseGate
+      tags: [validation]
+      summary: Live release-gate evaluation for a plan (VAL-FR-020/024)
+      x-requirement-ids: [VAL-FR-020, VAL-FR-024]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: plan_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Gate evaluation., content: { application/json: { schema: { $ref: '#/components/schemas/ReleaseGateView' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /validation/v1/packages/{scope}:
+    get:
+      operationId: getValidationPackage
+      tags: [validation]
+      summary: Vendor/customer validation package view for a plan scope (VAL-FR-023)
+      x-requirement-ids: [VAL-FR-023]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: scope, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Package view., content: { application/json: { schema: { $ref: '#/components/schemas/PackageView' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /validation/v1/packages/{scope}/export:
+    get:
+      operationId: getValidationPackageExport
+      tags: [validation]
+      summary: CSV or PDF export of the vendor/customer validation package (VAL-FR-023)
+      x-requirement-ids: [VAL-FR-023]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: scope, in: path, required: true, schema: { type: string } }
+        - { name: format, in: query, required: false, schema: { type: string, enum: [csv, pdf], default: csv } }
+      responses:
+        '200': { description: "CSV file (text/csv) or PDF file (application/pdf) depending on `format`.", content: { text/csv: { schema: { type: string } }, application/pdf: { schema: { type: string, format: binary } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    DeliverableInput:
+      type: object
+      additionalProperties: false
+      required: [artifact_type, risk_condition, owner, evidence_type]
+      x-requirement-ids: [VAL-FR-006, VAL-FR-008]
+      properties:
+        artifact_type: { type: string }
+        risk_condition: { type: string }
+        owner: { type: string }
+        review_required: { type: boolean, default: false }
+        signature_required: { type: boolean, default: false }
+        evidence_type: { type: string }
+        release_blocker: { type: boolean, default: true }
+
+    CreateOrUpdateMasterPlanCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, plan_number, scope, methodology]
+      x-requirement-ids: [VAL-FR-001, VAL-FR-005, VAL-FR-006]
+      properties:
+        idempotency_key: { type: string }
+        plan_id: { type: [string, 'null'], format: uuid }
+        expected_version: { type: [integer, 'null'] }
+        plan_number: { type: string }
+        scope: { type: string }
+        regulatory_profiles: { type: array, items: { type: string } }
+        methodology: { type: string }
+        responsibilities: { type: object }
+        retention_class: { type: [string, 'null'] }
+        new_deliverables: { type: array, items: { $ref: '#/components/schemas/DeliverableInput' } }
+
+    ReleaseMasterPlanCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, plan_id, expected_version, reason, challenge_id, reauth_password]
+      x-requirement-ids: [VAL-FR-020, VAL-FR-024]
+      properties:
+        idempotency_key: { type: string }
+        plan_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+
+    ReleaseGateView:
+      type: object
+      additionalProperties: false
+      required: [plan_id, plan_state, blockers, gate_state, required_artifacts]
+      x-requirement-ids: [VAL-FR-020, VAL-FR-024]
+      properties:
+        plan_id: { type: string, format: uuid }
+        plan_state: { type: string }
+        blockers: { type: array, items: { type: string } }
+        gate_state: { type: string, enum: [PASSED, BLOCKED] }
+        required_artifacts: { type: array, items: { type: string } }
+
+    PackageView:
+      type: object
+      additionalProperties: false
+      required: [plan_number, state, scope, methodology, gate]
+      x-requirement-ids: [VAL-FR-023]
+      properties:
+        plan_number: { type: string }
+        state: { type: string }
+        scope: { type: string }
+        methodology: { type: string }
+        gate: { $ref: '#/components/schemas/ReleaseGateView' }

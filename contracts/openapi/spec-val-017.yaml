@@ -1,0 +1,258 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-017 — Validation Summary Report, Release-to-Production & Go-Live Authorization
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-14 Document 95 (`services/gxp-api/app/modules/validation/
+    commands_vsr.py`, `router_wp14.py`). 2 owned entities: `validation_summary_report`,
+    `validated_release_authorization`. Signatures (Document 106): row 169 `summary-reports/{id}/approve`
+    (`Approved`, independent QA Releaser), row 166 `releases/{id}/authorize` (`Released`, QA Releaser
+    independent of every production performer), row 167 `releases/{id}/deployment-check` (`Released`,
+    same). `summary-reports` (generation) is unsigned per function catalogue FN-0923 — Document 106
+    row 168's "Regulatory Affairs authorized submitter" signature is SG-170 (unresolved signer class).
+    `recordPostGoLiveVerification()` (FN-0922) and `PostGoLiveVerificationCompleted` are exposed at
+    `releases/{id}/post-go-live-verification` (Document 95 §8 "Post-Go-Live" screen; VSR-FR-023/024).
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/summary-reports:
+    post:
+      operationId: postValidationV1SummaryReports
+      tags: [validation]
+      summary: Generate a Validation Summary Report from authoritative validation artifacts (VSR-FR-001..013/020)
+      x-requirement-ids: [VSR-FR-001, VSR-FR-002, VSR-FR-003, VSR-FR-004, VSR-FR-005, VSR-FR-006, VSR-FR-007, VSR-FR-008, VSR-FR-009, VSR-FR-010, VSR-FR-011, VSR-FR-012, VSR-FR-013, VSR-FR-020, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GenerateValidationSummaryReportCommand' } } }
+      responses:
+        '200': { description: Generated; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED (missing known_limitations / evidence_manifest_ref / unrecognised recommendation)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/releases/{vsr_id}/go-live-readiness:
+    get:
+      operationId: getValidationV1ReleasesIdGoLiveReadiness
+      tags: [validation]
+      summary: Evaluate go-live prerequisites and blockers for a VSR (VSR-FR-015)
+      x-requirement-ids: [VSR-FR-015, VSR-FR-006, VSR-FR-007, VSR-FR-009]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vsr_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: training, in: query, required: false, schema: { type: string } }
+        - { name: production_config, in: query, required: false, schema: { type: string } }
+        - { name: backups, in: query, required: false, schema: { type: string } }
+        - { name: interfaces, in: query, required: false, schema: { type: string } }
+        - { name: support, in: query, required: false, schema: { type: string } }
+        - { name: monitoring, in: query, required: false, schema: { type: string } }
+        - { name: cutover_tasks, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { description: Go-live readiness view., content: { application/json: { schema: { $ref: '#/components/schemas/GoLiveReadinessView' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /validation/v1/summary-reports/{report_id}/approve:
+    post:
+      operationId: postValidationV1SummaryReportsIdApprove
+      tags: [validation]
+      summary: Approve a VSR with an APPROVED / CONDITIONAL / REJECTED decision (VSR-FR-014/018/019) — Document 106 row 169 signature
+      x-requirement-ids: [VSR-FR-014, VSR-FR-018, VSR-FR-019, SIG-FR-004, SIG-FR-006, SIG-FR-018, MUT-FR-009, MUT-FR-012, MUT-FR-013, MUT-FR-015]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: report_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveValidationSummaryCommand' } } }
+      responses:
+        '200': { description: Approved; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION | INVALID_TRANSITION | VALIDATION_SUMMARY_BLOCKED | SIGNATURE_CHALLENGE_INVALID., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED (non-independent approver / missing reason / condition shape)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/releases/{vsr_id}/authorize:
+    post:
+      operationId: postValidationV1ReleasesIdAuthorize
+      tags: [validation]
+      summary: Issue a validated release authorization bound to the exact release/config (VSR-FR-015..019) — Document 106 row 166 signature
+      x-requirement-ids: [VSR-FR-015, VSR-FR-016, VSR-FR-017, VSR-FR-018, VSR-FR-019, VSR-FR-020, SIG-FR-004, SIG-FR-006, SIG-FR-018, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vsr_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/IssueValidatedReleaseAuthorizationCommand' } } }
+      responses:
+        '200': { description: Authorized; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: INVALID_TRANSITION | GO_LIVE_NOT_READY | VALIDATION_SUMMARY_BLOCKED | SIGNATURE_CHALLENGE_INVALID., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED (missing release_identity fields / non-independent authorizer / missing reason)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/releases/{authorization_id}/deployment-check:
+    post:
+      operationId: postValidationV1ReleasesIdDeploymentCheck
+      tags: [validation]
+      summary: Verify the exact deployment against the validated release authorization (VSR-FR-016/017/022) — Document 106 row 167 signature
+      x-requirement-ids: [VSR-FR-016, VSR-FR-017, VSR-FR-022, SIG-FR-004, SIG-FR-006, SIG-FR-018, MUT-FR-009, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: authorization_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VerifyDeploymentAgainstValidationReleaseCommand' } } }
+      responses:
+        '200': { description: Deployment matches the validated release; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION | INVALID_TRANSITION | DEPLOYMENT_VALIDATION_MISMATCH | SIGNATURE_CHALLENGE_INVALID., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED (missing reason / non-independent signer)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/releases/{authorization_id}/post-go-live-verification:
+    post:
+      operationId: postValidationV1ReleasesIdPostGoLiveVerification
+      tags: [validation]
+      summary: Record post-go-live smoke / monitoring verification; on failure route to controlled rollback (VSR-FR-023/024)
+      x-requirement-ids: [VSR-FR-023, VSR-FR-024, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: authorization_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecordPostGoLiveVerificationCommand' } } }
+      responses:
+        '200': { description: Recorded; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION | INVALID_TRANSITION | POST_GO_LIVE_VERIFICATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: VALIDATION_FAILED (unrecognised outcome)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  schemas:
+    GenerateValidationSummaryReportCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [VSR-FR-001, VSR-FR-002, VSR-FR-013, VSR-FR-014, VSR-FR-020]
+      required: [idempotency_key, report_number, release_ref, environment, intended_use, config_scope, evidence_manifest_ref, recommendation, known_limitations]
+      properties:
+        idempotency_key: { type: string }
+        report_number: { type: string }
+        release_ref: { type: string }
+        environment: { type: string }
+        intended_use: { type: string }
+        config_scope: { type: string }
+        evidence_manifest_ref: { type: string }
+        recommendation: { type: string, enum: [RECOMMENDED, RECOMMENDED_WITH_CONDITIONS, NOT_RECOMMENDED] }
+        known_limitations: { type: array, items: { type: object } }
+        baselines: { type: object }
+        execution_summary: { type: object }
+        traceability_status: { type: object }
+        deviations: { type: array, items: { type: object } }
+        security_summary: { type: object }
+        performance_summary: { type: object }
+        dr_summary: { type: object }
+        migration_summary: { type: [object, "null"] }
+        part11_summary: { type: object }
+        customer_responsibilities: { type: array, items: { type: object } }
+        customer: { type: [string, "null"] }
+        site_id: { type: [string, "null"], format: uuid }
+        evidence_manifest: { type: array, items: { type: object } }
+        retention_class: { type: [string, "null"] }
+    ApproveValidationSummaryCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [VSR-FR-014, VSR-FR-018, VSR-FR-019, SIG-FR-004]
+      required: [idempotency_key, report_id, expected_version, reason, decision, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        report_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reason: { type: string }
+        decision: { type: string, enum: [APPROVED, CONDITIONAL, REJECTED] }
+        decision_conditions: { type: array, items: { type: object } }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+    IssueValidatedReleaseAuthorizationCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [VSR-FR-015, VSR-FR-016, VSR-FR-017, VSR-FR-019, SIG-FR-004]
+      required: [idempotency_key, vsr_id, authorization_number, environment, config_fingerprint, release_identity, artifact_digests, decision, go_live_gates, reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        vsr_id: { type: string, format: uuid }
+        authorization_number: { type: string }
+        environment: { type: string }
+        config_fingerprint: { type: string }
+        release_identity: { type: object }
+        artifact_digests: { type: object }
+        decision: { type: string, enum: [APPROVED, CONDITIONAL, REJECTED] }
+        go_live_gates: { type: object }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+        conditions: { type: array, items: { type: object } }
+        production_performer_user_ids: { type: array, items: { type: string } }
+        site_id: { type: [string, "null"], format: uuid }
+    VerifyDeploymentAgainstValidationReleaseCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [VSR-FR-016, VSR-FR-017, VSR-FR-022, SIG-FR-004]
+      required: [idempotency_key, authorization_id, expected_version, submitted_config_fingerprint, submitted_artifact_digests, reason, challenge_id, reauth_password]
+      properties:
+        idempotency_key: { type: string }
+        authorization_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        submitted_config_fingerprint: { type: string }
+        submitted_artifact_digests: { type: object }
+        reason: { type: string }
+        challenge_id: { type: string, format: uuid }
+        reauth_password: { type: string }
+        production_performer_user_ids: { type: array, items: { type: string } }
+    RecordPostGoLiveVerificationCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [VSR-FR-023, VSR-FR-024]
+      required: [idempotency_key, authorization_id, expected_version, outcome]
+      properties:
+        idempotency_key: { type: string }
+        authorization_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        outcome: { type: string, enum: [PASS, FAIL] }
+        smoke_results: { type: array, items: { type: object } }
+        monitoring_results: { type: array, items: { type: object } }
+        rollback_ref: { type: [string, "null"] }
+        incident_ref: { type: [string, "null"] }
+        change_ref: { type: [string, "null"] }
+        notes: { type: [string, "null"] }
+    GoLiveReadinessView:
+      type: object
+      additionalProperties: true
+      x-requirement-ids: [VSR-FR-015]
+      required: [vsr_id, prerequisites, blockers, ready]
+      properties:
+        vsr_id: { type: string, format: uuid }
+        release_ref: { type: string }
+        recommendation: { type: string }
+        prerequisites:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              status: { type: string, enum: [PASS, FAIL] }
+              detail: { type: [string, "null"] }
+        blockers: { type: array, items: { type: string } }
+        ready: { type: boolean }
+        evaluated_at: { type: string, format: date-time }

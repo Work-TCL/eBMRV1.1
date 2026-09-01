@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, canViewDevices, newIdempotencyKey } from "@/lib/api";
+import { api, ApiError, canCreateDevice, canViewDevices, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -85,6 +85,8 @@ export default function DevicesPage() {
         Document 12 exposes device units by serial rather than as a browsable register, so this page looks
         one up at a time. Component, assembly, test and inspection history is not built — see SG-049/SG-050.
       </p>
+
+      {canCreateDevice(me) && <CreateLotCard siteId={siteId} />}
 
       <Card pad className="mb-4">
         <form onSubmit={lookup} className="flex items-end gap-4">
@@ -230,5 +232,100 @@ function HoldModal({
         </div>
       </form>
     </Modal>
+  );
+}
+
+function CreateLotCard({ siteId }: { siteId: string | null }) {
+  const [productVersionId, setProductVersionId] = useState("");
+  const [batchId, setBatchId] = useState("");
+  const [udiDi, setUdiDi] = useState("");
+  const [lotId, setLotId] = useState<string | null>(null);
+  const [serials, setSerials] = useState("");
+  const [unitCount, setUnitCount] = useState<number | null>(null);
+  const { busy, error, run } = useCommand(() => undefined);
+
+  function createLot(e: React.FormEvent) {
+    e.preventDefault();
+    if (!siteId) return;
+    run(async () => {
+      const receipt = await api.post<MutationReceipt>("/devices/v1/lots", {
+        idempotency_key: newIdempotencyKey(),
+        site_id: siteId,
+        product_version_id: productVersionId.trim(),
+        batch_id: batchId.trim() || null,
+        udi_di: udiDi.trim() || null,
+      });
+      setLotId(receipt.aggregate_id);
+      setUnitCount(null);
+    });
+  }
+
+  function createUnits(e: React.FormEvent) {
+    e.preventDefault();
+    if (!lotId) return;
+    const units = serials
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((serial_number) => ({ serial_number }));
+    if (units.length === 0) return;
+    run(async () => {
+      const receipts = await api.post<MutationReceipt[]>("/devices/v1/units/bulk-create", {
+        idempotency_key: newIdempotencyKey(),
+        device_lot_id: lotId,
+        units,
+      });
+      setUnitCount(receipts.length);
+      setSerials("");
+    });
+  }
+
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="Device lot & unit assembly" />
+      <form onSubmit={createLot} className="grid grid-cols-3 gap-4 mt-3">
+        <Field label="Product version ID" required>
+          <Input value={productVersionId} onChange={(e) => setProductVersionId(e.target.value)} required />
+        </Field>
+        <Field label="Batch ID" hint="Optional link to the producing batch.">
+          <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} />
+        </Field>
+        <Field label="UDI-DI" hint="Optional.">
+          <Input value={udiDi} onChange={(e) => setUdiDi(e.target.value)} />
+        </Field>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <Button type="submit" variant="primary" disabled={busy || !productVersionId.trim() || !siteId}>
+            {busy ? "Working…" : "Create device lot"}
+          </Button>
+        </div>
+      </form>
+
+      {lotId && (
+        <div className="mt-4">
+          <Banner tone="ok" title="Device lot created">
+            Lot ID <span className="tabular">{lotId}</span>. Add serial units below.
+          </Banner>
+          <form onSubmit={createUnits} className="mt-3">
+            <Field label="Serial numbers" hint="One per line (or comma-separated).">
+              <textarea
+                className="input"
+                rows={4}
+                value={serials}
+                onChange={(e) => setSerials(e.target.value)}
+                placeholder={"SN-000001\nSN-000002"}
+              />
+            </Field>
+            <Button type="submit" variant="secondary" disabled={busy || !serials.trim()}>
+              {busy ? "Working…" : "Bulk-create units"}
+            </Button>
+            {unitCount !== null && (
+              <p className="fs-2 mt-2">Created {unitCount} unit{unitCount === 1 ? "" : "s"}.</p>
+            )}
+          </form>
+        </div>
+      )}
+
+      {error && <p className="error-text mt-3">{error}</p>}
+    </Card>
   );
 }

@@ -1,0 +1,183 @@
+openapi: 3.1.0
+info:
+  title: SPEC-VAL-003 — Requirements, Design Inputs & Validation Traceability Management
+  version: 0.1.0
+  description: >
+    Document 113 contract for WP-12 Document 81 (`services/gxp-api/app/modules/validation/
+    commands_trace.py`). 3 owned entities: `validation_requirement`, `trace_link`,
+    `requirement_baseline`. Document 106 has no row for any SPEC-VAL-003 action — every operation is
+    RBAC-gated only.
+tags:
+  - name: validation
+
+paths:
+  /validation/v1/requirements:ingest:
+    post:
+      operationId: postValidationRequirementsIngest
+      tags: [validation]
+      summary: Ingest/version controlled requirements (REQ-FR-001/002/005/011)
+      x-requirement-ids: [REQ-FR-001, REQ-FR-002, REQ-FR-005, REQ-FR-011, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/IngestRequirementsCommand' } } }
+      responses:
+        '200': { description: Ingested; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/trace-links:
+    post:
+      operationId: postValidationTraceLinks
+      tags: [validation]
+      summary: Create a requirement/design/test/defect trace link (REQ-FR-006..009/013)
+      x-requirement-ids: [REQ-FR-006, REQ-FR-007, REQ-FR-008, REQ-FR-009, REQ-FR-013]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateTraceLinkCommand' } } }
+      responses:
+        '200': { description: Created; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/baselines:
+    post:
+      operationId: postValidationBaselines
+      tags: [validation]
+      summary: Freeze a requirement baseline for a release (REQ-FR-010/014/021)
+      x-requirement-ids: [REQ-FR-010, REQ-FR-014, REQ-FR-021]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/FreezeRequirementBaselineCommand' } } }
+      responses:
+        '200': { description: Frozen; MutationReceipt., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: VALIDATION_FAILED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /validation/v1/traceability:
+    get:
+      operationId: getValidationTraceability
+      tags: [validation]
+      summary: Traceability summary for a frozen baseline (REQ-FR-013/015)
+      x-requirement-ids: [REQ-FR-013, REQ-FR-015]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: baseline_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Traceability summary., content: { application/json: { schema: { $ref: '#/components/schemas/TraceabilitySummary' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /validation/v1/traceability/export:
+    get:
+      operationId: getValidationTraceabilityExport
+      tags: [validation]
+      summary: CSV or PDF export of the authoritative traceability graph for a baseline (REQ-FR-022/023)
+      x-requirement-ids: [REQ-FR-022, REQ-FR-023]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: baseline_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: format, in: query, required: false, schema: { type: string, enum: [csv, pdf], default: csv } }
+      responses:
+        '200': { description: "CSV file (text/csv) or PDF file (application/pdf) depending on `format`.", content: { text/csv: { schema: { type: string } }, application/pdf: { schema: { type: string, format: binary } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /validation/v1/traceability/gaps:
+    get:
+      operationId: getValidationTraceabilityGaps
+      tags: [validation]
+      summary: Live untested-requirement gap report for a baseline (REQ-FR-014)
+      x-requirement-ids: [REQ-FR-014]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: baseline_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Gap report., content: { application/json: { schema: { $ref: '#/components/schemas/GapReport' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    RequirementInput:
+      type: object
+      additionalProperties: false
+      required: [requirement_code, source_document, source_section, text, requirement_class]
+      x-requirement-ids: [REQ-FR-001, REQ-FR-002, REQ-FR-005]
+      properties:
+        requirement_code: { type: string }
+        source_document: { type: string }
+        source_section: { type: string }
+        text: { type: string }
+        requirement_class: { type: string }
+        regulatory_source: { type: [string, 'null'] }
+        binding_status: { type: string, default: BINDING, enum: [BINDING, GUIDANCE] }
+        acceptance_criteria: { type: [string, 'null'] }
+
+    IngestRequirementsCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, requirements]
+      x-requirement-ids: [REQ-FR-001, REQ-FR-011]
+      properties:
+        idempotency_key: { type: string }
+        requirements: { type: array, minItems: 1, items: { $ref: '#/components/schemas/RequirementInput' } }
+
+    CreateTraceLinkCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, source_type, source_id, source_version, target_type, target_id, target_version, relation_type]
+      x-requirement-ids: [REQ-FR-006, REQ-FR-007, REQ-FR-008, REQ-FR-009]
+      properties:
+        idempotency_key: { type: string }
+        source_type: { type: string }
+        source_id: { type: string }
+        source_version: { type: string }
+        target_type: { type: string }
+        target_id: { type: string }
+        target_version: { type: string }
+        relation_type: { type: string, enum: [RISK, DESIGN, TEST, DEFECT] }
+
+    FreezeRequirementBaselineCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, release_scope, requirement_refs]
+      x-requirement-ids: [REQ-FR-010, REQ-FR-021]
+      properties:
+        idempotency_key: { type: string }
+        release_scope: { type: string }
+        customer_scope: { type: [string, 'null'] }
+        requirement_refs: { type: array, minItems: 1, items: { type: object } }
+        exclusions: { type: array, items: { type: object } }
+
+    TraceabilitySummary:
+      type: object
+      additionalProperties: false
+      required: [release_scope, requirement_count, exclusion_count, gap_count, baseline_hash]
+      x-requirement-ids: [REQ-FR-013, REQ-FR-015]
+      properties:
+        release_scope: { type: string }
+        requirement_count: { type: integer }
+        exclusion_count: { type: integer }
+        gap_count: { type: integer }
+        baseline_hash: { type: string }
+
+    GapReport:
+      type: object
+      additionalProperties: false
+      required: [release_scope, gaps]
+      x-requirement-ids: [REQ-FR-014]
+      properties:
+        release_scope: { type: string }
+        gaps: { type: array, items: { type: object } }

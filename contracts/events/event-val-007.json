@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-007.json",
+  "title": "SPEC-VAL-007 — Performance Qualification (PQ), UAT & Business Process Verification Events",
+  "description": "Document 113 event contract for WP-14 Document 85 (app/modules/validation/commands_pq.py). Every event is emitted transactionally through the Mutation Gateway outbox in the same PostgreSQL transaction as the domain write (EVT-FR-002). PQParticipantsAssigned is named by the spec's own §4 function contract catalogue for assignPQParticipants(); PQUsabilityObservationRecorded is emitted once per usability observation captured inside executePQScenario() (recordPQUsabilityObservation, FN-0826, has no dedicated §7 endpoint).",
+  "x-requirement-ids": ["PQ-FR-001", "PQ-FR-004", "PQ-FR-015", "PQ-FR-018", "PQ-FR-019", "EVT-FR-001", "EVT-FR-002"],
+  "$defs": {
+    "PQScenarioCreatedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scenario_number", "process_area"],
+      "properties": {
+        "scenario_number": { "type": "string" },
+        "process_area": { "type": "string" },
+        "is_uat": { "type": "boolean" },
+        "is_template": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["PQ-FR-001", "PQ-FR-002", "PQ-FR-017", "PQ-FR-020"]
+    },
+    "PQParticipantsAssignedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "participant_count"],
+      "properties": {
+        "state": { "type": "string" },
+        "participant_count": { "type": "integer", "minimum": 0 }
+      },
+      "x-requirement-ids": ["PQ-FR-004", "PQ-FR-005"]
+    },
+    "PQScenarioCompletedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scenario_id", "result", "go_live_blocker"],
+      "properties": {
+        "scenario_id": { "type": "string", "format": "uuid" },
+        "result": { "type": "string", "enum": ["COMPLETED", "FAILED", "INTERRUPTED"] },
+        "go_live_blocker": { "type": "boolean" },
+        "observation_count": { "type": "integer", "minimum": 0 }
+      },
+      "x-requirement-ids": ["PQ-FR-003", "PQ-FR-016", "PQ-FR-018"]
+    },
+    "PQUsabilityObservationRecordedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["observation_index"],
+      "properties": {
+        "observation_index": { "type": "integer", "minimum": 0 },
+        "severity": { "type": ["string", "null"] },
+        "impact": { "type": ["string", "null"] },
+        "change_candidate": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["PQ-FR-015"]
+    },
+    "PQApprovedPayload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "decision"],
+      "properties": {
+        "state": { "type": "string", "enum": ["ACCEPTED", "REJECTED"] },
+        "decision": { "type": "string", "enum": ["ACCEPTED", "REJECTED"] }
+      },
+      "x-requirement-ids": ["PQ-FR-018", "PQ-FR-019"]
+    }
+  },
+  "events": [
+    { "event_type": "PQScenarioCreated", "schema_version": "1.0", "producer": "SPEC-VAL-007", "aggregate_type": "pq_scenario", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/PQScenarioCreatedPayload" }, "x-requirement-ids": ["PQ-FR-001"] },
+    { "event_type": "PQParticipantsAssigned", "schema_version": "1.0", "producer": "SPEC-VAL-007", "aggregate_type": "pq_scenario", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/PQParticipantsAssignedPayload" }, "x-requirement-ids": ["PQ-FR-004"] },
+    { "event_type": "PQScenarioCompleted", "schema_version": "1.0", "producer": "SPEC-VAL-007", "aggregate_type": "pq_execution", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/PQScenarioCompletedPayload" }, "x-requirement-ids": ["PQ-FR-003"] },
+    { "event_type": "PQUsabilityObservationRecorded", "schema_version": "1.0", "producer": "SPEC-VAL-007", "aggregate_type": "pq_execution", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/PQUsabilityObservationRecordedPayload" }, "x-requirement-ids": ["PQ-FR-015"] },
+    { "event_type": "PQApproved", "schema_version": "1.0", "producer": "SPEC-VAL-007", "aggregate_type": "pq_scenario", "dedupe_key": "event_id", "payload": { "$ref": "#/$defs/PQApprovedPayload" }, "x-requirement-ids": ["PQ-FR-019"] }
+  ]
+}
