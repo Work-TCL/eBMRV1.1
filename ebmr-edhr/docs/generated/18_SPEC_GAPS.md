@@ -1,7 +1,7 @@
 # 18 — SPEC_GAP Register
 
 **Package:** eBMR / eDHR Claude Code Construction Package  
-**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open) — all others open  
+**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open); SG-167 added 2026-09-01 (Document 105 signature policy backfill, consolidating the code-only "SG-168" reference — dependent content_challenge_hash() defect fixed + 5 signature-challenge endpoints added; policy-data half open); SG-169 added 2026-09-01, PARTIALLY RESOLVED (WP-12/14 PDF export dependency — ReportLab approved and pinned; live SCA/license scan still outstanding); SG-170 added 2026-09-01 (Document 106 row 168 unresolvable VSR-generation signer class; implemented unsigned per the function catalogue); SG-171 added 2026-09-01, RESOLVED (ai_governance router built and wired into main.py — Document 105's 13 functions were previously unreachable via HTTP); SG-172 added 2026-09-01 (validation platform router was never wired into main.py — lost in the 2026-09-01 git-filter-repo incident — now fixed; 24 signature-challenge endpoints added for its 26 signed pairs; policy-data half open) — all others open  
 **Specification baseline:** Documents 01–105, baseline date 2026-08-20  
 **Purpose:** Every missing or conflicting decision found in Documents 01–105, with impact, options and the document that resolves it.
 
@@ -10075,5 +10075,416 @@ options:
 blocking: false
 owner: Head of Quality + Security Owner (approved baseline authors)
 resolution_document: "— (open)"
+status: OPEN
+```
+
+### SG-167 — Document 105 (SPEC-AI-001) signature policy: zero SPEC-AI-001 rows in Document 106, so all 5 signed AI-governance functions are unsatisfiable (also referenced in code as SG-168)
+
+**Note on numbering:** this gap is referenced in `app/modules/ai_governance/ARCHITECTURE.md` as SG-167 and,
+separately, in `app/modules/ai_governance/commands.py`'s docstring, `app/mutation/errors.py`'s Document 105
+error-class header comment and `tests/test_ai_governance.py` as SG-168 — the same underlying gap acquired
+two numbers across an earlier session boundary (the errors.py comment records that "SG-168's history...
+the entry itself was lost to the same status-file lost-update race" referenced in this project's memory).
+**SG-167 is the canonical number for this entry going forward**; code comments citing SG-168 describe the
+identical gap and are not a separate, unresolved item.
+
+`docs/generated/03_FUNCTION_CATALOGUE.csv` marks 5 of the 13 AI-governance functions "SIGNATURE POLICY
+LOOKUP REQUIRED (Doc 04 SIG-FR-004; baseline values -> SG-004)": `approveAIModelDeployment`,
+`authorizeAIToolCall`, `recordHumanAIDisposition`, `evaluateAIReleaseGate`, `switchAIProviderProfile`.
+Each correctly calls `signature_service.resolve_signature_requirement()` before committing (Document 106
+SIGP-FR-004: signature need is resolved from policy data, never a code conditional) — but Document 106 has
+**zero SPEC-AI-001 rows** (checked: no `ai_model_deployment`/`ai_tool_call`/`ai_disposition`/
+`ai_release_gate`/`ai_provider_switch` entries anywhere in `specs/Documents_106_115/Document_106...`).
+Fail-closed resolution means all 5 raise `SIGNATURE_POLICY_UNRESOLVED` on every real invocation, exactly
+as WP-01's originally-unresolved signed commands and WP-05's SG-138 did.
+
+| Record type | Action |
+|---|---|
+| `ai_model_deployment` | approve |
+| `ai_tool_call` | authorize |
+| `ai_disposition` | record |
+| `ai_release_gate` | evaluate |
+| `ai_provider_switch` | switch |
+
+A second, dependent engineering defect was found and fixed this session (2026-09-01): `_apply_signature()`
+in `commands.py` bound its post-consumption hash check to
+`sha256_hex(cmd.model_dump(mode="json"))` — the **full** command payload, including the `challenge_id` and
+`reauth_password` fields the challenge-issuing caller cannot know in advance (the challenge doesn't exist
+yet when it's requested). This made the ceremony structurally unsatisfiable even once a Document 106 row
+existed: no caller could ever compute a hash at challenge-request time that would match the hash computed
+at consume time. Fixed by extracting `content_challenge_hash()`, which excludes
+`{"challenge_id", "reauth_password", "idempotency_key"}` from the hashed payload — the same shape
+`app.modules.validation.commands_vsr.create_challenge_hash()` already used for its own signed-CREATE path.
+Also missing until this session: no `ai_governance` router existed at all (see SG-171 below), so there was
+no HTTP entry point to request a challenge from regardless. Five `POST /ai-governance/v1/{resource}/
+signature-challenges` endpoints now exist (`app/modules/ai_governance/router.py`), each accepting a body
+that mirrors its command's non-transport fields and returning `SIGNATURE_POLICY_UNRESOLVED` (409) exactly
+as before, per the SG-138 precedent — verified directly: `resolve_signature_requirement()` is still called
+unconditionally and still raises with zero Document 106 rows present.
+
+Not guessed, per CLAUDE.md §4: signature meaning, required signer role, independent-signer requirement and
+reason-required flag for these 5 pairs are regulated decisions reserved to Document 106's approver.
+
+```yaml
+spec_gap_id: SG-167
+title: "Document 105 signature policy: zero SPEC-AI-001 rows in Document 106, so 5 signed AI-governance functions are unsatisfiable"
+class: R  # signature meaning, signer role and independence are regulated decisions
+description: >
+  approveAIModelDeployment, authorizeAIToolCall, recordHumanAIDisposition, evaluateAIReleaseGate and
+  switchAIProviderProfile each resolve signature requirement from Document 106 policy at commit time, but
+  no ai_model_deployment/ai_tool_call/ai_disposition/ai_release_gate/ai_provider_switch row exists.
+  Fail-closed resolution blocks all 5 (record_type, action) pairs with SIGNATURE_POLICY_UNRESOLVED. The
+  dependent engineering defects (unreachable challenge hash binding; no HTTP router) are now fixed.
+source_documents:
+  - Document 106 (signature policy) SIGP-FR-004
+  - Document 105 (SPEC-AI-001) AI-FR-006/007/009/010/034/054
+affected_modules:
+  - SPEC-AI-001
+affected_functions:
+  - app.modules.ai_governance.commands.approve_ai_model_deployment
+  - app.modules.ai_governance.commands.authorize_ai_tool_call
+  - app.modules.ai_governance.commands.record_human_ai_disposition
+  - app.modules.ai_governance.commands.evaluate_ai_release_gate
+  - app.modules.ai_governance.commands.switch_ai_provider_profile
+why_material: >
+  Signature meaning is the regulatory content of a Part 11 signature. Whether tool authorization, an AI
+  advisory disposition or a release-gate decision needs an independent second signer is an SoD decision.
+  Both are reserved to Document 106's named approver; inventing them would fabricate the attestation text
+  on AI-governance decisions that gate production model/tool use.
+risk_if_guessed: >
+  A guessed meaning would put words in a signer's mouth on an AI model-deployment approval or an AI
+  release-gate decision. A guessed independence flag could silently permit an AI use-case's own risk
+  assessor to also authorize its production model deployment.
+options:
+  - (A) Leave the 5 pairs unsatisfiable; SIGNATURE_POLICY_UNRESOLVED surfaces verbatim — current
+    behaviour, recommended.
+  - (B) Seed signature_required=False rows to unblock (rejected — an affirmative regulated decision no
+    approver has made; would let a production AI model/tool go live unsigned).
+  - (C) Copy meanings from an analogous seeded row such as batch.release (rejected — a batch release and
+    an AI model deployment approval are different attestations).
+blocking: true  # the affected transitions cannot be completed by any actor
+owner: Head of Quality (approver) + Security Owner + AI governance module owner
+resolution_document: "Document 106 (signature policy) — extension still required for the policy-data half (blocking). Engineering half resolved 2026-09-01: content_challenge_hash() fix + app/modules/ai_governance/router.py's 5 signature-challenge endpoints."
+status: OPEN
+```
+
+### SG-168 — (superseded — see SG-167)
+
+This number is intentionally left as a pointer rather than a duplicate entry: code written before this
+session's SPEC_GAPS.md backfill cites "SG-168" for the Document 105 signature-policy gap now formally
+recorded as **SG-167** above. No separate gap exists under SG-168.
+
+### SG-169 — WP-12/WP-14 export endpoints need a PDF-rendering dependency with no approved baseline entry
+
+`REQ-FR-022` (`GET /validation/v1/traceability/export`) and `VAL-FR-023`
+(`GET /validation/v1/packages/{scope}/export`) both name PDF as an acceptable export format alongside
+CSV/JSON. CSV was implemented with the stdlib `csv` module (no new dependency); PDF rendering has no
+component anywhere in `docs/generated/40_SBOM_LICENSE_DEPENDENCY_REGISTER.md`'s frozen technology
+baseline (Document 02 §6.1), so a new third-party dependency is required — which CLAUDE.md §9 and
+Document 104 (DEP-FR-017/018) require justifying before adding, not guessing into `pyproject.toml`.
+
+**RESOLVED 2026-09-01.** Full options analysis (WeasyPrint / ReportLab / fpdf2 / CSV-only) recorded in
+`work-packages/WP-12/14_DEPENDENCY_JUSTIFICATION_SG169.md`; **ReportLab (open-source core,
+`reportlab>=5.0,<6.0`)** recommended — BSD-style permissive license (no copyleft review, unlike fpdf2's
+LGPL), pure-Python with no new system libraries (unlike WeasyPrint's Pango/Cairo/GDK-PixBuf chain), and a
+Platypus `Table`/`Paragraph` flowable model that fits both export payloads' plain tabular/paragraph shape.
+**APPROVED by the project owner 2026-09-01**; pinned in `services/gxp-api/pyproject.toml` / `uv.lock`.
+Shared renderer: `app.modules.validation.shared.render_pdf_report()`, used by both
+`export_package_pdf()` and `export_traceability_pdf()`. One step from the justification document's §7
+remains outstanding: a live SCA/license scan against the exact pinned version, to be attached to
+`40_SBOM_LICENSE_DEPENDENCY_REGISTER.md` as the SBOM evidence of record (the justification document's own
+license/CVE claims are disclosed as training-knowledge, not a live scan, per CLAUDE.md §5).
+
+```yaml
+spec_gap_id: SG-169
+title: "WP-12/WP-14 export endpoints need a PDF-rendering dependency with no approved baseline entry"
+class: D  # dependency addition requiring Document 104 justification
+description: >
+  REQ-FR-022 and VAL-FR-023 name PDF as an acceptable export format; no PDF-rendering component exists in
+  the approved technology baseline. Resolved by adding reportlab (BSD-style, pure-Python) per Document 104,
+  approved by the project owner 2026-09-01.
+source_documents:
+  - Document 104 (SPEC-ENG-008) DEP-FR-001/004/006/017/018
+  - Document 81 (SPEC-VAL-003) REQ-FR-022
+  - Document 79 (SPEC-VAL-001) VAL-FR-023
+affected_modules:
+  - SPEC-VAL-001
+  - SPEC-VAL-003
+affected_functions:
+  - app.modules.validation.commands_plan.export_package_pdf
+  - app.modules.validation.commands_trace.export_traceability_pdf
+  - app.modules.validation.shared.render_pdf_report
+why_material: >
+  Document 104 requires need/alternatives/license/security/SBOM justification before any dependency is
+  added; a PDF-rendering library was not previously part of the approved baseline.
+risk_if_guessed: >
+  Adding an unreviewed dependency without a license/CVE/maintenance assessment risks an unapproved
+  copyleft obligation (e.g. fpdf2's LGPL) or an unassessed native-library attack surface entering the SBOM.
+options:
+  - (A) ReportLab open-source core — approved and pinned, recommended.
+  - (B) WeasyPrint — rejected, heavier native-library (Pango/Cairo/GDK-PixBuf) footprint for one feature.
+  - (C) fpdf2 — rejected without legal review, LGPL-3.0-or-later copyleft.
+  - (D) CSV-only (do nothing) — rejected, leaves REQ-FR-022/VAL-FR-023's PDF requirement unimplemented.
+blocking: false
+owner: Project owner (Document 104 approver) + Security Owner (SCA/license scan, outstanding)
+resolution_document: "work-packages/WP-12/14_DEPENDENCY_JUSTIFICATION_SG169.md — approved 2026-09-01; live SCA/license scan against the pinned version still outstanding."
+status: PARTIALLY RESOLVED
+```
+
+### SG-170 — Document 106 row 168 names an unresolvable signer class for `generateValidationSummaryReport()`, conflicting with every other validation module's unsigned-authoring convention
+
+Document 106 row 168 lists an `Approved` signature by a "Regulatory Affairs authorized submitter" for
+`POST /validation/v1/summary-reports` (VSR generation, FN-0923). `03_FUNCTION_CATALOGUE.csv` marks this
+function "evaluate via policy map", **not** "SIGNATURE POLICY LOOKUP REQUIRED" (unlike FN-0925/0926/0927,
+the VSR's own approve/authorize/deployment-check functions) — and "Regulatory Affairs authorized submitter"
+has no corresponding platform role anywhere in `services/gxp-api/scripts/seed.py`'s 26 seeded roles. Every
+other WP-12/WP-14 validation module follows the same convention: authoring/generation is unsigned and only
+the subsequent approve/release/authorize step is signed (e.g. `create_test_definition` unsigned,
+`approve_test_definition` signed; `create_iq_protocol` unsigned, `approve_iq_execution` signed). Treating
+row 168 as authoritative would make VSR generation the sole exception to that pattern, for a signer role
+that cannot be assigned.
+
+`generateValidationSummaryReport()` is implemented **unsigned, RBAC-gated only** (`evaluate_policy(...,
+action="validation.vsr.manage", ...)`), following the function catalogue over the Document 106 row —
+the real Part 11 sign point for the VSR is `approveValidationSummaryReport()` (row 169, resolvable, and
+already SIGNATURE POLICY LOOKUP REQUIRED per the function catalogue).
+
+```yaml
+spec_gap_id: SG-170
+title: "Document 106 row 168 names an unresolvable signer class for generateValidationSummaryReport(), conflicting with the function catalogue and every other validation module's unsigned-authoring convention"
+class: R  # signer role / signature requirement is a regulated decision
+description: >
+  Document 106 row 168 signs VSR generation with a "Regulatory Affairs authorized submitter" role that has
+  no platform mapping; the function catalogue marks the same function unsigned. Implemented unsigned,
+  matching the function catalogue and this module's own authoring/approve-split convention.
+source_documents:
+  - Document 106 (signature policy) row 168
+  - Document 95 (SPEC-VAL-017) VSR-FR-014
+  - docs/generated/03_FUNCTION_CATALOGUE.csv FN-0923
+affected_modules:
+  - SPEC-VAL-017
+affected_functions:
+  - app.modules.validation.commands_vsr.generate_validation_summary_report
+why_material: >
+  Whether a function requires a Part 11 signature, and which signer role/class may provide it, is a
+  regulated decision reserved to Document 106's approver — a role with no platform mapping cannot be
+  silently substituted with a different one without that approver's decision.
+risk_if_guessed: >
+  Inventing a substitute signer role (e.g. mapping "Regulatory Affairs authorized submitter" to QA
+  Releaser) would fabricate who Document 106 intended to attest to VSR generation, and would diverge from
+  the function catalogue's own classification of this function as unsigned.
+options:
+  - (A) Implement unsigned per the function catalogue, leave row 168 open for the approver to reconcile —
+    current behaviour, recommended.
+  - (B) Invent a "Regulatory Affairs authorized submitter" platform role and sign generation with it
+    (rejected — fabricates a role and a signature requirement Document 106's approver did not resolve to
+    a usable role).
+  - (C) Reuse QA Releaser for row 168 as a stand-in (rejected — conflates two different signer classes
+    without the approver's decision).
+blocking: false  # VSR generation is functional unsigned per the function catalogue; only row 168's own resolution is open
+owner: Head of Quality (approver) + Regulatory Affairs
+resolution_document: "Document 106 (signature policy) — either retire row 168 or supply a platform-mapped signer role and mark FN-0923 SIGNATURE POLICY LOOKUP REQUIRED to match."
+status: OPEN
+```
+
+### SG-171 — Document 105's "APIS (0)" / Document 113's silence leaves all 13 AI-governance functions with no HTTP entry point
+
+`app/modules/ai_governance/models.py` and `ARCHITECTURE.md` already established (WP-13 build) that
+Document 105's own "DATA MODEL (0 entities)" / "APIS (0)" / "EVENTS (0)" lines are a Phase-0 generation
+gap, not a deliberate zero-storage design — `04_DATA_MODEL_CATALOGUE.md` / `05_DATABASE_OWNERSHIP_
+MATRIX.md` / `06_API_CATALOGUE.yaml` / `07_EVENT_CATALOGUE.yaml` all have zero SPEC-AI-001 rows at all,
+which `03_FUNCTION_CATALOGUE.csv` FN-1005..FN-1017 resolves unambiguously (every function names a
+Mutation Gateway transaction, an output type and an emitted event). That reasoning justified building the
+11-table `ai_governance` schema and the 13 command functions, but as of the start of this session **no
+`app/modules/ai_governance/router.py` existed and the module was not wired into `main.py`** — 13 fully
+implemented, tested Mutation Gateway commands had no caller-reachable entry point at all. A Mutation
+Gateway command with no HTTP route is unreachable by any UI, script or integration; this cannot be what
+either the function catalogue or Document 105's own text intended, and is a materially different
+situation from `app.modules.deployment`, which explicitly states "0 HTTP APIs -- CI/installer tooling
+calls these directly" as a deliberate design (verified by reading that module's own docstrings before
+treating the two as parallel).
+
+**RESOLVED 2026-09-01.** `app/modules/ai_governance/router.py` added: one route per function (mostly thin
+wrappers, since `evaluate_policy()` is already called inside each command function), plus `GET` list/detail
+reads for the three highest-value browse surfaces (`use-cases`, `model-deployments`, `advisories` — not
+all 11 tables, matching the proportionality every other "module built this pass" phase in this project
+used), plus the 5 signature-challenge endpoints closing SG-167's dependent defect. Wired into `main.py`.
+`execute_ai_advisory()`/`run_ai_evaluation_suite()` are passed stand-in `model_client`/`evaluator`
+callables that always raise `DependencyUnavailableError`, since no live AI provider is configured in this
+environment (per `ARCHITECTURE.md`'s own "Known limitations" — not invented here) — this routes through
+`execute_ai_advisory()`'s existing AI-FR-041 fail-closed handling (writes `status=UNAVAILABLE`, never a
+guessed result) rather than fabricating an AI output or evaluation score.
+
+```yaml
+spec_gap_id: SG-171
+title: "Document 105's \"APIS (0)\" / Document 113's silence leaves all 13 AI-governance functions with no HTTP entry point"
+class: A  # architecture/API-surface resolution, not an invented regulated behaviour
+description: >
+  04_DATA_MODEL_CATALOGUE.md/05_DATABASE_OWNERSHIP_MATRIX.md/06_API_CATALOGUE.yaml/07_EVENT_CATALOGUE.yaml
+  have zero SPEC-AI-001 rows -- an incomplete Phase-0 artefact per the module's own prior analysis, not a
+  deliberate zero-HTTP-surface design (contrast with app.modules.deployment, which explicitly states 0 HTTP
+  APIs). All 13 FN-1005..FN-1017 Mutation Gateway commands existed with no router; now resolved with
+  app/modules/ai_governance/router.py wired into main.py.
+source_documents:
+  - Document 105 (SPEC-AI-001)
+  - docs/generated/03_FUNCTION_CATALOGUE.csv FN-1005..FN-1017
+  - docs/generated/06_API_CATALOGUE.yaml (zero SPEC-AI-001 rows, checked)
+affected_modules:
+  - SPEC-AI-001
+affected_functions:
+  - app.modules.ai_governance.commands.register_ai_use_case
+  - app.modules.ai_governance.commands.assess_ai_use_case_risk
+  - app.modules.ai_governance.commands.approve_ai_model_deployment
+  - app.modules.ai_governance.commands.build_ai_request_context
+  - app.modules.ai_governance.commands.execute_ai_advisory
+  - app.modules.ai_governance.commands.authorize_ai_tool_call
+  - app.modules.ai_governance.commands.record_human_ai_disposition
+  - app.modules.ai_governance.commands.run_ai_evaluation_suite
+  - app.modules.ai_governance.commands.evaluate_ai_release_gate
+  - app.modules.ai_governance.commands.detect_prompt_injection
+  - app.modules.ai_governance.commands.switch_ai_provider_profile
+  - app.modules.ai_governance.commands.retire_ai_use_case
+  - app.modules.ai_governance.commands.generate_ai_governance_package
+why_material: >
+  Whether an approved-but-incomplete spec artefact ("APIS (0)") should be read literally as "build no
+  router" or as a Phase-0 documentation gap is an architecture-scope judgement, not an invented regulated
+  behaviour -- no signature policy, authorization rule, retention rule, precision rule or AI decision
+  authority was invented to resolve it; every endpoint still enforces exactly the RBAC/signature/audit
+  behaviour already coded in commands.py.
+risk_if_guessed: >
+  Leaving the module unreachable would mean 13 built, tested Mutation Gateway commands (including the AI
+  governance register, risk assessment and evidence-package functions Document 105 requires) could never
+  actually be exercised by any caller -- a worse outcome than the API-surface judgement call made here.
+options:
+  - (A) Build the router -- selected, per the same Phase-0-gap reasoning already established for this
+    module's data model in ARCHITECTURE.md.
+  - (B) Leave it as-is (no router) -- rejected; unlike app.modules.deployment, nothing in Document 105 or
+    the function catalogue states these functions are meant to be unreachable via HTTP.
+blocking: false
+owner: AI governance module owner
+resolution_document: "app/modules/ai_governance/router.py, wired into app/main.py (2026-09-01)."
+status: RESOLVED
+```
+
+### SG-172 — The WP-12/WP-14 validation platform router existed but was never wired into `main.py`, and none of its 26 signed record-type/action pairs had a signature-challenges endpoint
+
+Discovered while resolving SG-167/SG-171 for the AI-governance module: `app/modules/validation/router.py`
+(67 routes) and `router_wp14.py` (15 routes) existed, fully built and passing their own test suites, but
+**neither was imported or `include_router()`-ed in `app/main.py`** — the entire WP-12/WP-14 validation
+platform (Documents 79-96) was unreachable via HTTP despite being `CODE_COMPLETE`. Per this project's
+memory of the git-filter-repo incident on 2026-09-01, `main.py` was one of the files whose uncommitted
+changes were lost when history was rewritten on a dirty working tree; the colleague's original wiring
+change did not survive. Separately, and independently of that incident, **no validation router exposed a
+`signature-challenges` endpoint** for any of its 26 signed `(record_type, action)` pairs — the same class
+of defect SG-138 found and closed for WP-05 QMS:
+
+| Record type | Actions |
+|---|---|
+| `validation_master_plan` | release |
+| `function_risk_assessment` | approve |
+| `validation_test_definition` | approve |
+| `validation_test_execution` | complete |
+| `iq_execution` | complete, approve |
+| `oq_execution` | approve |
+| `infrastructure_fingerprint` | approve |
+| `part11_scope_assessment` | approve |
+| `data_integrity_test_profile` | approve |
+| `interface_validation_profile` | approve |
+| `dr_qualification_execution` | approve |
+| `security_qualification_suite` | approve |
+| `performance_qualification_scenario` | create |
+| `performance_run` | create, evaluate |
+| `validation_exception` | create, triage, retest_plan, disposition |
+| `periodic_validation_review` | create, decision |
+| `migration_run` | approve |
+| `pq_scenario` | approve |
+| `validation_summary_report` | approve |
+| `validated_release_authorization` | authorize, deployment_check |
+
+Four of the `create` actions (`validation_exception`, `periodic_validation_review`,
+`performance_qualification_scenario`, `performance_run`) already carried an optional `new_record_id` field
+on their command classes and a docstring anticipating the exact pre-generated-id shape
+`app.modules.qms.signature_support.create_qms_signature_challenge_for_new_record()` established for
+SG-138's `training_assignment.create` fix — the command layer was ready for this endpoint before it
+existed. `validated_release_authorization.authorize` is bound differently: `commands_vsr.py`'s
+`_apply_signature_for_create()`/`create_challenge_hash()` bind the challenge to a hash of the full command
+payload (Document 106 row 166 signs the authorization decision itself, not a placeholder row), not to a
+generated id.
+
+**RESOLVED 2026-09-01 (engineering half only, both defects).** `main.py` now imports and includes both
+`validation_router` and `validation_wp14_router` (verified: `app.main.app.openapi()` reports 106
+`/validation/v1/*` paths, up from 0). A new `app/modules/validation/signature_support.py` generalizes the
+SG-138 pattern for this module (`create_validation_signature_challenge()` for existing records,
+`create_validation_signature_challenge_for_new_record()` for the 4 signed-CREATE actions); 19
+`signature-challenges` endpoints added to `router.py` and 5 to `router_wp14.py`, including a bespoke
+content-hash-bound endpoint for `validated_release_authorization.authorize` that mirrors
+`create_challenge_hash()`'s exact field set so the two hashes match. Every endpoint calls
+`resolve_signature_requirement()` unconditionally and still returns `SIGNATURE_POLICY_UNRESOLVED` (409) —
+no policy row was seeded, no meaning/signer role/independence flag was invented. **The policy-data half
+remains completely open**: no `validation_*` record type is seeded in Document 106, so all 26 pairs are
+still unsatisfiable by any actor.
+
+```yaml
+spec_gap_id: SG-172
+title: "The WP-12/WP-14 validation platform router existed but was never wired into main.py, and none of its 26 signed record-type/action pairs had a signature-challenges endpoint"
+class: R  # signature meaning/signer role/independence are regulated decisions; the wiring defect itself is engineering, not regulated
+description: >
+  app/modules/validation/router.py and router_wp14.py (82 routes total) were never included in main.py --
+  a lost-uncommitted-change side effect of the 2026-09-01 git-filter-repo incident -- leaving the entire
+  WP-12/WP-14 validation platform unreachable via HTTP. Separately, none of its 26 signed (record_type,
+  action) pairs had a signature-challenges endpoint (the SG-138 defect class). Both engineering defects are
+  now fixed; the Document 106 policy-data half for all 26 pairs remains open and blocking.
+source_documents:
+  - Document 106 (signature policy) SIGP-FR-004
+  - Document 79 (SPEC-VAL-001) through Document 96 (SPEC-VAL-018)
+affected_modules:
+  - SPEC-VAL-001..018
+affected_functions:
+  - app.modules.validation.commands_plan.release_master_plan
+  - app.modules.validation.commands_risk.approve_function_risk_assessment
+  - app.modules.validation.commands_test.approve_test_definition
+  - app.modules.validation.commands_test.complete_test_execution
+  - app.modules.validation.commands_iq.complete_iq_execution
+  - app.modules.validation.commands_iq.approve_iq_execution
+  - app.modules.validation.commands_oq.approve_oq_execution
+  - app.modules.validation.commands_infra.approve_infrastructure_fingerprint
+  - app.modules.validation.commands_part11.approve_part11_assessment
+  - app.modules.validation.commands_integrity.approve_data_integrity_profile
+  - app.modules.validation.commands_interface.approve_interface_profile
+  - app.modules.validation.commands_dr.approve_dr_execution
+  - app.modules.validation.commands_security.approve_security_suite
+  - app.modules.validation.commands_performance.create_performance_scenario
+  - app.modules.validation.commands_performance.record_performance_run
+  - app.modules.validation.commands_performance.evaluate_performance_run
+  - app.modules.validation.commands_exception.create_exception
+  - app.modules.validation.commands_exception.triage_exception
+  - app.modules.validation.commands_exception.define_retest_scope
+  - app.modules.validation.commands_exception.disposition_exception
+  - app.modules.validation.commands_periodic.create_periodic_review
+  - app.modules.validation.commands_periodic.decide_periodic_review
+  - app.modules.validation.commands_migration.approve_migration_cutover
+  - app.modules.validation.commands_pq.approve_pq
+  - app.modules.validation.commands_vsr.approve_validation_summary
+  - app.modules.validation.commands_vsr.issue_validated_release_authorization
+  - app.modules.validation.commands_vsr.verify_deployment_against_validation_release
+why_material: >
+  Signature meaning, required signer role and independent-signer requirement for all 26 pairs are
+  regulated decisions reserved to Document 106's approver, exactly as SG-138 established for WP-05 QMS.
+  The main.py wiring omission is a pure engineering defect (nothing regulated to decide) but is recorded
+  here because it fully explains why the module was unreachable despite being CODE_COMPLETE.
+risk_if_guessed: >
+  A guessed meaning would put words in a signer's mouth on a validation summary report approval or a
+  validated-release authorization -- the exact go-live gate this platform exists to control. A guessed
+  independence flag could silently permit a production performer to also authorize their own release.
+options:
+  - (A) Leave the 26 pairs unsatisfiable; SIGNATURE_POLICY_UNRESOLVED surfaces verbatim -- current
+    behaviour, recommended, matching SG-138's precedent exactly.
+  - (B) Seed signature_required=False rows to unblock (rejected -- an affirmative regulated decision no
+    approver has made; would let a validated-release authorization commit unsigned).
+  - (C) Copy meanings from an analogous seeded row (rejected -- a WP-05 QMS disposition and a validated
+    production release authorization are different attestations).
+blocking: true  # the affected transitions cannot be completed by any actor
+owner: Head of Quality (approver) + Regulatory Affairs + validation platform module owner
+resolution_document: "Document 106 (signature policy) -- extension still required for the policy-data half (blocking). Engineering half resolved 2026-09-01: main.py wiring + app/modules/validation/signature_support.py + 24 signature-challenge endpoints across router.py/router_wp14.py."
 status: OPEN
 ```

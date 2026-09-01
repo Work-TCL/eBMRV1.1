@@ -80,6 +80,9 @@ from app.modules.readmodels.router import search_router, reports_router, platfor
 from app.modules.supplier_quality.router import router as supplier_quality_router
 from app.modules.vault.router import router as vault_router
 from app.modules.yield_reconciliation.router import router as yield_reconciliation_router
+from app.modules.ai_governance.router import router as ai_governance_router
+from app.modules.validation.router import router as validation_router
+from app.modules.validation.router_wp14 import router as validation_wp14_router
 from app.mutation.errors import DependencyUnavailableError, GxPError
 
 logger = logging.getLogger("gxp_api.outbox")
@@ -279,3 +282,6 @@ app.include_router(search_router)
 app.include_router(reports_router)
 app.include_router(readmodels_platform_router)
 app.include_router(disaster_recovery_router)
+app.include_router(ai_governance_router)
+app.include_router(validation_router)
+app.include_router(validation_wp14_router)

@@ -312,6 +312,21 @@ async def approve_ai_model_deployment(
     )
 
 
+def content_challenge_hash(cmd) -> str:
+    """The signed-CREATE challenge is bound to the command's *content* -- the volatile transport fields
+    (`challenge_id`, `reauth_password`, `idempotency_key`) are excluded so the caller can compute the
+    identical hash before `challenge_id` exists. Same shape as
+    `app.modules.validation.commands_vsr.create_challenge_hash()`; extracted to a module-level function
+    (rather than left inline in `sha256_hex(cmd.model_dump(mode="json"))`, which -- before this fix --
+    included `challenge_id`/`reauth_password` in the hash it *also* used at consume time, a genuine
+    chicken-and-egg defect: the challenge's own id cannot be known when the challenge is requested, so
+    the challenge-issuing endpoint could never reproduce a matching hash) so `router.py`'s
+    signature-challenge endpoints can call it directly."""
+    return sha256_hex(
+        cmd.model_dump(mode="json", exclude={"challenge_id", "reauth_password", "idempotency_key"})
+    )
+
+
 async def _apply_signature(session, cmd, actor_user_id, *, record_version: int) -> uuid.UUID:
     """Shared step-up-then-consume-then-sign flow, matching evidence.commands.apply_evidence_legal_hold.
     Unreachable in this pass (resolve_signature_requirement always raises first -- SG-167), kept
@@ -327,7 +342,7 @@ async def _apply_signature(session, cmd, actor_user_id, *, record_version: int) 
         raise MissingSignatureError("challenge_id is required for a signed action")
     challenge = await signature_service.consume_challenge(
         session, challenge_id=cmd.challenge_id, user_id=actor_user_id,
-        record_version=record_version, record_hash=sha256_hex(cmd.model_dump(mode="json")),
+        record_version=record_version, record_hash=content_challenge_hash(cmd),
     )
     signature = await signature_service.sign(
         session, challenge=challenge, auth_context={"method": "password_reauth"}

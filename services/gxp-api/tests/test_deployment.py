@@ -85,9 +85,11 @@ async def test_validate_deployment_prerequisites_real_checks(db, seeded):
 
 async def test_detect_infrastructure_drift(db, seeded):
     async with SessionLocal() as s:
-        clean = await checks.detect_infrastructure_drift(s, declared_image_digest="sha256:aaa", observed_image_digest="sha256:aaa")
+        async with s.begin():
+            clean = await checks.detect_infrastructure_drift(s, declared_image_digest="sha256:aaa", observed_image_digest="sha256:aaa")
         assert clean["drifted"] is False
-        drifted = await checks.detect_infrastructure_drift(s, declared_image_digest="sha256:aaa", observed_image_digest="sha256:zzz")
+        async with s.begin():
+            drifted = await checks.detect_infrastructure_drift(s, declared_image_digest="sha256:aaa", observed_image_digest="sha256:zzz")
         assert drifted["drifted"] is True
     async with SessionLocal() as s:
         rows = (await s.execute(select(OutboxEvent.event_type).where(OutboxEvent.event_type == "InfrastructureDriftDetected"))).scalars().all()
@@ -104,7 +106,8 @@ async def test_check_certificate_expiry_reuses_crypto_metadata(db, seeded):
                 state="ACTIVE", issuer_ref="internal-ca",
             ))
     async with SessionLocal() as s:
-        report = await checks.check_certificate_expiry(s, warn_within_days=30)
+        async with s.begin():
+            report = await checks.check_certificate_expiry(s, warn_within_days=30)
     assert report["expiring_count"] >= 1
     async with SessionLocal() as s:
         rows = (await s.execute(select(OutboxEvent.event_type).where(OutboxEvent.event_type == "CertificateExpiryWarning"))).scalars().all()
