@@ -1,0 +1,434 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-ddcp-003.json",
+  "title": "SPEC-DDCP-003 — Inhalation DDCP Manufacturing Profile (MDI/DPI) Events",
+  "description": "WP-08 has no entries in 07_EVENT_CATALOGUE.yaml -- events derived directly from app/modules/ddcp/inhalation_commands.py's actual event_type= producer code. 8 events found: InhalationProfileDraftCreated, InhalerFillStarted, CLOSURE_TEST_FAILED, InhalerClosureRecorded (mutually exclusive outcomes of the same closure-test call site), INHALER_QC_OOS, InhalerDoseTestRecorded (mutually exclusive outcomes of the same dose-test call site), DoseCounterTestRecorded, InhalerManufacturingCompleted, InhalerBatchPackageGenerated, DoseUnitBoundToDevice. Note: 6 of this module's real events across the 4 DDCP files use SCREAMING_SNAKE_CASE (INJECTOR_TEST_FAILED, DOSE_DELIVERY_FAILED, COATING_PARAMETER_EXCURSION, DRUG_LOADING_OOS, CLOSURE_TEST_FAILED, INHALER_QC_OOS) instead of this codebase's otherwise-universal PascalCase event naming convention -- a minor, low-severity inconsistency, included here factually rather than silently renamed to fit the convention.",
+  "x-requirement-ids": [
+    "INH-FR-001",
+    "INH-FR-002",
+    "INH-FR-007",
+    "INH-FR-009",
+    "INH-FR-011"
+  ],
+  "$defs": {
+    "InhalationProfileDraftCreatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "profile_code",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "profile_code": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ],
+      "additionalProperties": false
+    },
+    "InhalerFillStartedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "batch_id",
+        "fill_route"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "fill_route": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ],
+      "additionalProperties": false
+    },
+    "CLOSURE_TEST_FAILEDPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ],
+      "additionalProperties": false
+    },
+    "InhalerClosureRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ],
+      "additionalProperties": false
+    },
+    "INHALER_QC_OOSPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "test_type",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "test_type": {
+          "type": "string"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ],
+      "additionalProperties": false
+    },
+    "InhalerDoseTestRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "test_type",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "test_type": {
+          "type": "string"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ],
+      "additionalProperties": false
+    },
+    "DoseCounterTestRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ],
+      "additionalProperties": false
+    },
+    "InhalerManufacturingCompletedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ],
+      "additionalProperties": false
+    },
+    "InhalerBatchPackageGeneratedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "manifest_version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "manifest_version": {
+          "type": "integer"
+        },
+        "digest": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ],
+      "additionalProperties": false
+    },
+    "DoseUnitBoundToDevicePayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "InhalationProfileDraftCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-003",
+      "aggregate_type": "ddcp_profile_version",
+      "payload": {
+        "$ref": "#/$defs/InhalationProfileDraftCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ]
+    },
+    {
+      "event_type": "InhalerFillStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-003",
+      "aggregate_type": "ddcp_process_operation",
+      "payload": {
+        "$ref": "#/$defs/InhalerFillStartedPayload"
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ]
+    },
+    {
+      "event_type": "CLOSURE_TEST_FAILED",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-003",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/CLOSURE_TEST_FAILEDPayload"
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ]
+    },
+    {
+      "event_type": "InhalerClosureRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-003",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/InhalerClosureRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ]
+    },
+    {
+      "event_type": "INHALER_QC_OOS",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-003",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/INHALER_QC_OOSPayload"
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ]
+    },
+    {
+      "event_type": "InhalerDoseTestRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-003",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/InhalerDoseTestRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ]
+    },
+    {
+      "event_type": "DoseCounterTestRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-003",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/DoseCounterTestRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ]
+    },
+    {
+      "event_type": "InhalerManufacturingCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-003",
+      "aggregate_type": "ddcp_process_operation",
+      "payload": {
+        "$ref": "#/$defs/InhalerManufacturingCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ]
+    },
+    {
+      "event_type": "InhalerBatchPackageGenerated",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-003",
+      "aggregate_type": "batch_evidence_manifest",
+      "payload": {
+        "$ref": "#/$defs/InhalerBatchPackageGeneratedPayload"
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ]
+    },
+    {
+      "event_type": "DoseUnitBoundToDevice",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-003",
+      "aggregate_type": "ddcp_unit_binding",
+      "payload": {
+        "$ref": "#/$defs/DoseUnitBoundToDevicePayload"
+      },
+      "x-requirement-ids": [
+        "INH-FR-001",
+        "INH-FR-002",
+        "INH-FR-007",
+        "INH-FR-009",
+        "INH-FR-011"
+      ]
+    }
+  ]
+}

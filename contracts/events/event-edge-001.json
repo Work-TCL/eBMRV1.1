@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-edge-001.json",
+  "title": "SPEC-EDGE-001 — Edge Gateway Runtime Architecture Events",
+  "description": "WP-06's edge/OT half (Documents 43-47) has no entries in 07_EVENT_CATALOGUE.yaml (same gap class as WP-01/07/08) -- events derived directly from app/modules/edge/commands.py's actual event_type= producer code. 5 events found: GatewayEnrolled, EdgeObservationsAccepted, GatewayHealthReported, GatewaySecurityEventReported, GatewayCertificateRotated.",
+  "x-requirement-ids": [
+    "EDGE-FR-001",
+    "EDGE-FR-003",
+    "EDGE-FR-009",
+    "EDGE-FR-015",
+    "EDGE-FR-017",
+    "EDGE-FR-027"
+  ],
+  "$defs": {
+    "GatewayEnrolledPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "site_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "site_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "EDGE-FR-001",
+        "EDGE-FR-003",
+        "EDGE-FR-009",
+        "EDGE-FR-015",
+        "EDGE-FR-017",
+        "EDGE-FR-027"
+      ],
+      "additionalProperties": false
+    },
+    "EdgeObservationsAcceptedPayload": {
+      "type": "object",
+      "required": [
+        "gateway_id",
+        "event_ids"
+      ],
+      "properties": {
+        "gateway_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-requirement-ids": [
+        "EDGE-FR-001",
+        "EDGE-FR-003",
+        "EDGE-FR-009",
+        "EDGE-FR-015",
+        "EDGE-FR-017",
+        "EDGE-FR-027"
+      ],
+      "additionalProperties": false
+    },
+    "GatewayHealthReportedPayload": {
+      "type": "object",
+      "required": [
+        "gateway_id",
+        "operational_state"
+      ],
+      "properties": {
+        "gateway_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "operational_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "EDGE-FR-001",
+        "EDGE-FR-003",
+        "EDGE-FR-009",
+        "EDGE-FR-015",
+        "EDGE-FR-017",
+        "EDGE-FR-027"
+      ],
+      "additionalProperties": false
+    },
+    "GatewaySecurityEventReportedPayload": {
+      "type": "object",
+      "required": [
+        "gateway_id",
+        "severity"
+      ],
+      "properties": {
+        "gateway_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "severity": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "EDGE-FR-001",
+        "EDGE-FR-003",
+        "EDGE-FR-009",
+        "EDGE-FR-015",
+        "EDGE-FR-017",
+        "EDGE-FR-027"
+      ],
+      "additionalProperties": false
+    },
+    "GatewayCertificateRotatedPayload": {
+      "type": "object",
+      "required": [
+        "gateway_id"
+      ],
+      "properties": {
+        "gateway_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "EDGE-FR-001",
+        "EDGE-FR-003",
+        "EDGE-FR-009",
+        "EDGE-FR-015",
+        "EDGE-FR-017",
+        "EDGE-FR-027"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "GatewayEnrolled",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-001",
+      "aggregate_type": "edge_gateway",
+      "payload": {
+        "$ref": "#/$defs/GatewayEnrolledPayload"
+      },
+      "x-requirement-ids": [
+        "EDGE-FR-001",
+        "EDGE-FR-003",
+        "EDGE-FR-009",
+        "EDGE-FR-015",
+        "EDGE-FR-017",
+        "EDGE-FR-027"
+      ]
+    },
+    {
+      "event_type": "EdgeObservationsAccepted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-001",
+      "aggregate_type": "edge_gateway",
+      "payload": {
+        "$ref": "#/$defs/EdgeObservationsAcceptedPayload"
+      },
+      "x-requirement-ids": [
+        "EDGE-FR-001",
+        "EDGE-FR-003",
+        "EDGE-FR-009",
+        "EDGE-FR-015",
+        "EDGE-FR-017",
+        "EDGE-FR-027"
+      ]
+    },
+    {
+      "event_type": "GatewayHealthReported",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-001",
+      "aggregate_type": "edge_gateway",
+      "payload": {
+        "$ref": "#/$defs/GatewayHealthReportedPayload"
+      },
+      "x-requirement-ids": [
+        "EDGE-FR-001",
+        "EDGE-FR-003",
+        "EDGE-FR-009",
+        "EDGE-FR-015",
+        "EDGE-FR-017",
+        "EDGE-FR-027"
+      ]
+    },
+    {
+      "event_type": "GatewaySecurityEventReported",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-001",
+      "aggregate_type": "edge_gateway",
+      "payload": {
+        "$ref": "#/$defs/GatewaySecurityEventReportedPayload"
+      },
+      "x-requirement-ids": [
+        "EDGE-FR-001",
+        "EDGE-FR-003",
+        "EDGE-FR-009",
+        "EDGE-FR-015",
+        "EDGE-FR-017",
+        "EDGE-FR-027"
+      ]
+    },
+    {
+      "event_type": "GatewayCertificateRotated",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-001",
+      "aggregate_type": "edge_gateway",
+      "payload": {
+        "$ref": "#/$defs/GatewayCertificateRotatedPayload"
+      },
+      "x-requirement-ids": [
+        "EDGE-FR-001",
+        "EDGE-FR-003",
+        "EDGE-FR-009",
+        "EDGE-FR-015",
+        "EDGE-FR-017",
+        "EDGE-FR-027"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,415 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-gxp-006.json",
+  "title": "SPEC-GXP-006 — Regulatory Rules & Calculation Engine Events",
+  "description": "WP-01 has no entries in 07_EVENT_CATALOGUE.yaml -- events derived directly from app/modules/rules/commands.py and uom_commands.py's actual event_type= producer code. 8 events found: RuleDraftCreated, RuleValidated, RuleReleased, RuleEvaluated, UomDraftCreated, UomReleased, UomConversionDraftCreated, UomConversionReleased.",
+  "x-requirement-ids": [
+    "RUL-FR-002",
+    "RUL-FR-005",
+    "RUL-FR-016",
+    "RUL-FR-021",
+    "RUL-FR-022",
+    "RUL-FR-023",
+    "CALC-FR-002",
+    "CALC-FR-004",
+    "CALC-FR-006"
+  ],
+  "$defs": {
+    "RuleDraftCreatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "rule_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "rule_id": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ],
+      "additionalProperties": false
+    },
+    "RuleValidatedPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ],
+      "additionalProperties": false
+    },
+    "RuleReleasedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "rule_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "rule_id": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ],
+      "additionalProperties": false
+    },
+    "RuleEvaluatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "rule_id",
+        "outcome"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "rule_id": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ],
+      "additionalProperties": false
+    },
+    "UomDraftCreatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "code"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "code": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ],
+      "additionalProperties": false
+    },
+    "UomReleasedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "code",
+        "vault_object_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "code": {
+          "type": "string"
+        },
+        "vault_object_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ],
+      "additionalProperties": false
+    },
+    "UomConversionDraftCreatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "from_code",
+        "to_code"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "from_code": {
+          "type": "string"
+        },
+        "to_code": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ],
+      "additionalProperties": false
+    },
+    "UomConversionReleasedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "vault_object_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "vault_object_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "RuleDraftCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-GXP-006",
+      "aggregate_type": "rule",
+      "payload": {
+        "$ref": "#/$defs/RuleDraftCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ]
+    },
+    {
+      "event_type": "RuleValidated",
+      "schema_version": "1.0",
+      "producer": "SPEC-GXP-006",
+      "aggregate_type": "rule",
+      "payload": {
+        "$ref": "#/$defs/RuleValidatedPayload"
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ]
+    },
+    {
+      "event_type": "RuleReleased",
+      "schema_version": "1.0",
+      "producer": "SPEC-GXP-006",
+      "aggregate_type": "rule",
+      "payload": {
+        "$ref": "#/$defs/RuleReleasedPayload"
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ]
+    },
+    {
+      "event_type": "RuleEvaluated",
+      "schema_version": "1.0",
+      "producer": "SPEC-GXP-006",
+      "aggregate_type": "rule_evaluation",
+      "payload": {
+        "$ref": "#/$defs/RuleEvaluatedPayload"
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ]
+    },
+    {
+      "event_type": "UomDraftCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-GXP-006",
+      "aggregate_type": "uom",
+      "payload": {
+        "$ref": "#/$defs/UomDraftCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ]
+    },
+    {
+      "event_type": "UomReleased",
+      "schema_version": "1.0",
+      "producer": "SPEC-GXP-006",
+      "aggregate_type": "uom",
+      "payload": {
+        "$ref": "#/$defs/UomReleasedPayload"
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ]
+    },
+    {
+      "event_type": "UomConversionDraftCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-GXP-006",
+      "aggregate_type": "uom_conversion",
+      "payload": {
+        "$ref": "#/$defs/UomConversionDraftCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ]
+    },
+    {
+      "event_type": "UomConversionReleased",
+      "schema_version": "1.0",
+      "producer": "SPEC-GXP-006",
+      "aggregate_type": "uom_conversion",
+      "payload": {
+        "$ref": "#/$defs/UomConversionReleasedPayload"
+      },
+      "x-requirement-ids": [
+        "RUL-FR-002",
+        "RUL-FR-005",
+        "RUL-FR-016",
+        "RUL-FR-021",
+        "RUL-FR-022",
+        "RUL-FR-023",
+        "CALC-FR-002",
+        "CALC-FR-004",
+        "CALC-FR-006"
+      ]
+    }
+  ]
+}

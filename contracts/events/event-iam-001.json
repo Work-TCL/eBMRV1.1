@@ -1,0 +1,444 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-iam-001.json",
+  "title": "SPEC-IAM-001 — Identity, Authorization, RBAC, Qualification & SoD Events",
+  "description": "WP-01 has no entries in 07_EVENT_CATALOGUE.yaml -- events derived directly from app/modules/iam/commands.py's actual event_type= producer code. 12 events found: platform admin/auth CRUD (organizations, sites, roles, users, role assignment/permissions) -- the IAM-FR-XXX qualification/SoD requirements themselves (Document 07's core subject) are enforced structurally by app/modules/policy/service.py's evaluate_policy()/effective_role_names() at every call site rather than emitting their own events; only the underlying identity/RBAC-object CRUD is event-sourced. Note: app/modules/policy/ (the evaluate_policy()/SoD-check module Document 07's own runtime logic actually lives in) emits zero events of its own -- same reasoning as Document 03/04, see this file's sibling contracts.",
+  "x-requirement-ids": [
+    "IAM-FR-006",
+    "IAMSEC-FR-010",
+    "PAM-FR-025"
+  ],
+  "$defs": {
+    "UserCreatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "username"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "username": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "RoleCreatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "UserRoleAssignedPayload": {
+      "type": "object",
+      "required": [
+        "user_id",
+        "site_id",
+        "role_id"
+      ],
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "site_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "role_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "OrganizationChangedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "SiteCreatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "code"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "code": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "SiteChangedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "code"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "code": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "SiteDeletedPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "RoleChangedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "RoleDeletedPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "UserChangedPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "UserStatusChangedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "RolePermissionsChangedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "permissions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "UserCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-IAM-001",
+      "aggregate_type": "user",
+      "payload": {
+        "$ref": "#/$defs/UserCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ]
+    },
+    {
+      "event_type": "RoleCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-IAM-001",
+      "aggregate_type": "role",
+      "payload": {
+        "$ref": "#/$defs/RoleCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ]
+    },
+    {
+      "event_type": "UserRoleAssigned",
+      "schema_version": "1.0",
+      "producer": "SPEC-IAM-001",
+      "aggregate_type": "user_site_role",
+      "payload": {
+        "$ref": "#/$defs/UserRoleAssignedPayload"
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ]
+    },
+    {
+      "event_type": "OrganizationChanged",
+      "schema_version": "1.0",
+      "producer": "SPEC-IAM-001",
+      "aggregate_type": "organization",
+      "payload": {
+        "$ref": "#/$defs/OrganizationChangedPayload"
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ]
+    },
+    {
+      "event_type": "SiteCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-IAM-001",
+      "aggregate_type": "site",
+      "payload": {
+        "$ref": "#/$defs/SiteCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ]
+    },
+    {
+      "event_type": "SiteChanged",
+      "schema_version": "1.0",
+      "producer": "SPEC-IAM-001",
+      "aggregate_type": "site",
+      "payload": {
+        "$ref": "#/$defs/SiteChangedPayload"
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ]
+    },
+    {
+      "event_type": "SiteDeleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-IAM-001",
+      "aggregate_type": "site",
+      "payload": {
+        "$ref": "#/$defs/SiteDeletedPayload"
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ]
+    },
+    {
+      "event_type": "RoleChanged",
+      "schema_version": "1.0",
+      "producer": "SPEC-IAM-001",
+      "aggregate_type": "role",
+      "payload": {
+        "$ref": "#/$defs/RoleChangedPayload"
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ]
+    },
+    {
+      "event_type": "RoleDeleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-IAM-001",
+      "aggregate_type": "role",
+      "payload": {
+        "$ref": "#/$defs/RoleDeletedPayload"
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ]
+    },
+    {
+      "event_type": "UserChanged",
+      "schema_version": "1.0",
+      "producer": "SPEC-IAM-001",
+      "aggregate_type": "user",
+      "payload": {
+        "$ref": "#/$defs/UserChangedPayload"
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ]
+    },
+    {
+      "event_type": "UserStatusChanged",
+      "schema_version": "1.0",
+      "producer": "SPEC-IAM-001",
+      "aggregate_type": "user",
+      "payload": {
+        "$ref": "#/$defs/UserStatusChangedPayload"
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ]
+    },
+    {
+      "event_type": "RolePermissionsChanged",
+      "schema_version": "1.0",
+      "producer": "SPEC-IAM-001",
+      "aggregate_type": "role",
+      "payload": {
+        "$ref": "#/$defs/RolePermissionsChangedPayload"
+      },
+      "x-requirement-ids": [
+        "IAM-FR-006",
+        "IAMSEC-FR-010",
+        "PAM-FR-025"
+      ]
+    }
+  ]
+}

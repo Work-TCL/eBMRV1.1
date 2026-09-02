@@ -1,0 +1,764 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-ddcp-001.json",
+  "title": "SPEC-DDCP-001 — Prefilled Syringe & Injectable DDCP Manufacturing Profile Events",
+  "description": "WP-08 has no entries in 07_EVENT_CATALOGUE.yaml -- events derived directly from app/modules/ddcp/commands.py's actual event_type= producer code. 16 events found: InjectableProfileDraftCreated, InjectableProfileReleased, ConstituentHandoffRecorded, ConstituentHandoffDecided, PFSFillingStarted, FillIPCRecorded, FillIPCOutOfSpec (mutually exclusive outcomes of the same in-process-check call site), SyringeCountRecorded, PFSInterventionRecorded, PFSFillingCompleted, PFSDeviceAssemblyRecorded, PFSDeviceAssemblyVerified, DeviceTestFailed, PFSFunctionalTestRecorded (mutually exclusive outcomes of the same functional-test call site), PFSBatchPackageGenerated, PFSStabilityRetainSampleRecorded.",
+  "x-requirement-ids": [
+    "PFS-FR-001",
+    "PFS-FR-003",
+    "PFS-FR-005",
+    "PFS-FR-006",
+    "PFS-FR-013",
+    "PFS-FR-018",
+    "PFS-FR-021"
+  ],
+  "$defs": {
+    "InjectableProfileDraftCreatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "profile_code",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "profile_code": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "InjectableProfileReleasedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "profile_code",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "profile_code": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "ConstituentHandoffRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "batch_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "ConstituentHandoffDecidedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "PFSFillingStartedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "batch_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "FillIPCRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "outcome"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sample_id": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "rule_evaluation_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "FillIPCOutOfSpecPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "outcome"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sample_id": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "rule_evaluation_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "SyringeCountRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "count_type",
+        "quantity"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "count_type": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "PFSInterventionRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "intervention_type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "intervention_type": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "PFSFillingCompletedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "PFSDeviceAssemblyRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "assembly_step",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "assembly_step": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "PFSDeviceAssemblyVerifiedPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "DeviceTestFailedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "test_type",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "test_type": {
+          "type": "string"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "PFSFunctionalTestRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "test_type",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "test_type": {
+          "type": "string"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "PFSBatchPackageGeneratedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "manifest_version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "manifest_version": {
+          "type": "integer"
+        },
+        "digest": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    },
+    "PFSStabilityRetainSampleRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "batch_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "InjectableProfileDraftCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "ddcp_profile_version",
+      "payload": {
+        "$ref": "#/$defs/InjectableProfileDraftCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "InjectableProfileReleased",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "ddcp_profile_version",
+      "payload": {
+        "$ref": "#/$defs/InjectableProfileReleasedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "ConstituentHandoffRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "constituent_handoff",
+      "payload": {
+        "$ref": "#/$defs/ConstituentHandoffRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "ConstituentHandoffDecided",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "constituent_handoff",
+      "payload": {
+        "$ref": "#/$defs/ConstituentHandoffDecidedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "PFSFillingStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "fill_operation",
+      "payload": {
+        "$ref": "#/$defs/PFSFillingStartedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "FillIPCRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "fill_operation",
+      "payload": {
+        "$ref": "#/$defs/FillIPCRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "FillIPCOutOfSpec",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "fill_operation",
+      "payload": {
+        "$ref": "#/$defs/FillIPCOutOfSpecPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "SyringeCountRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "production_count_ledger",
+      "payload": {
+        "$ref": "#/$defs/SyringeCountRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "PFSInterventionRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "fill_operation",
+      "payload": {
+        "$ref": "#/$defs/PFSInterventionRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "PFSFillingCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "fill_operation",
+      "payload": {
+        "$ref": "#/$defs/PFSFillingCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "PFSDeviceAssemblyRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "device_assembly_record",
+      "payload": {
+        "$ref": "#/$defs/PFSDeviceAssemblyRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "PFSDeviceAssemblyVerified",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "device_assembly_record",
+      "payload": {
+        "$ref": "#/$defs/PFSDeviceAssemblyVerifiedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "DeviceTestFailed",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/DeviceTestFailedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "PFSFunctionalTestRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/PFSFunctionalTestRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "PFSBatchPackageGenerated",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "batch_evidence_manifest",
+      "payload": {
+        "$ref": "#/$defs/PFSBatchPackageGeneratedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    },
+    {
+      "event_type": "PFSStabilityRetainSampleRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-001",
+      "aggregate_type": "production_count_ledger",
+      "payload": {
+        "$ref": "#/$defs/PFSStabilityRetainSampleRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "PFS-FR-001",
+        "PFS-FR-003",
+        "PFS-FR-005",
+        "PFS-FR-006",
+        "PFS-FR-013",
+        "PFS-FR-018",
+        "PFS-FR-021"
+      ]
+    }
+  ]
+}

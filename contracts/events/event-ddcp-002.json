@@ -1,0 +1,601 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-ddcp-002.json",
+  "title": "SPEC-DDCP-002 — Autoinjector, Pen Injector & Cartridge-Based DDCP Manufacturing Profile Events",
+  "description": "WP-08 has no entries in 07_EVENT_CATALOGUE.yaml -- events derived directly from app/modules/ddcp/injector_commands.py's actual event_type= producer code. 10 events found: InjectorProfileDraftCreated, InjectorAssemblyOperationStarted, DrugContainerBound, InjectorAssemblyParameterRecorded, INJECTOR_TEST_FAILED, InjectorFunctionalTestCompleted (mutually exclusive outcomes of the same functional-test call site), DOSE_DELIVERY_FAILED, DoseDeliveryEvaluated (mutually exclusive outcomes of the same dose-delivery call site), InjectorUnitDispositioned, InjectorAssemblyCompleted, InjectorBatchEvidencePackageGenerated, ReusableDevicePairingRecorded. Note: 6 of this module's real events across the 4 DDCP files use SCREAMING_SNAKE_CASE (INJECTOR_TEST_FAILED, DOSE_DELIVERY_FAILED, COATING_PARAMETER_EXCURSION, DRUG_LOADING_OOS, CLOSURE_TEST_FAILED, INHALER_QC_OOS) instead of this codebase's otherwise-universal PascalCase event naming convention -- a minor, low-severity inconsistency, included here factually rather than silently renamed to fit the convention.",
+  "x-requirement-ids": [
+    "INJ-FR-001",
+    "INJ-FR-004",
+    "INJ-FR-005",
+    "INJ-FR-006",
+    "INJ-FR-007",
+    "INJ-FR-008",
+    "INJ-FR-009",
+    "INJ-FR-018"
+  ],
+  "$defs": {
+    "InjectorProfileDraftCreatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "profile_code",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "profile_code": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ],
+      "additionalProperties": false
+    },
+    "InjectorAssemblyOperationStartedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "batch_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ],
+      "additionalProperties": false
+    },
+    "DrugContainerBoundPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "injector_unit_serial"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "injector_unit_serial": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ],
+      "additionalProperties": false
+    },
+    "InjectorAssemblyParameterRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "parameter_code"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "parameter_code": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ],
+      "additionalProperties": false
+    },
+    "INJECTOR_TEST_FAILEDPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "test_type",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "test_type": {
+          "type": "string"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ],
+      "additionalProperties": false
+    },
+    "InjectorFunctionalTestCompletedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "test_type",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "test_type": {
+          "type": "string"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ],
+      "additionalProperties": false
+    },
+    "DOSE_DELIVERY_FAILEDPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result_state": {
+          "type": "string"
+        },
+        "rule_evaluation_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ],
+      "additionalProperties": false
+    },
+    "DoseDeliveryEvaluatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result_state": {
+          "type": "string"
+        },
+        "rule_evaluation_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ],
+      "additionalProperties": false
+    },
+    "InjectorUnitDispositionedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "unit_identifier",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "unit_identifier": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ],
+      "additionalProperties": false
+    },
+    "InjectorAssemblyCompletedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ],
+      "additionalProperties": false
+    },
+    "InjectorBatchEvidencePackageGeneratedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "manifest_version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "manifest_version": {
+          "type": "integer"
+        },
+        "digest": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ],
+      "additionalProperties": false
+    },
+    "ReusableDevicePairingRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "compatibility_status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "compatibility_status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "InjectorProfileDraftCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-002",
+      "aggregate_type": "ddcp_profile_version",
+      "payload": {
+        "$ref": "#/$defs/InjectorProfileDraftCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ]
+    },
+    {
+      "event_type": "InjectorAssemblyOperationStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-002",
+      "aggregate_type": "ddcp_process_operation",
+      "payload": {
+        "$ref": "#/$defs/InjectorAssemblyOperationStartedPayload"
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ]
+    },
+    {
+      "event_type": "DrugContainerBound",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-002",
+      "aggregate_type": "ddcp_unit_binding",
+      "payload": {
+        "$ref": "#/$defs/DrugContainerBoundPayload"
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ]
+    },
+    {
+      "event_type": "InjectorAssemblyParameterRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-002",
+      "aggregate_type": "ddcp_process_operation",
+      "payload": {
+        "$ref": "#/$defs/InjectorAssemblyParameterRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ]
+    },
+    {
+      "event_type": "INJECTOR_TEST_FAILED",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-002",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/INJECTOR_TEST_FAILEDPayload"
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ]
+    },
+    {
+      "event_type": "InjectorFunctionalTestCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-002",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/InjectorFunctionalTestCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ]
+    },
+    {
+      "event_type": "DOSE_DELIVERY_FAILED",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-002",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/DOSE_DELIVERY_FAILEDPayload"
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ]
+    },
+    {
+      "event_type": "DoseDeliveryEvaluated",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-002",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/DoseDeliveryEvaluatedPayload"
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ]
+    },
+    {
+      "event_type": "InjectorUnitDispositioned",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-002",
+      "aggregate_type": "device_assembly_record",
+      "payload": {
+        "$ref": "#/$defs/InjectorUnitDispositionedPayload"
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ]
+    },
+    {
+      "event_type": "InjectorAssemblyCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-002",
+      "aggregate_type": "ddcp_process_operation",
+      "payload": {
+        "$ref": "#/$defs/InjectorAssemblyCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ]
+    },
+    {
+      "event_type": "InjectorBatchEvidencePackageGenerated",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-002",
+      "aggregate_type": "batch_evidence_manifest",
+      "payload": {
+        "$ref": "#/$defs/InjectorBatchEvidencePackageGeneratedPayload"
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ]
+    },
+    {
+      "event_type": "ReusableDevicePairingRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-002",
+      "aggregate_type": "reusable_device_pairing",
+      "payload": {
+        "$ref": "#/$defs/ReusableDevicePairingRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "INJ-FR-001",
+        "INJ-FR-004",
+        "INJ-FR-005",
+        "INJ-FR-006",
+        "INJ-FR-007",
+        "INJ-FR-008",
+        "INJ-FR-009",
+        "INJ-FR-018"
+      ]
+    }
+  ]
+}
