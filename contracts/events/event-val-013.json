@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-013.json",
+  "title": "SPEC-VAL-013 — Backup, Restore, PITR & Disaster Recovery Qualification Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_dr.py actually emits. All 4 of the catalogue's declared Document 91 events are implemented: DRRestoreExecuted, RecoveredGxPSmokeCompleted (conditional on gxp_smoke_results being supplied; genuinely caller-defined keys, so its payload is not closed the way every other event in this file is), RecoveryObjectivesMeasured, DRQualificationApproved. (The module also emits an undeclared DrScenarioDefined at scenario-authoring time -- not part of the catalogue's declared 4.) Verified directly against source, including indirection through the shared finalize() helper and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "DRQ-FR-001",
+    "DRQ-FR-002",
+    "DRQ-FR-003",
+    "DRQ-FR-004",
+    "DRQ-FR-005",
+    "DRQ-FR-006",
+    "DRQ-FR-007",
+    "DRQ-FR-008"
+  ],
+  "$defs": {
+    "DRRestoreExecutedPayload": {
+      "type": "object",
+      "required": [
+        "scenario_id",
+        "backup_set_ref"
+      ],
+      "properties": {
+        "scenario_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "backup_set_ref": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "DRQ-FR-001",
+        "DRQ-FR-002",
+        "DRQ-FR-003",
+        "DRQ-FR-004",
+        "DRQ-FR-005",
+        "DRQ-FR-006",
+        "DRQ-FR-007",
+        "DRQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "RecoveredGxPSmokeCompletedPayload": {
+      "type": "object",
+      "x-requirement-ids": [
+        "DRQ-FR-001",
+        "DRQ-FR-002",
+        "DRQ-FR-003",
+        "DRQ-FR-004",
+        "DRQ-FR-005",
+        "DRQ-FR-006",
+        "DRQ-FR-007",
+        "DRQ-FR-008"
+      ],
+      "description": "Caller-supplied {smoke_test_name: passed_bool} map; genuinely open-keyed (Document 91 does not fix the smoke-test set), so additionalProperties is not closed here unlike every other payload in this contract set.",
+      "additionalProperties": true
+    },
+    "RecoveryObjectivesMeasuredPayload": {
+      "type": "object",
+      "required": [
+        "rpo_achieved_seconds",
+        "rto_achieved_seconds",
+        "result"
+      ],
+      "properties": {
+        "rpo_achieved_seconds": {
+          "type": "integer"
+        },
+        "rto_achieved_seconds": {
+          "type": "integer"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "DRQ-FR-001",
+        "DRQ-FR-002",
+        "DRQ-FR-003",
+        "DRQ-FR-004",
+        "DRQ-FR-005",
+        "DRQ-FR-006",
+        "DRQ-FR-007",
+        "DRQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "DRQualificationApprovedPayload": {
+      "type": "object",
+      "required": [
+        "approved"
+      ],
+      "properties": {
+        "approved": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "DRQ-FR-001",
+        "DRQ-FR-002",
+        "DRQ-FR-003",
+        "DRQ-FR-004",
+        "DRQ-FR-005",
+        "DRQ-FR-006",
+        "DRQ-FR-007",
+        "DRQ-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "DRRestoreExecuted",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-013",
+      "aggregate_type": "dr_qualification_execution",
+      "payload": {
+        "$ref": "#/$defs/DRRestoreExecutedPayload"
+      },
+      "x-requirement-ids": [
+        "DRQ-FR-001",
+        "DRQ-FR-002",
+        "DRQ-FR-003",
+        "DRQ-FR-004",
+        "DRQ-FR-005",
+        "DRQ-FR-006",
+        "DRQ-FR-007",
+        "DRQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "RecoveredGxPSmokeCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-013",
+      "aggregate_type": "dr_qualification_execution",
+      "payload": {
+        "$ref": "#/$defs/RecoveredGxPSmokeCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "DRQ-FR-001",
+        "DRQ-FR-002",
+        "DRQ-FR-003",
+        "DRQ-FR-004",
+        "DRQ-FR-005",
+        "DRQ-FR-006",
+        "DRQ-FR-007",
+        "DRQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "RecoveryObjectivesMeasured",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-013",
+      "aggregate_type": "dr_qualification_execution",
+      "payload": {
+        "$ref": "#/$defs/RecoveryObjectivesMeasuredPayload"
+      },
+      "x-requirement-ids": [
+        "DRQ-FR-001",
+        "DRQ-FR-002",
+        "DRQ-FR-003",
+        "DRQ-FR-004",
+        "DRQ-FR-005",
+        "DRQ-FR-006",
+        "DRQ-FR-007",
+        "DRQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "DRQualificationApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-013",
+      "aggregate_type": "dr_qualification_execution",
+      "payload": {
+        "$ref": "#/$defs/DRQualificationApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "DRQ-FR-001",
+        "DRQ-FR-002",
+        "DRQ-FR-003",
+        "DRQ-FR-004",
+        "DRQ-FR-005",
+        "DRQ-FR-006",
+        "DRQ-FR-007",
+        "DRQ-FR-008"
+      ]
+    }
+  ]
+}

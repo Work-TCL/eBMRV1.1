@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-004.json",
+  "title": "SPEC-VAL-004 — Validation Test Strategy & Evidence Governance Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_test.py actually emits. All 5 of the catalogue's declared Document 82 events are implemented: ValidationTestApproved, ValidationTestExecutionStarted, ValidationTestCompleted, AutomatedEvidenceImported, ValidationTestReviewed. (The module also emits an undeclared ValidationTestDefined at test-authoring time, ahead of approval -- not part of the catalogue's declared 5, included nowhere here.) Verified directly against source, including indirection through the shared `finalize()` helper (payload = new_value) and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "TST-FR-001",
+    "TST-FR-002",
+    "TST-FR-003",
+    "TST-FR-004",
+    "TST-FR-005",
+    "TST-FR-006",
+    "TST-FR-007",
+    "TST-FR-008"
+  ],
+  "$defs": {
+    "ValidationTestApprovedPayload": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "TST-FR-001",
+        "TST-FR-002",
+        "TST-FR-003",
+        "TST-FR-004",
+        "TST-FR-005",
+        "TST-FR-006",
+        "TST-FR-007",
+        "TST-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "ValidationTestExecutionStartedPayload": {
+      "type": "object",
+      "required": [
+        "test_definition_id"
+      ],
+      "properties": {
+        "test_definition_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "TST-FR-001",
+        "TST-FR-002",
+        "TST-FR-003",
+        "TST-FR-004",
+        "TST-FR-005",
+        "TST-FR-006",
+        "TST-FR-007",
+        "TST-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "ValidationTestCompletedPayload": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "TST-FR-001",
+        "TST-FR-002",
+        "TST-FR-003",
+        "TST-FR-004",
+        "TST-FR-005",
+        "TST-FR-006",
+        "TST-FR-007",
+        "TST-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "AutomatedEvidenceImportedPayload": {
+      "type": "object",
+      "required": [
+        "ci_run_ref",
+        "result"
+      ],
+      "properties": {
+        "ci_run_ref": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "TST-FR-001",
+        "TST-FR-002",
+        "TST-FR-003",
+        "TST-FR-004",
+        "TST-FR-005",
+        "TST-FR-006",
+        "TST-FR-007",
+        "TST-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "ValidationTestReviewedPayload": {
+      "type": "object",
+      "required": [
+        "reviewer_user_id"
+      ],
+      "properties": {
+        "reviewer_user_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "TST-FR-001",
+        "TST-FR-002",
+        "TST-FR-003",
+        "TST-FR-004",
+        "TST-FR-005",
+        "TST-FR-006",
+        "TST-FR-007",
+        "TST-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "ValidationTestApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-004",
+      "aggregate_type": "validation_test_definition",
+      "payload": {
+        "$ref": "#/$defs/ValidationTestApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "TST-FR-001",
+        "TST-FR-002",
+        "TST-FR-003",
+        "TST-FR-004",
+        "TST-FR-005",
+        "TST-FR-006",
+        "TST-FR-007",
+        "TST-FR-008"
+      ]
+    },
+    {
+      "event_type": "ValidationTestExecutionStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-004",
+      "aggregate_type": "validation_test_execution",
+      "payload": {
+        "$ref": "#/$defs/ValidationTestExecutionStartedPayload"
+      },
+      "x-requirement-ids": [
+        "TST-FR-001",
+        "TST-FR-002",
+        "TST-FR-003",
+        "TST-FR-004",
+        "TST-FR-005",
+        "TST-FR-006",
+        "TST-FR-007",
+        "TST-FR-008"
+      ]
+    },
+    {
+      "event_type": "ValidationTestCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-004",
+      "aggregate_type": "validation_test_execution",
+      "payload": {
+        "$ref": "#/$defs/ValidationTestCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "TST-FR-001",
+        "TST-FR-002",
+        "TST-FR-003",
+        "TST-FR-004",
+        "TST-FR-005",
+        "TST-FR-006",
+        "TST-FR-007",
+        "TST-FR-008"
+      ]
+    },
+    {
+      "event_type": "AutomatedEvidenceImported",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-004",
+      "aggregate_type": "validation_test_execution",
+      "payload": {
+        "$ref": "#/$defs/AutomatedEvidenceImportedPayload"
+      },
+      "x-requirement-ids": [
+        "TST-FR-001",
+        "TST-FR-002",
+        "TST-FR-003",
+        "TST-FR-004",
+        "TST-FR-005",
+        "TST-FR-006",
+        "TST-FR-007",
+        "TST-FR-008"
+      ]
+    },
+    {
+      "event_type": "ValidationTestReviewed",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-004",
+      "aggregate_type": "validation_test_execution",
+      "payload": {
+        "$ref": "#/$defs/ValidationTestReviewedPayload"
+      },
+      "x-requirement-ids": [
+        "TST-FR-001",
+        "TST-FR-002",
+        "TST-FR-003",
+        "TST-FR-004",
+        "TST-FR-005",
+        "TST-FR-006",
+        "TST-FR-007",
+        "TST-FR-008"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-016.json",
+  "title": "SPEC-VAL-016 — Validation Defect, Deviation, Test Exception & Remediation Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_exception.py actually emits. All 4 of the catalogue's declared Document 94 events are implemented: ValidationExceptionCreated, ValidationExceptionTriaged, ValidationRetestScopeDefined, ValidationExceptionDispositioned. Verified directly against source, including indirection through the shared finalize() helper and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "VEX-FR-001",
+    "VEX-FR-002",
+    "VEX-FR-003",
+    "VEX-FR-004",
+    "VEX-FR-005",
+    "VEX-FR-006",
+    "VEX-FR-007",
+    "VEX-FR-008"
+  ],
+  "$defs": {
+    "ValidationExceptionCreatedPayload": {
+      "type": "object",
+      "required": [
+        "exception_type",
+        "severity"
+      ],
+      "properties": {
+        "exception_type": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "VEX-FR-001",
+        "VEX-FR-002",
+        "VEX-FR-003",
+        "VEX-FR-004",
+        "VEX-FR-005",
+        "VEX-FR-006",
+        "VEX-FR-007",
+        "VEX-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "ValidationExceptionTriagedPayload": {
+      "type": "object",
+      "required": [
+        "severity",
+        "gxp_impact"
+      ],
+      "properties": {
+        "severity": {
+          "type": "string"
+        },
+        "gxp_impact": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "VEX-FR-001",
+        "VEX-FR-002",
+        "VEX-FR-003",
+        "VEX-FR-004",
+        "VEX-FR-005",
+        "VEX-FR-006",
+        "VEX-FR-007",
+        "VEX-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "ValidationRetestScopeDefinedPayload": {
+      "type": "object",
+      "required": [
+        "retest_plan"
+      ],
+      "properties": {
+        "retest_plan": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "VEX-FR-001",
+        "VEX-FR-002",
+        "VEX-FR-003",
+        "VEX-FR-004",
+        "VEX-FR-005",
+        "VEX-FR-006",
+        "VEX-FR-007",
+        "VEX-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "ValidationExceptionDispositionedPayload": {
+      "type": "object",
+      "required": [
+        "disposition"
+      ],
+      "properties": {
+        "disposition": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "VEX-FR-001",
+        "VEX-FR-002",
+        "VEX-FR-003",
+        "VEX-FR-004",
+        "VEX-FR-005",
+        "VEX-FR-006",
+        "VEX-FR-007",
+        "VEX-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "ValidationExceptionCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-016",
+      "aggregate_type": "validation_exception",
+      "payload": {
+        "$ref": "#/$defs/ValidationExceptionCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "VEX-FR-001",
+        "VEX-FR-002",
+        "VEX-FR-003",
+        "VEX-FR-004",
+        "VEX-FR-005",
+        "VEX-FR-006",
+        "VEX-FR-007",
+        "VEX-FR-008"
+      ]
+    },
+    {
+      "event_type": "ValidationExceptionTriaged",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-016",
+      "aggregate_type": "validation_exception",
+      "payload": {
+        "$ref": "#/$defs/ValidationExceptionTriagedPayload"
+      },
+      "x-requirement-ids": [
+        "VEX-FR-001",
+        "VEX-FR-002",
+        "VEX-FR-003",
+        "VEX-FR-004",
+        "VEX-FR-005",
+        "VEX-FR-006",
+        "VEX-FR-007",
+        "VEX-FR-008"
+      ]
+    },
+    {
+      "event_type": "ValidationRetestScopeDefined",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-016",
+      "aggregate_type": "validation_exception",
+      "payload": {
+        "$ref": "#/$defs/ValidationRetestScopeDefinedPayload"
+      },
+      "x-requirement-ids": [
+        "VEX-FR-001",
+        "VEX-FR-002",
+        "VEX-FR-003",
+        "VEX-FR-004",
+        "VEX-FR-005",
+        "VEX-FR-006",
+        "VEX-FR-007",
+        "VEX-FR-008"
+      ]
+    },
+    {
+      "event_type": "ValidationExceptionDispositioned",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-016",
+      "aggregate_type": "validation_exception",
+      "payload": {
+        "$ref": "#/$defs/ValidationExceptionDispositionedPayload"
+      },
+      "x-requirement-ids": [
+        "VEX-FR-001",
+        "VEX-FR-002",
+        "VEX-FR-003",
+        "VEX-FR-004",
+        "VEX-FR-005",
+        "VEX-FR-006",
+        "VEX-FR-007",
+        "VEX-FR-008"
+      ]
+    }
+  ]
+}

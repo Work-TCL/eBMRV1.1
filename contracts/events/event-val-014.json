@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-014.json",
+  "title": "SPEC-VAL-014 — Security Qualification, Vulnerability Verification & Pen Testing Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_security.py actually emits. All 4 of the catalogue's declared Document 92 events are implemented: SecurityControlTestCompleted, PenTestFindingImported, SecurityQualificationGateEvaluated, SecurityQualificationApproved. (The module also emits an undeclared SecuritySuiteDefined at suite-authoring time -- not part of the catalogue's declared 4.) Verified directly against source, including indirection through the shared finalize() helper and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "SECQ-FR-001",
+    "SECQ-FR-002",
+    "SECQ-FR-003",
+    "SECQ-FR-004",
+    "SECQ-FR-005",
+    "SECQ-FR-006",
+    "SECQ-FR-007",
+    "SECQ-FR-008"
+  ],
+  "$defs": {
+    "SecurityControlTestCompletedPayload": {
+      "type": "object",
+      "required": [
+        "control_ref",
+        "result"
+      ],
+      "properties": {
+        "control_ref": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        },
+        "finding_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "SECQ-FR-001",
+        "SECQ-FR-002",
+        "SECQ-FR-003",
+        "SECQ-FR-004",
+        "SECQ-FR-005",
+        "SECQ-FR-006",
+        "SECQ-FR-007",
+        "SECQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "PenTestFindingImportedPayload": {
+      "type": "object",
+      "required": [
+        "source",
+        "severity",
+        "control_ref"
+      ],
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "control_ref": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "SECQ-FR-001",
+        "SECQ-FR-002",
+        "SECQ-FR-003",
+        "SECQ-FR-004",
+        "SECQ-FR-005",
+        "SECQ-FR-006",
+        "SECQ-FR-007",
+        "SECQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "SecurityQualificationGateEvaluatedPayload": {
+      "type": "object",
+      "required": [
+        "blockers",
+        "gate_state",
+        "finding_count"
+      ],
+      "properties": {
+        "blockers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "gate_state": {
+          "type": "string"
+        },
+        "finding_count": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "SECQ-FR-001",
+        "SECQ-FR-002",
+        "SECQ-FR-003",
+        "SECQ-FR-004",
+        "SECQ-FR-005",
+        "SECQ-FR-006",
+        "SECQ-FR-007",
+        "SECQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "SecurityQualificationApprovedPayload": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "SECQ-FR-001",
+        "SECQ-FR-002",
+        "SECQ-FR-003",
+        "SECQ-FR-004",
+        "SECQ-FR-005",
+        "SECQ-FR-006",
+        "SECQ-FR-007",
+        "SECQ-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "SecurityControlTestCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-014",
+      "aggregate_type": "security_qualification_suite",
+      "payload": {
+        "$ref": "#/$defs/SecurityControlTestCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "SECQ-FR-001",
+        "SECQ-FR-002",
+        "SECQ-FR-003",
+        "SECQ-FR-004",
+        "SECQ-FR-005",
+        "SECQ-FR-006",
+        "SECQ-FR-007",
+        "SECQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "PenTestFindingImported",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-014",
+      "aggregate_type": "security_qualification_finding",
+      "payload": {
+        "$ref": "#/$defs/PenTestFindingImportedPayload"
+      },
+      "x-requirement-ids": [
+        "SECQ-FR-001",
+        "SECQ-FR-002",
+        "SECQ-FR-003",
+        "SECQ-FR-004",
+        "SECQ-FR-005",
+        "SECQ-FR-006",
+        "SECQ-FR-007",
+        "SECQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "SecurityQualificationGateEvaluated",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-014",
+      "aggregate_type": "security_qualification_suite",
+      "payload": {
+        "$ref": "#/$defs/SecurityQualificationGateEvaluatedPayload"
+      },
+      "x-requirement-ids": [
+        "SECQ-FR-001",
+        "SECQ-FR-002",
+        "SECQ-FR-003",
+        "SECQ-FR-004",
+        "SECQ-FR-005",
+        "SECQ-FR-006",
+        "SECQ-FR-007",
+        "SECQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "SecurityQualificationApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-014",
+      "aggregate_type": "security_qualification_suite",
+      "payload": {
+        "$ref": "#/$defs/SecurityQualificationApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "SECQ-FR-001",
+        "SECQ-FR-002",
+        "SECQ-FR-003",
+        "SECQ-FR-004",
+        "SECQ-FR-005",
+        "SECQ-FR-006",
+        "SECQ-FR-007",
+        "SECQ-FR-008"
+      ]
+    }
+  ]
+}
