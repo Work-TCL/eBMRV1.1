@@ -10564,6 +10564,31 @@ Three independent signals agree on which side is the approved one, with no signa
    `gxp_vault_object`, `iam_subject`, ...). `products`, `recipes`, `batches` are the only bare, unprefixed
    names anywhere in the regulated schema.
 
+**UPDATE 2026-09-01 -- FK-level dependency sweep, correcting/expanding the affected-modules list.** The
+original note above found dependents by grepping Python `import` statements only, which misses a foreign
+key that references a table by schema-qualified string (`ForeignKey("ebmr.batches.id")`) without importing
+the owning module's Python code at all. A full `ForeignKey(...)` sweep across every `models*.py` file
+changes the picture for Batch specifically:
+
+- **`ebmr.batches` (scaffold, non-authoritative) has FK dependents in `ddcp` (13 columns), `material` (7),
+  `machine_integration` (2) and `equipment` (1)** -- `machine_integration` and `equipment` are WP-06, not
+  previously listed. `ddcp`'s dependency is especially deep: `DeviceAssemblyRecord`, `DdcpUnitBinding`,
+  `ReusableDevicePairing` and 10 more DDCP tables all carry a hard FK into the scaffold table, not just a
+  Python-level import.
+- **`ebmr.gxp_batch` (authoritative) has FK dependents in `packaging`, `device`, `qa_review`, `release`,
+  `qc` and `yield_reconciliation`** -- `device` (WP-02) wasn't previously listed either.
+- **Product and Recipe are much less entangled than Batch**: nothing outside the `product`/`recipe`
+  modules themselves has an FK into `ebmr.products` or `ebmr.recipes`. Every other module that references
+  a product or recipe already does so correctly, through `gxp_product_*`/`gxp_recipe_*`
+  (`packaging`, `device`, `batch_execution`, `release`, plus `product_master`/`recipe_master`
+  themselves). This materially lowers the migration risk for those two entities relative to Batch: the
+  product/recipe scaffold tables can likely be retired once `material`/`ddcp`/`iam`'s own Python-level
+  usage is confirmed empty, with no FK-constraint untangling required.
+
+This does not change the recommendation (option A below), only its accuracy and the size of the Batch
+migration: 4 real modules carry a hard schema dependency on the wrong table for Batch, not the 1
+(`ddcp`) implied by the original note.
+
 What is **not** resolvable without a project-owner decision: whether `product`/`recipe`/`batch` ever held
 real customer/demo data that would need migrating into the `_master`/`_execution` tables before removal,
 and the actual cutover plan for `ddcp`, `material` and `iam` (all three still importing the non-authoritative
@@ -10608,7 +10633,8 @@ affected_functions:
   - app/modules/recipe_master/commands.py (all)
   - app/modules/batch/commands.py (all)
   - app/modules/batch_execution/commands.py (all)
-  - app/modules/ddcp/*.py, app/modules/material/commands.py, app/modules/iam/commands.py (dependents on the non-authoritative side)
+  - "app/modules/ddcp/models.py (13 FK columns into ebmr.batches), app/modules/material/models.py (7), app/modules/machine_integration/models.py (2), app/modules/equipment/models.py (1) -- schema-level dependents on the non-authoritative Batch table"
+  - "app/modules/iam/commands.py -- Python-level (non-FK) dependent on the non-authoritative side"
 why_material: >
   AG-05 is a hard architecture non-negotiable, not a preference. Deciding which store is authoritative,
   whether the other side's data needs migrating first, and the cutover sequence for three dependent
