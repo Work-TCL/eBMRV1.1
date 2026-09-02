@@ -22,6 +22,7 @@ dependencies = [
     # stack), and used identically by every WP-07 adapter (app/modules/erp/adapters/*.py) so there is one
     # HTTP client in the whole service, not one per vendor.
     "httpx>=0.27",
+    "reportlab>=5.0,<6.0",
 ]
 
 [dependency-groups]
