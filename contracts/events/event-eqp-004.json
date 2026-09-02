@@ -1,0 +1,325 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-eqp-004.json",
+  "title": "SPEC-EQP-004 — Environmental Monitoring & Cleanroom State Control Events",
+  "description": "Document 113 event contract for the events app/modules/equipment/em_commands.py actually emits. 6 of the catalogue's 8 declared Document 41 events are implemented: EMTaskScheduled, EMSampleCollected, EMResultRecorded, EMAlertTriggered, EMActionLimitExceeded, EMExcursionClosed (EMResultRecorded/EMAlertTriggered/EMActionLimitExceeded are mutually exclusive outcomes of the same result-recording call site, chosen by `alert_action_status`). EMDataGapDetected and EMAreaHeld are declared in 07_EVENT_CATALOGUE.yaml but have no producing code path -- missed-sample/data-gap detection (a scheduled/background check) and a distinct area-hold transition (the module records the excursion itself but does not yet emit a separate area-held event) are not yet built. Verified directly against source, not assumed.",
+  "x-requirement-ids": [
+    "EM-FR-001",
+    "EM-FR-002",
+    "EM-FR-003",
+    "EM-FR-004",
+    "EM-FR-005",
+    "EM-FR-006",
+    "EM-FR-007",
+    "EM-FR-008"
+  ],
+  "$defs": {
+    "EMTaskScheduledPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "EM-FR-001",
+        "EM-FR-002",
+        "EM-FR-003",
+        "EM-FR-004",
+        "EM-FR-005",
+        "EM-FR-006",
+        "EM-FR-007",
+        "EM-FR-008"
+      ]
+    },
+    "EMSampleCollectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "EM-FR-001",
+        "EM-FR-002",
+        "EM-FR-003",
+        "EM-FR-004",
+        "EM-FR-005",
+        "EM-FR-006",
+        "EM-FR-007",
+        "EM-FR-008"
+      ]
+    },
+    "EMResultRecordedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "alert_action_status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "alert_action_status": {
+          "type": "string"
+        },
+        "excursion_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "EM-FR-001",
+        "EM-FR-002",
+        "EM-FR-003",
+        "EM-FR-004",
+        "EM-FR-005",
+        "EM-FR-006",
+        "EM-FR-007",
+        "EM-FR-008"
+      ]
+    },
+    "EMAlertTriggeredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "alert_action_status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "alert_action_status": {
+          "type": "string"
+        },
+        "excursion_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "EM-FR-001",
+        "EM-FR-002",
+        "EM-FR-003",
+        "EM-FR-004",
+        "EM-FR-005",
+        "EM-FR-006",
+        "EM-FR-007",
+        "EM-FR-008"
+      ]
+    },
+    "EMActionLimitExceededPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "alert_action_status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "alert_action_status": {
+          "type": "string"
+        },
+        "excursion_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "EM-FR-001",
+        "EM-FR-002",
+        "EM-FR-003",
+        "EM-FR-004",
+        "EM-FR-005",
+        "EM-FR-006",
+        "EM-FR-007",
+        "EM-FR-008"
+      ]
+    },
+    "EMExcursionClosedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "disposition"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "disposition": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "EM-FR-001",
+        "EM-FR-002",
+        "EM-FR-003",
+        "EM-FR-004",
+        "EM-FR-005",
+        "EM-FR-006",
+        "EM-FR-007",
+        "EM-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "EMTaskScheduled",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-004",
+      "aggregate_type": "em_program_version",
+      "payload": {
+        "$ref": "#/$defs/EMTaskScheduledPayload"
+      },
+      "x-requirement-ids": [
+        "EM-FR-001",
+        "EM-FR-002",
+        "EM-FR-003",
+        "EM-FR-004",
+        "EM-FR-005",
+        "EM-FR-006",
+        "EM-FR-007",
+        "EM-FR-008"
+      ]
+    },
+    {
+      "event_type": "EMSampleCollected",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-004",
+      "aggregate_type": "em_sample_or_reading",
+      "payload": {
+        "$ref": "#/$defs/EMSampleCollectedPayload"
+      },
+      "x-requirement-ids": [
+        "EM-FR-001",
+        "EM-FR-002",
+        "EM-FR-003",
+        "EM-FR-004",
+        "EM-FR-005",
+        "EM-FR-006",
+        "EM-FR-007",
+        "EM-FR-008"
+      ]
+    },
+    {
+      "event_type": "EMResultRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-004",
+      "aggregate_type": "em_sample_or_reading",
+      "payload": {
+        "$ref": "#/$defs/EMResultRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "EM-FR-001",
+        "EM-FR-002",
+        "EM-FR-003",
+        "EM-FR-004",
+        "EM-FR-005",
+        "EM-FR-006",
+        "EM-FR-007",
+        "EM-FR-008"
+      ]
+    },
+    {
+      "event_type": "EMAlertTriggered",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-004",
+      "aggregate_type": "em_sample_or_reading",
+      "payload": {
+        "$ref": "#/$defs/EMAlertTriggeredPayload"
+      },
+      "x-requirement-ids": [
+        "EM-FR-001",
+        "EM-FR-002",
+        "EM-FR-003",
+        "EM-FR-004",
+        "EM-FR-005",
+        "EM-FR-006",
+        "EM-FR-007",
+        "EM-FR-008"
+      ]
+    },
+    {
+      "event_type": "EMActionLimitExceeded",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-004",
+      "aggregate_type": "em_sample_or_reading",
+      "payload": {
+        "$ref": "#/$defs/EMActionLimitExceededPayload"
+      },
+      "x-requirement-ids": [
+        "EM-FR-001",
+        "EM-FR-002",
+        "EM-FR-003",
+        "EM-FR-004",
+        "EM-FR-005",
+        "EM-FR-006",
+        "EM-FR-007",
+        "EM-FR-008"
+      ]
+    },
+    {
+      "event_type": "EMExcursionClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-004",
+      "aggregate_type": "em_excursion",
+      "payload": {
+        "$ref": "#/$defs/EMExcursionClosedPayload"
+      },
+      "x-requirement-ids": [
+        "EM-FR-001",
+        "EM-FR-002",
+        "EM-FR-003",
+        "EM-FR-004",
+        "EM-FR-005",
+        "EM-FR-006",
+        "EM-FR-007",
+        "EM-FR-008"
+      ]
+    }
+  ]
+}

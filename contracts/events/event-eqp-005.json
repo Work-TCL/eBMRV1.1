@@ -1,0 +1,361 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-eqp-005.json",
+  "title": "SPEC-EQP-005 — Sterilization, CIP/SIP & Sterile Filtration Management Events",
+  "description": "Document 113 event contract for the events app/modules/equipment/sterilization_commands.py actually emits. 6 of the catalogue's 10 declared Document 42 events are implemented: SterilizationCycleStarted, SterilizationCycleCompleted, SterilizationCycleFailed, SterilizationCycleAccepted, FilterInstalled, FilterIntegrityPassed, FilterIntegrityFailed. SIPStatusIssued, CIPCompleted and SterileStatusExpired are declared in 07_EVENT_CATALOGUE.yaml but have no producing code path -- this module models CIP/SIP as sterilization-cycle process types (see `process_type` on SterilizationCycleStarted) rather than distinct CIP/SIP-specific events, and sterile-status expiry (a scheduled/background check) is not yet built. Verified directly against source, not assumed.",
+  "x-requirement-ids": [
+    "STR-FR-001",
+    "STR-FR-002",
+    "STR-FR-003",
+    "STR-FR-004",
+    "STR-FR-005",
+    "STR-FR-006",
+    "STR-FR-007",
+    "STR-FR-008"
+  ],
+  "$defs": {
+    "SterilizationCycleStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "process_type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "process_type": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    },
+    "SterilizationCycleCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    },
+    "SterilizationCycleFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    },
+    "SterilizationCycleAcceptedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    },
+    "FilterInstalledPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    },
+    "FilterIntegrityPassedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "phase",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    },
+    "FilterIntegrityFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "phase",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "SterilizationCycleStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-005",
+      "aggregate_type": "process_cycle",
+      "payload": {
+        "$ref": "#/$defs/SterilizationCycleStartedPayload"
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    },
+    {
+      "event_type": "SterilizationCycleCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-005",
+      "aggregate_type": "process_cycle",
+      "payload": {
+        "$ref": "#/$defs/SterilizationCycleCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    },
+    {
+      "event_type": "SterilizationCycleFailed",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-005",
+      "aggregate_type": "process_cycle",
+      "payload": {
+        "$ref": "#/$defs/SterilizationCycleFailedPayload"
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    },
+    {
+      "event_type": "SterilizationCycleAccepted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-005",
+      "aggregate_type": "process_cycle",
+      "payload": {
+        "$ref": "#/$defs/SterilizationCycleAcceptedPayload"
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    },
+    {
+      "event_type": "FilterInstalled",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-005",
+      "aggregate_type": "sterile_filter_use",
+      "payload": {
+        "$ref": "#/$defs/FilterInstalledPayload"
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    },
+    {
+      "event_type": "FilterIntegrityPassed",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-005",
+      "aggregate_type": "sterile_filter_use",
+      "payload": {
+        "$ref": "#/$defs/FilterIntegrityPassedPayload"
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    },
+    {
+      "event_type": "FilterIntegrityFailed",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-005",
+      "aggregate_type": "sterile_filter_use",
+      "payload": {
+        "$ref": "#/$defs/FilterIntegrityFailedPayload"
+      },
+      "x-requirement-ids": [
+        "STR-FR-001",
+        "STR-FR-002",
+        "STR-FR-003",
+        "STR-FR-004",
+        "STR-FR-005",
+        "STR-FR-006",
+        "STR-FR-007",
+        "STR-FR-008"
+      ]
+    }
+  ]
+}
