@@ -1,7 +1,7 @@
 # 18 — SPEC_GAP Register
 
 **Package:** eBMR / eDHR Claude Code Construction Package  
-**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open); SG-167 added 2026-09-01 (Document 105 signature policy backfill, consolidating the code-only "SG-168" reference — dependent content_challenge_hash() defect fixed + 5 signature-challenge endpoints added; policy-data half open); SG-169 added 2026-09-01, RESOLVED (WP-12/14 PDF export dependency — ReportLab approved, re-pinned after a lost pin, live SCA/license scan complete: 0 vulnerabilities, all licenses permissive); SG-170 added 2026-09-01 (Document 106 row 168 unresolvable VSR-generation signer class; implemented unsigned per the function catalogue); SG-171 added 2026-09-01, RESOLVED (ai_governance router built and wired into main.py — Document 105's 13 functions were previously unreachable via HTTP); SG-172 added 2026-09-01 (validation platform router was never wired into main.py — lost in the 2026-09-01 git-filter-repo incident — now fixed; 24 signature-challenge endpoints added for its 26 signed pairs; policy-data half open) — all others open  
+**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open); SG-167 added 2026-09-01 (Document 105 signature policy backfill, consolidating the code-only "SG-168" reference — dependent content_challenge_hash() defect fixed + 5 signature-challenge endpoints added; policy-data half open); SG-169 added 2026-09-01, RESOLVED (WP-12/14 PDF export dependency — ReportLab approved, re-pinned after a lost pin, live SCA/license scan complete: 0 vulnerabilities, all licenses permissive); SG-170 added 2026-09-01 (Document 106 row 168 unresolvable VSR-generation signer class; implemented unsigned per the function catalogue); SG-171 added 2026-09-01, RESOLVED (ai_governance router built and wired into main.py — Document 105's 13 functions were previously unreachable via HTTP); SG-172 added 2026-09-01 (validation platform router was never wired into main.py — lost in the 2026-09-01 git-filter-repo incident — now fixed; 24 signature-challenge endpoints added for its 26 signed pairs; policy-data half open); SG-173 added 2026-09-01 (product/recipe/batch have two independent, both-live authoritative stores each — AG-05 violation found while scoping WP-02's SG-013 event-schema slice; not fixed, migration/cutover plan reserved for the project owner) — all others open  
 **Specification baseline:** Documents 01–105, baseline date 2026-08-20  
 **Purpose:** Every missing or conflicting decision found in Documents 01–105, with impact, options and the document that resolves it.
 
@@ -10522,5 +10522,116 @@ options:
 blocking: true  # the affected transitions cannot be completed by any actor
 owner: Head of Quality (approver) + Regulatory Affairs + validation platform module owner
 resolution_document: "Document 106 (signature policy) -- extension still required for the policy-data half (blocking). Engineering half resolved 2026-09-01: main.py wiring + app/modules/validation/signature_support.py + 24 signature-challenge endpoints across router.py/router_wp14.py."
+status: OPEN
+```
+
+### SG-173 — Two independent, both-live authoritative stores for Product, Recipe and Batch (AG-05 violation)
+
+Discovered while cross-referencing WP-02's 39 catalogue events (Document 09-12) against `event_type=`
+producer code, ahead of writing their event contracts (the next slice of SG-013). Found three pairs of
+parallel modules, each pair independently modelling the same regulated entity with its own PostgreSQL
+tables, both sides wired into `app/main.py` and reachable via HTTP right now:
+
+| Entity | Module A (non-`gxp_` tables) | Module B (`gxp_`-prefixed tables) |
+|---|---|---|
+| Product (Document 09) | `app/modules/product/` -> `products` | `app/modules/product_master/` -> `gxp_product_family`, `gxp_product_version`, `gxp_product_constituent`, `gxp_constituent_compatibility_version` |
+| Recipe (Document 10) | `app/modules/recipe/` -> `recipes`, `recipe_steps` | `app/modules/recipe_master/` -> `gxp_recipe_family`, `gxp_recipe_version`, `gxp_recipe_section`, `gxp_recipe_step`, `gxp_recipe_step_dependency`, `gxp_recipe_parameter`, `gxp_recipe_evidence_requirement` |
+| Batch (Document 11) | `app/modules/batch/` -> `batches`, `batch_steps`, `batch_reviews`, `batch_releases` | `app/modules/batch_execution/` -> `gxp_batch`, `gxp_batch_step` |
+
+Neither side of any pair imports or references the other's models. Both sides have real routes (4-12
+endpoints each), real test suites (module-A test functions: product 59, recipe 59, batch 74; module-B:
+product_master 53, recipe_master 5, batch_execution 12) and real downstream dependents: `ddcp`, `material`
+and `iam` import module A (`product`/`recipe`/`batch`); `packaging`, `qc`, `yield_reconciliation`,
+`qa_review` and `release` import module B (`batch_execution`). This is AG-05 ("one authoritative
+owner/store per regulated entity") and DATA-FR-001/DATA-FR-005 violated for the three most central
+entities in the platform, not a documentation gap -- a batch (or recipe, or product) created/mutated
+through one side is invisible to code that reads the other side, silently, with no reconciliation and no
+error.
+
+Three independent signals agree on which side is the approved one, with no signal pointing the other way:
+
+1. **Git history**: `product`/`recipe`/`batch` were all added in `8addf8a` ("Initial commit", 2026-08-22,
+   before any spec-driven work started). `product_master`/`recipe_master`/`batch_execution` were all added
+   later in `53dcdb7` ("complete wp-00 to wp-10 and working on wp-11") -- the deliberate, documented build
+   pass.
+2. **`docs/generated/05_DATABASE_OWNERSHIP_MATRIX.md`** (generated from the frozen spec baseline before
+   either module was coded) names `gxp_batch`/`gxp_batch_step` as the authoritative entities for
+   SPEC-EBMR-002; it does not mention `batches`/`batch_steps` at all. (The matrix's WP-02 section is
+   otherwise incomplete -- no product/recipe rows either way -- so this signal only directly covers Batch,
+   but it does not contradict the pattern for Product/Recipe.)
+3. **Naming convention**: every other authoritative regulated table in this codebase, across every module,
+   carries a `gxp_` or module-specific prefix (`gxp_command_receipt`, `gxp_outbox`, `gxp_signature`,
+   `gxp_vault_object`, `iam_subject`, ...). `products`, `recipes`, `batches` are the only bare, unprefixed
+   names anywhere in the regulated schema.
+
+What is **not** resolvable without a project-owner decision: whether `product`/`recipe`/`batch` ever held
+real customer/demo data that would need migrating into the `_master`/`_execution` tables before removal,
+and the actual cutover plan for `ddcp`, `material` and `iam` (all three still importing the non-authoritative
+side, `iam` and `ddcp` having been added in the *same* `53dcdb7` build pass that built the correct modules
+and yet still wired to the old scaffold). That is a multi-module migration with real regression risk, not
+an engineering judgement call.
+
+```yaml
+spec_gap_id: SG-173
+title: "Two independent, both-live authoritative stores for Product, Recipe and Batch (AG-05 violation)"
+class: R  # regulated decision -- which store is authoritative, and the data-migration/cutover plan
+description: >
+  app/modules/product, app/modules/recipe and app/modules/batch each implement their own independent
+  PostgreSQL tables for a regulated entity that app/modules/product_master, app/modules/recipe_master and
+  app/modules/batch_execution also independently implement. Both sides of all three pairs are wired into
+  app/main.py, have real routes/tests, and have real downstream dependents that disagree on which side is
+  authoritative (ddcp/material/iam use the non-gxp_-prefixed side; packaging/qc/yield_reconciliation/
+  qa_review/release use the gxp_-prefixed side). Git history, the frozen-baseline-generated
+  05_DATABASE_OWNERSHIP_MATRIX.md, and the codebase-wide gxp_-prefix convention for authoritative tables
+  all agree product_master/recipe_master/batch_execution are the approved implementations and
+  product/recipe/batch are unremoved day-one scaffolding -- but the migration/cutover plan for the three
+  wrongly-wired dependent modules, and whether any real data in the scaffold tables needs migrating first,
+  is a regulated data-integrity decision this session should not make unilaterally.
+source_documents:
+  - Document 02 (DOC-002) AG-05
+  - Document 09 (SPEC-EBMR-000), Document 10 (SPEC-EBMR-001), Document 11 (SPEC-EBMR-002)
+  - Document 69 (SPEC-DATA-001) DATA-FR-001, DATA-FR-005
+  - docs/generated/05_DATABASE_OWNERSHIP_MATRIX.md
+source_requirement_ids:
+  - DATA-FR-001
+  - DATA-FR-005
+  - BAT-FR-001
+  - BAT-FR-002
+affected_modules:
+  - SPEC-EBMR-000
+  - SPEC-EBMR-001
+  - SPEC-EBMR-002
+affected_functions:
+  - app/modules/product/commands.py (all)
+  - app/modules/product_master/commands.py (all)
+  - app/modules/recipe/commands.py (all)
+  - app/modules/recipe_master/commands.py (all)
+  - app/modules/batch/commands.py (all)
+  - app/modules/batch_execution/commands.py (all)
+  - app/modules/ddcp/*.py, app/modules/material/commands.py, app/modules/iam/commands.py (dependents on the non-authoritative side)
+why_material: >
+  AG-05 is a hard architecture non-negotiable, not a preference. Deciding which store is authoritative,
+  whether the other side's data needs migrating first, and the cutover sequence for three dependent
+  modules is exactly the class of decision this project's own SPEC_GAP process reserves for the project
+  owner -- picking wrong, or picking silently, risks losing or orphaning real regulated batch/recipe/
+  product history.
+risk_if_guessed: >
+  Deleting or redirecting either side without confirming there is no real data in it, or without a
+  coordinated cutover for ddcp/material/iam, could silently orphan in-flight batch/recipe/product records
+  or break those three modules outright. This is the kind of migration/data-loss decision Section 4 of
+  CLAUDE.md explicitly reserves.
+options:
+  - (A) Migrate ddcp/material/iam to import product_master/recipe_master/batch_execution, verify no real
+    data exists in the products/recipes/batches tables (or migrate what's there), then remove the
+    product/recipe/batch modules and their routes/tables entirely -- recommended, matches every signal
+    found.
+  - (B) Keep both, formally declare one a read-only projection of the other with an explicit sync job --
+    rejected as first choice -- adds a permanent reconciliation burden for what looks like unintentional
+    duplication, not a deliberate CQRS split.
+  - (C) Leave as-is and treat it as accepted technical debt -- rejected, it's a live AG-05 violation on the
+    platform's three most central entities, not a cosmetic issue.
+blocking: false  # both sides currently function independently; nothing is broken today, but the split is a data-integrity risk building silently in the background
+owner: Platform Architect + Head of Quality (data-integrity sign-off)
+resolution_document: "-- (open)"
 status: OPEN
 ```
