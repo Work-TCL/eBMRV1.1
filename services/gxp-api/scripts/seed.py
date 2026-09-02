@@ -11,6 +11,13 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
+import app.all_models  # noqa: F401 -- registers every module's models before any relationship/FK
+# string reference (e.g. AsepticProfileVersion.product_id -> "ebmr.products") is resolved; seed.py
+# only imports the specific model classes it needs directly, which left tables like `ebmr.products`
+# unregistered and raised NoReferencedTableError on the very first flush. Same fix app/main.py gets
+# for free by importing every module's router (which transitively imports its models) -- seed.py
+# doesn't import routers, so it needs this explicitly. Found 2026-09-02 while trying to reseed the
+# empty ebmr_new_gxp demo database.
 from app.core.db import SessionLocal
 from app.core.security import hash_password
 from app.modules.iam.models import Organization, Permission, Role, RolePermission, Site, SodRule, User, UserSiteRole
