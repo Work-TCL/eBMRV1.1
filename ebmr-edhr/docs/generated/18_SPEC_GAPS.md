@@ -1,7 +1,7 @@
 # 18 — SPEC_GAP Register
 
 **Package:** eBMR / eDHR Claude Code Construction Package  
-**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open); SG-167 added 2026-09-01 (Document 105 signature policy backfill, consolidating the code-only "SG-168" reference — dependent content_challenge_hash() defect fixed + 5 signature-challenge endpoints added; policy-data half open); SG-169 added 2026-09-01, RESOLVED (WP-12/14 PDF export dependency — ReportLab approved, re-pinned after a lost pin, live SCA/license scan complete: 0 vulnerabilities, all licenses permissive); SG-170 added 2026-09-01 (Document 106 row 168 unresolvable VSR-generation signer class; implemented unsigned per the function catalogue); SG-171 added 2026-09-01, RESOLVED (ai_governance router built and wired into main.py — Document 105's 13 functions were previously unreachable via HTTP); SG-172 added 2026-09-01 (validation platform router was never wired into main.py — lost in the 2026-09-01 git-filter-repo incident — now fixed; 24 signature-challenge endpoints added for its 26 signed pairs; policy-data half open); SG-173 added 2026-09-01 (product/recipe/batch have two independent, both-live authoritative stores each — AG-05 violation found while scoping WP-02's SG-013 event-schema slice; not fixed, migration/cutover plan reserved for the project owner); SG-013 event half re-baselined 2026-09-01 (284/484 events now committed — WP-09/10/11/13/14 landed since the last note plus a new WP-03 slice, 24/38; WP-04/06/12 still fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued — SG-013 remains blocking); SG-174 added 2026-09-01 (LineClearanceCompleted emitted by both packaging and equipment/cleaning modules with no consumer-visible distinction — found by tooling/events/validate.py itself while writing the WP-06 event slice, 33/43; left failing/documented rather than silently renamed; SG-013 now at 317/484, 316 distinct) — all others open  
+**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open); SG-167 added 2026-09-01 (Document 105 signature policy backfill, consolidating the code-only "SG-168" reference — dependent content_challenge_hash() defect fixed + 5 signature-challenge endpoints added; policy-data half open); SG-169 added 2026-09-01, RESOLVED (WP-12/14 PDF export dependency — ReportLab approved, re-pinned after a lost pin, live SCA/license scan complete: 0 vulnerabilities, all licenses permissive); SG-170 added 2026-09-01 (Document 106 row 168 unresolvable VSR-generation signer class; implemented unsigned per the function catalogue); SG-171 added 2026-09-01, RESOLVED (ai_governance router built and wired into main.py — Document 105's 13 functions were previously unreachable via HTTP); SG-172 added 2026-09-01 (validation platform router was never wired into main.py — lost in the 2026-09-01 git-filter-repo incident — now fixed; 24 signature-challenge endpoints added for its 26 signed pairs; policy-data half open); SG-173 added 2026-09-01 (product/recipe/batch have two independent, both-live authoritative stores each — AG-05 violation found while scoping WP-02's SG-013 event-schema slice; not fixed, migration/cutover plan reserved for the project owner); SG-013 event half re-baselined 2026-09-01 (284/484 events now committed — WP-09/10/11/13/14 landed since the last note plus a new WP-03 slice, 24/38; WP-04/06/12 still fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued — SG-013 remains blocking); SG-174 added 2026-09-01 (cross-module event-name collisions — LineClearanceCompleted and, found in the WP-04 slice the same day, MaterialReconciliationCalculated — each emitted by two unrelated modules with no consumer-visible distinction; both found by tooling/events/validate.py itself, left failing/documented rather than silently renamed); SG-013 event half at 371/484 after the WP-04 slice (54/72, Documents 18-25 — material/QC; WP-12 62 events fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued) — all others open  
 **Specification baseline:** Documents 01–105, baseline date 2026-08-20  
 **Purpose:** Every missing or conflicting decision found in Documents 01–105, with impact, options and the document that resolves it.
 
@@ -776,8 +776,28 @@ status: RESOLVED_APPROVED_2026-08-21
 > renamed to force a clean pass — see SG-174. Total after this slice: **317 of 484 events committed**
 > (316 distinct event_type values, since one name is claimed twice per SG-174), **167 remaining**:
 > WP-04 (72) and WP-12 (62) fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued.
-> `tooling/events/validate.py` re-run after this pass: **`PASS  no event contract violations found`**
-> (42 files parsed, 284 event entries).
+> `tooling/events/validate.py` re-run after this pass: **`FAIL  1 violation(s)`** (47 files parsed, 317
+> event entries) — the single SG-174 finding above. This is the accurate result, left standing rather
+> than corrected to a false "PASS": a prior draft of this note copy-pasted the pre-WP-06 "PASS" line by
+> mistake before this fix; flagging that error here rather than silently erasing it, per Section 5.
+>
+> **UPDATE 2026-09-01 (later the same day) — WP-04 slice (54 of 72 declared).** `event-mat-001.json`
+> (Document 18, 1/7 — the only real event is SupplierQualificationApproved; procurement/PO creation and
+> supplier suspension/disqualification are not built as native flows), `event-mat-002a/b/c/d.json`
+> (Documents 19-22, 28/34 declared — material receipt/quarantine, inventory/lot/container, dispensing/
+> weighing, consumption/return/destruction/reconciliation), `event-qc-001/002/003.json` (Documents 23-25,
+> 25/31 declared — native QC, LIMS integration, OOS/OOT management). 18 catalogue-declared events have no
+> producing code path, documented per-file not invented (test invalidation, an explicit LIMS-rejection/
+> dead-letter path, retest-plan completion, and several others — see each file's description for the
+> specific list). **Second instance of SG-174 found, same class**: `MaterialReconciliationCalculated` is
+> also emitted by `yield_reconciliation` (Document 17, already contracted in WP-03) — see SG-174's update.
+> A full sweep of all 55 committed contract files found exactly these 2 collisions (4 entries) and no
+> others; the remaining gap between 371 entries and fewer distinct names is the already-documented
+> same-producer "dual-aggregate" pattern from the QMS slice's own history (one producer intentionally
+> emitting the same event_type twice for two aggregates in one call), not a new defect.
+> `tooling/events/validate.py`: **`FAIL  2 violation(s)`** (55 files parsed, 371 event entries) — both
+> SG-174 findings, left standing. **SG-013 now: 371/484 events committed, 113 remaining**: WP-12 (62)
+> fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued.
 
 
 498 API operations and 484 event types are declared by path/name across the baseline, but only a small number of documents provide request/response or payload examples (authoring standard items 18 and 21). Contract-first code generation, consumer contract tests and compatibility checks all require field-level schemas.
@@ -10697,7 +10717,7 @@ resolution_document: "-- (open)"
 status: OPEN
 ```
 
-### SG-174 — `LineClearanceCompleted` is emitted by two different modules with no way for a consumer to tell them apart
+### SG-174 — Cross-module event-name collisions: `LineClearanceCompleted` and `MaterialReconciliationCalculated` each emitted by two different modules with no way for a consumer to tell them apart
 
 Found by `tooling/events/validate.py` itself (CTRC-FR-008) while writing the WP-06 slice of SG-013's event
 contracts. `app/modules/packaging/commands.py` (Document 16, packaging-line clearance before a packaging
@@ -10718,19 +10738,40 @@ routine, but changing a live event contract without checking for real consumers 
 of change Document 101's contract-first discipline exists to gate, so it's recorded here rather than done
 inline while writing an unrelated slice.
 
+**UPDATE 2026-09-01 (same day) — second, independent instance found, same class.** While writing the
+WP-04 slice, `tooling/events/validate.py` caught the identical defect shape again: `app/modules/material/
+commands.py` (Document 22, material-level reconciliation, `aggregate_type=material_reconciliation`) and
+`app/modules/yield_reconciliation/commands.py` (Document 17, batch-level material reconciliation,
+`aggregate_type=reconciliation_record`) both emit the literal `event_type="MaterialReconciliationCalculated"`
+for two different reconciliation concepts. Same treatment: documented in both `event-mat-002d.json` and
+`event-ebmr-008.json`, left failing rather than silently renamed. A direct sweep of every committed
+contract file (`contracts/events/*.json`, 55 files / 371 entries as of this pass) found **exactly these
+two collisions and no others** among what's been written so far — this is a real, recurring pattern
+(two instances in two consecutive slices, both a generically-named "completed/calculated" event reused by
+an unrelated module) worth a deliberate check when writing the remaining WP-04/WP-12/WP-01/07/08 slices,
+not just a one-off. `blocking` stays false for the same reason as before: no live consumer exists yet to
+actually mis-route.
+
 ```yaml
 spec_gap_id: SG-174
-title: "LineClearanceCompleted emitted by two different modules (packaging, equipment) with no consumer-visible distinction"
-class: E  # engineering defect -- event-naming collision, not a regulated decision
+title: "Cross-module event-name collisions: LineClearanceCompleted (packaging/equipment) and MaterialReconciliationCalculated (material/yield_reconciliation), no consumer-visible distinction"
+class: E  # engineering defect -- event-naming collisions, not a regulated decision
 description: >
-  app/modules/packaging/commands.py (Document 16) and app/modules/equipment/cleaning_commands.py
-  (Document 39) both emit event_type="LineClearanceCompleted" for two different real-world procedures
-  (packaging-line clearance vs. equipment/cleanroom clearance). tooling/events/validate.py's CTRC-FR-008
-  check correctly flags this as two producers claiming one event_type. Left failing/documented rather than
-  silently renamed in the contract to force a clean pass.
+  Two independent instances of the same defect shape, both found by tooling/events/validate.py's
+  CTRC-FR-008 check while writing SG-013's event contracts, not by inspection. (1) app/modules/packaging/
+  commands.py (Document 16) and app/modules/equipment/cleaning_commands.py (Document 39) both emit
+  event_type="LineClearanceCompleted" for two different real-world procedures (packaging-line clearance
+  vs. equipment/cleanroom clearance). (2) app/modules/material/commands.py (Document 22) and
+  app/modules/yield_reconciliation/commands.py (Document 17) both emit
+  event_type="MaterialReconciliationCalculated" for two different reconciliation concepts (material-level
+  vs. batch-level). A full sweep of every committed contract file (55 files / 371 entries as of this pass)
+  found exactly these two collisions and no others. Left failing/documented in both contract files for
+  each pair rather than silently renamed to force a clean pass.
 source_documents:
   - Document 16 (SPEC-EBMR-007)
   - Document 39 (SPEC-EQP-002)
+  - Document 17 (SPEC-EBMR-008)
+  - Document 22 (SPEC-MAT-002D)
   - Document 101 (SPEC-ENG-005) CTR-FR-003, CTR-FR-020, CTR-FR-021
 source_requirement_ids:
   - CTR-FR-003
@@ -10738,24 +10779,29 @@ source_requirement_ids:
 affected_modules:
   - SPEC-EBMR-007
   - SPEC-EQP-002
+  - SPEC-EBMR-008
+  - SPEC-MAT-002D
 affected_functions:
   - app/modules/packaging/commands.py::line_clearance (LineClearanceCompleted producer)
   - app/modules/equipment/cleaning_commands.py (LineClearanceCompleted producer)
+  - app/modules/material/commands.py (MaterialReconciliationCalculated producer)
+  - app/modules/yield_reconciliation/commands.py (MaterialReconciliationCalculated producer)
 why_material: >
   Renaming a live event type is a compatibility change (CTR-FR-020/021) that should be checked against
   real consumers before being made, even though no live NATS bus exists yet (Phase 1 outbox publisher
   logs rather than publishes) -- routine, but not something to do silently as a side effect of writing an
-  unrelated contract slice.
+  unrelated contract slice. Two instances in two consecutive slices makes this worth a deliberate check
+  when writing the remaining WP-04/WP-12/WP-01/07/08 slices, not just a one-off fix.
 risk_if_guessed: >
   Low today (no live consumer exists to actually mis-route), but growing: any future read-model/projection
-  that subscribes to LineClearanceCompleted expecting one of the two procedures will silently receive both,
-  with no field to disambiguate short of aggregate_type inspection.
+  that subscribes to either event type expecting one specific procedure will silently receive both, with
+  no field to disambiguate short of aggregate_type inspection.
 options:
-  - (A) Rename the packaging side to PackagingLineClearanceCompleted (or the equipment side to
-    EquipmentLineClearanceCompleted / CleanroomLineClearanceCompleted) with a schema_version bump --
-    recommended, routine engineering fix, no regulated-decision content.
-  - (B) Leave both as LineClearanceCompleted permanently, document that consumers must branch on
-    aggregate_type -- rejected, defeats the purpose of CTR-FR-003 distinct event types.
+  - (A) Rename one side of each pair (e.g. PackagingLineClearanceCompleted /
+    MaterialLotReconciliationCalculated) with a schema_version bump per pair -- recommended, routine
+    engineering fix, no regulated-decision content.
+  - (B) Leave both pairs permanently colliding, document that consumers must branch on aggregate_type --
+    rejected, defeats the purpose of CTR-FR-003 distinct event types.
 blocking: false  # no live consumer exists yet to actually mis-route; a real but not urgent defect
 owner: Platform Architect
 resolution_document: "-- (open)"

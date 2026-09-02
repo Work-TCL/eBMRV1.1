@@ -1,0 +1,411 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qc-001.json",
+  "title": "SPEC-QC-001 — Native Basic QC & Sampling Events",
+  "description": "Document 113 event contract for the events app/modules/qc/commands.py actually emits. 9 of the catalogue's 10 declared Document 23 events are implemented: QCSampleCreated, QCSampleReceived, QCTestStarted, QCResultRecorded, QCResultOOSDetected, QCResultOOTDetected, QCTestAnalystCompleted, QCTestReviewed, QCResultCorrected. QCTestInvalidated is declared but has no producing code path -- test invalidation is not yet built as a distinct transition. Verified directly against source.",
+  "x-requirement-ids": [
+    "QC-FR-001",
+    "QC-FR-002",
+    "QC-FR-003",
+    "QC-FR-004",
+    "QC-FR-005",
+    "QC-FR-006",
+    "QC-FR-007",
+    "QC-FR-008"
+  ],
+  "$defs": {
+    "QCSampleCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sample_number"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sample_number": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "QCSampleReceivedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "QCTestStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "QCResultRecordedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "outcome"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "outcome": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "QCResultOOSDetectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "QCResultOOTDetectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "QCTestAnalystCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "QCTestReviewedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "QCResultCorrectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "supersedes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "supersedes": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "QCSampleCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-001",
+      "aggregate_type": "qc_sample",
+      "payload": {
+        "$ref": "#/$defs/QCSampleCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "QCSampleReceived",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-001",
+      "aggregate_type": "qc_sample",
+      "payload": {
+        "$ref": "#/$defs/QCSampleReceivedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "QCTestStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-001",
+      "aggregate_type": "qc_test_order",
+      "payload": {
+        "$ref": "#/$defs/QCTestStartedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "QCResultRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-001",
+      "aggregate_type": "qc_result",
+      "payload": {
+        "$ref": "#/$defs/QCResultRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "QCResultOOSDetected",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-001",
+      "aggregate_type": "qc_result",
+      "payload": {
+        "$ref": "#/$defs/QCResultOOSDetectedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "QCResultOOTDetected",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-001",
+      "aggregate_type": "qc_result",
+      "payload": {
+        "$ref": "#/$defs/QCResultOOTDetectedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "QCTestAnalystCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-001",
+      "aggregate_type": "qc_test_order",
+      "payload": {
+        "$ref": "#/$defs/QCTestAnalystCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "QCTestReviewed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-001",
+      "aggregate_type": "qc_test_order",
+      "payload": {
+        "$ref": "#/$defs/QCTestReviewedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "QCResultCorrected",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-001",
+      "aggregate_type": "qc_result",
+      "payload": {
+        "$ref": "#/$defs/QCResultCorrectedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    }
+  ]
+}

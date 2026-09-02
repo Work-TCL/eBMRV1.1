@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qc-002.json",
+  "title": "SPEC-QC-002 — LIMS Integration Architecture & Generic Adapter Contract Events",
+  "description": "Document 113 event contract for the events app/modules/lims_integration/commands.py actually emits. 5 of the catalogue's 8 declared Document 24 events are implemented: LIMSSampleRequested, LIMSStatusReceived, LIMSResultAccepted, LIMSResultRevised (mutually exclusive outcomes of the same result-ingestion call site, chosen by is_revision), LIMSReconciliationMismatchDetected. LIMSResultReceived, LIMSResultRejected and LIMSIntegrationDeadLettered are declared but have no producing code path -- a received-but-not-yet-accepted intermediate state, an explicit rejection path, and dead-letter handling for the LIMS adapter are not yet built. Verified directly against source.",
+  "x-requirement-ids": [
+    "QC-FR-001",
+    "QC-FR-002",
+    "QC-FR-003",
+    "QC-FR-004",
+    "QC-FR-005",
+    "QC-FR-006",
+    "QC-FR-007",
+    "QC-FR-008"
+  ],
+  "$defs": {
+    "LIMSSampleRequestedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "external_sample_id",
+        "internal_sample_id"
+      ],
+      "properties": {
+        "external_sample_id": {
+          "type": "string"
+        },
+        "internal_sample_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "LIMSStatusReceivedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "external_sample_id",
+        "status"
+      ],
+      "properties": {
+        "external_sample_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "LIMSResultAcceptedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "external_sample_id",
+        "test_code",
+        "outcome"
+      ],
+      "properties": {
+        "external_sample_id": {
+          "type": "string"
+        },
+        "test_code": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "LIMSResultRevisedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "external_sample_id",
+        "test_code",
+        "outcome"
+      ],
+      "properties": {
+        "external_sample_id": {
+          "type": "string"
+        },
+        "test_code": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "LIMSReconciliationMismatchDetectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "external_sample_id",
+        "issue"
+      ],
+      "properties": {
+        "external_sample_id": {
+          "type": "string"
+        },
+        "issue": {
+          "type": "string"
+        },
+        "mapped_version": {
+          "type": "integer"
+        },
+        "current_version": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "LIMSSampleRequested",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-002",
+      "aggregate_type": "lims_mapping",
+      "payload": {
+        "$ref": "#/$defs/LIMSSampleRequestedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "LIMSStatusReceived",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-002",
+      "aggregate_type": "lims_message",
+      "payload": {
+        "$ref": "#/$defs/LIMSStatusReceivedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "LIMSResultAccepted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-002",
+      "aggregate_type": "qc_result",
+      "payload": {
+        "$ref": "#/$defs/LIMSResultAcceptedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "LIMSResultRevised",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-002",
+      "aggregate_type": "qc_result",
+      "payload": {
+        "$ref": "#/$defs/LIMSResultRevisedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "LIMSReconciliationMismatchDetected",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-002",
+      "aggregate_type": "lims_instance",
+      "payload": {
+        "$ref": "#/$defs/LIMSReconciliationMismatchDetectedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    }
+  ]
+}

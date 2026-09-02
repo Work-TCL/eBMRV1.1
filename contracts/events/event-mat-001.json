@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-mat-001.json",
+  "title": "SPEC-MAT-001 — Procurement & Supplier Quality Events",
+  "description": "Document 113 event contract for the events app/modules/supplier_quality/commands.py actually emits. Only 1 of the catalogue's 7 declared Document 18 events is implemented: SupplierQualificationApproved. SupplierMaterialApproved, SupplierSuspended, SupplierDisqualified, PurchaseRequisitionApproved, PurchaseOrderIssued and PurchaseOrderRegulatedFieldsChanged are declared in 07_EVENT_CATALOGUE.yaml but have no producing code path anywhere in the codebase -- procurement (requisition/PO creation) is not built as a native flow here (Document 48/49 route PO ownership through the ERP integration, and app/modules/erp/ has no PO-specific event either), and supplier suspension/disqualification transitions beyond initial qualification approval are not yet built. Verified directly against source (grep across app/, not assumption).",
+  "x-requirement-ids": [
+    "MAT-FR-001",
+    "MAT-FR-002",
+    "MAT-FR-003",
+    "MAT-FR-004",
+    "MAT-FR-005",
+    "MAT-FR-006",
+    "MAT-FR-007",
+    "MAT-FR-008"
+  ],
+  "$defs": {
+    "SupplierQualificationApprovedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "supplier_id",
+        "decision"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "supplier_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "decision": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "SupplierQualificationApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-001",
+      "aggregate_type": "supplier_qualification",
+      "payload": {
+        "$ref": "#/$defs/SupplierQualificationApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    }
+  ]
+}

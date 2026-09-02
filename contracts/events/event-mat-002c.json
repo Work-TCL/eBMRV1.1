@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-mat-002c.json",
+  "title": "SPEC-MAT-002C — Material Dispensing & Weighing Events",
+  "description": "Document 113 event contract for the events app/modules/material/commands.py actually emits for Document 21. 6 of the catalogue's 7 declared events are implemented: DispensingStarted, DispensingSourceSelected, WeighingReadingAccepted, DispensingVerified, MaterialDispensed, DispensingCancelled. WeighingExceptionRaised is declared but has no producing code path -- an unstable/out-of-tolerance reading is not yet distinguished from an accepted one at the event level. Verified directly against source.",
+  "x-requirement-ids": [
+    "MAT-FR-001",
+    "MAT-FR-002",
+    "MAT-FR-003",
+    "MAT-FR-004",
+    "MAT-FR-005",
+    "MAT-FR-006",
+    "MAT-FR-007",
+    "MAT-FR-008"
+  ],
+  "$defs": {
+    "DispensingStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order_id"
+      ],
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "DispensingSourceSelectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order_id",
+        "source_id",
+        "lot_id"
+      ],
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "source_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "lot_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "WeighingReadingAcceptedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order_id",
+        "reading_id",
+        "stable"
+      ],
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "reading_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "stable": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "DispensingVerifiedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order_id"
+      ],
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "MaterialDispensedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order_id",
+        "dispensed_container_id",
+        "quantity"
+      ],
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "dispensed_container_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "quantity": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "DispensingCancelledPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order_id"
+      ],
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "DispensingStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002C",
+      "aggregate_type": "dispensing_order",
+      "payload": {
+        "$ref": "#/$defs/DispensingStartedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "DispensingSourceSelected",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002C",
+      "aggregate_type": "dispensing_order",
+      "payload": {
+        "$ref": "#/$defs/DispensingSourceSelectedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "WeighingReadingAccepted",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002C",
+      "aggregate_type": "dispensing_order",
+      "payload": {
+        "$ref": "#/$defs/WeighingReadingAcceptedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "DispensingVerified",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002C",
+      "aggregate_type": "dispensing_order",
+      "payload": {
+        "$ref": "#/$defs/DispensingVerifiedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "MaterialDispensed",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002C",
+      "aggregate_type": "dispensing_order",
+      "payload": {
+        "$ref": "#/$defs/MaterialDispensedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "DispensingCancelled",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002C",
+      "aggregate_type": "dispensing_order",
+      "payload": {
+        "$ref": "#/$defs/DispensingCancelledPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    }
+  ]
+}
