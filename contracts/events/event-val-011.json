@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-011.json",
+  "title": "SPEC-VAL-011 — Audit Trail, Vault & Data Integrity Validation Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_integrity.py actually emits. 1 of the catalogue's 4 declared Document 89 events is directly named-matched (DataIntegrityQualificationApproved); the other 3 exist under a dict-keyed lookup this catalogue's own event_type= grep would miss: AuditTamperTestCompleted (the default outcome for reorder/delete/edit/overwrite tamper actions), VaultCanonicalizationVerified and ArchiveRetrievalVerified (both keyed off `tamper_action` in `_EVENT_BY_ACTION`). All 4 of the catalogue's declared events are therefore implemented. (The module also emits an undeclared DataIntegrityProfileDefined at profile-authoring time -- not part of the catalogue's declared 4.) Verified directly against source, including indirection through the shared finalize() helper and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "DIVQ-FR-001",
+    "DIVQ-FR-002",
+    "DIVQ-FR-003",
+    "DIVQ-FR-004",
+    "DIVQ-FR-005",
+    "DIVQ-FR-006",
+    "DIVQ-FR-007",
+    "DIVQ-FR-008"
+  ],
+  "$defs": {
+    "AuditTamperTestCompletedPayload": {
+      "type": "object",
+      "required": [
+        "tamper_action",
+        "status"
+      ],
+      "properties": {
+        "tamper_action": {
+          "type": "string"
+        },
+        "detected": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "DIVQ-FR-001",
+        "DIVQ-FR-002",
+        "DIVQ-FR-003",
+        "DIVQ-FR-004",
+        "DIVQ-FR-005",
+        "DIVQ-FR-006",
+        "DIVQ-FR-007",
+        "DIVQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "VaultCanonicalizationVerifiedPayload": {
+      "type": "object",
+      "required": [
+        "tamper_action",
+        "status"
+      ],
+      "properties": {
+        "tamper_action": {
+          "type": "string"
+        },
+        "detected": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "DIVQ-FR-001",
+        "DIVQ-FR-002",
+        "DIVQ-FR-003",
+        "DIVQ-FR-004",
+        "DIVQ-FR-005",
+        "DIVQ-FR-006",
+        "DIVQ-FR-007",
+        "DIVQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "ArchiveRetrievalVerifiedPayload": {
+      "type": "object",
+      "required": [
+        "tamper_action",
+        "status"
+      ],
+      "properties": {
+        "tamper_action": {
+          "type": "string"
+        },
+        "detected": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "DIVQ-FR-001",
+        "DIVQ-FR-002",
+        "DIVQ-FR-003",
+        "DIVQ-FR-004",
+        "DIVQ-FR-005",
+        "DIVQ-FR-006",
+        "DIVQ-FR-007",
+        "DIVQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "DataIntegrityQualificationApprovedPayload": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "DIVQ-FR-001",
+        "DIVQ-FR-002",
+        "DIVQ-FR-003",
+        "DIVQ-FR-004",
+        "DIVQ-FR-005",
+        "DIVQ-FR-006",
+        "DIVQ-FR-007",
+        "DIVQ-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "AuditTamperTestCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-011",
+      "aggregate_type": "tamper_test_execution",
+      "payload": {
+        "$ref": "#/$defs/AuditTamperTestCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "DIVQ-FR-001",
+        "DIVQ-FR-002",
+        "DIVQ-FR-003",
+        "DIVQ-FR-004",
+        "DIVQ-FR-005",
+        "DIVQ-FR-006",
+        "DIVQ-FR-007",
+        "DIVQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "VaultCanonicalizationVerified",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-011",
+      "aggregate_type": "tamper_test_execution",
+      "payload": {
+        "$ref": "#/$defs/VaultCanonicalizationVerifiedPayload"
+      },
+      "x-requirement-ids": [
+        "DIVQ-FR-001",
+        "DIVQ-FR-002",
+        "DIVQ-FR-003",
+        "DIVQ-FR-004",
+        "DIVQ-FR-005",
+        "DIVQ-FR-006",
+        "DIVQ-FR-007",
+        "DIVQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "ArchiveRetrievalVerified",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-011",
+      "aggregate_type": "tamper_test_execution",
+      "payload": {
+        "$ref": "#/$defs/ArchiveRetrievalVerifiedPayload"
+      },
+      "x-requirement-ids": [
+        "DIVQ-FR-001",
+        "DIVQ-FR-002",
+        "DIVQ-FR-003",
+        "DIVQ-FR-004",
+        "DIVQ-FR-005",
+        "DIVQ-FR-006",
+        "DIVQ-FR-007",
+        "DIVQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "DataIntegrityQualificationApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-011",
+      "aggregate_type": "data_integrity_test_profile",
+      "payload": {
+        "$ref": "#/$defs/DataIntegrityQualificationApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "DIVQ-FR-001",
+        "DIVQ-FR-002",
+        "DIVQ-FR-003",
+        "DIVQ-FR-004",
+        "DIVQ-FR-005",
+        "DIVQ-FR-006",
+        "DIVQ-FR-007",
+        "DIVQ-FR-008"
+      ]
+    }
+  ]
+}

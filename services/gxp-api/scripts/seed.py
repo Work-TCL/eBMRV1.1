@@ -11,6 +11,13 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
+import app.all_models  # noqa: F401 -- registers every module's models before any relationship/FK
+# string reference (e.g. AsepticProfileVersion.product_id -> "ebmr.products") is resolved; seed.py
+# only imports the specific model classes it needs directly, which left tables like `ebmr.products`
+# unregistered and raised NoReferencedTableError on the very first flush. Same fix app/main.py gets
+# for free by importing every module's router (which transitively imports its models) -- seed.py
+# doesn't import routers, so it needs this explicitly. Found 2026-09-02 while trying to reseed the
+# empty ebmr_new_gxp demo database.
 from app.core.db import SessionLocal
 from app.core.security import hash_password
 from app.modules.iam.models import Organization, Permission, Role, RolePermission, Site, SodRule, User, UserSiteRole
@@ -473,6 +480,90 @@ PERMISSION_CATALOG = [
     ("dr.recovery_objective.manage", "manage", "recovery_objective_profile", "Set/update a component's RPO/RTO recovery tier (Document 76)"),
     ("dr.backup.view", "view", "backup_inventory", "Read backup freshness / RPO-at-risk status (Document 76)"),
     ("dr.restore_test.execute", "execute", "restore_test", "Record an executed restore/PITR drill (Document 76)"),
+    # WP-13 (Document 105, SPEC-AI-001) — the 13 FN-1005..FN-1017 functions. No existing role maps
+    # cleanly to "AI governance operator/reviewer" (§2 of every other new-module block above uses the
+    # same test); granted to Admin + QA Reviewer below with that reasoning, not a spec mapping.
+    ("ai_governance.use_case.register", "register", "ai_use_case", "Register an AI use case (Document 105, AI-FR-001/002)"),
+    ("ai_governance.use_case.assess_risk", "assess_risk", "ai_use_case", "Record an AI use-case risk assessment (Document 105, AI-FR-003)"),
+    ("ai_governance.model.approve", "approve", "ai_model_deployment", "Approve an AI model deployment (Document 105, AI-FR-007/021 — signature policy lookup required, SG-167)"),
+    ("ai_governance.context.build", "build", "ai_context_package", "Build a retrieval-scoped AI request context (Document 105, AI-FR-011/030/031)"),
+    ("ai_governance.advisory.execute", "execute", "ai_advisory_log", "Execute an AI advisory call and log it (Document 105, AI-FR-005/028)"),
+    ("ai_governance.tool.authorize", "authorize", "ai_tool_decision", "Authorize an AI tool call (Document 105, AI-FR-009/010 — signature policy lookup required, SG-167)"),
+    ("ai_governance.disposition.record", "record", "ai_disposition", "Record the human disposition of an AI advisory (Document 105, AI-FR-005 — signature policy lookup required, SG-167)"),
+    ("ai_governance.evaluation.run", "run", "ai_evaluation_report", "Run an AI evaluation suite against acceptance thresholds (Document 105, AI-FR-022/024)"),
+    ("ai_governance.release_gate.evaluate", "evaluate", "ai_release_gate", "Evaluate the AI model/prompt/tool release gate (Document 105, AI-FR-021 — signature policy lookup required, SG-167)"),
+    ("ai_governance.injection.detect", "detect", "ai_prompt_injection_event", "Screen content for prompt injection (Document 105, AI-FR-014/025)"),
+    ("ai_governance.provider.switch", "switch", "ai_provider_switch", "Switch an AI use case's active provider/model (Document 105 — signature policy lookup required, SG-167)"),
+    ("ai_governance.use_case.retire", "retire", "ai_use_case", "Retire an AI use case (Document 105)"),
+    ("ai_governance.package.generate", "generate", "ai_use_case", "Generate an AI governance evidence package (Document 105, AI-FR-028)"),
+    # WP-12 (Documents 79-86/88-96, SPEC-VAL-001..018) + WP-14 (Documents 85/87/95, SPEC-VAL-007/009/017)
+    # — 58 codes, one per router-level evaluate_policy() call in app/modules/validation/router.py and
+    # router_wp14.py. No dedicated "Validation Engineer"/"System Owner" role exists yet; `.manage`/
+    # `.create`/`.execute`/`.complete`/`.view` map to Operator (the general "does the work" role), and
+    # `.approve`/`.release`/`.authorize`/`.deployment_check`/`.post_go_live.record` map to QA Releaser
+    # (final release authority, matching every other WP's convention). QA Reviewer gets the review/view
+    # subset plus the WP-14 migration/VSR preparer actions (that's the role Document 87/95's own test
+    # suite exercises for authoring those records). Per-instance SoD independence (e.g. "the releaser
+    # cannot be the recommender") is enforced in the domain functions themselves (Document 106 rows
+    # 166/169), not by this RBAC grant — this only gates who may attempt the action at all.
+    ("validation.plan.manage", "manage", "validation_master_plan", "Create/update a validation master plan (Document 79)"),
+    ("validation.plan.release", "release", "validation_master_plan", "Release a validation master plan (Document 79)"),
+    ("validation.gate.view", "view", "validation_release_gate", "View a release's validation gate status (Document 79)"),
+    ("validation.package.view", "view", "validation_master_plan", "View/export a validation evidence package (Document 79)"),
+    ("validation.intended_use.manage", "manage", "intended_use", "Record an intended-use/criticality determination (Document 80)"),
+    ("validation.function_risk.manage", "manage", "function_risk_assessment", "Create/update a function risk assessment (Document 80)"),
+    ("validation.function_risk.approve", "approve", "function_risk_assessment", "Approve a function risk assessment (Document 80)"),
+    ("validation.function_risk.view", "view", "function_risk_assessment", "View a function's risk/assurance depth (Document 80)"),
+    ("validation.requirement.manage", "manage", "validation_requirement", "Ingest/update validation requirements (Document 81)"),
+    ("validation.trace_link.manage", "manage", "trace_link", "Create a requirement/design/test trace link (Document 81)"),
+    ("validation.baseline.manage", "manage", "requirement_baseline", "Baseline a requirement set (Document 81)"),
+    ("validation.traceability.view", "view", "trace_link", "View traceability matrix/coverage gaps (Document 81)"),
+    ("validation.test_definition.manage", "manage", "validation_test_definition", "Author a validation test definition (Document 82)"),
+    ("validation.test_definition.approve", "approve", "validation_test_definition", "Approve a validation test definition (Document 82)"),
+    ("validation.test_execution.manage", "manage", "validation_test_execution", "Record/start a validation test execution (Document 82)"),
+    ("validation.test_execution.complete", "complete", "validation_test_execution", "Complete a validation test execution (Document 82)"),
+    ("validation.iq.manage", "manage", "iq_protocol", "Author an IQ protocol / record an IQ execution (Document 83)"),
+    ("validation.iq.complete", "complete", "iq_execution", "Complete an IQ execution (Document 83)"),
+    ("validation.iq.approve", "approve", "iq_execution", "Approve an IQ execution (Document 83)"),
+    ("validation.oq.manage", "manage", "oq_suite", "Author an OQ suite / record an OQ execution (Document 84)"),
+    ("validation.oq.view", "view", "oq_execution", "View OQ functional-control coverage (Document 84)"),
+    ("validation.oq.approve", "approve", "oq_execution", "Approve an OQ execution (Document 84)"),
+    ("validation.infrastructure.manage", "manage", "infrastructure_qualification_profile", "Record an infrastructure qualification profile/fingerprint/test (Document 86)"),
+    ("validation.infrastructure.approve", "approve", "infrastructure_fingerprint", "Approve an infrastructure qualification fingerprint (Document 86)"),
+    ("validation.part11.manage", "manage", "part11_scope_assessment", "Record a Part 11 scope assessment/test suite/control result (Document 88)"),
+    ("validation.part11.approve", "approve", "part11_scope_assessment", "Approve a Part 11 scope assessment (Document 88)"),
+    ("validation.data_integrity.manage", "manage", "data_integrity_test_profile", "Record a data-integrity test suite/tamper test (Document 89)"),
+    ("validation.data_integrity.approve", "approve", "data_integrity_test_profile", "Approve a data-integrity test profile (Document 89)"),
+    ("validation.interface.manage", "manage", "interface_validation_profile", "Record an interface validation profile/test (Document 90)"),
+    ("validation.interface.approve", "approve", "interface_validation_profile", "Approve an interface validation profile (Document 90)"),
+    ("validation.dr.manage", "manage", "dr_qualification_scenario", "Record a DR qualification scenario/execution/measurement (Document 91)"),
+    ("validation.dr.approve", "approve", "dr_qualification_execution", "Approve a DR qualification execution (Document 91)"),
+    ("validation.security.manage", "manage", "security_qualification_suite", "Record a security qualification suite/test/finding (Document 92)"),
+    ("validation.security.view", "view", "security_qualification_suite", "View a security qualification gate (Document 92)"),
+    ("validation.security.approve", "approve", "security_qualification_suite", "Approve a security qualification suite (Document 92)"),
+    ("validation.performance.manage", "manage", "performance_qualification_scenario", "Record a performance qualification scenario/run/evaluation (Document 93)"),
+    ("validation.performance.view", "view", "performance_run", "View performance/capacity sizing evidence (Document 93)"),
+    ("validation.exception.create", "create", "validation_exception", "Log a validation defect/deviation/test exception (Document 94)"),
+    ("validation.exception.triage", "triage", "validation_exception", "Triage a validation exception (Document 94)"),
+    ("validation.exception.retest_plan", "retest_plan", "validation_exception", "Record a validation exception's retest plan (Document 94)"),
+    ("validation.exception.disposition", "disposition", "validation_exception", "Disposition a validation exception (Document 94)"),
+    ("validation.exception.view", "view", "validation_exception", "View a release's open validation exception gate (Document 94)"),
+    ("validation.change_impact.manage", "manage", "validation_change_impact", "Record a change impact/revalidation plan (Document 96)"),
+    ("validation.periodic_review.manage", "manage", "periodic_validation_review", "Record a periodic validation review (Document 96)"),
+    ("validation.periodic_review.decide", "decide", "periodic_validation_review", "Decide a periodic validation review outcome (Document 96)"),
+    ("validation.state_baseline.decommission", "decommission", "validated_state_baseline", "Decommission a validated-state baseline (Document 96)"),
+    ("validation.pq.manage", "manage", "pq_scenario", "Author a PQ scenario / assign participants (Document 85)"),
+    ("validation.pq.execute", "execute", "pq_execution", "Execute a PQ scenario (Document 85)"),
+    ("validation.pq.approve", "approve", "pq_scenario", "Approve a PQ scenario (Document 85)"),
+    ("validation.migration.manage", "manage", "migration_validation_plan", "Author a migration validation plan / record a migration run/reconciliation (Document 87)"),
+    ("validation.migration.approve", "approve", "migration_run", "Approve a migration run (Document 87)"),
+    ("validation.migration.trace_view", "trace_view", "migration_validation_plan", "Look up a legacy record's migration trace (Document 87)"),
+    ("validation.vsr.manage", "manage", "validation_summary_report", "Author a validation summary report (Document 95)"),
+    ("validation.vsr.approve", "approve", "validation_summary_report", "Approve a validation summary report (Document 95)"),
+    ("validation.release_auth.view", "view", "validated_release_authorization", "View go-live readiness for a validated release (Document 95)"),
+    ("validation.release_auth.authorize", "authorize", "validated_release_authorization", "Authorize a validated release for production (Document 95)"),
+    ("validation.release_auth.deployment_check", "deployment_check", "validated_release_authorization", "Check deployed artifacts against the validated release (Document 95)"),
+    ("validation.post_go_live.record", "record", "validated_release_authorization", "Record a post-go-live verification outcome (Document 95)"),
 ]
 
 # Every WP-05 QMS `.view` code, granted together wherever a role can see quality records at all.
@@ -584,12 +675,39 @@ ROLE_PERMISSIONS = {
         "evidence.integrity_check",
         "search.query", "search.rebuild", "report.export",
         "dr.recovery_objective.manage", "dr.backup.view", "dr.restore_test.execute",
+        # WP-13 (Document 105, SPEC-AI-001).
+        "ai_governance.use_case.register", "ai_governance.use_case.assess_risk", "ai_governance.model.approve",
+        "ai_governance.context.build", "ai_governance.advisory.execute", "ai_governance.tool.authorize",
+        "ai_governance.disposition.record", "ai_governance.evaluation.run", "ai_governance.release_gate.evaluate",
+        "ai_governance.injection.detect", "ai_governance.provider.switch", "ai_governance.use_case.retire",
+        "ai_governance.package.generate",
+        # WP-12/WP-14 (Documents 79-96, SPEC-VAL-001..018).
+        "validation.plan.manage", "validation.plan.release", "validation.gate.view",
+        "validation.package.view", "validation.intended_use.manage", "validation.function_risk.manage",
+        "validation.function_risk.approve", "validation.function_risk.view", "validation.requirement.manage",
+        "validation.trace_link.manage", "validation.baseline.manage", "validation.traceability.view",
+        "validation.test_definition.manage", "validation.test_definition.approve", "validation.test_execution.manage",
+        "validation.test_execution.complete", "validation.iq.manage", "validation.iq.complete",
+        "validation.iq.approve", "validation.oq.manage", "validation.oq.view",
+        "validation.oq.approve", "validation.infrastructure.manage", "validation.infrastructure.approve",
+        "validation.part11.manage", "validation.part11.approve", "validation.data_integrity.manage",
+        "validation.data_integrity.approve", "validation.interface.manage", "validation.interface.approve",
+        "validation.dr.manage", "validation.dr.approve", "validation.security.manage",
+        "validation.security.view", "validation.security.approve", "validation.performance.manage",
+        "validation.performance.view", "validation.exception.create", "validation.exception.triage",
+        "validation.exception.retest_plan", "validation.exception.disposition", "validation.exception.view",
+        "validation.change_impact.manage", "validation.periodic_review.manage", "validation.periodic_review.decide",
+        "validation.state_baseline.decommission", "validation.pq.manage", "validation.pq.execute",
+        "validation.pq.approve", "validation.migration.manage", "validation.migration.approve",
+        "validation.migration.trace_view", "validation.vsr.manage", "validation.vsr.approve",
+        "validation.release_auth.view", "validation.release_auth.authorize", "validation.release_auth.deployment_check",
+        "validation.post_go_live.record",
         *QMS_WRITE_CODES, *QMS_VIEW_CODES,
     ],
-    "Operator": ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.execute", "batch_execution.view", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "equipment_asset.hold", "cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "ncr.create", "complaint.create", "training.assignment.complete"],
+    "Operator": ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.execute", "batch_execution.view", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "equipment_asset.hold", "cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "ncr.create", "complaint.create", "training.assignment.complete", "validation.plan.manage", "validation.gate.view", "validation.package.view", "validation.intended_use.manage", "validation.function_risk.manage", "validation.function_risk.view", "validation.requirement.manage", "validation.trace_link.manage", "validation.baseline.manage", "validation.traceability.view", "validation.test_definition.manage", "validation.test_execution.manage", "validation.test_execution.complete", "validation.iq.manage", "validation.iq.complete", "validation.oq.manage", "validation.oq.view", "validation.infrastructure.manage", "validation.part11.manage", "validation.data_integrity.manage", "validation.interface.manage", "validation.dr.manage", "validation.security.manage", "validation.security.view", "validation.performance.manage", "validation.performance.view", "validation.exception.view", "validation.change_impact.manage", "validation.periodic_review.manage", "validation.periodic_review.decide", "validation.state_baseline.decommission", "validation.pq.manage", "validation.pq.execute", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"],
     "Supervisor": ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view", "device.create", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
-    "QA Reviewer": ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation", "equipment_asset.hold", "equipment_asset.return_to_service", "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify", "em_sample.review", "em_excursion.impact", "process_cycle.create", "process_cycle.start", "process_cycle.review", "reconciliation.verify", "machine_evidence.review_view", "evidence.upload", "evidence.download", "evidence.manifest", "evidence.legal_hold", "evidence.integrity_check", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "qms_deviation.investigate", "qms_deviation.impact", "qms_deviation.extend", "capa.create", "capa.plan", "capa.action.add", "capa.action.complete", "capa.extend", "ncr.create", "ncr.segregate", "ncr.evaluate", "ncr.verify", "change.create", "change.impact", "change.task.add", "change.implement", "change.verify", "document.create", "document.submit", "complaint.create", "complaint.triage", "complaint.investigation_decision", "complaint.investigate", "risk.create", "risk.assessment.add", "risk.controls.add", "risk.review", "scar.case.create", "scar.issue", "scar.response", "scar.review", "internal_audit.create", "internal_audit.start", "internal_audit.finding.add", "internal_audit.finding.response", "field_action.create", "field_action.scope", "field_action.communications", "field_action.reconcile", "quality_metric.calculate", "effectiveness_check.create"],
-    "QA Releaser": ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "supplier_qualification.approve", "qc_test_specification.release", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.effectiveness", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close", "quality_metric.definition.create", "quality_metric.definition.release", "quality_metric.management_review", "effectiveness_check.evaluate", "privileged_access.approve", "privileged_session.close", "privileged_session.review", "security_incident.close"],
+    "QA Reviewer": ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation", "equipment_asset.hold", "equipment_asset.return_to_service", "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify", "em_sample.review", "em_excursion.impact", "process_cycle.create", "process_cycle.start", "process_cycle.review", "reconciliation.verify", "machine_evidence.review_view", "evidence.upload", "evidence.download", "evidence.manifest", "evidence.legal_hold", "evidence.integrity_check", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "qms_deviation.investigate", "qms_deviation.impact", "qms_deviation.extend", "capa.create", "capa.plan", "capa.action.add", "capa.action.complete", "capa.extend", "ncr.create", "ncr.segregate", "ncr.evaluate", "ncr.verify", "change.create", "change.impact", "change.task.add", "change.implement", "change.verify", "document.create", "document.submit", "complaint.create", "complaint.triage", "complaint.investigation_decision", "complaint.investigate", "risk.create", "risk.assessment.add", "risk.controls.add", "risk.review", "scar.case.create", "scar.issue", "scar.response", "scar.review", "internal_audit.create", "internal_audit.start", "internal_audit.finding.add", "internal_audit.finding.response", "field_action.create", "field_action.scope", "field_action.communications", "field_action.reconcile", "quality_metric.calculate", "effectiveness_check.create", "ai_governance.use_case.register", "ai_governance.use_case.assess_risk", "ai_governance.context.build", "ai_governance.advisory.execute", "ai_governance.disposition.record", "ai_governance.evaluation.run", "ai_governance.release_gate.evaluate", "ai_governance.injection.detect", "validation.gate.view", "validation.package.view", "validation.function_risk.approve", "validation.function_risk.view", "validation.traceability.view", "validation.oq.view", "validation.security.view", "validation.performance.view", "validation.exception.view", "validation.periodic_review.decide", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"],
+    "QA Releaser": ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "supplier_qualification.approve", "qc_test_specification.release", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.effectiveness", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close", "quality_metric.definition.create", "quality_metric.definition.release", "quality_metric.management_review", "effectiveness_check.evaluate", "privileged_access.approve", "privileged_session.close", "privileged_session.review", "security_incident.close", "validation.exception.create", "validation.exception.triage", "validation.exception.retest_plan", "validation.exception.disposition", "validation.plan.release", "validation.function_risk.approve", "validation.test_definition.approve", "validation.iq.approve", "validation.oq.approve", "validation.infrastructure.approve", "validation.part11.approve", "validation.data_integrity.approve", "validation.interface.approve", "validation.dr.approve", "validation.security.approve", "validation.pq.approve", "validation.migration.approve", "validation.vsr.approve", "validation.release_auth.authorize", "validation.release_auth.deployment_check", "validation.post_go_live.record"],
     "QC Reviewer": ["material_lot.disposition", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.view", "qc_result.correct", "material_lot.collect_sample", "material_lot.retest", "dispensing_order.verify", "cleaning_execution.verify", "em_sample.review", "process_cycle.review", *QMS_VIEW_CODES, "qms_deviation.create", "ncr.create", "ncr.evaluate", "ncr.verify", "capa.action.complete"],
     # Document 38 (SPEC-EQP-001) actor-specific roles — grants scoped to exactly the operation each actor
     # performs (§2), no broader platform access.

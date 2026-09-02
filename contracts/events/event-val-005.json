@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-005.json",
+  "title": "SPEC-VAL-005 — Installation Qualification (IQ) Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_iq.py actually emits. All 4 of the catalogue's declared Document 83 events are implemented: InstalledInventoryCaptured, IQPrerequisitesVerified, IQCompleted, IQApproved. (The module also emits an undeclared IqProtocolDefined at protocol-authoring time -- not part of the catalogue's declared 4.) Verified directly against source, including indirection through the shared `finalize()` helper (payload = new_value) and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "IQ-FR-001",
+    "IQ-FR-002",
+    "IQ-FR-003",
+    "IQ-FR-004",
+    "IQ-FR-005",
+    "IQ-FR-006",
+    "IQ-FR-007",
+    "IQ-FR-008"
+  ],
+  "$defs": {
+    "InstalledInventoryCapturedPayload": {
+      "type": "object",
+      "required": [
+        "protocol_id",
+        "deviation_count"
+      ],
+      "properties": {
+        "protocol_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "deviation_count": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "IQ-FR-001",
+        "IQ-FR-002",
+        "IQ-FR-003",
+        "IQ-FR-004",
+        "IQ-FR-005",
+        "IQ-FR-006",
+        "IQ-FR-007",
+        "IQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "IQPrerequisitesVerifiedPayload": {
+      "type": "object",
+      "required": [
+        "check_results"
+      ],
+      "properties": {
+        "check_results": {
+          "type": "object"
+        }
+      },
+      "x-requirement-ids": [
+        "IQ-FR-001",
+        "IQ-FR-002",
+        "IQ-FR-003",
+        "IQ-FR-004",
+        "IQ-FR-005",
+        "IQ-FR-006",
+        "IQ-FR-007",
+        "IQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "IQCompletedPayload": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "IQ-FR-001",
+        "IQ-FR-002",
+        "IQ-FR-003",
+        "IQ-FR-004",
+        "IQ-FR-005",
+        "IQ-FR-006",
+        "IQ-FR-007",
+        "IQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "IQApprovedPayload": {
+      "type": "object",
+      "required": [
+        "approved"
+      ],
+      "properties": {
+        "approved": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "IQ-FR-001",
+        "IQ-FR-002",
+        "IQ-FR-003",
+        "IQ-FR-004",
+        "IQ-FR-005",
+        "IQ-FR-006",
+        "IQ-FR-007",
+        "IQ-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "InstalledInventoryCaptured",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-005",
+      "aggregate_type": "iq_execution",
+      "payload": {
+        "$ref": "#/$defs/InstalledInventoryCapturedPayload"
+      },
+      "x-requirement-ids": [
+        "IQ-FR-001",
+        "IQ-FR-002",
+        "IQ-FR-003",
+        "IQ-FR-004",
+        "IQ-FR-005",
+        "IQ-FR-006",
+        "IQ-FR-007",
+        "IQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "IQPrerequisitesVerified",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-005",
+      "aggregate_type": "iq_execution",
+      "payload": {
+        "$ref": "#/$defs/IQPrerequisitesVerifiedPayload"
+      },
+      "x-requirement-ids": [
+        "IQ-FR-001",
+        "IQ-FR-002",
+        "IQ-FR-003",
+        "IQ-FR-004",
+        "IQ-FR-005",
+        "IQ-FR-006",
+        "IQ-FR-007",
+        "IQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "IQCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-005",
+      "aggregate_type": "iq_execution",
+      "payload": {
+        "$ref": "#/$defs/IQCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "IQ-FR-001",
+        "IQ-FR-002",
+        "IQ-FR-003",
+        "IQ-FR-004",
+        "IQ-FR-005",
+        "IQ-FR-006",
+        "IQ-FR-007",
+        "IQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "IQApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-005",
+      "aggregate_type": "iq_execution",
+      "payload": {
+        "$ref": "#/$defs/IQApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "IQ-FR-001",
+        "IQ-FR-002",
+        "IQ-FR-003",
+        "IQ-FR-004",
+        "IQ-FR-005",
+        "IQ-FR-006",
+        "IQ-FR-007",
+        "IQ-FR-008"
+      ]
+    }
+  ]
+}

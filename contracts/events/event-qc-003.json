@@ -1,0 +1,509 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-qc-003.json",
+  "title": "SPEC-QC-003 — OOS / OOT Management Events",
+  "description": "Document 113 event contract for the events app/modules/qc/commands.py actually emits for Document 25. 11 of the catalogue's 13 declared events are implemented: OOSOpened, OOSLabInvestigationStarted, OOSAssignableCauseDetermined, OOSExtendedInvestigationStarted, OOSRetestAuthorized, OOSResampleAuthorized, OOSImpactAssessed, OOSDispositionApproved, OOSClosed, OOTDetected, OOTClosed. OOSRetestCompleted and OOTInvestigationStarted are declared but have no producing code path -- a retest-plan's completion and a distinct OOT-investigation-started transition are not yet built. Verified directly against source.",
+  "x-requirement-ids": [
+    "QC-FR-001",
+    "QC-FR-002",
+    "QC-FR-003",
+    "QC-FR-004",
+    "QC-FR-005",
+    "QC-FR-006",
+    "QC-FR-007",
+    "QC-FR-008"
+  ],
+  "$defs": {
+    "OOSOpenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "oos_number"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "oos_number": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "OOSLabInvestigationStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "OOSAssignableCauseDeterminedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "assignable"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "assignable": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "OOSExtendedInvestigationStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "OOSRetestAuthorizedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "oos_record_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "oos_record_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "OOSResampleAuthorizedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "oos_record_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "oos_record_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "OOSImpactAssessedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "OOSDispositionApprovedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "final_classification"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "final_classification": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "OOSClosedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "OOTDetectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_result_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "source_result_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    "OOTClosedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "OOSOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-003",
+      "aggregate_type": "oos_record",
+      "payload": {
+        "$ref": "#/$defs/OOSOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "OOSLabInvestigationStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-003",
+      "aggregate_type": "oos_record",
+      "payload": {
+        "$ref": "#/$defs/OOSLabInvestigationStartedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "OOSAssignableCauseDetermined",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-003",
+      "aggregate_type": "oos_record",
+      "payload": {
+        "$ref": "#/$defs/OOSAssignableCauseDeterminedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "OOSExtendedInvestigationStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-003",
+      "aggregate_type": "oos_record",
+      "payload": {
+        "$ref": "#/$defs/OOSExtendedInvestigationStartedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "OOSRetestAuthorized",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-003",
+      "aggregate_type": "oos_retest_plan",
+      "payload": {
+        "$ref": "#/$defs/OOSRetestAuthorizedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "OOSResampleAuthorized",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-003",
+      "aggregate_type": "oos_resample_plan",
+      "payload": {
+        "$ref": "#/$defs/OOSResampleAuthorizedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "OOSImpactAssessed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-003",
+      "aggregate_type": "oos_record",
+      "payload": {
+        "$ref": "#/$defs/OOSImpactAssessedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "OOSDispositionApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-003",
+      "aggregate_type": "oos_record",
+      "payload": {
+        "$ref": "#/$defs/OOSDispositionApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "OOSClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-003",
+      "aggregate_type": "oos_record",
+      "payload": {
+        "$ref": "#/$defs/OOSClosedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "OOTDetected",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-003",
+      "aggregate_type": "oot_record",
+      "payload": {
+        "$ref": "#/$defs/OOTDetectedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    },
+    {
+      "event_type": "OOTClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-QC-003",
+      "aggregate_type": "oot_record",
+      "payload": {
+        "$ref": "#/$defs/OOTClosedPayload"
+      },
+      "x-requirement-ids": [
+        "QC-FR-001",
+        "QC-FR-002",
+        "QC-FR-003",
+        "QC-FR-004",
+        "QC-FR-005",
+        "QC-FR-006",
+        "QC-FR-007",
+        "QC-FR-008"
+      ]
+    }
+  ]
+}

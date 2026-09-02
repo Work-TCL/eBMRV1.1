@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-001.json",
+  "title": "SPEC-VAL-001 — Validation Master Plan & CSA Strategy Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_plan.py actually emits. 3 of the catalogue's 4 declared Document 79 events are implemented: ValidationDeliverablesDerived, ValidationReleaseGateEvaluated, ValidationMasterPlanReleased. ValidationPackageGenerated is declared but is a read-only export (getPackage/exportPackageCsv/exportPackagePdf are RBAC-gated queries, not mutations) with no outbox event by design. Verified directly against source, including indirection through the shared `finalize()` helper (payload = new_value) and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "VAL-FR-001",
+    "VAL-FR-002",
+    "VAL-FR-003",
+    "VAL-FR-004",
+    "VAL-FR-005",
+    "VAL-FR-006",
+    "VAL-FR-007",
+    "VAL-FR-008"
+  ],
+  "$defs": {
+    "ValidationDeliverablesDerivedPayload": {
+      "type": "object",
+      "required": [
+        "plan_number",
+        "scope",
+        "deliverables_added"
+      ],
+      "properties": {
+        "plan_number": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "deliverables_added": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "VAL-FR-001",
+        "VAL-FR-002",
+        "VAL-FR-003",
+        "VAL-FR-004",
+        "VAL-FR-005",
+        "VAL-FR-006",
+        "VAL-FR-007",
+        "VAL-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "ValidationReleaseGateEvaluatedPayload": {
+      "type": "object",
+      "required": [
+        "plan_id",
+        "state",
+        "blockers"
+      ],
+      "properties": {
+        "plan_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-requirement-ids": [
+        "VAL-FR-001",
+        "VAL-FR-002",
+        "VAL-FR-003",
+        "VAL-FR-004",
+        "VAL-FR-005",
+        "VAL-FR-006",
+        "VAL-FR-007",
+        "VAL-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "ValidationMasterPlanReleasedPayload": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "VAL-FR-001",
+        "VAL-FR-002",
+        "VAL-FR-003",
+        "VAL-FR-004",
+        "VAL-FR-005",
+        "VAL-FR-006",
+        "VAL-FR-007",
+        "VAL-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "ValidationDeliverablesDerived",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-001",
+      "aggregate_type": "validation_master_plan",
+      "payload": {
+        "$ref": "#/$defs/ValidationDeliverablesDerivedPayload"
+      },
+      "x-requirement-ids": [
+        "VAL-FR-001",
+        "VAL-FR-002",
+        "VAL-FR-003",
+        "VAL-FR-004",
+        "VAL-FR-005",
+        "VAL-FR-006",
+        "VAL-FR-007",
+        "VAL-FR-008"
+      ]
+    },
+    {
+      "event_type": "ValidationReleaseGateEvaluated",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-001",
+      "aggregate_type": "validation_release_gate",
+      "payload": {
+        "$ref": "#/$defs/ValidationReleaseGateEvaluatedPayload"
+      },
+      "x-requirement-ids": [
+        "VAL-FR-001",
+        "VAL-FR-002",
+        "VAL-FR-003",
+        "VAL-FR-004",
+        "VAL-FR-005",
+        "VAL-FR-006",
+        "VAL-FR-007",
+        "VAL-FR-008"
+      ]
+    },
+    {
+      "event_type": "ValidationMasterPlanReleased",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-001",
+      "aggregate_type": "validation_master_plan",
+      "payload": {
+        "$ref": "#/$defs/ValidationMasterPlanReleasedPayload"
+      },
+      "x-requirement-ids": [
+        "VAL-FR-001",
+        "VAL-FR-002",
+        "VAL-FR-003",
+        "VAL-FR-004",
+        "VAL-FR-005",
+        "VAL-FR-006",
+        "VAL-FR-007",
+        "VAL-FR-008"
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 # 18 — SPEC_GAP Register
 
 **Package:** eBMR / eDHR Claude Code Construction Package  
-**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open) — all others open  
+**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open); SG-167 added 2026-09-01 (Document 105 signature policy backfill, consolidating the code-only "SG-168" reference — dependent content_challenge_hash() defect fixed + 5 signature-challenge endpoints added; policy-data half open); SG-169 added 2026-09-01, RESOLVED (WP-12/14 PDF export dependency — ReportLab approved, re-pinned after a lost pin, live SCA/license scan complete: 0 vulnerabilities, all licenses permissive); SG-170 added 2026-09-01 (Document 106 row 168 unresolvable VSR-generation signer class; implemented unsigned per the function catalogue); SG-171 added 2026-09-01, RESOLVED (ai_governance router built and wired into main.py — Document 105's 13 functions were previously unreachable via HTTP); SG-172 added 2026-09-01 (validation platform router was never wired into main.py — lost in the 2026-09-01 git-filter-repo incident — now fixed; 24 signature-challenge endpoints added for its 26 signed pairs; policy-data half open); SG-173 added 2026-09-01 (product/recipe/batch have two independent, both-live authoritative stores each — AG-05 violation found while scoping WP-02's SG-013 event-schema slice; not fixed, migration/cutover plan reserved for the project owner); SG-013 event half re-baselined 2026-09-01 (284/484 events now committed — WP-09/10/11/13/14 landed since the last note plus a new WP-03 slice, 24/38; WP-04/06/12 still fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued — SG-013 remains blocking); SG-174 added 2026-09-01 (cross-module event-name collisions — LineClearanceCompleted and, found in the WP-04 slice the same day, MaterialReconciliationCalculated — each emitted by two unrelated modules with no consumer-visible distinction; both found by tooling/events/validate.py itself, left failing/documented rather than silently renamed); SG-013 event half at 371/484 after the WP-04 slice (54/72, Documents 18-25 — material/QC; WP-12 62 events fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued); SG-013 event half reaches 431/484 (89%) after the WP-12 slice (60/62, Documents 79-96) — every catalogue-backed work package now done; SG-013 event half CLOSED except WP-02 after deriving events directly from code for every previously-uncatalogued module (WP-01/07/08 + WP-06's edge/OT half, Documents 43/47) — 542 entries / 537 distinct across 81 files, every module in app/modules/ with real events now contracted except the SG-173 scaffold (product/recipe/batch), left uncontracted by design; SG-013 stays OPEN/blocking on SG-173 alone — all others open  
 **Specification baseline:** Documents 01–105, baseline date 2026-08-20  
 **Purpose:** Every missing or conflicting decision found in Documents 01–105, with impact, options and the document that resolves it.
 
@@ -743,6 +743,111 @@ status: RESOLVED_APPROVED_2026-08-21
 >
 > **SG-013 stays `blocking: true` and OPEN.** 400 of 484 event types (all non-QMS modules) remain
 > unschematised, and point 4 (SG-143's unbuilt-capability list) is untouched by this slice.
+>
+> **UPDATE 2026-09-01 — re-baseline against `contracts/events/*.json` directly (this note had gone stale;
+> several sessions' slices landed without a corresponding update here).** Direct count as of this pass:
+> **284 of 484 events committed, 200 remaining**, across WP-05 (84, QMS, unchanged), WP-09 (24, Postmarket),
+> WP-10 (49, Security), WP-11 (63 committed against 59 declared — a few extra beyond the catalogue,
+> documented per-file), WP-14 (16 committed against 14 declared, `event-val-007/009/017.json`), WP-13 (15,
+> `event-ai-001.json`, built from the function catalogue directly since Document 105 declares 0 events —
+> see SG-171's history) and, new this pass, **WP-03 (24 of 38 declared)**:
+> `event-ebmr-004.json`/`005`/`006`/`007`/`008` (Documents 13-17 — genealogy, QA review, release,
+> packaging, yield/reconciliation). WP-03's 14 undeclared-in-code events (impact assessment,
+> QAReviewStarted/QAActionRequested, three non-standard release dispositions plus a post-release hold,
+> five packaging label sub-events, ReconciliationSuperseded) are documented per-file rather than invented —
+> same treatment the QMS/WP-11/WP-13 slices already established for catalogue/code divergence.
+> **WP-02 event-schema work is blocked pending SG-173** (the product/recipe/batch duplicate-store finding)
+> rather than being the next slice — writing contracts against `batch`/`product`/`recipe` before the
+> project owner picks the authoritative side would contract a surface that may not exist afterward.
+> Still fully open: **WP-04 (72), WP-12 (62)** — none started; plus WP-01/07/08, which have no
+> entries in `07_EVENT_CATALOGUE.yaml` at all (a separate, smaller gap — same class WP-13 already worked
+> around by deriving events from code directly rather than a catalogue that doesn't cover them).
+>
+> **UPDATE 2026-09-01 (later the same day) — WP-06 slice (33 of 43 declared).** `event-eqp-001.json`
+> through `005.json` (Documents 38-42 — equipment/calibration/qualification/maintenance, cleaning/line
+> clearance, sterile/aseptic operations, environmental monitoring, sterilization/CIP-SIP/filtration).
+> 10 catalogue-declared events have no producing code path (mostly scheduled/background-job triggers this
+> build doesn't run yet: CalibrationDue, EquipmentRetired, CleanHoldExpired, AsepticHoldTimeExceeded,
+> AsepticOperationHeld, EMDataGapDetected, EMAreaHeld, SIPStatusIssued, CIPCompleted, SterileStatusExpired)
+> — documented per-file, not invented. **New finding, not fixed here: SG-174** — the validator itself
+> caught `LineClearanceCompleted` being emitted by two different modules (`packaging` for Document 16,
+> `equipment/cleaning_commands.py` for Document 39) with no way for a consumer to tell them apart.
+> `tooling/events/validate.py` is deliberately left **failing** (1 violation) rather than silently
+> renamed to force a clean pass — see SG-174. Total after this slice: **317 of 484 events committed**
+> (316 distinct event_type values, since one name is claimed twice per SG-174), **167 remaining**:
+> WP-04 (72) and WP-12 (62) fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued.
+> `tooling/events/validate.py` re-run after this pass: **`FAIL  1 violation(s)`** (47 files parsed, 317
+> event entries) — the single SG-174 finding above. This is the accurate result, left standing rather
+> than corrected to a false "PASS": a prior draft of this note copy-pasted the pre-WP-06 "PASS" line by
+> mistake before this fix; flagging that error here rather than silently erasing it, per Section 5.
+>
+> **UPDATE 2026-09-01 (later the same day) — WP-04 slice (54 of 72 declared).** `event-mat-001.json`
+> (Document 18, 1/7 — the only real event is SupplierQualificationApproved; procurement/PO creation and
+> supplier suspension/disqualification are not built as native flows), `event-mat-002a/b/c/d.json`
+> (Documents 19-22, 28/34 declared — material receipt/quarantine, inventory/lot/container, dispensing/
+> weighing, consumption/return/destruction/reconciliation), `event-qc-001/002/003.json` (Documents 23-25,
+> 25/31 declared — native QC, LIMS integration, OOS/OOT management). 18 catalogue-declared events have no
+> producing code path, documented per-file not invented (test invalidation, an explicit LIMS-rejection/
+> dead-letter path, retest-plan completion, and several others — see each file's description for the
+> specific list). **Second instance of SG-174 found, same class**: `MaterialReconciliationCalculated` is
+> also emitted by `yield_reconciliation` (Document 17, already contracted in WP-03) — see SG-174's update.
+> A full sweep of all 55 committed contract files found exactly these 2 collisions (4 entries) and no
+> others; the remaining gap between 371 entries and fewer distinct names is the already-documented
+> same-producer "dual-aggregate" pattern from the QMS slice's own history (one producer intentionally
+> emitting the same event_type twice for two aggregates in one call), not a new defect.
+> `tooling/events/validate.py`: **`FAIL  2 violation(s)`** (55 files parsed, 371 event entries) — both
+> SG-174 findings, left standing. **SG-013 now: 371/484 events committed, 113 remaining**: WP-12 (62)
+> fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued.
+>
+> **UPDATE 2026-09-01 (later the same day) — WP-12 slice (60 of 62 declared), the last catalogue-backed
+> work package.** `event-val-001.json` through `018.json` (15 files, Documents 79-84/86/88-94/96 — the
+> validation platform proper; Documents 85/87/95 were already contracted separately in the WP-14 slice as
+> `event-val-007/009/017.json`). Only 2 of the 62 declared events have no producing code path this time —
+> the best ratio of any slice so far: `ValidationPackageGenerated` (a read-only export, RBAC-gated query
+> not a mutation, correctly has no outbox event) and `ValidationRiskReassessmentRequired` (reassessment
+> triggering, e.g. on a material change, is not yet built). Both were nearly missed on a first
+> literal-string pass -- 3 of the 60 real events (`AuditTamperTestCompleted`/`VaultCanonicalizationVerified`/
+> `ArchiveRetrievalVerified` in Document 89, plus `InterfaceContractTestsCompleted`/
+> `EdgeOutageQualificationCompleted` in Document 90) are only reachable through a dict-keyed lookup
+> (`_EVENT_BY_ACTION.get(...)`) or a parameterized shared helper, not a direct `event_type="X"` literal --
+> found by tracing each candidate's actual call graph before concluding it was missing, same discipline
+> the WP-06 near-miss (EMAlertTriggered/FilterInstalled) already established. One structural finding fixed
+> inline, not a new SPEC_GAP: `RecoveredGxPSmokeCompleted`'s payload (Document 91) is a genuinely
+> caller-defined `{smoke_test_name: passed_bool}` map with no fixed key set -- `additionalProperties: true`
+> with the reason stated in its schema description, rather than a fabricated closed shape or a fabricated
+> wrapper field the real payload doesn't have. A full sweep after this slice found no new cross-producer
+> collisions beyond SG-174's existing 2. `tooling/events/validate.py`: **`FAIL  2 violation(s)`** (70 files
+> parsed, 431 event entries) — both pre-existing SG-174 findings, left standing.
+>
+> **SG-013's event half is now effectively closed for every catalogue-backed work package: 431/484
+> events committed (89%).** What remains: **WP-02 (39 events)**, blocked on SG-173's authoritative-store
+> decision, not an engineering gap; and **WP-01/07/08**, which have no entries in
+> `07_EVENT_CATALOGUE.yaml` at all — a Phase-0 documentation gap, not a code gap, and a different task
+> shape (deriving events from code directly, as the WP-13 slice already did for Document 105) rather than
+> catalogue cross-referencing. SG-013 stays OPEN and `blocking: true` until both are resolved, but the
+> mechanical cross-referencing phase this SPEC_GAP called for is done.
+>
+> **UPDATE 2026-09-01 (later the same day) — the uncatalogued modules, closed.** Same "derive from code
+> directly" approach as Document 105 (WP-13), applied to every module `07_EVENT_CATALOGUE.yaml` never
+> covered: `event-gxp-003/004/006.json` + `event-iam-001.json` (WP-01, Documents 05/06/08/07 — audit,
+> vault, rules, IAM; 24 events -- Documents 03/04's Mutation Gateway and Signature modules, plus
+> app/modules/policy/, correctly emit zero domain events of their own, verified by grep, not assumed),
+> `event-erp-001.json` (WP-07, Documents 48-53 consolidated per ADR-0009; 21 events), `event-ddcp-001/002/
+> 003/004.json` (WP-08, Documents 54-57; 51 events -- including 6 real events this codebase names in
+> SCREAMING_SNAKE_CASE against its own PascalCase convention, e.g. `DRUG_LOADING_OOS`, included factually
+> rather than silently renamed), and `event-edge-001.json` + `event-edge-005.json` (WP-06's edge/OT half,
+> Documents 43/47 -- the only two of Documents 43-47 with actual event-producing code; Documents 44-46 are
+> the already-DEFERRED on-prem gateway runtime scope). A full sweep of every module directory in
+> `app/modules/` for `event_type=` producers, cross-checked against `contracts/events/*.json`, found every
+> single module with real events now has a contract, with **one deliberate exception**: `product`,
+> `recipe` and `batch` (the SG-173 scaffold modules) -- correctly left uncontracted pending that decision,
+> same reasoning as skipping WP-02 in the earlier slice.
+>
+> **Total after this pass: 542 event entries across 81 contract files (537 distinct event_type values --
+> the difference is SG-174's 2 known collisions, 5 entries; not a new defect, a full sweep confirmed no
+> others).** `tooling/events/validate.py`: **`FAIL  2 violation(s)`**, both pre-existing SG-174 findings,
+> left standing. **This closes SG-013's event half entirely except for WP-02**, which stays blocked on
+> SG-173 by design, not by omission. SG-013 stays OPEN/`blocking: true` for that one reason.
 
 
 498 API operations and 484 event types are declared by path/name across the baseline, but only a small number of documents provide request/response or payload examples (authoring standard items 18 and 21). Contract-first code generation, consumer contract tests and compatibility checks all require field-level schemas.
@@ -10075,5 +10180,680 @@ options:
 blocking: false
 owner: Head of Quality + Security Owner (approved baseline authors)
 resolution_document: "— (open)"
+status: OPEN
+```
+
+### SG-167 — Document 105 (SPEC-AI-001) signature policy: zero SPEC-AI-001 rows in Document 106, so all 5 signed AI-governance functions are unsatisfiable (also referenced in code as SG-168)
+
+**Note on numbering:** this gap is referenced in `app/modules/ai_governance/ARCHITECTURE.md` as SG-167 and,
+separately, in `app/modules/ai_governance/commands.py`'s docstring, `app/mutation/errors.py`'s Document 105
+error-class header comment and `tests/test_ai_governance.py` as SG-168 — the same underlying gap acquired
+two numbers across an earlier session boundary (the errors.py comment records that "SG-168's history...
+the entry itself was lost to the same status-file lost-update race" referenced in this project's memory).
+**SG-167 is the canonical number for this entry going forward**; code comments citing SG-168 describe the
+identical gap and are not a separate, unresolved item.
+
+`docs/generated/03_FUNCTION_CATALOGUE.csv` marks 5 of the 13 AI-governance functions "SIGNATURE POLICY
+LOOKUP REQUIRED (Doc 04 SIG-FR-004; baseline values -> SG-004)": `approveAIModelDeployment`,
+`authorizeAIToolCall`, `recordHumanAIDisposition`, `evaluateAIReleaseGate`, `switchAIProviderProfile`.
+Each correctly calls `signature_service.resolve_signature_requirement()` before committing (Document 106
+SIGP-FR-004: signature need is resolved from policy data, never a code conditional) — but Document 106 has
+**zero SPEC-AI-001 rows** (checked: no `ai_model_deployment`/`ai_tool_call`/`ai_disposition`/
+`ai_release_gate`/`ai_provider_switch` entries anywhere in `specs/Documents_106_115/Document_106...`).
+Fail-closed resolution means all 5 raise `SIGNATURE_POLICY_UNRESOLVED` on every real invocation, exactly
+as WP-01's originally-unresolved signed commands and WP-05's SG-138 did.
+
+| Record type | Action |
+|---|---|
+| `ai_model_deployment` | approve |
+| `ai_tool_call` | authorize |
+| `ai_disposition` | record |
+| `ai_release_gate` | evaluate |
+| `ai_provider_switch` | switch |
+
+A second, dependent engineering defect was found and fixed this session (2026-09-01): `_apply_signature()`
+in `commands.py` bound its post-consumption hash check to
+`sha256_hex(cmd.model_dump(mode="json"))` — the **full** command payload, including the `challenge_id` and
+`reauth_password` fields the challenge-issuing caller cannot know in advance (the challenge doesn't exist
+yet when it's requested). This made the ceremony structurally unsatisfiable even once a Document 106 row
+existed: no caller could ever compute a hash at challenge-request time that would match the hash computed
+at consume time. Fixed by extracting `content_challenge_hash()`, which excludes
+`{"challenge_id", "reauth_password", "idempotency_key"}` from the hashed payload — the same shape
+`app.modules.validation.commands_vsr.create_challenge_hash()` already used for its own signed-CREATE path.
+Also missing until this session: no `ai_governance` router existed at all (see SG-171 below), so there was
+no HTTP entry point to request a challenge from regardless. Five `POST /ai-governance/v1/{resource}/
+signature-challenges` endpoints now exist (`app/modules/ai_governance/router.py`), each accepting a body
+that mirrors its command's non-transport fields and returning `SIGNATURE_POLICY_UNRESOLVED` (409) exactly
+as before, per the SG-138 precedent — confirmed by real test execution, not inspection alone:
+`tests/test_ai_governance.py` (pre-existing, unmodified by this session) runs each of the 5 signed
+functions directly against the seeded test database and asserts `SignaturePolicyUnresolvedError` on every
+one — **`test_ai_governance.py`: 23/24 passed** (the one unrelated failure,
+`test_authorize_tool_call_read_tool_fails_closed_on_signature`, is a pre-existing test-data gap — the
+`seeded` fixture never inserts an `AIToolRegistry` row for the `gxp_read_lookup` tool name the test
+references, so the call fails one check earlier than the test expects, on `AIToolNotAllowlistedError`
+rather than the intended `SignaturePolicyUnresolvedError`; unrelated to this session's router/hash-binding
+changes, which the test never reaches).
+
+Not guessed, per CLAUDE.md §4: signature meaning, required signer role, independent-signer requirement and
+reason-required flag for these 5 pairs are regulated decisions reserved to Document 106's approver.
+
+```yaml
+spec_gap_id: SG-167
+title: "Document 105 signature policy: zero SPEC-AI-001 rows in Document 106, so 5 signed AI-governance functions are unsatisfiable"
+class: R  # signature meaning, signer role and independence are regulated decisions
+description: >
+  approveAIModelDeployment, authorizeAIToolCall, recordHumanAIDisposition, evaluateAIReleaseGate and
+  switchAIProviderProfile each resolve signature requirement from Document 106 policy at commit time, but
+  no ai_model_deployment/ai_tool_call/ai_disposition/ai_release_gate/ai_provider_switch row exists.
+  Fail-closed resolution blocks all 5 (record_type, action) pairs with SIGNATURE_POLICY_UNRESOLVED. The
+  dependent engineering defects (unreachable challenge hash binding; no HTTP router) are now fixed.
+source_documents:
+  - Document 106 (signature policy) SIGP-FR-004
+  - Document 105 (SPEC-AI-001) AI-FR-006/007/009/010/034/054
+affected_modules:
+  - SPEC-AI-001
+affected_functions:
+  - app.modules.ai_governance.commands.approve_ai_model_deployment
+  - app.modules.ai_governance.commands.authorize_ai_tool_call
+  - app.modules.ai_governance.commands.record_human_ai_disposition
+  - app.modules.ai_governance.commands.evaluate_ai_release_gate
+  - app.modules.ai_governance.commands.switch_ai_provider_profile
+why_material: >
+  Signature meaning is the regulatory content of a Part 11 signature. Whether tool authorization, an AI
+  advisory disposition or a release-gate decision needs an independent second signer is an SoD decision.
+  Both are reserved to Document 106's named approver; inventing them would fabricate the attestation text
+  on AI-governance decisions that gate production model/tool use.
+risk_if_guessed: >
+  A guessed meaning would put words in a signer's mouth on an AI model-deployment approval or an AI
+  release-gate decision. A guessed independence flag could silently permit an AI use-case's own risk
+  assessor to also authorize its production model deployment.
+options:
+  - (A) Leave the 5 pairs unsatisfiable; SIGNATURE_POLICY_UNRESOLVED surfaces verbatim — current
+    behaviour, recommended.
+  - (B) Seed signature_required=False rows to unblock (rejected — an affirmative regulated decision no
+    approver has made; would let a production AI model/tool go live unsigned).
+  - (C) Copy meanings from an analogous seeded row such as batch.release (rejected — a batch release and
+    an AI model deployment approval are different attestations).
+blocking: true  # the affected transitions cannot be completed by any actor
+owner: Head of Quality (approver) + Security Owner + AI governance module owner
+resolution_document: "Document 106 (signature policy) — extension still required for the policy-data half (blocking). Engineering half resolved 2026-09-01: content_challenge_hash() fix + app/modules/ai_governance/router.py's 5 signature-challenge endpoints."
+status: OPEN
+```
+
+### SG-168 — (superseded — see SG-167)
+
+This number is intentionally left as a pointer rather than a duplicate entry: code written before this
+session's SPEC_GAPS.md backfill cites "SG-168" for the Document 105 signature-policy gap now formally
+recorded as **SG-167** above. No separate gap exists under SG-168.
+
+### SG-169 — WP-12/WP-14 export endpoints need a PDF-rendering dependency with no approved baseline entry
+
+`REQ-FR-022` (`GET /validation/v1/traceability/export`) and `VAL-FR-023`
+(`GET /validation/v1/packages/{scope}/export`) both name PDF as an acceptable export format alongside
+CSV/JSON. CSV was implemented with the stdlib `csv` module (no new dependency); PDF rendering has no
+component anywhere in `docs/generated/40_SBOM_LICENSE_DEPENDENCY_REGISTER.md`'s frozen technology
+baseline (Document 02 §6.1), so a new third-party dependency is required — which CLAUDE.md §9 and
+Document 104 (DEP-FR-017/018) require justifying before adding, not guessing into `pyproject.toml`.
+
+**RESOLVED 2026-09-01.** Full options analysis (WeasyPrint / ReportLab / fpdf2 / CSV-only) recorded in
+`work-packages/WP-12/14_DEPENDENCY_JUSTIFICATION_SG169.md`; **ReportLab (open-source core,
+`reportlab>=5.0,<6.0`)** recommended — BSD-style permissive license (no copyleft review, unlike fpdf2's
+LGPL), pure-Python with no new system libraries (unlike WeasyPrint's Pango/Cairo/GDK-PixBuf chain), and a
+Platypus `Table`/`Paragraph` flowable model that fits both export payloads' plain tabular/paragraph shape.
+**APPROVED by the project owner 2026-09-01**; pinned in `services/gxp-api/pyproject.toml` / `uv.lock`.
+Shared renderer: `app.modules.validation.shared.render_pdf_report()`, used by both
+`export_package_pdf()` and `export_traceability_pdf()`.
+
+**FULLY RESOLVED 2026-09-01 (later the same day).** The pin above had actually been lost to the same
+git-filter-repo incident that hit `tests/conftest.py` (`pyproject.toml`/`uv.lock` had zero `reportlab`
+entries when re-checked); re-pinned via `uv add "reportlab>=5.0,<6.0"` (resolved identically: 5.0.1). The
+live SCA/license scan the justification document's §7 flagged as outstanding is now done, against this
+re-pin: `uvx pip-audit` (OSV.dev) found **0 vulnerabilities** in reportlab/pillow/charset-normalizer (it
+did surface one unrelated pre-existing finding, `ecdsa` 0.19.2 / PYSEC-2026-1325, a `python-jose`
+transitive dependency predating this addition — out of scope here); `pip-licenses` confirmed reportlab =
+BSD License, pillow = MIT-CMU, charset-normalizer = MIT, all permissive. Full detail in
+`work-packages/WP-12/14_DEPENDENCY_JUSTIFICATION_SG169.md` §6b. `40_SBOM_LICENSE_DEPENDENCY_REGISTER.md`
+was **not** hand-populated with a CSV row — that register is explicitly CI-populated by its own stated
+design ("inventing versions would create false provenance"); the justification document is the scan's
+evidence of record until CI runs.
+
+```yaml
+spec_gap_id: SG-169
+title: "WP-12/WP-14 export endpoints need a PDF-rendering dependency with no approved baseline entry"
+class: D  # dependency addition requiring Document 104 justification
+description: >
+  REQ-FR-022 and VAL-FR-023 name PDF as an acceptable export format; no PDF-rendering component exists in
+  the approved technology baseline. Resolved by adding reportlab (BSD-style, pure-Python) per Document 104,
+  approved by the project owner 2026-09-01.
+source_documents:
+  - Document 104 (SPEC-ENG-008) DEP-FR-001/004/006/017/018
+  - Document 81 (SPEC-VAL-003) REQ-FR-022
+  - Document 79 (SPEC-VAL-001) VAL-FR-023
+affected_modules:
+  - SPEC-VAL-001
+  - SPEC-VAL-003
+affected_functions:
+  - app.modules.validation.commands_plan.export_package_pdf
+  - app.modules.validation.commands_trace.export_traceability_pdf
+  - app.modules.validation.shared.render_pdf_report
+why_material: >
+  Document 104 requires need/alternatives/license/security/SBOM justification before any dependency is
+  added; a PDF-rendering library was not previously part of the approved baseline.
+risk_if_guessed: >
+  Adding an unreviewed dependency without a license/CVE/maintenance assessment risks an unapproved
+  copyleft obligation (e.g. fpdf2's LGPL) or an unassessed native-library attack surface entering the SBOM.
+options:
+  - (A) ReportLab open-source core — approved and pinned, recommended.
+  - (B) WeasyPrint — rejected, heavier native-library (Pango/Cairo/GDK-PixBuf) footprint for one feature.
+  - (C) fpdf2 — rejected without legal review, LGPL-3.0-or-later copyleft.
+  - (D) CSV-only (do nothing) — rejected, leaves REQ-FR-022/VAL-FR-023's PDF requirement unimplemented.
+blocking: false
+owner: Project owner (Document 104 approver) + Security Owner (SCA/license scan, complete)
+resolution_document: "work-packages/WP-12/14_DEPENDENCY_JUSTIFICATION_SG169.md — approved 2026-09-01; re-pinned and live SCA/license scan completed 2026-09-01 (0 vulnerabilities, all licenses permissive)."
+status: RESOLVED
+```
+
+### SG-170 — Document 106 row 168 names an unresolvable signer class for `generateValidationSummaryReport()`, conflicting with every other validation module's unsigned-authoring convention
+
+Document 106 row 168 lists an `Approved` signature by a "Regulatory Affairs authorized submitter" for
+`POST /validation/v1/summary-reports` (VSR generation, FN-0923). `03_FUNCTION_CATALOGUE.csv` marks this
+function "evaluate via policy map", **not** "SIGNATURE POLICY LOOKUP REQUIRED" (unlike FN-0925/0926/0927,
+the VSR's own approve/authorize/deployment-check functions) — and "Regulatory Affairs authorized submitter"
+has no corresponding platform role anywhere in `services/gxp-api/scripts/seed.py`'s 26 seeded roles. Every
+other WP-12/WP-14 validation module follows the same convention: authoring/generation is unsigned and only
+the subsequent approve/release/authorize step is signed (e.g. `create_test_definition` unsigned,
+`approve_test_definition` signed; `create_iq_protocol` unsigned, `approve_iq_execution` signed). Treating
+row 168 as authoritative would make VSR generation the sole exception to that pattern, for a signer role
+that cannot be assigned.
+
+`generateValidationSummaryReport()` is implemented **unsigned, RBAC-gated only** (`evaluate_policy(...,
+action="validation.vsr.manage", ...)`), following the function catalogue over the Document 106 row —
+the real Part 11 sign point for the VSR is `approveValidationSummaryReport()` (row 169, resolvable, and
+already SIGNATURE POLICY LOOKUP REQUIRED per the function catalogue).
+
+```yaml
+spec_gap_id: SG-170
+title: "Document 106 row 168 names an unresolvable signer class for generateValidationSummaryReport(), conflicting with the function catalogue and every other validation module's unsigned-authoring convention"
+class: R  # signer role / signature requirement is a regulated decision
+description: >
+  Document 106 row 168 signs VSR generation with a "Regulatory Affairs authorized submitter" role that has
+  no platform mapping; the function catalogue marks the same function unsigned. Implemented unsigned,
+  matching the function catalogue and this module's own authoring/approve-split convention.
+source_documents:
+  - Document 106 (signature policy) row 168
+  - Document 95 (SPEC-VAL-017) VSR-FR-014
+  - docs/generated/03_FUNCTION_CATALOGUE.csv FN-0923
+affected_modules:
+  - SPEC-VAL-017
+affected_functions:
+  - app.modules.validation.commands_vsr.generate_validation_summary_report
+why_material: >
+  Whether a function requires a Part 11 signature, and which signer role/class may provide it, is a
+  regulated decision reserved to Document 106's approver — a role with no platform mapping cannot be
+  silently substituted with a different one without that approver's decision.
+risk_if_guessed: >
+  Inventing a substitute signer role (e.g. mapping "Regulatory Affairs authorized submitter" to QA
+  Releaser) would fabricate who Document 106 intended to attest to VSR generation, and would diverge from
+  the function catalogue's own classification of this function as unsigned.
+options:
+  - (A) Implement unsigned per the function catalogue, leave row 168 open for the approver to reconcile —
+    current behaviour, recommended.
+  - (B) Invent a "Regulatory Affairs authorized submitter" platform role and sign generation with it
+    (rejected — fabricates a role and a signature requirement Document 106's approver did not resolve to
+    a usable role).
+  - (C) Reuse QA Releaser for row 168 as a stand-in (rejected — conflates two different signer classes
+    without the approver's decision).
+blocking: false  # VSR generation is functional unsigned per the function catalogue; only row 168's own resolution is open
+owner: Head of Quality (approver) + Regulatory Affairs
+resolution_document: "Document 106 (signature policy) — either retire row 168 or supply a platform-mapped signer role and mark FN-0923 SIGNATURE POLICY LOOKUP REQUIRED to match."
+status: OPEN
+```
+
+### SG-171 — Document 105's "APIS (0)" / Document 113's silence leaves all 13 AI-governance functions with no HTTP entry point
+
+`app/modules/ai_governance/models.py` and `ARCHITECTURE.md` already established (WP-13 build) that
+Document 105's own "DATA MODEL (0 entities)" / "APIS (0)" / "EVENTS (0)" lines are a Phase-0 generation
+gap, not a deliberate zero-storage design — `04_DATA_MODEL_CATALOGUE.md` / `05_DATABASE_OWNERSHIP_
+MATRIX.md` / `06_API_CATALOGUE.yaml` / `07_EVENT_CATALOGUE.yaml` all have zero SPEC-AI-001 rows at all,
+which `03_FUNCTION_CATALOGUE.csv` FN-1005..FN-1017 resolves unambiguously (every function names a
+Mutation Gateway transaction, an output type and an emitted event). That reasoning justified building the
+11-table `ai_governance` schema and the 13 command functions, but as of the start of this session **no
+`app/modules/ai_governance/router.py` existed and the module was not wired into `main.py`** — 13 fully
+implemented, tested Mutation Gateway commands had no caller-reachable entry point at all. A Mutation
+Gateway command with no HTTP route is unreachable by any UI, script or integration; this cannot be what
+either the function catalogue or Document 105's own text intended, and is a materially different
+situation from `app.modules.deployment`, which explicitly states "0 HTTP APIs -- CI/installer tooling
+calls these directly" as a deliberate design (verified by reading that module's own docstrings before
+treating the two as parallel).
+
+**RESOLVED 2026-09-01.** `app/modules/ai_governance/router.py` added: one route per function (mostly thin
+wrappers, since `evaluate_policy()` is already called inside each command function), plus `GET` list/detail
+reads for the three highest-value browse surfaces (`use-cases`, `model-deployments`, `advisories` — not
+all 11 tables, matching the proportionality every other "module built this pass" phase in this project
+used), plus the 5 signature-challenge endpoints closing SG-167's dependent defect. Wired into `main.py`.
+`execute_ai_advisory()`/`run_ai_evaluation_suite()` are passed stand-in `model_client`/`evaluator`
+callables that always raise `DependencyUnavailableError`, since no live AI provider is configured in this
+environment (per `ARCHITECTURE.md`'s own "Known limitations" — not invented here) — this routes through
+`execute_ai_advisory()`'s existing AI-FR-041 fail-closed handling (writes `status=UNAVAILABLE`, never a
+guessed result) rather than fabricating an AI output or evaluation score.
+
+```yaml
+spec_gap_id: SG-171
+title: "Document 105's \"APIS (0)\" / Document 113's silence leaves all 13 AI-governance functions with no HTTP entry point"
+class: A  # architecture/API-surface resolution, not an invented regulated behaviour
+description: >
+  04_DATA_MODEL_CATALOGUE.md/05_DATABASE_OWNERSHIP_MATRIX.md/06_API_CATALOGUE.yaml/07_EVENT_CATALOGUE.yaml
+  have zero SPEC-AI-001 rows -- an incomplete Phase-0 artefact per the module's own prior analysis, not a
+  deliberate zero-HTTP-surface design (contrast with app.modules.deployment, which explicitly states 0 HTTP
+  APIs). All 13 FN-1005..FN-1017 Mutation Gateway commands existed with no router; now resolved with
+  app/modules/ai_governance/router.py wired into main.py.
+source_documents:
+  - Document 105 (SPEC-AI-001)
+  - docs/generated/03_FUNCTION_CATALOGUE.csv FN-1005..FN-1017
+  - docs/generated/06_API_CATALOGUE.yaml (zero SPEC-AI-001 rows, checked)
+affected_modules:
+  - SPEC-AI-001
+affected_functions:
+  - app.modules.ai_governance.commands.register_ai_use_case
+  - app.modules.ai_governance.commands.assess_ai_use_case_risk
+  - app.modules.ai_governance.commands.approve_ai_model_deployment
+  - app.modules.ai_governance.commands.build_ai_request_context
+  - app.modules.ai_governance.commands.execute_ai_advisory
+  - app.modules.ai_governance.commands.authorize_ai_tool_call
+  - app.modules.ai_governance.commands.record_human_ai_disposition
+  - app.modules.ai_governance.commands.run_ai_evaluation_suite
+  - app.modules.ai_governance.commands.evaluate_ai_release_gate
+  - app.modules.ai_governance.commands.detect_prompt_injection
+  - app.modules.ai_governance.commands.switch_ai_provider_profile
+  - app.modules.ai_governance.commands.retire_ai_use_case
+  - app.modules.ai_governance.commands.generate_ai_governance_package
+why_material: >
+  Whether an approved-but-incomplete spec artefact ("APIS (0)") should be read literally as "build no
+  router" or as a Phase-0 documentation gap is an architecture-scope judgement, not an invented regulated
+  behaviour -- no signature policy, authorization rule, retention rule, precision rule or AI decision
+  authority was invented to resolve it; every endpoint still enforces exactly the RBAC/signature/audit
+  behaviour already coded in commands.py.
+risk_if_guessed: >
+  Leaving the module unreachable would mean 13 built, tested Mutation Gateway commands (including the AI
+  governance register, risk assessment and evidence-package functions Document 105 requires) could never
+  actually be exercised by any caller -- a worse outcome than the API-surface judgement call made here.
+options:
+  - (A) Build the router -- selected, per the same Phase-0-gap reasoning already established for this
+    module's data model in ARCHITECTURE.md.
+  - (B) Leave it as-is (no router) -- rejected; unlike app.modules.deployment, nothing in Document 105 or
+    the function catalogue states these functions are meant to be unreachable via HTTP.
+blocking: false
+owner: AI governance module owner
+resolution_document: "app/modules/ai_governance/router.py, wired into app/main.py (2026-09-01)."
+status: RESOLVED
+```
+
+### SG-172 — The WP-12/WP-14 validation platform router existed but was never wired into `main.py`, and none of its 26 signed record-type/action pairs had a signature-challenges endpoint
+
+Discovered while resolving SG-167/SG-171 for the AI-governance module: `app/modules/validation/router.py`
+(67 routes) and `router_wp14.py` (15 routes) existed, fully built and passing their own test suites, but
+**neither was imported or `include_router()`-ed in `app/main.py`** — the entire WP-12/WP-14 validation
+platform (Documents 79-96) was unreachable via HTTP despite being `CODE_COMPLETE`. Per this project's
+memory of the git-filter-repo incident on 2026-09-01, `main.py` was one of the files whose uncommitted
+changes were lost when history was rewritten on a dirty working tree; the colleague's original wiring
+change did not survive. Separately, and independently of that incident, **no validation router exposed a
+`signature-challenges` endpoint** for any of its 26 signed `(record_type, action)` pairs — the same class
+of defect SG-138 found and closed for WP-05 QMS:
+
+| Record type | Actions |
+|---|---|
+| `validation_master_plan` | release |
+| `function_risk_assessment` | approve |
+| `validation_test_definition` | approve |
+| `validation_test_execution` | complete |
+| `iq_execution` | complete, approve |
+| `oq_execution` | approve |
+| `infrastructure_fingerprint` | approve |
+| `part11_scope_assessment` | approve |
+| `data_integrity_test_profile` | approve |
+| `interface_validation_profile` | approve |
+| `dr_qualification_execution` | approve |
+| `security_qualification_suite` | approve |
+| `performance_qualification_scenario` | create |
+| `performance_run` | create, evaluate |
+| `validation_exception` | create, triage, retest_plan, disposition |
+| `periodic_validation_review` | create, decision |
+| `migration_run` | approve |
+| `pq_scenario` | approve |
+| `validation_summary_report` | approve |
+| `validated_release_authorization` | authorize, deployment_check |
+
+Four of the `create` actions (`validation_exception`, `periodic_validation_review`,
+`performance_qualification_scenario`, `performance_run`) already carried an optional `new_record_id` field
+on their command classes and a docstring anticipating the exact pre-generated-id shape
+`app.modules.qms.signature_support.create_qms_signature_challenge_for_new_record()` established for
+SG-138's `training_assignment.create` fix — the command layer was ready for this endpoint before it
+existed. `validated_release_authorization.authorize` is bound differently: `commands_vsr.py`'s
+`_apply_signature_for_create()`/`create_challenge_hash()` bind the challenge to a hash of the full command
+payload (Document 106 row 166 signs the authorization decision itself, not a placeholder row), not to a
+generated id.
+
+**RESOLVED 2026-09-01 (engineering half only, both defects).** `main.py` now imports and includes both
+`validation_router` and `validation_wp14_router` (verified: `app.main.app.openapi()` reports 106
+`/validation/v1/*` paths, up from 0). A new `app/modules/validation/signature_support.py` generalizes the
+SG-138 pattern for this module (`create_validation_signature_challenge()` for existing records,
+`create_validation_signature_challenge_for_new_record()` for the 4 signed-CREATE actions); 19
+`signature-challenges` endpoints added to `router.py` and 5 to `router_wp14.py`, including a bespoke
+content-hash-bound endpoint for `validated_release_authorization.authorize` that mirrors
+`create_challenge_hash()`'s exact field set so the two hashes match. Every endpoint calls
+`resolve_signature_requirement()` unconditionally and still returns `SIGNATURE_POLICY_UNRESOLVED` (409) —
+no policy row was seeded, no meaning/signer role/independence flag was invented.
+
+Confirmed by real, solo (non-concurrent) test execution against the shared test database, not inspection
+alone: **`test_validation_wp12_part1-4.py` + `test_validation_wp14_part1-3.py`: 24 passed, 36 failed**,
+every one of the 36 failures a `SignaturePolicyUnresolvedError` raised from inside the pre-existing,
+unmodified test files' own `_challenge()` helpers calling `signature_service.resolve_signature_
+requirement()` directly for a `validation_*` record type — i.e. the tests are failing for exactly the
+reason this gap describes, not because of a defect in this session's router/endpoint work (which none of
+these 36 tests reach; they call the command layer directly). A related discovery while investigating:
+several of these tests' own docstrings (e.g. `test_exception_create_signed_by_independent_releaser_
+sg167_resolved`, `test_exception_triage_and_retest_plan_require_independent_releaser_signature`) say
+"Document 106 row NNN, now resolved," implying their author's `tests/conftest.py` once seeded
+`SignaturePolicy` test-floor rows for these validation record types (mirroring the `batch_step`/
+`material_lot`/etc. rows the committed `conftest.py` seeds today) — that fixture code did not survive the
+2026-09-01 git-filter-repo incident (`conftest.py` is one of the files this project's memory records as
+having lost uncommitted deltas). Those rows, had they survived, would have been the author's own **test
+fixture** convenience seeding, not evidence that Document 106's real approver ever supplied these values —
+recreating them now from the test docstrings' bare mention of a row number, with no record of the actual
+`meaning`/`required_role_id`/`requires_independent_signer` values the author chose, would be exactly the
+kind of regulated-attestation guess CLAUDE.md §4 prohibits, so they were not recreated. **The policy-data half
+remains completely open**: no `validation_*` record type is seeded in Document 106, so all 26 pairs are
+still unsatisfiable by any actor.
+
+```yaml
+spec_gap_id: SG-172
+title: "The WP-12/WP-14 validation platform router existed but was never wired into main.py, and none of its 26 signed record-type/action pairs had a signature-challenges endpoint"
+class: R  # signature meaning/signer role/independence are regulated decisions; the wiring defect itself is engineering, not regulated
+description: >
+  app/modules/validation/router.py and router_wp14.py (82 routes total) were never included in main.py --
+  a lost-uncommitted-change side effect of the 2026-09-01 git-filter-repo incident -- leaving the entire
+  WP-12/WP-14 validation platform unreachable via HTTP. Separately, none of its 26 signed (record_type,
+  action) pairs had a signature-challenges endpoint (the SG-138 defect class). Both engineering defects are
+  now fixed; the Document 106 policy-data half for all 26 pairs remains open and blocking.
+source_documents:
+  - Document 106 (signature policy) SIGP-FR-004
+  - Document 79 (SPEC-VAL-001) through Document 96 (SPEC-VAL-018)
+affected_modules:
+  - SPEC-VAL-001..018
+affected_functions:
+  - app.modules.validation.commands_plan.release_master_plan
+  - app.modules.validation.commands_risk.approve_function_risk_assessment
+  - app.modules.validation.commands_test.approve_test_definition
+  - app.modules.validation.commands_test.complete_test_execution
+  - app.modules.validation.commands_iq.complete_iq_execution
+  - app.modules.validation.commands_iq.approve_iq_execution
+  - app.modules.validation.commands_oq.approve_oq_execution
+  - app.modules.validation.commands_infra.approve_infrastructure_fingerprint
+  - app.modules.validation.commands_part11.approve_part11_assessment
+  - app.modules.validation.commands_integrity.approve_data_integrity_profile
+  - app.modules.validation.commands_interface.approve_interface_profile
+  - app.modules.validation.commands_dr.approve_dr_execution
+  - app.modules.validation.commands_security.approve_security_suite
+  - app.modules.validation.commands_performance.create_performance_scenario
+  - app.modules.validation.commands_performance.record_performance_run
+  - app.modules.validation.commands_performance.evaluate_performance_run
+  - app.modules.validation.commands_exception.create_exception
+  - app.modules.validation.commands_exception.triage_exception
+  - app.modules.validation.commands_exception.define_retest_scope
+  - app.modules.validation.commands_exception.disposition_exception
+  - app.modules.validation.commands_periodic.create_periodic_review
+  - app.modules.validation.commands_periodic.decide_periodic_review
+  - app.modules.validation.commands_migration.approve_migration_cutover
+  - app.modules.validation.commands_pq.approve_pq
+  - app.modules.validation.commands_vsr.approve_validation_summary
+  - app.modules.validation.commands_vsr.issue_validated_release_authorization
+  - app.modules.validation.commands_vsr.verify_deployment_against_validation_release
+why_material: >
+  Signature meaning, required signer role and independent-signer requirement for all 26 pairs are
+  regulated decisions reserved to Document 106's approver, exactly as SG-138 established for WP-05 QMS.
+  The main.py wiring omission is a pure engineering defect (nothing regulated to decide) but is recorded
+  here because it fully explains why the module was unreachable despite being CODE_COMPLETE.
+risk_if_guessed: >
+  A guessed meaning would put words in a signer's mouth on a validation summary report approval or a
+  validated-release authorization -- the exact go-live gate this platform exists to control. A guessed
+  independence flag could silently permit a production performer to also authorize their own release.
+options:
+  - (A) Leave the 26 pairs unsatisfiable; SIGNATURE_POLICY_UNRESOLVED surfaces verbatim -- current
+    behaviour, recommended, matching SG-138's precedent exactly.
+  - (B) Seed signature_required=False rows to unblock (rejected -- an affirmative regulated decision no
+    approver has made; would let a validated-release authorization commit unsigned).
+  - (C) Copy meanings from an analogous seeded row (rejected -- a WP-05 QMS disposition and a validated
+    production release authorization are different attestations).
+blocking: true  # the affected transitions cannot be completed by any actor
+owner: Head of Quality (approver) + Regulatory Affairs + validation platform module owner
+resolution_document: "Document 106 (signature policy) -- extension still required for the policy-data half (blocking). Engineering half resolved 2026-09-01: main.py wiring + app/modules/validation/signature_support.py + 24 signature-challenge endpoints across router.py/router_wp14.py."
+status: OPEN
+```
+
+### SG-173 — Two independent, both-live authoritative stores for Product, Recipe and Batch (AG-05 violation)
+
+Discovered while cross-referencing WP-02's 39 catalogue events (Document 09-12) against `event_type=`
+producer code, ahead of writing their event contracts (the next slice of SG-013). Found three pairs of
+parallel modules, each pair independently modelling the same regulated entity with its own PostgreSQL
+tables, both sides wired into `app/main.py` and reachable via HTTP right now:
+
+| Entity | Module A (non-`gxp_` tables) | Module B (`gxp_`-prefixed tables) |
+|---|---|---|
+| Product (Document 09) | `app/modules/product/` -> `products` | `app/modules/product_master/` -> `gxp_product_family`, `gxp_product_version`, `gxp_product_constituent`, `gxp_constituent_compatibility_version` |
+| Recipe (Document 10) | `app/modules/recipe/` -> `recipes`, `recipe_steps` | `app/modules/recipe_master/` -> `gxp_recipe_family`, `gxp_recipe_version`, `gxp_recipe_section`, `gxp_recipe_step`, `gxp_recipe_step_dependency`, `gxp_recipe_parameter`, `gxp_recipe_evidence_requirement` |
+| Batch (Document 11) | `app/modules/batch/` -> `batches`, `batch_steps`, `batch_reviews`, `batch_releases` | `app/modules/batch_execution/` -> `gxp_batch`, `gxp_batch_step` |
+
+Neither side of any pair imports or references the other's models. Both sides have real routes (4-12
+endpoints each), real test suites (module-A test functions: product 59, recipe 59, batch 74; module-B:
+product_master 53, recipe_master 5, batch_execution 12) and real downstream dependents: `ddcp`, `material`
+and `iam` import module A (`product`/`recipe`/`batch`); `packaging`, `qc`, `yield_reconciliation`,
+`qa_review` and `release` import module B (`batch_execution`). This is AG-05 ("one authoritative
+owner/store per regulated entity") and DATA-FR-001/DATA-FR-005 violated for the three most central
+entities in the platform, not a documentation gap -- a batch (or recipe, or product) created/mutated
+through one side is invisible to code that reads the other side, silently, with no reconciliation and no
+error.
+
+Three independent signals agree on which side is the approved one, with no signal pointing the other way:
+
+1. **Git history**: `product`/`recipe`/`batch` were all added in `8addf8a` ("Initial commit", 2026-08-22,
+   before any spec-driven work started). `product_master`/`recipe_master`/`batch_execution` were all added
+   later in `53dcdb7` ("complete wp-00 to wp-10 and working on wp-11") -- the deliberate, documented build
+   pass.
+2. **`docs/generated/05_DATABASE_OWNERSHIP_MATRIX.md`** (generated from the frozen spec baseline before
+   either module was coded) names `gxp_batch`/`gxp_batch_step` as the authoritative entities for
+   SPEC-EBMR-002; it does not mention `batches`/`batch_steps` at all. (The matrix's WP-02 section is
+   otherwise incomplete -- no product/recipe rows either way -- so this signal only directly covers Batch,
+   but it does not contradict the pattern for Product/Recipe.)
+3. **Naming convention**: every other authoritative regulated table in this codebase, across every module,
+   carries a `gxp_` or module-specific prefix (`gxp_command_receipt`, `gxp_outbox`, `gxp_signature`,
+   `gxp_vault_object`, `iam_subject`, ...). `products`, `recipes`, `batches` are the only bare, unprefixed
+   names anywhere in the regulated schema.
+
+**UPDATE 2026-09-01 -- FK-level dependency sweep, correcting/expanding the affected-modules list.** The
+original note above found dependents by grepping Python `import` statements only, which misses a foreign
+key that references a table by schema-qualified string (`ForeignKey("ebmr.batches.id")`) without importing
+the owning module's Python code at all. A full `ForeignKey(...)` sweep across every `models*.py` file
+changes the picture for Batch specifically:
+
+- **`ebmr.batches` (scaffold, non-authoritative) has FK dependents in `ddcp` (13 columns), `material` (7),
+  `machine_integration` (2) and `equipment` (1)** -- `machine_integration` and `equipment` are WP-06, not
+  previously listed. `ddcp`'s dependency is especially deep: `DeviceAssemblyRecord`, `DdcpUnitBinding`,
+  `ReusableDevicePairing` and 10 more DDCP tables all carry a hard FK into the scaffold table, not just a
+  Python-level import.
+- **`ebmr.gxp_batch` (authoritative) has FK dependents in `packaging`, `device`, `qa_review`, `release`,
+  `qc` and `yield_reconciliation`** -- `device` (WP-02) wasn't previously listed either.
+- **Product and Recipe are much less entangled than Batch**: nothing outside the `product`/`recipe`
+  modules themselves has an FK into `ebmr.products` or `ebmr.recipes`. Every other module that references
+  a product or recipe already does so correctly, through `gxp_product_*`/`gxp_recipe_*`
+  (`packaging`, `device`, `batch_execution`, `release`, plus `product_master`/`recipe_master`
+  themselves). This materially lowers the migration risk for those two entities relative to Batch: the
+  product/recipe scaffold tables can likely be retired once `material`/`ddcp`/`iam`'s own Python-level
+  usage is confirmed empty, with no FK-constraint untangling required.
+
+This does not change the recommendation (option A below), only its accuracy and the size of the Batch
+migration: 4 real modules carry a hard schema dependency on the wrong table for Batch, not the 1
+(`ddcp`) implied by the original note.
+
+What is **not** resolvable without a project-owner decision: whether `product`/`recipe`/`batch` ever held
+real customer/demo data that would need migrating into the `_master`/`_execution` tables before removal,
+and the actual cutover plan for `ddcp`, `material` and `iam` (all three still importing the non-authoritative
+side, `iam` and `ddcp` having been added in the *same* `53dcdb7` build pass that built the correct modules
+and yet still wired to the old scaffold). That is a multi-module migration with real regression risk, not
+an engineering judgement call.
+
+```yaml
+spec_gap_id: SG-173
+title: "Two independent, both-live authoritative stores for Product, Recipe and Batch (AG-05 violation)"
+class: R  # regulated decision -- which store is authoritative, and the data-migration/cutover plan
+description: >
+  app/modules/product, app/modules/recipe and app/modules/batch each implement their own independent
+  PostgreSQL tables for a regulated entity that app/modules/product_master, app/modules/recipe_master and
+  app/modules/batch_execution also independently implement. Both sides of all three pairs are wired into
+  app/main.py, have real routes/tests, and have real downstream dependents that disagree on which side is
+  authoritative (ddcp/material/iam use the non-gxp_-prefixed side; packaging/qc/yield_reconciliation/
+  qa_review/release use the gxp_-prefixed side). Git history, the frozen-baseline-generated
+  05_DATABASE_OWNERSHIP_MATRIX.md, and the codebase-wide gxp_-prefix convention for authoritative tables
+  all agree product_master/recipe_master/batch_execution are the approved implementations and
+  product/recipe/batch are unremoved day-one scaffolding -- but the migration/cutover plan for the three
+  wrongly-wired dependent modules, and whether any real data in the scaffold tables needs migrating first,
+  is a regulated data-integrity decision this session should not make unilaterally.
+source_documents:
+  - Document 02 (DOC-002) AG-05
+  - Document 09 (SPEC-EBMR-000), Document 10 (SPEC-EBMR-001), Document 11 (SPEC-EBMR-002)
+  - Document 69 (SPEC-DATA-001) DATA-FR-001, DATA-FR-005
+  - docs/generated/05_DATABASE_OWNERSHIP_MATRIX.md
+source_requirement_ids:
+  - DATA-FR-001
+  - DATA-FR-005
+  - BAT-FR-001
+  - BAT-FR-002
+affected_modules:
+  - SPEC-EBMR-000
+  - SPEC-EBMR-001
+  - SPEC-EBMR-002
+affected_functions:
+  - app/modules/product/commands.py (all)
+  - app/modules/product_master/commands.py (all)
+  - app/modules/recipe/commands.py (all)
+  - app/modules/recipe_master/commands.py (all)
+  - app/modules/batch/commands.py (all)
+  - app/modules/batch_execution/commands.py (all)
+  - "app/modules/ddcp/models.py (13 FK columns into ebmr.batches), app/modules/material/models.py (7), app/modules/machine_integration/models.py (2), app/modules/equipment/models.py (1) -- schema-level dependents on the non-authoritative Batch table"
+  - "app/modules/iam/commands.py -- Python-level (non-FK) dependent on the non-authoritative side"
+why_material: >
+  AG-05 is a hard architecture non-negotiable, not a preference. Deciding which store is authoritative,
+  whether the other side's data needs migrating first, and the cutover sequence for three dependent
+  modules is exactly the class of decision this project's own SPEC_GAP process reserves for the project
+  owner -- picking wrong, or picking silently, risks losing or orphaning real regulated batch/recipe/
+  product history.
+risk_if_guessed: >
+  Deleting or redirecting either side without confirming there is no real data in it, or without a
+  coordinated cutover for ddcp/material/iam, could silently orphan in-flight batch/recipe/product records
+  or break those three modules outright. This is the kind of migration/data-loss decision Section 4 of
+  CLAUDE.md explicitly reserves.
+options:
+  - (A) Migrate ddcp/material/iam to import product_master/recipe_master/batch_execution, verify no real
+    data exists in the products/recipes/batches tables (or migrate what's there), then remove the
+    product/recipe/batch modules and their routes/tables entirely -- recommended, matches every signal
+    found.
+  - (B) Keep both, formally declare one a read-only projection of the other with an explicit sync job --
+    rejected as first choice -- adds a permanent reconciliation burden for what looks like unintentional
+    duplication, not a deliberate CQRS split.
+  - (C) Leave as-is and treat it as accepted technical debt -- rejected, it's a live AG-05 violation on the
+    platform's three most central entities, not a cosmetic issue.
+blocking: false  # both sides currently function independently; nothing is broken today, but the split is a data-integrity risk building silently in the background
+owner: Platform Architect + Head of Quality (data-integrity sign-off)
+resolution_document: "-- (open)"
+status: OPEN
+```
+
+### SG-174 — Cross-module event-name collisions: `LineClearanceCompleted` and `MaterialReconciliationCalculated` each emitted by two different modules with no way for a consumer to tell them apart
+
+Found by `tooling/events/validate.py` itself (CTRC-FR-008) while writing the WP-06 slice of SG-013's event
+contracts. `app/modules/packaging/commands.py` (Document 16, packaging-line clearance before a packaging
+run) and `app/modules/equipment/cleaning_commands.py` (Document 39, equipment/cleanroom line clearance
+before use) each independently emit the literal `event_type="LineClearanceCompleted"` — the same string
+for two different real-world procedures. This is not a data-entry mistake in either contract file; both
+sides were verified directly against source. A consumer subscribed to `LineClearanceCompleted` cannot
+distinguish a packaging-line clearance from an equipment-cleanroom clearance without inspecting
+`aggregate_type` (`packaging_run` vs `line_clearance`) itself, which defeats the purpose of a distinct
+event type (CTR-FR-003).
+
+Left as-is rather than silently renamed in the contract: `event-eqp-002.json` and `event-ebmr-007.json`
+both document the collision explicitly, and `tooling/events/validate.py` is left **failing** on this one
+finding (1 violation) rather than forced to a clean pass that would misrepresent what the code actually
+emits. This is an engineering defect, not a regulated-behaviour question — the actual fix (rename one
+event type, e.g. `PackagingLineClearanceCompleted`, with a `schema_version` bump per CTR-FR-020/021) is
+routine, but changing a live event contract without checking for real consumers first is exactly the class
+of change Document 101's contract-first discipline exists to gate, so it's recorded here rather than done
+inline while writing an unrelated slice.
+
+**UPDATE 2026-09-01 (same day) — second, independent instance found, same class.** While writing the
+WP-04 slice, `tooling/events/validate.py` caught the identical defect shape again: `app/modules/material/
+commands.py` (Document 22, material-level reconciliation, `aggregate_type=material_reconciliation`) and
+`app/modules/yield_reconciliation/commands.py` (Document 17, batch-level material reconciliation,
+`aggregate_type=reconciliation_record`) both emit the literal `event_type="MaterialReconciliationCalculated"`
+for two different reconciliation concepts. Same treatment: documented in both `event-mat-002d.json` and
+`event-ebmr-008.json`, left failing rather than silently renamed. A direct sweep of every committed
+contract file (`contracts/events/*.json`, 55 files / 371 entries as of this pass) found **exactly these
+two collisions and no others** among what's been written so far — this is a real, recurring pattern
+(two instances in two consecutive slices, both a generically-named "completed/calculated" event reused by
+an unrelated module) worth a deliberate check when writing the remaining WP-04/WP-12/WP-01/07/08 slices,
+not just a one-off. `blocking` stays false for the same reason as before: no live consumer exists yet to
+actually mis-route.
+
+```yaml
+spec_gap_id: SG-174
+title: "Cross-module event-name collisions: LineClearanceCompleted (packaging/equipment) and MaterialReconciliationCalculated (material/yield_reconciliation), no consumer-visible distinction"
+class: E  # engineering defect -- event-naming collisions, not a regulated decision
+description: >
+  Two independent instances of the same defect shape, both found by tooling/events/validate.py's
+  CTRC-FR-008 check while writing SG-013's event contracts, not by inspection. (1) app/modules/packaging/
+  commands.py (Document 16) and app/modules/equipment/cleaning_commands.py (Document 39) both emit
+  event_type="LineClearanceCompleted" for two different real-world procedures (packaging-line clearance
+  vs. equipment/cleanroom clearance). (2) app/modules/material/commands.py (Document 22) and
+  app/modules/yield_reconciliation/commands.py (Document 17) both emit
+  event_type="MaterialReconciliationCalculated" for two different reconciliation concepts (material-level
+  vs. batch-level). A full sweep of every committed contract file (55 files / 371 entries as of this pass)
+  found exactly these two collisions and no others. Left failing/documented in both contract files for
+  each pair rather than silently renamed to force a clean pass.
+source_documents:
+  - Document 16 (SPEC-EBMR-007)
+  - Document 39 (SPEC-EQP-002)
+  - Document 17 (SPEC-EBMR-008)
+  - Document 22 (SPEC-MAT-002D)
+  - Document 101 (SPEC-ENG-005) CTR-FR-003, CTR-FR-020, CTR-FR-021
+source_requirement_ids:
+  - CTR-FR-003
+  - CTRC-FR-008
+affected_modules:
+  - SPEC-EBMR-007
+  - SPEC-EQP-002
+  - SPEC-EBMR-008
+  - SPEC-MAT-002D
+affected_functions:
+  - app/modules/packaging/commands.py::line_clearance (LineClearanceCompleted producer)
+  - app/modules/equipment/cleaning_commands.py (LineClearanceCompleted producer)
+  - app/modules/material/commands.py (MaterialReconciliationCalculated producer)
+  - app/modules/yield_reconciliation/commands.py (MaterialReconciliationCalculated producer)
+why_material: >
+  Renaming a live event type is a compatibility change (CTR-FR-020/021) that should be checked against
+  real consumers before being made, even though no live NATS bus exists yet (Phase 1 outbox publisher
+  logs rather than publishes) -- routine, but not something to do silently as a side effect of writing an
+  unrelated contract slice. Two instances in two consecutive slices makes this worth a deliberate check
+  when writing the remaining WP-04/WP-12/WP-01/07/08 slices, not just a one-off fix.
+risk_if_guessed: >
+  Low today (no live consumer exists to actually mis-route), but growing: any future read-model/projection
+  that subscribes to either event type expecting one specific procedure will silently receive both, with
+  no field to disambiguate short of aggregate_type inspection.
+options:
+  - (A) Rename one side of each pair (e.g. PackagingLineClearanceCompleted /
+    MaterialLotReconciliationCalculated) with a schema_version bump per pair -- recommended, routine
+    engineering fix, no regulated-decision content.
+  - (B) Leave both pairs permanently colliding, document that consumers must branch on aggregate_type --
+    rejected, defeats the purpose of CTR-FR-003 distinct event types.
+blocking: false  # no live consumer exists yet to actually mis-route; a real but not urgent defect
+owner: Platform Architect
+resolution_document: "-- (open)"
 status: OPEN
 ```

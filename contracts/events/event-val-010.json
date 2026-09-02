@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-010.json",
+  "title": "SPEC-VAL-010 — 21 CFR Part 11 Electronic Records & Signature Validation Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_part11.py actually emits. All 3 of the catalogue's declared Document 88 events are implemented: Part11AssessmentCreated, Part11TestSuiteDerived (also re-emitted when an individual control-evidence result is recorded, same event_type, same shared-suite aggregate concept), Part11QualificationApproved. Verified directly against source, including indirection through the shared finalize() helper and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "P11Q-FR-001",
+    "P11Q-FR-002",
+    "P11Q-FR-003",
+    "P11Q-FR-004",
+    "P11Q-FR-005",
+    "P11Q-FR-006",
+    "P11Q-FR-007",
+    "P11Q-FR-008"
+  ],
+  "$defs": {
+    "Part11AssessmentCreatedPayload": {
+      "type": "object",
+      "required": [
+        "record_or_signature_type"
+      ],
+      "properties": {
+        "record_or_signature_type": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "P11Q-FR-001",
+        "P11Q-FR-002",
+        "P11Q-FR-003",
+        "P11Q-FR-004",
+        "P11Q-FR-005",
+        "P11Q-FR-006",
+        "P11Q-FR-007",
+        "P11Q-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "Part11TestSuiteDerivedPayload": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "control_evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "control_citation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "P11Q-FR-001",
+        "P11Q-FR-002",
+        "P11Q-FR-003",
+        "P11Q-FR-004",
+        "P11Q-FR-005",
+        "P11Q-FR-006",
+        "P11Q-FR-007",
+        "P11Q-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "Part11QualificationApprovedPayload": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "P11Q-FR-001",
+        "P11Q-FR-002",
+        "P11Q-FR-003",
+        "P11Q-FR-004",
+        "P11Q-FR-005",
+        "P11Q-FR-006",
+        "P11Q-FR-007",
+        "P11Q-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "Part11AssessmentCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-010",
+      "aggregate_type": "part11_scope_assessment",
+      "payload": {
+        "$ref": "#/$defs/Part11AssessmentCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "P11Q-FR-001",
+        "P11Q-FR-002",
+        "P11Q-FR-003",
+        "P11Q-FR-004",
+        "P11Q-FR-005",
+        "P11Q-FR-006",
+        "P11Q-FR-007",
+        "P11Q-FR-008"
+      ]
+    },
+    {
+      "event_type": "Part11TestSuiteDerived",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-010",
+      "aggregate_type": "part11_scope_assessment",
+      "payload": {
+        "$ref": "#/$defs/Part11TestSuiteDerivedPayload"
+      },
+      "x-requirement-ids": [
+        "P11Q-FR-001",
+        "P11Q-FR-002",
+        "P11Q-FR-003",
+        "P11Q-FR-004",
+        "P11Q-FR-005",
+        "P11Q-FR-006",
+        "P11Q-FR-007",
+        "P11Q-FR-008"
+      ]
+    },
+    {
+      "event_type": "Part11QualificationApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-010",
+      "aggregate_type": "part11_scope_assessment",
+      "payload": {
+        "$ref": "#/$defs/Part11QualificationApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "P11Q-FR-001",
+        "P11Q-FR-002",
+        "P11Q-FR-003",
+        "P11Q-FR-004",
+        "P11Q-FR-005",
+        "P11Q-FR-006",
+        "P11Q-FR-007",
+        "P11Q-FR-008"
+      ]
+    }
+  ]
+}

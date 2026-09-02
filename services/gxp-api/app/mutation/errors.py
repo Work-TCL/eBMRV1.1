@@ -1879,3 +1879,133 @@ class DeploymentPrerequisiteFailedError(GxPError):
 
     code = "DEPLOYMENT_PREREQUISITE_FAILED"
     status_code = 409
+
+
+# =================================================================================================
+# Document 87 (SPEC-VAL-009) / Document 95 (SPEC-VAL-017) -- Data Migration & Validation Summary
+# Report / Go-Live Authorization. `app/modules/validation/commands_migration.py` and
+# `commands_vsr.py` reference these but the classes were never added when the module was built
+# (WP-11/12/14 bookkeeping desync, see docs/generated/18_SPEC_GAPS.md history).
+# =================================================================================================
+
+
+class LegacyTraceMissingError(GxPError):
+    """`verifyLegacyRecordTrace()` -- MIGV-FR-007/021, Document 87 §4's declared `LEGACY_TRACE_MISSING`
+    error name. Neither the identity map, the rejected-record ledger, nor the controlled legacy-archive
+    reference has a trace for the requested legacy id."""
+
+    code = "LEGACY_TRACE_MISSING"
+    status_code = 404
+
+
+class GoLiveNotReadyError(GxPError):
+    """`authorizeValidatedRelease()` -- VSR-FR-015/019. An APPROVED validated-release-authorization
+    decision was requested while at least one go-live gate/blocker is still open."""
+
+    code = "GO_LIVE_NOT_READY"
+    status_code = 409
+
+
+class ValidationSummaryBlockedError(GxPError):
+    """VSR-FR-006/019. A CONDITIONAL/APPROVED validation summary report decision names a condition
+    that would bypass a critical GxP control, or the record still carries an open critical
+    deviation/exception -- either blocks the decision regardless of who signs it."""
+
+    code = "VALIDATION_SUMMARY_BLOCKED"
+    status_code = 409
+
+
+class DeploymentValidationMismatchError(GxPError):
+    """`checkDeploymentValidationMatch()` -- VSR-FR-016/017/022, Document 95 §13. The artifact digests
+    or configuration fingerprint submitted for production promotion do not match the exact release the
+    VSR validated; the technical gate fails closed rather than promoting with an impact note."""
+
+    code = "DEPLOYMENT_VALIDATION_MISMATCH"
+    status_code = 409
+
+
+class PostGoLiveVerificationFailedError(GxPError):
+    """VSR-FR-024. A FAIL post-go-live verification outcome was recorded without a rollback, incident
+    or change reference -- a bare failure is not permitted; it must route to a controlled path."""
+
+    code = "POST_GO_LIVE_VERIFICATION_FAILED"
+    status_code = 422
+
+
+# =================================================================================================
+# Document 105 (SPEC-AI-001) -- AI Governance for Regulated Manufacturing. `app/modules/ai_governance/
+# commands.py` references these but the classes were never added when the module was built (see
+# SG-168's history in docs/generated/18_SPEC_GAPS.md -- the entry itself was lost to the same
+# status-file lost-update race as the module's tracked build stage).
+# =================================================================================================
+
+
+class AIUseCaseNotActiveError(GxPError):
+    """AI-FR-001/002. An advisory request targeted an AI use case that is not in the ACTIVE state;
+    only an active, registered use case may serve advisory requests."""
+
+    code = "AI_USE_CASE_NOT_ACTIVE"
+    status_code = 409
+
+
+class AIModelNotApprovedError(GxPError):
+    """AI-FR-007/021. The requested model deployment is not an approved production deployment for
+    this use case; an unapproved model/version cannot serve regulated-adjacent advisory traffic."""
+
+    code = "AI_MODEL_NOT_APPROVED"
+    status_code = 403
+
+
+class AIToolNotAllowlistedError(GxPError):
+    """AI-FR-009/010. The requested tool call is not on the use case's explicit read/write allowlist,
+    or exceeds its declared risk class; production AI tools are read-only unless individually
+    approved."""
+
+    code = "AI_TOOL_NOT_ALLOWLISTED"
+    status_code = 403
+
+
+class AIDataClassificationDeniedError(GxPError):
+    """AI-FR-011/031/032. The retrieved record's data classification is not approved for this use
+    case, is outside the caller's own tenant/site scope, or is a security secret -- secrets are never
+    included in AI context regardless of use-case configuration."""
+
+    code = "AI_DATA_CLASSIFICATION_DENIED"
+    status_code = 403
+
+
+class AIPromptInjectionBlockedError(GxPError):
+    """AI-FR-014/025. Retrieved or user-supplied content matched a known instruction-override
+    pattern; the content is untrusted and cannot redefine system/tool policy, so the escalation this
+    content would have triggered is blocked."""
+
+    code = "AI_PROMPT_INJECTION_BLOCKED"
+    status_code = 403
+
+
+class AIOutputInvalidError(GxPError):
+    """AI-FR-018/019. No usable result was produced -- the provider was unavailable or timed out, it
+    returned no structured output, or the output failed schema validation. The system reports
+    insufficient evidence rather than fabricating or guessing an output."""
+
+    code = "AI_OUTPUT_INVALID"
+    status_code = 422
+
+
+class AIEvaluationCriticalFailureError(GxPError):
+    """AI-FR-022/024. A release-gate evaluation against the use case's versioned evaluation set
+    produced a BLOCK decision -- a critical failure class (e.g. prompt-injection or unsafe-tool-call
+    rate) is not permitted to hide behind an acceptable overall average."""
+
+    code = "AI_EVALUATION_CRITICAL_FAILURE"
+    status_code = 409
+
+
+class AIRegulatedDecisionBoundaryError(GxPError):
+    """AI-FR-003/004. A proposed AI action falls inside the regulated-decision boundary the AI is
+    never permitted to cross autonomously (sign, release, disposition, approve, alter audit, submit a
+    report); the action must instead go through the normal authorization/signature/Mutation Gateway
+    path with a qualified human as the actor."""
+
+    code = "AI_REGULATED_DECISION_BOUNDARY"
+    status_code = 403

@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-eqp-003.json",
+  "title": "SPEC-EQP-003 — Sterile / Aseptic Manufacturing Operations Events",
+  "description": "Document 113 event contract for the events app/modules/equipment/aseptic_commands.py actually emits. 5 of the catalogue's 7 declared Document 40 events are implemented: AsepticOperationStarted, AsepticInterventionRecorded, UnplannedInterventionDetected, AsepticEnvironmentExcursionDetected, AsepticOperationCompleted. AsepticHoldTimeExceeded and AsepticOperationHeld are declared in 07_EVENT_CATALOGUE.yaml but have no producing code path -- aseptic hold-time-exceeded detection (a scheduled/background check) and a distinct hold-transition event (the module folds a critical excursion straight into AsepticEnvironmentExcursionDetected rather than a separate held event) are not yet built. Verified directly against source, not assumed.",
+  "x-requirement-ids": [
+    "ASP-FR-001",
+    "ASP-FR-002",
+    "ASP-FR-003",
+    "ASP-FR-004",
+    "ASP-FR-005",
+    "ASP-FR-006",
+    "ASP-FR-007",
+    "ASP-FR-008"
+  ],
+  "$defs": {
+    "AsepticOperationStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "ASP-FR-001",
+        "ASP-FR-002",
+        "ASP-FR-003",
+        "ASP-FR-004",
+        "ASP-FR-005",
+        "ASP-FR-006",
+        "ASP-FR-007",
+        "ASP-FR-008"
+      ]
+    },
+    "AsepticInterventionRecordedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "intervention_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "ASP-FR-001",
+        "ASP-FR-002",
+        "ASP-FR-003",
+        "ASP-FR-004",
+        "ASP-FR-005",
+        "ASP-FR-006",
+        "ASP-FR-007",
+        "ASP-FR-008"
+      ]
+    },
+    "UnplannedInterventionDetectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "intervention_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "ASP-FR-001",
+        "ASP-FR-002",
+        "ASP-FR-003",
+        "ASP-FR-004",
+        "ASP-FR-005",
+        "ASP-FR-006",
+        "ASP-FR-007",
+        "ASP-FR-008"
+      ]
+    },
+    "AsepticEnvironmentExcursionDetectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "ASP-FR-001",
+        "ASP-FR-002",
+        "ASP-FR-003",
+        "ASP-FR-004",
+        "ASP-FR-005",
+        "ASP-FR-006",
+        "ASP-FR-007",
+        "ASP-FR-008"
+      ]
+    },
+    "AsepticOperationCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "ASP-FR-001",
+        "ASP-FR-002",
+        "ASP-FR-003",
+        "ASP-FR-004",
+        "ASP-FR-005",
+        "ASP-FR-006",
+        "ASP-FR-007",
+        "ASP-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "AsepticOperationStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-003",
+      "aggregate_type": "aseptic_operation",
+      "payload": {
+        "$ref": "#/$defs/AsepticOperationStartedPayload"
+      },
+      "x-requirement-ids": [
+        "ASP-FR-001",
+        "ASP-FR-002",
+        "ASP-FR-003",
+        "ASP-FR-004",
+        "ASP-FR-005",
+        "ASP-FR-006",
+        "ASP-FR-007",
+        "ASP-FR-008"
+      ]
+    },
+    {
+      "event_type": "AsepticInterventionRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-003",
+      "aggregate_type": "aseptic_operation",
+      "payload": {
+        "$ref": "#/$defs/AsepticInterventionRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "ASP-FR-001",
+        "ASP-FR-002",
+        "ASP-FR-003",
+        "ASP-FR-004",
+        "ASP-FR-005",
+        "ASP-FR-006",
+        "ASP-FR-007",
+        "ASP-FR-008"
+      ]
+    },
+    {
+      "event_type": "UnplannedInterventionDetected",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-003",
+      "aggregate_type": "aseptic_operation",
+      "payload": {
+        "$ref": "#/$defs/UnplannedInterventionDetectedPayload"
+      },
+      "x-requirement-ids": [
+        "ASP-FR-001",
+        "ASP-FR-002",
+        "ASP-FR-003",
+        "ASP-FR-004",
+        "ASP-FR-005",
+        "ASP-FR-006",
+        "ASP-FR-007",
+        "ASP-FR-008"
+      ]
+    },
+    {
+      "event_type": "AsepticEnvironmentExcursionDetected",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-003",
+      "aggregate_type": "aseptic_operation",
+      "payload": {
+        "$ref": "#/$defs/AsepticEnvironmentExcursionDetectedPayload"
+      },
+      "x-requirement-ids": [
+        "ASP-FR-001",
+        "ASP-FR-002",
+        "ASP-FR-003",
+        "ASP-FR-004",
+        "ASP-FR-005",
+        "ASP-FR-006",
+        "ASP-FR-007",
+        "ASP-FR-008"
+      ]
+    },
+    {
+      "event_type": "AsepticOperationCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-003",
+      "aggregate_type": "aseptic_operation",
+      "payload": {
+        "$ref": "#/$defs/AsepticOperationCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "ASP-FR-001",
+        "ASP-FR-002",
+        "ASP-FR-003",
+        "ASP-FR-004",
+        "ASP-FR-005",
+        "ASP-FR-006",
+        "ASP-FR-007",
+        "ASP-FR-008"
+      ]
+    }
+  ]
+}

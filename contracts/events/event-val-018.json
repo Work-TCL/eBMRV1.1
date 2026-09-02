@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-018.json",
+  "title": "SPEC-VAL-018 — Periodic Review, Change Impact & Validated-State Maintenance Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_periodic.py actually emits. All 6 of the catalogue's declared Document 96 events are implemented: ValidationChangeImpactAssessed, RevalidationPlanApproved, RevalidationCompleted, PeriodicReviewCreated, ValidatedStateEvaluated, ValidatedSystemDecommissioned. Verified directly against source, including indirection through the shared finalize() helper and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "PRD-FR-001",
+    "PRD-FR-002",
+    "PRD-FR-003",
+    "PRD-FR-004",
+    "PRD-FR-005",
+    "PRD-FR-006",
+    "PRD-FR-007",
+    "PRD-FR-008"
+  ],
+  "$defs": {
+    "ValidationChangeImpactAssessedPayload": {
+      "type": "object",
+      "required": [
+        "change_ref",
+        "revalidation_level"
+      ],
+      "properties": {
+        "change_ref": {
+          "type": "string"
+        },
+        "revalidation_level": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PRD-FR-001",
+        "PRD-FR-002",
+        "PRD-FR-003",
+        "PRD-FR-004",
+        "PRD-FR-005",
+        "PRD-FR-006",
+        "PRD-FR-007",
+        "PRD-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "RevalidationPlanApprovedPayload": {
+      "type": "object",
+      "required": [
+        "revalidation_ref"
+      ],
+      "properties": {
+        "revalidation_ref": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PRD-FR-001",
+        "PRD-FR-002",
+        "PRD-FR-003",
+        "PRD-FR-004",
+        "PRD-FR-005",
+        "PRD-FR-006",
+        "PRD-FR-007",
+        "PRD-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "RevalidationCompletedPayload": {
+      "type": "object",
+      "required": [
+        "evidence_ref",
+        "completed"
+      ],
+      "properties": {
+        "evidence_ref": {
+          "type": "string"
+        },
+        "completed": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "PRD-FR-001",
+        "PRD-FR-002",
+        "PRD-FR-003",
+        "PRD-FR-004",
+        "PRD-FR-005",
+        "PRD-FR-006",
+        "PRD-FR-007",
+        "PRD-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "PeriodicReviewCreatedPayload": {
+      "type": "object",
+      "required": [
+        "release_ref",
+        "finding_count"
+      ],
+      "properties": {
+        "release_ref": {
+          "type": "string"
+        },
+        "finding_count": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "PRD-FR-001",
+        "PRD-FR-002",
+        "PRD-FR-003",
+        "PRD-FR-004",
+        "PRD-FR-005",
+        "PRD-FR-006",
+        "PRD-FR-007",
+        "PRD-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "ValidatedStateEvaluatedPayload": {
+      "type": "object",
+      "required": [
+        "decision"
+      ],
+      "properties": {
+        "decision": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PRD-FR-001",
+        "PRD-FR-002",
+        "PRD-FR-003",
+        "PRD-FR-004",
+        "PRD-FR-005",
+        "PRD-FR-006",
+        "PRD-FR-007",
+        "PRD-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "ValidatedSystemDecommissionedPayload": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PRD-FR-001",
+        "PRD-FR-002",
+        "PRD-FR-003",
+        "PRD-FR-004",
+        "PRD-FR-005",
+        "PRD-FR-006",
+        "PRD-FR-007",
+        "PRD-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "ValidationChangeImpactAssessed",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-018",
+      "aggregate_type": "validation_change_impact",
+      "payload": {
+        "$ref": "#/$defs/ValidationChangeImpactAssessedPayload"
+      },
+      "x-requirement-ids": [
+        "PRD-FR-001",
+        "PRD-FR-002",
+        "PRD-FR-003",
+        "PRD-FR-004",
+        "PRD-FR-005",
+        "PRD-FR-006",
+        "PRD-FR-007",
+        "PRD-FR-008"
+      ]
+    },
+    {
+      "event_type": "RevalidationPlanApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-018",
+      "aggregate_type": "validation_change_impact",
+      "payload": {
+        "$ref": "#/$defs/RevalidationPlanApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "PRD-FR-001",
+        "PRD-FR-002",
+        "PRD-FR-003",
+        "PRD-FR-004",
+        "PRD-FR-005",
+        "PRD-FR-006",
+        "PRD-FR-007",
+        "PRD-FR-008"
+      ]
+    },
+    {
+      "event_type": "RevalidationCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-018",
+      "aggregate_type": "validation_change_impact",
+      "payload": {
+        "$ref": "#/$defs/RevalidationCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "PRD-FR-001",
+        "PRD-FR-002",
+        "PRD-FR-003",
+        "PRD-FR-004",
+        "PRD-FR-005",
+        "PRD-FR-006",
+        "PRD-FR-007",
+        "PRD-FR-008"
+      ]
+    },
+    {
+      "event_type": "PeriodicReviewCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-018",
+      "aggregate_type": "periodic_validation_review",
+      "payload": {
+        "$ref": "#/$defs/PeriodicReviewCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "PRD-FR-001",
+        "PRD-FR-002",
+        "PRD-FR-003",
+        "PRD-FR-004",
+        "PRD-FR-005",
+        "PRD-FR-006",
+        "PRD-FR-007",
+        "PRD-FR-008"
+      ]
+    },
+    {
+      "event_type": "ValidatedStateEvaluated",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-018",
+      "aggregate_type": "periodic_validation_review",
+      "payload": {
+        "$ref": "#/$defs/ValidatedStateEvaluatedPayload"
+      },
+      "x-requirement-ids": [
+        "PRD-FR-001",
+        "PRD-FR-002",
+        "PRD-FR-003",
+        "PRD-FR-004",
+        "PRD-FR-005",
+        "PRD-FR-006",
+        "PRD-FR-007",
+        "PRD-FR-008"
+      ]
+    },
+    {
+      "event_type": "ValidatedSystemDecommissioned",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-018",
+      "aggregate_type": "validated_state_baseline",
+      "payload": {
+        "$ref": "#/$defs/ValidatedSystemDecommissionedPayload"
+      },
+      "x-requirement-ids": [
+        "PRD-FR-001",
+        "PRD-FR-002",
+        "PRD-FR-003",
+        "PRD-FR-004",
+        "PRD-FR-005",
+        "PRD-FR-006",
+        "PRD-FR-007",
+        "PRD-FR-008"
+      ]
+    }
+  ]
+}

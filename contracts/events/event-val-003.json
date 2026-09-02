@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-003.json",
+  "title": "SPEC-VAL-003 — Requirements, Design Inputs & Validation Traceability Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_trace.py actually emits. All 4 of the catalogue's declared Document 81 events are implemented: RequirementIngested, TraceabilityMatrixGenerated, TraceabilityGapDetected, RequirementBaselineFrozen. Verified directly against source, including indirection through the shared `finalize()` helper (payload = new_value) and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "TRC-FR-001",
+    "TRC-FR-002",
+    "TRC-FR-003",
+    "TRC-FR-004",
+    "TRC-FR-005",
+    "TRC-FR-006",
+    "TRC-FR-007",
+    "TRC-FR-008"
+  ],
+  "$defs": {
+    "RequirementIngestedPayload": {
+      "type": "object",
+      "required": [
+        "count",
+        "requirement_ids"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "requirement_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-requirement-ids": [
+        "TRC-FR-001",
+        "TRC-FR-002",
+        "TRC-FR-003",
+        "TRC-FR-004",
+        "TRC-FR-005",
+        "TRC-FR-006",
+        "TRC-FR-007",
+        "TRC-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "TraceabilityMatrixGeneratedPayload": {
+      "type": "object",
+      "required": [
+        "source",
+        "target"
+      ],
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "TRC-FR-001",
+        "TRC-FR-002",
+        "TRC-FR-003",
+        "TRC-FR-004",
+        "TRC-FR-005",
+        "TRC-FR-006",
+        "TRC-FR-007",
+        "TRC-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "TraceabilityGapDetectedPayload": {
+      "type": "object",
+      "required": [
+        "gaps"
+      ],
+      "properties": {
+        "gaps": {
+          "type": "array"
+        }
+      },
+      "x-requirement-ids": [
+        "TRC-FR-001",
+        "TRC-FR-002",
+        "TRC-FR-003",
+        "TRC-FR-004",
+        "TRC-FR-005",
+        "TRC-FR-006",
+        "TRC-FR-007",
+        "TRC-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "RequirementBaselineFrozenPayload": {
+      "type": "object",
+      "required": [
+        "release_scope",
+        "baseline_hash",
+        "gap_count"
+      ],
+      "properties": {
+        "release_scope": {
+          "type": "string"
+        },
+        "baseline_hash": {
+          "type": "string"
+        },
+        "gap_count": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "TRC-FR-001",
+        "TRC-FR-002",
+        "TRC-FR-003",
+        "TRC-FR-004",
+        "TRC-FR-005",
+        "TRC-FR-006",
+        "TRC-FR-007",
+        "TRC-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "RequirementIngested",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-003",
+      "aggregate_type": "validation_requirement",
+      "payload": {
+        "$ref": "#/$defs/RequirementIngestedPayload"
+      },
+      "x-requirement-ids": [
+        "TRC-FR-001",
+        "TRC-FR-002",
+        "TRC-FR-003",
+        "TRC-FR-004",
+        "TRC-FR-005",
+        "TRC-FR-006",
+        "TRC-FR-007",
+        "TRC-FR-008"
+      ]
+    },
+    {
+      "event_type": "TraceabilityMatrixGenerated",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-003",
+      "aggregate_type": "trace_link",
+      "payload": {
+        "$ref": "#/$defs/TraceabilityMatrixGeneratedPayload"
+      },
+      "x-requirement-ids": [
+        "TRC-FR-001",
+        "TRC-FR-002",
+        "TRC-FR-003",
+        "TRC-FR-004",
+        "TRC-FR-005",
+        "TRC-FR-006",
+        "TRC-FR-007",
+        "TRC-FR-008"
+      ]
+    },
+    {
+      "event_type": "TraceabilityGapDetected",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-003",
+      "aggregate_type": "requirement_baseline",
+      "payload": {
+        "$ref": "#/$defs/TraceabilityGapDetectedPayload"
+      },
+      "x-requirement-ids": [
+        "TRC-FR-001",
+        "TRC-FR-002",
+        "TRC-FR-003",
+        "TRC-FR-004",
+        "TRC-FR-005",
+        "TRC-FR-006",
+        "TRC-FR-007",
+        "TRC-FR-008"
+      ]
+    },
+    {
+      "event_type": "RequirementBaselineFrozen",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-003",
+      "aggregate_type": "requirement_baseline",
+      "payload": {
+        "$ref": "#/$defs/RequirementBaselineFrozenPayload"
+      },
+      "x-requirement-ids": [
+        "TRC-FR-001",
+        "TRC-FR-002",
+        "TRC-FR-003",
+        "TRC-FR-004",
+        "TRC-FR-005",
+        "TRC-FR-006",
+        "TRC-FR-007",
+        "TRC-FR-008"
+      ]
+    }
+  ]
+}

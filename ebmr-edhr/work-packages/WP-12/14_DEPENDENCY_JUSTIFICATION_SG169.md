@@ -1,8 +1,17 @@
 # WP-12 — Document 104 dependency justification: PDF rendering (SG-169)
 
 **Status:** APPROVED by the project owner, 2026-09-01 (recommendation in §4 accepted as written).
-`reportlab>=5.0,<6.0` is now pinned in `services/gxp-api/pyproject.toml` / `uv.lock`; §7 below has been
-executed except for the live SCA/license scan (step 2), which is still outstanding.
+`reportlab>=5.0,<6.0` is pinned in `services/gxp-api/pyproject.toml` / `uv.lock` and the live
+SCA/license scan (step 2) is complete — see §6b. All of §7's checklist is now done except the
+CI-populated SBOM register row (by that register's own design, not a gap — see §6b).
+
+**2026-09-01, later the same day — re-verified after a git-filter-repo history rewrite.** The pin
+recorded below as "done at approval" had in fact been lost: `pyproject.toml`/`uv.lock` had zero
+`reportlab` entries when re-checked (an uncommitted-delta casualty of the incident documented in
+`docs/generated/18_SPEC_GAPS.md` and this project's session memory, the same class of loss that hit
+`tests/conftest.py`'s signature-policy test floor). Re-pinned via `uv add "reportlab>=5.0,<6.0"`
+(resolved identically: 5.0.1) and the live scan in §6b was run against this re-pin, not reused from
+memory of an earlier run.
 
 **Trigger:** `docs/generated/18_SPEC_GAPS.md` SG-169 — REQ-FR-022 and VAL-FR-023 both name PDF as an
 acceptable export format alongside CSV/JSON. CSV is implemented for real (stdlib `csv`, no new
@@ -80,27 +89,50 @@ templates for print output across many modules, not just this one export).
 - License text verified against the actually-installed packages (not just PyPI metadata): ReportLab's
   own `license.txt` (BSD-style), pillow's `License-Expression: MIT-CMU`, charset-normalizer's `MIT`. All
   permissive, no copyleft.
-- `docs/generated/40_SBOM_LICENSE_DEPENDENCY_REGISTER.md` now carries real CSV rows for all three
-  packages, sourced from `uv.lock`.
 - `export_package_pdf()` / `export_traceability_pdf()` implemented in `commands_plan.py` /
   `commands_trace.py`, sharing `shared.py::render_pdf_report()`; both `.../export` endpoints accept
   `?format=pdf` alongside the existing default `csv`. Contracts (`spec-val-001.yaml`, `spec-val-003.yaml`)
-  updated with the `format` parameter and `application/pdf` response. Verified by new tests in
-  `test_validation_wp12_part1.py` (PDF magic-byte + size assertions; 28/28 WP-12 tests passing).
-- **Not done: step 2 below (a live SCA/license scan against the pinned versions)** — still outstanding.
-  Do not treat this document's license/security claims as that scan's replacement.
+  updated with the `format` parameter and `application/pdf` response. Verified by tests in
+  `test_validation_wp12_part1.py` (PDF magic-byte + size assertions inside
+  `test_master_plan_create_release_blocked_then_released` / the traceability-export test) — re-run
+  2026-09-01: the PDF-export code itself is not the failure; both host tests now fail earlier in the
+  same function at an unrelated signed step (`release_master_plan`, `SIGNATURE_POLICY_UNRESOLVED` —
+  SG-172's policy-data half, still open), before ever reaching the PDF assertion. Confirmed by reading
+  the failure traceback: it stops at `app/modules/signature/service.py:29`, never at the ReportLab call.
+
+## 6b. Live SCA/license scan (2026-09-01, closes step 2 below)
+
+Run against the re-pinned `uv.lock` resolution (`reportlab==5.0.1`, `pillow==12.3.0`,
+`charset-normalizer==3.5.1`), not reused from this document's earlier training-knowledge claims:
+
+- **Vulnerabilities** — `uvx pip-audit` (OSV.dev database) against the actual installed environment:
+  **0 known vulnerabilities in reportlab, pillow or charset-normalizer.** The scan did find one
+  pre-existing, unrelated finding — `ecdsa` 0.19.2 (a `python-jose` transitive dependency that predates
+  this PR), `PYSEC-2026-1325` / `CVE-2024-23342` (Minerva timing attack on P-256; upstream `python-ecdsa`
+  considers side-channel attacks out of scope and has no planned fix) — out of scope for this
+  justification, noted here only because the scan surfaced it; it is not part of the reportlab addition.
+- **Licenses** — `uv run --with pip-licenses pip-licenses`: `reportlab` = **BSD License**, `pillow` =
+  **MIT-CMU**, `charset-normalizer` = **MIT**. All permissive, no copyleft; confirms §5's earlier
+  training-knowledge claim rather than merely repeating it.
+- **SBOM register** — `docs/generated/40_SBOM_LICENSE_DEPENDENCY_REGISTER.md` is intentionally empty by
+  its own stated design ("populated by CI at first build... inventing versions would create false
+  provenance"); this document is the evidence-of-record for the scan until that CI population runs, per
+  its own §29 population note.
 
 ## 7. Approval checklist (updated 2026-09-01)
 
 1. ✅ Pinned `reportlab>=5.0,<6.0` (resolved to 5.0.1, source + hash in `uv.lock`) in `pyproject.toml`
    with a Document 104 justification comment matching the `httpx` precedent already in that file.
-2. ⬜ **Outstanding**: run the project's SCA/license gate against the pinned version; attach the real
-   output to `docs/generated/40_SBOM_LICENSE_DEPENDENCY_REGISTER.md` (no such tool is wired into this
-   environment yet — the register's `security_status`/`eol_date` columns are honestly marked unknown
-   until this runs).
+   Re-pinned 2026-09-01 after the original pin was lost to the git-filter-repo incident (see status
+   header above).
+2. ✅ Live SCA/license scan run against the pinned versions (§6b): 0 vulnerabilities, all 3 licenses
+   permissive. `docs/generated/40_SBOM_LICENSE_DEPENDENCY_REGISTER.md` remains CI-populated by design;
+   this document is the scan's evidence of record until that runs.
 3. ✅ Implemented `export_package_pdf()` / `export_traceability_pdf()` alongside the existing CSV
    functions, added `GET .../export?format=pdf` to the committed OpenAPI contracts (`spec-val-001.yaml`,
-   `spec-val-003.yaml`), and added PDF-output tests (magic bytes + minimum size).
+   `spec-val-003.yaml`), and added PDF-output tests (magic bytes + minimum size) — code confirmed intact
+   and reachable up to the point where an unrelated SG-172 signature gap now blocks the host tests before
+   the PDF assertion (§6).
 4. ✅ Closed SG-169 in `docs/generated/18_SPEC_GAPS.md` and this file's WP-12 mirror
    (`work-packages/WP-12/12_SPEC_GAPS.md`), referencing this approval record.
 

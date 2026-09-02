@@ -1,0 +1,593 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-ddcp-004.json",
+  "title": "SPEC-DDCP-004 — Drug-Eluting / Drug-Coated Device DDCP Manufacturing Profile Events",
+  "description": "WP-08 has no entries in 07_EVENT_CATALOGUE.yaml -- events derived directly from app/modules/ddcp/coated_device_commands.py's actual event_type= producer code. 11 events found: CoatedDeviceProfileDraftCreated, DrugCoatingUsageRecorded, CoatingRunStarted, COATING_PARAMETER_EXCURSION, CoatingEvidenceRecorded (mutually exclusive outcomes of the same in-process-parameter call site), DRUG_LOADING_OOS, DrugLoadingRecorded (mutually exclusive outcomes of the same drug-loading call site), CoatedDeviceFunctionalTestRecorded, CoatedDeviceDispositioned, CoatedDeviceGenealogyBound, CoatingRunCompleted, PostSterilizationTestRecorded, CoatedDeviceBatchPackageGenerated. Note: 6 of this module's real events across the 4 DDCP files use SCREAMING_SNAKE_CASE (INJECTOR_TEST_FAILED, DOSE_DELIVERY_FAILED, COATING_PARAMETER_EXCURSION, DRUG_LOADING_OOS, CLOSURE_TEST_FAILED, INHALER_QC_OOS) instead of this codebase's otherwise-universal PascalCase event naming convention -- a minor, low-severity inconsistency, included here factually rather than silently renamed to fit the convention.",
+  "x-requirement-ids": [
+    "COAT-FR-001",
+    "COAT-FR-002",
+    "COAT-FR-005",
+    "COAT-FR-006",
+    "COAT-FR-008",
+    "COAT-FR-010"
+  ],
+  "$defs": {
+    "CoatedDeviceProfileDraftCreatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "profile_code",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "profile_code": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "DrugCoatingUsageRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "usage_type",
+        "quantity"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "usage_type": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "CoatingRunStartedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "batch_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "COATING_PARAMETER_EXCURSIONPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "parameter_code",
+        "excursion"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "parameter_code": {
+          "type": "string"
+        },
+        "excursion": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "CoatingEvidenceRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "parameter_code",
+        "excursion"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "parameter_code": {
+          "type": "string"
+        },
+        "excursion": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "DRUG_LOADING_OOSPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "DrugLoadingRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "CoatedDeviceFunctionalTestRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "test_type",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "test_type": {
+          "type": "string"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "CoatedDeviceDispositionedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "unit_identifier",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "unit_identifier": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "CoatedDeviceGenealogyBoundPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "CoatingRunCompletedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "PostSterilizationTestRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "test_type",
+        "result_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "test_type": {
+          "type": "string"
+        },
+        "result_state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "CoatedDeviceBatchPackageGeneratedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "manifest_version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "manifest_version": {
+          "type": "integer"
+        },
+        "digest": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "CoatedDeviceProfileDraftCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "ddcp_profile_version",
+      "payload": {
+        "$ref": "#/$defs/CoatedDeviceProfileDraftCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    },
+    {
+      "event_type": "DrugCoatingUsageRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "drug_coating_usage_ledger",
+      "payload": {
+        "$ref": "#/$defs/DrugCoatingUsageRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    },
+    {
+      "event_type": "CoatingRunStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "ddcp_process_operation",
+      "payload": {
+        "$ref": "#/$defs/CoatingRunStartedPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    },
+    {
+      "event_type": "COATING_PARAMETER_EXCURSION",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "ddcp_process_operation",
+      "payload": {
+        "$ref": "#/$defs/COATING_PARAMETER_EXCURSIONPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    },
+    {
+      "event_type": "CoatingEvidenceRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "ddcp_process_operation",
+      "payload": {
+        "$ref": "#/$defs/CoatingEvidenceRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    },
+    {
+      "event_type": "DRUG_LOADING_OOS",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/DRUG_LOADING_OOSPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    },
+    {
+      "event_type": "DrugLoadingRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/DrugLoadingRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    },
+    {
+      "event_type": "CoatedDeviceFunctionalTestRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/CoatedDeviceFunctionalTestRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    },
+    {
+      "event_type": "CoatedDeviceDispositioned",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "device_assembly_record",
+      "payload": {
+        "$ref": "#/$defs/CoatedDeviceDispositionedPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    },
+    {
+      "event_type": "CoatedDeviceGenealogyBound",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "ddcp_unit_binding",
+      "payload": {
+        "$ref": "#/$defs/CoatedDeviceGenealogyBoundPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    },
+    {
+      "event_type": "CoatingRunCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "ddcp_process_operation",
+      "payload": {
+        "$ref": "#/$defs/CoatingRunCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    },
+    {
+      "event_type": "PostSterilizationTestRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "device_functional_test_link",
+      "payload": {
+        "$ref": "#/$defs/PostSterilizationTestRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    },
+    {
+      "event_type": "CoatedDeviceBatchPackageGenerated",
+      "schema_version": "1.0",
+      "producer": "SPEC-DDCP-004",
+      "aggregate_type": "batch_evidence_manifest",
+      "payload": {
+        "$ref": "#/$defs/CoatedDeviceBatchPackageGeneratedPayload"
+      },
+      "x-requirement-ids": [
+        "COAT-FR-001",
+        "COAT-FR-002",
+        "COAT-FR-005",
+        "COAT-FR-006",
+        "COAT-FR-008",
+        "COAT-FR-010"
+      ]
+    }
+  ]
+}

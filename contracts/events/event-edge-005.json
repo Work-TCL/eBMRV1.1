@@ -1,0 +1,594 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-edge-005.json",
+  "title": "SPEC-EDGE-005 — Machine/PLC/SCADA Data Acquisition, Evidence Mapping & Command Boundary Events",
+  "description": "WP-06's edge/OT half has no entries in 07_EVENT_CATALOGUE.yaml -- events derived directly from app/modules/machine_integration/commands.py's actual event_type= producer code. 10 events found: SignalMappingReleased, BatchContextOpened, BatchContextClosed, StepResultCandidateCreated, MachineAlarmDetected, CycleEvidenceCreated, MachineCommandRequested, MachineCommandCompleted, MachineCommandFailed (mutually exclusive outcomes of the same command-finalization call site), HistoricalReplayStarted.",
+  "x-requirement-ids": [
+    "MAP-FR-002",
+    "MAP-FR-004",
+    "MAP-FR-005",
+    "MAP-FR-009",
+    "MAP-FR-012",
+    "MAP-FR-014",
+    "MAP-FR-016",
+    "MAP-FR-018",
+    "MAP-FR-019",
+    "MAP-FR-021",
+    "MAP-FR-025",
+    "MAP-FR-027",
+    "MAP-FR-029",
+    "MAP-FR-031"
+  ],
+  "$defs": {
+    "SignalMappingReleasedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "mapping_key",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "mapping_key": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ],
+      "additionalProperties": false
+    },
+    "BatchContextOpenedPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ],
+      "additionalProperties": false
+    },
+    "BatchContextClosedPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ],
+      "additionalProperties": false
+    },
+    "StepResultCandidateCreatedPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ],
+      "additionalProperties": false
+    },
+    "MachineAlarmDetectedPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ],
+      "additionalProperties": false
+    },
+    "CycleEvidenceCreatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "cycle_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "cycle_id": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ],
+      "additionalProperties": false
+    },
+    "MachineCommandRequestedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "operation_code"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "operation_code": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ],
+      "additionalProperties": false
+    },
+    "MachineCommandCompletedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "outcome_status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "outcome_status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ],
+      "additionalProperties": false
+    },
+    "MachineCommandFailedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "outcome_status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "outcome_status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ],
+      "additionalProperties": false
+    },
+    "HistoricalReplayStartedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "mode"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "mode": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "SignalMappingReleased",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-005",
+      "aggregate_type": "signal_mapping",
+      "payload": {
+        "$ref": "#/$defs/SignalMappingReleasedPayload"
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ]
+    },
+    {
+      "event_type": "BatchContextOpened",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-005",
+      "aggregate_type": "batch_context",
+      "payload": {
+        "$ref": "#/$defs/BatchContextOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ]
+    },
+    {
+      "event_type": "BatchContextClosed",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-005",
+      "aggregate_type": "batch_context",
+      "payload": {
+        "$ref": "#/$defs/BatchContextClosedPayload"
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ]
+    },
+    {
+      "event_type": "StepResultCandidateCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-005",
+      "aggregate_type": "machine_evidence_candidate",
+      "payload": {
+        "$ref": "#/$defs/StepResultCandidateCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ]
+    },
+    {
+      "event_type": "MachineAlarmDetected",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-005",
+      "aggregate_type": "machine_alarm_event",
+      "payload": {
+        "$ref": "#/$defs/MachineAlarmDetectedPayload"
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ]
+    },
+    {
+      "event_type": "CycleEvidenceCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-005",
+      "aggregate_type": "cycle_evidence_manifest",
+      "payload": {
+        "$ref": "#/$defs/CycleEvidenceCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ]
+    },
+    {
+      "event_type": "MachineCommandRequested",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-005",
+      "aggregate_type": "machine_command_request",
+      "payload": {
+        "$ref": "#/$defs/MachineCommandRequestedPayload"
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ]
+    },
+    {
+      "event_type": "MachineCommandCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-005",
+      "aggregate_type": "machine_command_request",
+      "payload": {
+        "$ref": "#/$defs/MachineCommandCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ]
+    },
+    {
+      "event_type": "MachineCommandFailed",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-005",
+      "aggregate_type": "machine_command_request",
+      "payload": {
+        "$ref": "#/$defs/MachineCommandFailedPayload"
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ]
+    },
+    {
+      "event_type": "HistoricalReplayStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EDGE-005",
+      "aggregate_type": "machine_replay_job",
+      "payload": {
+        "$ref": "#/$defs/HistoricalReplayStartedPayload"
+      },
+      "x-requirement-ids": [
+        "MAP-FR-002",
+        "MAP-FR-004",
+        "MAP-FR-005",
+        "MAP-FR-009",
+        "MAP-FR-012",
+        "MAP-FR-014",
+        "MAP-FR-016",
+        "MAP-FR-018",
+        "MAP-FR-019",
+        "MAP-FR-021",
+        "MAP-FR-025",
+        "MAP-FR-027",
+        "MAP-FR-029",
+        "MAP-FR-031"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,414 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-eqp-001.json",
+  "title": "SPEC-EQP-001 — Equipment, Calibration, Qualification & Maintenance Events",
+  "description": "Document 113 event contract for the events app/modules/equipment/commands.py actually emits. 8 of the catalogue's 10 declared Document 38 events are implemented: EquipmentInstalled, EquipmentQualified, EquipmentCalibrated, CalibrationOutOfTolerance, MaintenanceDue, EquipmentOutOfService, MaintenanceCompleted, EquipmentReturnedToService. CalibrationDue and EquipmentRetired are declared in 07_EVENT_CATALOGUE.yaml but have no producing code path -- calibration-due detection (a scheduled/background check, not a command) and equipment retirement are not yet built. EquipmentOutOfService has two real emission sites with slightly different payload shapes (a maintenance work-order transition vs. a manual HoldEquipment command); the schema below is the union, with only `id` required. Verified directly against source, not assumed.",
+  "x-requirement-ids": [
+    "EQP-FR-001",
+    "EQP-FR-002",
+    "EQP-FR-003",
+    "EQP-FR-004",
+    "EQP-FR-005",
+    "EQP-FR-006",
+    "EQP-FR-007",
+    "EQP-FR-008"
+  ],
+  "$defs": {
+    "EquipmentInstalledPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "equipment_code"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "equipment_code": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    "EquipmentQualifiedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "qualification_status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "qualification_status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    "EquipmentCalibratedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "calibration_id",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "calibration_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    "CalibrationOutOfTolerancePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "calibration_id",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "calibration_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    "MaintenanceDuePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "work_order_id",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "work_order_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    "EquipmentOutOfServicePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "work_order_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "type": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    "MaintenanceCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "work_order_id",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "work_order_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    "EquipmentReturnedToServicePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "EquipmentInstalled",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-001",
+      "aggregate_type": "equipment_asset",
+      "payload": {
+        "$ref": "#/$defs/EquipmentInstalledPayload"
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    {
+      "event_type": "EquipmentQualified",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-001",
+      "aggregate_type": "equipment_asset",
+      "payload": {
+        "$ref": "#/$defs/EquipmentQualifiedPayload"
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    {
+      "event_type": "EquipmentCalibrated",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-001",
+      "aggregate_type": "equipment_asset",
+      "payload": {
+        "$ref": "#/$defs/EquipmentCalibratedPayload"
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    {
+      "event_type": "CalibrationOutOfTolerance",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-001",
+      "aggregate_type": "equipment_asset",
+      "payload": {
+        "$ref": "#/$defs/CalibrationOutOfTolerancePayload"
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    {
+      "event_type": "MaintenanceDue",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-001",
+      "aggregate_type": "equipment_asset",
+      "payload": {
+        "$ref": "#/$defs/MaintenanceDuePayload"
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    {
+      "event_type": "EquipmentOutOfService",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-001",
+      "aggregate_type": "equipment_asset",
+      "payload": {
+        "$ref": "#/$defs/EquipmentOutOfServicePayload"
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    {
+      "event_type": "MaintenanceCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-001",
+      "aggregate_type": "equipment_asset",
+      "payload": {
+        "$ref": "#/$defs/MaintenanceCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    },
+    {
+      "event_type": "EquipmentReturnedToService",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-001",
+      "aggregate_type": "equipment_asset",
+      "payload": {
+        "$ref": "#/$defs/EquipmentReturnedToServicePayload"
+      },
+      "x-requirement-ids": [
+        "EQP-FR-001",
+        "EQP-FR-002",
+        "EQP-FR-003",
+        "EQP-FR-004",
+        "EQP-FR-005",
+        "EQP-FR-006",
+        "EQP-FR-007",
+        "EQP-FR-008"
+      ]
+    }
+  ]
+}

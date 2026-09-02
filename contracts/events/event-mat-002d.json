@@ -1,0 +1,433 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-mat-002d.json",
+  "title": "SPEC-MAT-002D — Material Consumption, Return, Adjustment, Destruction & Reconciliation Events",
+  "description": "Document 113 event contract for the events app/modules/material/commands.py actually emits for Document 22. 8 of the catalogue's 9 declared events are implemented: MaterialConsumed, MaterialReturned, MaterialSampled, MaterialLossRecorded (mutually exclusive outcomes of the same loss-recording call site, chosen by loss_type), InventoryAdjustmentApproved, MaterialDestroyed, MaterialReconciliationCalculated, MaterialReconciliationFailed (mutually exclusive outcomes of the same reconciliation call site, chosen by outcome). ERPInventoryPostingFailed is declared but has no producing code path -- ERP posting-failure handling is not yet built on the material side. Verified directly against source. KNOWN DEFECT (SG-174, not fixed here): app/modules/yield_reconciliation/commands.py also emits the literal event_type \"MaterialReconciliationCalculated\" (Document 17 batch material reconciliation, aggregate_type reconciliation_record) -- a second, independent cross-module name collision, same class as LineClearanceCompleted. tooling/events/validate.py correctly fails CTRC-FR-008 on this pair too; left standing as accurate evidence.",
+  "x-requirement-ids": [
+    "MAT-FR-001",
+    "MAT-FR-002",
+    "MAT-FR-003",
+    "MAT-FR-004",
+    "MAT-FR-005",
+    "MAT-FR-006",
+    "MAT-FR-007",
+    "MAT-FR-008"
+  ],
+  "$defs": {
+    "MaterialConsumedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "batch_id",
+        "dispensed_container_id",
+        "quantity"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "dispensed_container_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "quantity": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "MaterialReturnedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "batch_id",
+        "resulting_status",
+        "quantity"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "resulting_status": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "MaterialSampledPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "loss_type",
+        "quantity"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "loss_type": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "MaterialLossRecordedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "loss_type",
+        "quantity"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "loss_type": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "InventoryAdjustmentApprovedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "variance"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "variance": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "MaterialDestroyedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "quantity"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "quantity": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "MaterialReconciliationCalculatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "batch_id",
+        "outcome"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "outcome": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "MaterialReconciliationFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "batch_id",
+        "outcome"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "outcome": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "MaterialConsumed",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002D",
+      "aggregate_type": "material_consumption",
+      "payload": {
+        "$ref": "#/$defs/MaterialConsumedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "MaterialReturned",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002D",
+      "aggregate_type": "material_return",
+      "payload": {
+        "$ref": "#/$defs/MaterialReturnedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "MaterialSampled",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002D",
+      "aggregate_type": "inventory_transaction",
+      "payload": {
+        "$ref": "#/$defs/MaterialSampledPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "MaterialLossRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002D",
+      "aggregate_type": "inventory_transaction",
+      "payload": {
+        "$ref": "#/$defs/MaterialLossRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "InventoryAdjustmentApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002D",
+      "aggregate_type": "inventory_adjustment_request",
+      "payload": {
+        "$ref": "#/$defs/InventoryAdjustmentApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "MaterialDestroyed",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002D",
+      "aggregate_type": "destruction_record",
+      "payload": {
+        "$ref": "#/$defs/MaterialDestroyedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "MaterialReconciliationCalculated",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002D",
+      "aggregate_type": "material_reconciliation",
+      "payload": {
+        "$ref": "#/$defs/MaterialReconciliationCalculatedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "MaterialReconciliationFailed",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002D",
+      "aggregate_type": "material_reconciliation",
+      "payload": {
+        "$ref": "#/$defs/MaterialReconciliationFailedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    }
+  ]
+}

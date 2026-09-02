@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-012.json",
+  "title": "SPEC-VAL-012 — Integration, Edge, Device & Interface Validation Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_interface.py actually emits. All 4 of the catalogue's declared Document 90 events are implemented, 2 of them (InterfaceContractTestsCompleted, EdgeOutageQualificationCompleted) only visible through a parameterized shared helper (`_record_interface_test(..., event_type=...)`) a literal-string grep would miss: InterfaceContractTestsCompleted, EdgeOutageQualificationCompleted, InterfaceReconciliationVerified (conditionally emitted alongside either of the first two when external_reconciliation is supplied), InterfaceQualificationApproved. (The module also emits an undeclared InterfaceProfileDefined at profile-authoring time -- not part of the catalogue's declared 4.) Verified directly against source, including indirection through the shared finalize() helper and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "INTQ-FR-001",
+    "INTQ-FR-002",
+    "INTQ-FR-003",
+    "INTQ-FR-004",
+    "INTQ-FR-005",
+    "INTQ-FR-006",
+    "INTQ-FR-007",
+    "INTQ-FR-008"
+  ],
+  "$defs": {
+    "InterfaceContractTestsCompletedPayload": {
+      "type": "object",
+      "required": [
+        "profile_id",
+        "scenario",
+        "status"
+      ],
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "scenario": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INTQ-FR-001",
+        "INTQ-FR-002",
+        "INTQ-FR-003",
+        "INTQ-FR-004",
+        "INTQ-FR-005",
+        "INTQ-FR-006",
+        "INTQ-FR-007",
+        "INTQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "EdgeOutageQualificationCompletedPayload": {
+      "type": "object",
+      "required": [
+        "profile_id",
+        "scenario",
+        "status"
+      ],
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "scenario": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INTQ-FR-001",
+        "INTQ-FR-002",
+        "INTQ-FR-003",
+        "INTQ-FR-004",
+        "INTQ-FR-005",
+        "INTQ-FR-006",
+        "INTQ-FR-007",
+        "INTQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "InterfaceReconciliationVerifiedPayload": {
+      "type": "object",
+      "required": [],
+      "properties": {},
+      "x-requirement-ids": [
+        "INTQ-FR-001",
+        "INTQ-FR-002",
+        "INTQ-FR-003",
+        "INTQ-FR-004",
+        "INTQ-FR-005",
+        "INTQ-FR-006",
+        "INTQ-FR-007",
+        "INTQ-FR-008"
+      ],
+      "additionalProperties": true
+    },
+    "InterfaceQualificationApprovedPayload": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INTQ-FR-001",
+        "INTQ-FR-002",
+        "INTQ-FR-003",
+        "INTQ-FR-004",
+        "INTQ-FR-005",
+        "INTQ-FR-006",
+        "INTQ-FR-007",
+        "INTQ-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "InterfaceContractTestsCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-012",
+      "aggregate_type": "interface_test_execution",
+      "payload": {
+        "$ref": "#/$defs/InterfaceContractTestsCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "INTQ-FR-001",
+        "INTQ-FR-002",
+        "INTQ-FR-003",
+        "INTQ-FR-004",
+        "INTQ-FR-005",
+        "INTQ-FR-006",
+        "INTQ-FR-007",
+        "INTQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "EdgeOutageQualificationCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-012",
+      "aggregate_type": "interface_test_execution",
+      "payload": {
+        "$ref": "#/$defs/EdgeOutageQualificationCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "INTQ-FR-001",
+        "INTQ-FR-002",
+        "INTQ-FR-003",
+        "INTQ-FR-004",
+        "INTQ-FR-005",
+        "INTQ-FR-006",
+        "INTQ-FR-007",
+        "INTQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "InterfaceReconciliationVerified",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-012",
+      "aggregate_type": "interface_test_execution",
+      "payload": {
+        "$ref": "#/$defs/InterfaceReconciliationVerifiedPayload"
+      },
+      "x-requirement-ids": [
+        "INTQ-FR-001",
+        "INTQ-FR-002",
+        "INTQ-FR-003",
+        "INTQ-FR-004",
+        "INTQ-FR-005",
+        "INTQ-FR-006",
+        "INTQ-FR-007",
+        "INTQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "InterfaceQualificationApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-012",
+      "aggregate_type": "interface_validation_profile",
+      "payload": {
+        "$ref": "#/$defs/InterfaceQualificationApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "INTQ-FR-001",
+        "INTQ-FR-002",
+        "INTQ-FR-003",
+        "INTQ-FR-004",
+        "INTQ-FR-005",
+        "INTQ-FR-006",
+        "INTQ-FR-007",
+        "INTQ-FR-008"
+      ]
+    }
+  ]
+}

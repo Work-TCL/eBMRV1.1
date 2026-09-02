@@ -1,0 +1,350 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-eqp-002.json",
+  "title": "SPEC-EQP-002 — Cleaning, Sanitization & Line Clearance Events",
+  "description": "Document 113 event contract for the events app/modules/equipment/cleaning_commands.py actually emits. 7 of the catalogue's 8 declared Document 39 events are implemented: CleaningStarted, CleaningCompleted, CleaningVerificationFailed, EquipmentMarkedClean, LineClearanceStarted, LineClearanceCompleted, LineClearanceFailed. CleanHoldExpired is declared in 07_EVENT_CATALOGUE.yaml but has no producing code path -- clean-hold-time expiry is a scheduled/background check, not yet built. Verified directly against source, not assumed. KNOWN DEFECT (SG-174, not fixed here): app/modules/packaging/commands.py also emits the literal event_type \"LineClearanceCompleted\" (Document 16 packaging-line clearance) -- a genuine cross-module name collision in running code, not a data-entry error in this contract. tooling/events/validate.py correctly fails CTRC-FR-008 on this pair; the fail is left standing as accurate evidence rather than renamed away in the contract to force a clean pass.",
+  "x-requirement-ids": [
+    "CLN-FR-001",
+    "CLN-FR-002",
+    "CLN-FR-003",
+    "CLN-FR-004",
+    "CLN-FR-005",
+    "CLN-FR-006",
+    "CLN-FR-007",
+    "CLN-FR-008"
+  ],
+  "$defs": {
+    "CleaningStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    },
+    "CleaningCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "step_count"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "step_count": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    },
+    "CleaningVerificationFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    },
+    "EquipmentMarkedCleanPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    },
+    "LineClearanceStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    },
+    "LineClearanceCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    },
+    "LineClearanceFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "CleaningStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-002",
+      "aggregate_type": "cleaning_execution",
+      "payload": {
+        "$ref": "#/$defs/CleaningStartedPayload"
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    },
+    {
+      "event_type": "CleaningCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-002",
+      "aggregate_type": "cleaning_execution",
+      "payload": {
+        "$ref": "#/$defs/CleaningCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    },
+    {
+      "event_type": "CleaningVerificationFailed",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-002",
+      "aggregate_type": "cleaning_execution",
+      "payload": {
+        "$ref": "#/$defs/CleaningVerificationFailedPayload"
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    },
+    {
+      "event_type": "EquipmentMarkedClean",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-002",
+      "aggregate_type": "cleaning_execution",
+      "payload": {
+        "$ref": "#/$defs/EquipmentMarkedCleanPayload"
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    },
+    {
+      "event_type": "LineClearanceStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-002",
+      "aggregate_type": "line_clearance",
+      "payload": {
+        "$ref": "#/$defs/LineClearanceStartedPayload"
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    },
+    {
+      "event_type": "LineClearanceCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-002",
+      "aggregate_type": "line_clearance",
+      "payload": {
+        "$ref": "#/$defs/LineClearanceCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    },
+    {
+      "event_type": "LineClearanceFailed",
+      "schema_version": "1.0",
+      "producer": "SPEC-EQP-002",
+      "aggregate_type": "line_clearance",
+      "payload": {
+        "$ref": "#/$defs/LineClearanceFailedPayload"
+      },
+      "x-requirement-ids": [
+        "CLN-FR-001",
+        "CLN-FR-002",
+        "CLN-FR-003",
+        "CLN-FR-004",
+        "CLN-FR-005",
+        "CLN-FR-006",
+        "CLN-FR-007",
+        "CLN-FR-008"
+      ]
+    }
+  ]
+}

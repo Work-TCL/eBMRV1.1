@@ -1,8 +1,8 @@
 # Build Status
 
-_Generated 2026-08-31 — do not hand-edit._
+_Generated 2026-09-02 — do not hand-edit._
 
-**Overall:** 64/103 modules started · 0 released · 763/2965 requirements verified · 2495/9150 test cases executed
+**Overall:** 83/103 modules started · 0 released · 763/2965 requirements verified · 2495/9150 test cases executed
 
 ## Work packages
 
@@ -20,9 +20,9 @@ _Generated 2026-08-31 — do not hand-edit._
 | WP-09 | Postmarket | 0/3 | CODE_COMPLETE | WP-05 |
 | WP-10 | Security | 0/8 | CODE_COMPLETE | WP-00, WP-01 |
 | WP-11 | Data / Infrastructure / DR / SRE | 0/10 | NOT_STARTED | WP-00, WP-01 |
-| WP-12 | Validation Platform & Evidence | 0/15 | NOT_STARTED | WP-01, WP-11 |
-| WP-13 | AI Advisory Capabilities | 0/1 | NOT_STARTED | WP-01, WP-10, WP-12 |
-| WP-14 | Customer Deployment / PQ / Go-Live | 0/3 | NOT_STARTED | WP-12 |
+| WP-12 | Validation Platform & Evidence | 0/15 | IN_DEVELOPMENT | WP-01, WP-11 |
+| WP-13 | AI Advisory Capabilities | 0/1 | IN_DEVELOPMENT | WP-01, WP-10, WP-12 |
+| WP-14 | Customer Deployment / PQ / Go-Live | 0/3 | IN_DEVELOPMENT | WP-12 |
 
 ## Modules
 
@@ -104,24 +104,24 @@ _Generated 2026-08-31 — do not hand-edit._
 | 76 | SPEC-DATA-008 | WP-11 | H | 32 | 0 | 53 | 0 | 0 | 0 | NOT_STARTED | — |
 | 77 | SPEC-DATA-009 | WP-11 | H | 35 | 0 | 127 | 0 | 0 | 0 | NOT_STARTED | — |
 | 78 | SPEC-DATA-010 | WP-11 | H | 36 | 0 | 74 | 0 | 0 | 0 | NOT_STARTED | — |
-| 79 | SPEC-VAL-001 | WP-12 | H | 28 | 0 | 59 | 0 | 0 | 0 | NOT_STARTED | — |
-| 80 | SPEC-VAL-002 | WP-12 | H | 22 | 0 | 44 | 0 | 0 | 0 | NOT_STARTED | — |
-| 81 | SPEC-VAL-003 | WP-12 | H | 23 | 0 | 47 | 0 | 0 | 0 | NOT_STARTED | — |
-| 82 | SPEC-VAL-004 | WP-12 | H | 24 | 0 | 42 | 0 | 0 | 0 | NOT_STARTED | — |
-| 83 | SPEC-VAL-005 | WP-12 | H | 21 | 0 | 37 | 0 | 0 | 0 | NOT_STARTED | — |
-| 84 | SPEC-VAL-006 | WP-12 | H | 18 | 0 | 35 | 0 | 0 | 0 | NOT_STARTED | — |
-| 85 | SPEC-VAL-007 | WP-14 | H | 20 | 0 | 36 | 0 | 0 | 0 | NOT_STARTED | — |
-| 86 | SPEC-VAL-008 | WP-12 | H | 20 | 0 | 28 | 0 | 0 | 0 | NOT_STARTED | — |
-| 87 | SPEC-VAL-009 | WP-14 | H | 22 | 0 | 42 | 0 | 0 | 0 | NOT_STARTED | — |
-| 88 | SPEC-VAL-010 | WP-12 | H | 26 | 0 | 58 | 0 | 0 | 0 | NOT_STARTED | — |
-| 89 | SPEC-VAL-011 | WP-12 | H | 24 | 0 | 50 | 0 | 0 | 0 | NOT_STARTED | — |
-| 90 | SPEC-VAL-012 | WP-12 | H | 24 | 0 | 56 | 0 | 0 | 0 | NOT_STARTED | — |
-| 91 | SPEC-VAL-013 | WP-12 | H | 22 | 0 | 70 | 0 | 0 | 0 | NOT_STARTED | — |
-| 92 | SPEC-VAL-014 | WP-12 | H | 24 | 0 | 36 | 0 | 0 | 0 | NOT_STARTED | — |
-| 93 | SPEC-VAL-015 | WP-12 | H | 24 | 0 | 46 | 0 | 0 | 0 | NOT_STARTED | — |
-| 94 | SPEC-VAL-016 | WP-12 | H | 22 | 0 | 49 | 0 | 0 | 0 | NOT_STARTED | — |
-| 95 | SPEC-VAL-017 | WP-14 | H | 24 | 0 | 52 | 0 | 0 | 0 | NOT_STARTED | — |
-| 96 | SPEC-VAL-018 | WP-12 | H | 28 | 0 | 49 | 0 | 0 | 0 | NOT_STARTED | — |
+| 79 | SPEC-VAL-001 | WP-12 | H | 28 | 0 | 59 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 80 | SPEC-VAL-002 | WP-12 | H | 22 | 0 | 44 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 81 | SPEC-VAL-003 | WP-12 | H | 23 | 0 | 47 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 82 | SPEC-VAL-004 | WP-12 | H | 24 | 0 | 42 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 83 | SPEC-VAL-005 | WP-12 | H | 21 | 0 | 37 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 84 | SPEC-VAL-006 | WP-12 | H | 18 | 0 | 35 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 85 | SPEC-VAL-007 | WP-14 | H | 20 | 0 | 36 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 86 | SPEC-VAL-008 | WP-12 | H | 20 | 0 | 28 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 87 | SPEC-VAL-009 | WP-14 | H | 22 | 0 | 42 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 88 | SPEC-VAL-010 | WP-12 | H | 26 | 0 | 58 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 89 | SPEC-VAL-011 | WP-12 | H | 24 | 0 | 50 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 90 | SPEC-VAL-012 | WP-12 | H | 24 | 0 | 56 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 91 | SPEC-VAL-013 | WP-12 | H | 22 | 0 | 70 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 92 | SPEC-VAL-014 | WP-12 | H | 24 | 0 | 36 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 93 | SPEC-VAL-015 | WP-12 | H | 24 | 0 | 46 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 94 | SPEC-VAL-016 | WP-12 | H | 22 | 0 | 49 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 95 | SPEC-VAL-017 | WP-14 | H | 24 | 0 | 52 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 96 | SPEC-VAL-018 | WP-12 | H | 28 | 0 | 49 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 | 97 | SPEC-ENG-001 | WP-00 | H | 36 | 0 | 65 | 0 | 0 | 0 | NOT_STARTED | — |
 | 98 | SPEC-ENG-002 | WP-00 | H | 36 | 0 | 74 | 0 | 0 | 0 | NOT_STARTED | — |
 | 99 | SPEC-ENG-003 | WP-00 | H | 30 | 0 | 69 | 0 | 0 | 0 | NOT_STARTED | — |
@@ -130,7 +130,7 @@ _Generated 2026-08-31 — do not hand-edit._
 | 102 | SPEC-ENG-006 | WP-00 | H | 36 | 0 | 76 | 0 | 0 | 0 | NOT_STARTED | — |
 | 103 | SPEC-ENG-007 | WP-00 | H | 36 | 0 | 83 | 0 | 0 | 0 | NOT_STARTED | — |
 | 104 | SPEC-ENG-008 | WP-00 | H | 36 | 0 | 130 | 0 | 0 | 0 | NOT_STARTED | — |
-| 105 | SPEC-AI-001 | WP-13 | H | 56 | 0 | 158 | 0 | 0 | 0 | NOT_STARTED | — |
+| 105 | SPEC-AI-001 | WP-13 | H | 56 | 0 | 158 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 
 ## Blocked modules
 
@@ -166,3 +166,4 @@ _Generated 2026-08-31 — do not hand-edit._
 | SPEC-PM-002 | SG-157; SG-158; SG-159 |
 | SPEC-PM-003 | SG-160 |
 | SPEC-ENG-005 | SG-013 (blocking): 344 of 434 implemented operations are in a surface with no committed contract; 484 event types have no committed schema at all; SG-014: no WP-01 operation declares expected_version, so CTRC-FR-006 and the optimistic-concurrency test cases cannot be executed |
+| SPEC-AI-001 | SG-167: Document 106 has zero SPEC-AI-001 signature policy rows -- 5 signed functions unsatisfiable |

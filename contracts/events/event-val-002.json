@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-002.json",
+  "title": "SPEC-VAL-002 — Intended Use, GxP Criticality & Risk Classification Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_risk.py actually emits. 4 of the catalogue's 5 declared Document 80 events are implemented: IntendedUseCreated, AssuranceLevelDerived, FunctionRiskAssessed, RiskAssessmentApproved. ValidationRiskReassessmentRequired is declared but has no producing code path -- triggering a reassessment (e.g. on a material change) is not yet built. Verified directly against source, including indirection through the shared `finalize()` helper (payload = new_value) and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "RISK-FR-001",
+    "RISK-FR-002",
+    "RISK-FR-003",
+    "RISK-FR-004",
+    "RISK-FR-005",
+    "RISK-FR-006",
+    "RISK-FR-007",
+    "RISK-FR-008"
+  ],
+  "$defs": {
+    "IntendedUseCreatedPayload": {
+      "type": "object",
+      "required": [
+        "scope_ref",
+        "scope_version"
+      ],
+      "properties": {
+        "scope_ref": {
+          "type": "string"
+        },
+        "scope_version": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "RISK-FR-001",
+        "RISK-FR-002",
+        "RISK-FR-003",
+        "RISK-FR-004",
+        "RISK-FR-005",
+        "RISK-FR-006",
+        "RISK-FR-007",
+        "RISK-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "AssuranceLevelDerivedPayload": {
+      "type": "object",
+      "required": [
+        "function_ref",
+        "risk_category",
+        "assurance_method"
+      ],
+      "properties": {
+        "function_ref": {
+          "type": "string"
+        },
+        "risk_category": {
+          "type": "string"
+        },
+        "assurance_method": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "RISK-FR-001",
+        "RISK-FR-002",
+        "RISK-FR-003",
+        "RISK-FR-004",
+        "RISK-FR-005",
+        "RISK-FR-006",
+        "RISK-FR-007",
+        "RISK-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "FunctionRiskAssessedPayload": {
+      "type": "object",
+      "required": [
+        "function_ref",
+        "risk_category"
+      ],
+      "properties": {
+        "function_ref": {
+          "type": "string"
+        },
+        "risk_category": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "RISK-FR-001",
+        "RISK-FR-002",
+        "RISK-FR-003",
+        "RISK-FR-004",
+        "RISK-FR-005",
+        "RISK-FR-006",
+        "RISK-FR-007",
+        "RISK-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "RiskAssessmentApprovedPayload": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "residual_risk": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "RISK-FR-001",
+        "RISK-FR-002",
+        "RISK-FR-003",
+        "RISK-FR-004",
+        "RISK-FR-005",
+        "RISK-FR-006",
+        "RISK-FR-007",
+        "RISK-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "IntendedUseCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-002",
+      "aggregate_type": "intended_use",
+      "payload": {
+        "$ref": "#/$defs/IntendedUseCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "RISK-FR-001",
+        "RISK-FR-002",
+        "RISK-FR-003",
+        "RISK-FR-004",
+        "RISK-FR-005",
+        "RISK-FR-006",
+        "RISK-FR-007",
+        "RISK-FR-008"
+      ]
+    },
+    {
+      "event_type": "AssuranceLevelDerived",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-002",
+      "aggregate_type": "function_risk_assessment",
+      "payload": {
+        "$ref": "#/$defs/AssuranceLevelDerivedPayload"
+      },
+      "x-requirement-ids": [
+        "RISK-FR-001",
+        "RISK-FR-002",
+        "RISK-FR-003",
+        "RISK-FR-004",
+        "RISK-FR-005",
+        "RISK-FR-006",
+        "RISK-FR-007",
+        "RISK-FR-008"
+      ]
+    },
+    {
+      "event_type": "FunctionRiskAssessed",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-002",
+      "aggregate_type": "function_risk_assessment",
+      "payload": {
+        "$ref": "#/$defs/FunctionRiskAssessedPayload"
+      },
+      "x-requirement-ids": [
+        "RISK-FR-001",
+        "RISK-FR-002",
+        "RISK-FR-003",
+        "RISK-FR-004",
+        "RISK-FR-005",
+        "RISK-FR-006",
+        "RISK-FR-007",
+        "RISK-FR-008"
+      ]
+    },
+    {
+      "event_type": "RiskAssessmentApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-002",
+      "aggregate_type": "function_risk_assessment",
+      "payload": {
+        "$ref": "#/$defs/RiskAssessmentApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "RISK-FR-001",
+        "RISK-FR-002",
+        "RISK-FR-003",
+        "RISK-FR-004",
+        "RISK-FR-005",
+        "RISK-FR-006",
+        "RISK-FR-007",
+        "RISK-FR-008"
+      ]
+    }
+  ]
+}

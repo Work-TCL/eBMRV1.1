@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-008.json",
+  "title": "SPEC-VAL-008 — Infrastructure, Cloud, Platform & Environment Qualification Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_infra.py actually emits. All 3 of the catalogue's declared Document 86 events are implemented: InfrastructureFingerprintCaptured, InfrastructureQualificationDifferenceDetected, InfrastructureQualified. (The module also emits an undeclared InfrastructureProfileDefined at profile-authoring time -- not part of the catalogue's declared 3.) Verified directly against source, including indirection through the shared finalize() helper and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "INFQ-FR-001",
+    "INFQ-FR-002",
+    "INFQ-FR-003",
+    "INFQ-FR-004",
+    "INFQ-FR-005",
+    "INFQ-FR-006",
+    "INFQ-FR-007",
+    "INFQ-FR-008"
+  ],
+  "$defs": {
+    "InfrastructureFingerprintCapturedPayload": {
+      "type": "object",
+      "required": [
+        "profile_id",
+        "drift_detected"
+      ],
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "drift_detected": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "INFQ-FR-001",
+        "INFQ-FR-002",
+        "INFQ-FR-003",
+        "INFQ-FR-004",
+        "INFQ-FR-005",
+        "INFQ-FR-006",
+        "INFQ-FR-007",
+        "INFQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "InfrastructureQualificationDifferenceDetectedPayload": {
+      "type": "object",
+      "required": [
+        "drift_detected"
+      ],
+      "properties": {
+        "drift_detected": {
+          "type": "boolean"
+        },
+        "drift_detail": {
+          "type": "object"
+        }
+      },
+      "x-requirement-ids": [
+        "INFQ-FR-001",
+        "INFQ-FR-002",
+        "INFQ-FR-003",
+        "INFQ-FR-004",
+        "INFQ-FR-005",
+        "INFQ-FR-006",
+        "INFQ-FR-007",
+        "INFQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "InfrastructureQualifiedPayload": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INFQ-FR-001",
+        "INFQ-FR-002",
+        "INFQ-FR-003",
+        "INFQ-FR-004",
+        "INFQ-FR-005",
+        "INFQ-FR-006",
+        "INFQ-FR-007",
+        "INFQ-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "InfrastructureFingerprintCaptured",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-008",
+      "aggregate_type": "infrastructure_fingerprint",
+      "payload": {
+        "$ref": "#/$defs/InfrastructureFingerprintCapturedPayload"
+      },
+      "x-requirement-ids": [
+        "INFQ-FR-001",
+        "INFQ-FR-002",
+        "INFQ-FR-003",
+        "INFQ-FR-004",
+        "INFQ-FR-005",
+        "INFQ-FR-006",
+        "INFQ-FR-007",
+        "INFQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "InfrastructureQualificationDifferenceDetected",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-008",
+      "aggregate_type": "infrastructure_fingerprint",
+      "payload": {
+        "$ref": "#/$defs/InfrastructureQualificationDifferenceDetectedPayload"
+      },
+      "x-requirement-ids": [
+        "INFQ-FR-001",
+        "INFQ-FR-002",
+        "INFQ-FR-003",
+        "INFQ-FR-004",
+        "INFQ-FR-005",
+        "INFQ-FR-006",
+        "INFQ-FR-007",
+        "INFQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "InfrastructureQualified",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-008",
+      "aggregate_type": "infrastructure_fingerprint",
+      "payload": {
+        "$ref": "#/$defs/InfrastructureQualifiedPayload"
+      },
+      "x-requirement-ids": [
+        "INFQ-FR-001",
+        "INFQ-FR-002",
+        "INFQ-FR-003",
+        "INFQ-FR-004",
+        "INFQ-FR-005",
+        "INFQ-FR-006",
+        "INFQ-FR-007",
+        "INFQ-FR-008"
+      ]
+    }
+  ]
+}

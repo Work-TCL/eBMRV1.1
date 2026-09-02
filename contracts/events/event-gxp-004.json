@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-gxp-004.json",
+  "title": "SPEC-GXP-004 — Record Version Vault, Locking, Amendment & Controlled Correction Events",
+  "description": "WP-01 has no entries in 07_EVENT_CATALOGUE.yaml -- events derived directly from app/modules/vault/commands.py's actual event_type= producer code. 3 events found: VaultObjectReleased, RecordCorrectionRequested, RecordCorrectionCompleted.",
+  "x-requirement-ids": [
+    "VLT-FR-001",
+    "VLT-FR-009",
+    "VLT-FR-010"
+  ],
+  "$defs": {
+    "VaultObjectReleasedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "object_type",
+        "business_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "object_type": {
+          "type": "string"
+        },
+        "business_id": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "VLT-FR-001",
+        "VLT-FR-009",
+        "VLT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "RecordCorrectionRequestedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "record_object_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "record_object_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "VLT-FR-001",
+        "VLT-FR-009",
+        "VLT-FR-010"
+      ],
+      "additionalProperties": false
+    },
+    "RecordCorrectionCompletedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "resulting_object_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "resulting_object_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "VLT-FR-001",
+        "VLT-FR-009",
+        "VLT-FR-010"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "VaultObjectReleased",
+      "schema_version": "1.0",
+      "producer": "SPEC-GXP-004",
+      "aggregate_type": "vault_object",
+      "payload": {
+        "$ref": "#/$defs/VaultObjectReleasedPayload"
+      },
+      "x-requirement-ids": [
+        "VLT-FR-001",
+        "VLT-FR-009",
+        "VLT-FR-010"
+      ]
+    },
+    {
+      "event_type": "RecordCorrectionRequested",
+      "schema_version": "1.0",
+      "producer": "SPEC-GXP-004",
+      "aggregate_type": "record_correction",
+      "payload": {
+        "$ref": "#/$defs/RecordCorrectionRequestedPayload"
+      },
+      "x-requirement-ids": [
+        "VLT-FR-001",
+        "VLT-FR-009",
+        "VLT-FR-010"
+      ]
+    },
+    {
+      "event_type": "RecordCorrectionCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-GXP-004",
+      "aggregate_type": "record_correction",
+      "payload": {
+        "$ref": "#/$defs/RecordCorrectionCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "VLT-FR-001",
+        "VLT-FR-009",
+        "VLT-FR-010"
+      ]
+    }
+  ]
+}

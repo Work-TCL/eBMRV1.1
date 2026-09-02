@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-015.json",
+  "title": "SPEC-VAL-015 — Performance, Load, Capacity & Reliability Qualification Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_performance.py actually emits. All 4 of the catalogue's declared Document 93 events are implemented: DeploymentSizingDerived, PerformanceQualificationExecuted, PerformanceQualificationApproved (conditional, only emitted when the run result is PASS), PerformanceAcceptanceEvaluated. Verified directly against source, including indirection through the shared finalize() helper and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "PERFQ-FR-001",
+    "PERFQ-FR-002",
+    "PERFQ-FR-003",
+    "PERFQ-FR-004",
+    "PERFQ-FR-005",
+    "PERFQ-FR-006",
+    "PERFQ-FR-007",
+    "PERFQ-FR-008"
+  ],
+  "$defs": {
+    "DeploymentSizingDerivedPayload": {
+      "type": "object",
+      "required": [
+        "release_ref",
+        "environment"
+      ],
+      "properties": {
+        "release_ref": {
+          "type": "string"
+        },
+        "environment": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PERFQ-FR-001",
+        "PERFQ-FR-002",
+        "PERFQ-FR-003",
+        "PERFQ-FR-004",
+        "PERFQ-FR-005",
+        "PERFQ-FR-006",
+        "PERFQ-FR-007",
+        "PERFQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "PerformanceQualificationExecutedPayload": {
+      "type": "object",
+      "required": [
+        "scenario_id",
+        "build_ref"
+      ],
+      "properties": {
+        "scenario_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "build_ref": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PERFQ-FR-001",
+        "PERFQ-FR-002",
+        "PERFQ-FR-003",
+        "PERFQ-FR-004",
+        "PERFQ-FR-005",
+        "PERFQ-FR-006",
+        "PERFQ-FR-007",
+        "PERFQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "PerformanceQualificationApprovedPayload": {
+      "type": "object",
+      "required": [
+        "run_id"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "PERFQ-FR-001",
+        "PERFQ-FR-002",
+        "PERFQ-FR-003",
+        "PERFQ-FR-004",
+        "PERFQ-FR-005",
+        "PERFQ-FR-006",
+        "PERFQ-FR-007",
+        "PERFQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "PerformanceAcceptanceEvaluatedPayload": {
+      "type": "object",
+      "required": [
+        "acceptance_result",
+        "breaches"
+      ],
+      "properties": {
+        "acceptance_result": {
+          "type": "string"
+        },
+        "breaches": {
+          "type": "array"
+        }
+      },
+      "x-requirement-ids": [
+        "PERFQ-FR-001",
+        "PERFQ-FR-002",
+        "PERFQ-FR-003",
+        "PERFQ-FR-004",
+        "PERFQ-FR-005",
+        "PERFQ-FR-006",
+        "PERFQ-FR-007",
+        "PERFQ-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "DeploymentSizingDerived",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-015",
+      "aggregate_type": "performance_qualification_scenario",
+      "payload": {
+        "$ref": "#/$defs/DeploymentSizingDerivedPayload"
+      },
+      "x-requirement-ids": [
+        "PERFQ-FR-001",
+        "PERFQ-FR-002",
+        "PERFQ-FR-003",
+        "PERFQ-FR-004",
+        "PERFQ-FR-005",
+        "PERFQ-FR-006",
+        "PERFQ-FR-007",
+        "PERFQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "PerformanceQualificationExecuted",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-015",
+      "aggregate_type": "performance_run",
+      "payload": {
+        "$ref": "#/$defs/PerformanceQualificationExecutedPayload"
+      },
+      "x-requirement-ids": [
+        "PERFQ-FR-001",
+        "PERFQ-FR-002",
+        "PERFQ-FR-003",
+        "PERFQ-FR-004",
+        "PERFQ-FR-005",
+        "PERFQ-FR-006",
+        "PERFQ-FR-007",
+        "PERFQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "PerformanceQualificationApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-015",
+      "aggregate_type": "performance_run",
+      "payload": {
+        "$ref": "#/$defs/PerformanceQualificationApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "PERFQ-FR-001",
+        "PERFQ-FR-002",
+        "PERFQ-FR-003",
+        "PERFQ-FR-004",
+        "PERFQ-FR-005",
+        "PERFQ-FR-006",
+        "PERFQ-FR-007",
+        "PERFQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "PerformanceAcceptanceEvaluated",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-015",
+      "aggregate_type": "performance_run",
+      "payload": {
+        "$ref": "#/$defs/PerformanceAcceptanceEvaluatedPayload"
+      },
+      "x-requirement-ids": [
+        "PERFQ-FR-001",
+        "PERFQ-FR-002",
+        "PERFQ-FR-003",
+        "PERFQ-FR-004",
+        "PERFQ-FR-005",
+        "PERFQ-FR-006",
+        "PERFQ-FR-007",
+        "PERFQ-FR-008"
+      ]
+    }
+  ]
+}

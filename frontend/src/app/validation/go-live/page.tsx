@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { FormConsole } from "@/components/shared/FormConsole";
+import { SignedJsonForm, type SignedJsonOp } from "@/components/shared/SignedJsonForm";
 
 const READS = [
   { label: "Go-live readiness (VSR id)", path: "releases/{p}/go-live-readiness" },
@@ -46,7 +47,6 @@ export default function GoLivePage() {
               { path: "pq/scenarios", label: "Create a PQ scenario", template: '{\n  "acceptance_criteria": "",\n  "reason": ""\n}' },
               { path: "pq/scenarios/{scenario_id}/participants", label: "Add PQ participants / training" },
               { path: "pq/executions", label: "Record a PQ execution" },
-              { path: "pq/{scenario_id}/approve", label: "Approve a PQ scenario (site acceptance)" },
             ]}
           />
 
@@ -57,7 +57,6 @@ export default function GoLivePage() {
               { path: "migrations/plans", label: "Create a migration plan" },
               { path: "migrations/runs", label: "Record a migration run / dry run" },
               { path: "migrations/{run_id}/reconcile", label: "Reconcile a migration run" },
-              { path: "migrations/{run_id}/approve", label: "Approve a migration run (cutover)" },
             ]}
           />
 
@@ -66,17 +65,64 @@ export default function GoLivePage() {
             root="/validation/v1"
             ops={[
               { path: "summary-reports", label: "Create a validation summary report" },
-              { path: "summary-reports/{report_id}/approve", label: "Approve a summary report" },
-              { path: "releases/{vsr_id}/authorize", label: "Authorize the release / go-live" },
-              { path: "releases/{authorization_id}/deployment-check", label: "Record a deployment check" },
               { path: "releases/{authorization_id}/post-go-live-verification", label: "Record post-go-live verification" },
             ]}
           />
+
+          <SignedJsonForm title="PQ · migration · release — signed operations (SG-172)" root="/validation/v1" ops={GO_LIVE_SIGNED_OPS} />
         </>
       )}
     </div>
   );
 }
+
+// ---- Signed operations (SG-172) -----------------------------------------------------------------
+
+const GO_LIVE_SIGNED_OPS: SignedJsonOp[] = [
+  {
+    label: "Approve a PQ scenario (site acceptance)",
+    action: "approve",
+    postPath: "pq/{scenario_id}/approve",
+    challengePath: "pq/{scenario_id}/signature-challenges",
+    template: '{\n  "expected_version": 1,\n  "reason": "",\n  "decision": "ACCEPTED"\n}',
+    about: "decision is ACCEPTED | REJECTED.",
+  },
+  {
+    label: "Approve a migration run (cutover)",
+    action: "approve",
+    postPath: "migrations/{run_id}/approve",
+    challengePath: "migrations/{run_id}/signature-challenges",
+    template: '{\n  "expected_version": 1,\n  "reason": ""\n}',
+  },
+  {
+    label: "Approve a validation summary report",
+    action: "approve",
+    postPath: "summary-reports/{report_id}/approve",
+    challengePath: "summary-reports/{report_id}/signature-challenges",
+    template:
+      '{\n  "expected_version": 1,\n  "reason": "",\n  "decision": "APPROVED",\n  "decision_conditions": []\n}',
+    about: "decision is APPROVED | CONDITIONAL | REJECTED.",
+  },
+  {
+    label: "Authorize the release / go-live",
+    action: "authorize",
+    postPath: "releases/{vsr_id}/authorize",
+    challengePath: "releases/{vsr_id}/authorize/signature-challenges",
+    mirrorBodyInChallenge: true,
+    template:
+      '{\n  "authorization_number": "",\n  "environment": "",\n  "config_fingerprint": "",\n  "release_identity": {\n    "image_digest": "",\n    "schema_version": "",\n    "migration_head": "",\n    "config_version": ""\n  },\n  "artifact_digests": {},\n  "decision": "APPROVED",\n  "go_live_gates": {},\n  "reason": "",\n  "conditions": [],\n  "production_performer_user_ids": []\n}',
+    about:
+      "Content-hash-bound signature (Document 106 row 166) — decision is APPROVED | CONDITIONAL | REJECTED. Do not edit the payload after requesting the challenge.",
+  },
+  {
+    label: "Record a deployment check",
+    action: "deployment_check",
+    postPath: "releases/{authorization_id}/deployment-check",
+    challengePath: "releases/{authorization_id}/deployment-check/signature-challenges",
+    template:
+      '{\n  "expected_version": 1,\n  "submitted_config_fingerprint": "",\n  "submitted_artifact_digests": {},\n  "reason": "",\n  "production_performer_user_ids": []\n}',
+  },
+];
 
 function ReadCard() {
   const [which, setWhich] = useState(0);

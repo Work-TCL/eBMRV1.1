@@ -1,0 +1,1256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-erp-001.json",
+  "title": "SPEC-ERP-001..006 — Enterprise ERP Integration Events",
+  "description": "WP-07 has no entries in 07_EVENT_CATALOGUE.yaml -- events derived directly from app/modules/erp/commands.py's actual event_type= producer code (the single consolidated module for Documents 48-53 per ADR-0009). 20 events found across two groups: master-data/instance lifecycle (Document 52, SPEC-ERP-005 master data sync) -- ERPInstanceRegistered, ERPInstanceValidated, MasterMappingProposed, MasterMappingActivated, MasterMappingSuspended, MasterConflictResolved, SyncCheckpointAdvanced -- and integration command reliability (Document 53, SPEC-ERP-006) -- ERPCommandQueued, ERPCommandRetried, ERPCommandCancelled, ExternalCommitNotFound, IntegrationCompensationQueued, ERPInboundEventReceived, ReconciliationStarted, ReconciliationMismatchDetected, ReconciliationResolved, ReconciliationCompleted, BulkJobStarted, BulkJobProgressRecorded, BulkJobCompleted, MigrationPackageRecorded. Two internal security-event strings (IDEMPOTENCY_KEY_REUSED, INBOUND_EVENT_ID_REUSED) write to a separate IntegrationSecurityEvent table via a distinct durably-committed-outside-the-caller's-transaction helper (INT-FR-025), not the outbox -- not included here, same treatment as security.audit-adjacent trails elsewhere in this codebase.",
+  "x-requirement-ids": [
+    "INT-FR-001",
+    "INT-FR-003",
+    "INT-FR-006",
+    "INT-FR-007",
+    "INT-FR-008",
+    "INT-FR-010",
+    "INT-FR-011",
+    "INT-FR-013",
+    "INT-FR-014",
+    "INT-FR-015",
+    "INT-FR-016",
+    "INT-FR-017",
+    "INT-FR-021",
+    "INT-FR-023",
+    "INT-FR-024",
+    "INT-FR-025"
+  ],
+  "$defs": {
+    "ERPInstanceRegisteredPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "vendor",
+        "instance_name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "vendor": {
+          "type": "string"
+        },
+        "instance_name": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ],
+      "additionalProperties": false
+    },
+    "ERPInstanceValidatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "acceptance_reference"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "acceptance_reference": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ],
+      "additionalProperties": false
+    },
+    "MasterMappingProposedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "entity_type",
+        "external_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "entity_type": {
+          "type": "string"
+        },
+        "external_id": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ],
+      "additionalProperties": false
+    },
+    "MasterMappingActivatedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "mapping_hash"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "mapping_hash": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ],
+      "additionalProperties": false
+    },
+    "MasterMappingSuspendedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ],
+      "additionalProperties": false
+    },
+    "MasterConflictResolvedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "resolution"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "resolution": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ],
+      "additionalProperties": false
+    },
+    "SyncCheckpointAdvancedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "cursor_value"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "cursor_value": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ],
+      "additionalProperties": false
+    },
+    "ERPCommandQueuedPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "command_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "correction_of_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "ERPCommandRetriedPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "ERPCommandCancelledPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "ExternalCommitNotFoundPayload": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "IntegrationCompensationQueuedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "compensates_command_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "compensates_command_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "ERPInboundEventReceivedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "entity_type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "entity_type": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "ReconciliationStartedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "scope"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "scope": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "ReconciliationMismatchDetectedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "run_id",
+        "difference_type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "run_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "difference_type": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "ReconciliationResolvedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "resolution_status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "resolution_status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "ReconciliationCompletedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "status",
+        "difference_count"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string"
+        },
+        "difference_count": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "BulkJobStartedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "job_type",
+        "entity_type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "job_type": {
+          "type": "string"
+        },
+        "entity_type": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "BulkJobProgressRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "succeeded_count",
+        "failed_count"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "succeeded_count": {
+          "type": "integer"
+        },
+        "failed_count": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "BulkJobCompletedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "status",
+        "succeeded_count",
+        "failed_count"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string"
+        },
+        "succeeded_count": {
+          "type": "integer"
+        },
+        "failed_count": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    },
+    "MigrationPackageRecordedPayload": {
+      "type": "object",
+      "required": [
+        "id",
+        "package_name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "package_name": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "ERPInstanceRegistered",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-005",
+      "aggregate_type": "erp_instance",
+      "payload": {
+        "$ref": "#/$defs/ERPInstanceRegisteredPayload"
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ]
+    },
+    {
+      "event_type": "ERPInstanceValidated",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-005",
+      "aggregate_type": "erp_instance",
+      "payload": {
+        "$ref": "#/$defs/ERPInstanceValidatedPayload"
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ]
+    },
+    {
+      "event_type": "MasterMappingProposed",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-005",
+      "aggregate_type": "erp_external_mapping",
+      "payload": {
+        "$ref": "#/$defs/MasterMappingProposedPayload"
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ]
+    },
+    {
+      "event_type": "MasterMappingActivated",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-005",
+      "aggregate_type": "erp_external_mapping",
+      "payload": {
+        "$ref": "#/$defs/MasterMappingActivatedPayload"
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ]
+    },
+    {
+      "event_type": "MasterMappingSuspended",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-005",
+      "aggregate_type": "erp_external_mapping",
+      "payload": {
+        "$ref": "#/$defs/MasterMappingSuspendedPayload"
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ]
+    },
+    {
+      "event_type": "MasterConflictResolved",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-005",
+      "aggregate_type": "erp_mapping_conflict",
+      "payload": {
+        "$ref": "#/$defs/MasterConflictResolvedPayload"
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ]
+    },
+    {
+      "event_type": "SyncCheckpointAdvanced",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-005",
+      "aggregate_type": "erp_sync_checkpoint",
+      "payload": {
+        "$ref": "#/$defs/SyncCheckpointAdvancedPayload"
+      },
+      "x-requirement-ids": [
+        "MDS-FR-001",
+        "MDS-FR-006",
+        "MDS-FR-007",
+        "MDS-FR-009",
+        "MDS-FR-017",
+        "MDS-FR-018",
+        "MDS-FR-019",
+        "MDS-FR-020"
+      ]
+    },
+    {
+      "event_type": "ERPCommandQueued",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_command",
+      "payload": {
+        "$ref": "#/$defs/ERPCommandQueuedPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "ERPCommandRetried",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_command",
+      "payload": {
+        "$ref": "#/$defs/ERPCommandRetriedPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "ERPCommandCancelled",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_command",
+      "payload": {
+        "$ref": "#/$defs/ERPCommandCancelledPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "ExternalCommitNotFound",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_command",
+      "payload": {
+        "$ref": "#/$defs/ExternalCommitNotFoundPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "IntegrationCompensationQueued",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_command",
+      "payload": {
+        "$ref": "#/$defs/IntegrationCompensationQueuedPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "ERPInboundEventReceived",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_inbound_event",
+      "payload": {
+        "$ref": "#/$defs/ERPInboundEventReceivedPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "ReconciliationStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_reconciliation_run",
+      "payload": {
+        "$ref": "#/$defs/ReconciliationStartedPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "ReconciliationMismatchDetected",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_reconciliation_difference",
+      "payload": {
+        "$ref": "#/$defs/ReconciliationMismatchDetectedPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "ReconciliationResolved",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_reconciliation_difference",
+      "payload": {
+        "$ref": "#/$defs/ReconciliationResolvedPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "ReconciliationCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_reconciliation_run",
+      "payload": {
+        "$ref": "#/$defs/ReconciliationCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "BulkJobStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_bulk_job",
+      "payload": {
+        "$ref": "#/$defs/BulkJobStartedPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "BulkJobProgressRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_bulk_job",
+      "payload": {
+        "$ref": "#/$defs/BulkJobProgressRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "BulkJobCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "integration_bulk_job",
+      "payload": {
+        "$ref": "#/$defs/BulkJobCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    },
+    {
+      "event_type": "MigrationPackageRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-ERP-006",
+      "aggregate_type": "erp_migration_package",
+      "payload": {
+        "$ref": "#/$defs/MigrationPackageRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "INT-FR-001",
+        "INT-FR-003",
+        "INT-FR-006",
+        "INT-FR-007",
+        "INT-FR-008",
+        "INT-FR-010",
+        "INT-FR-011",
+        "INT-FR-013",
+        "INT-FR-014",
+        "INT-FR-015",
+        "INT-FR-016",
+        "INT-FR-017",
+        "INT-FR-021",
+        "INT-FR-023",
+        "INT-FR-024",
+        "INT-FR-025"
+      ]
+    }
+  ]
+}

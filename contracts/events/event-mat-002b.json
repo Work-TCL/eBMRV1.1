@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-mat-002b.json",
+  "title": "SPEC-MAT-002B — Inventory, Lot/Container & Warehouse Events",
+  "description": "Document 113 event contract for the events app/modules/material/commands.py actually emits for Document 20. 6 of the catalogue's 9 declared events are implemented: InventoryTransferred, InventoryReserved, InventoryReservationReleased, ContainerSplit, ContainerMerged, InventoryAdjusted (mutually exclusive with the undeclared InventoryCounted on the same call site, chosen by whether the count delta is non-zero). InventoryReceived, MaterialQualityHoldPlaced and InventoryERPDiscrepancyDetected are declared but have no producing code path -- initial receipt into inventory is covered by Document 19's MaterialReceived/MaterialLotReceived rather than a separate InventoryReceived event, quality holds are covered by MaterialQuarantined (Document 19) rather than a distinct inventory-side hold event, and ERP inventory-discrepancy detection is not yet built. Verified directly against source.",
+  "x-requirement-ids": [
+    "MAT-FR-001",
+    "MAT-FR-002",
+    "MAT-FR-003",
+    "MAT-FR-004",
+    "MAT-FR-005",
+    "MAT-FR-006",
+    "MAT-FR-007",
+    "MAT-FR-008"
+  ],
+  "$defs": {
+    "InventoryTransferredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "container_id",
+        "transaction_type",
+        "quantity"
+      ],
+      "properties": {
+        "container_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "transaction_type": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "InventoryReservedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "batch_id",
+        "quantity"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "quantity": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "InventoryReservationReleasedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "ContainerSplitPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "container_id",
+        "children"
+      ],
+      "properties": {
+        "container_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "ContainerMergedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "merged_container_id",
+        "sources"
+      ],
+      "properties": {
+        "merged_container_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    "InventoryAdjustedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "balance_id",
+        "delta"
+      ],
+      "properties": {
+        "balance_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "delta": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "InventoryTransferred",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002B",
+      "aggregate_type": "inventory_balance_projection",
+      "payload": {
+        "$ref": "#/$defs/InventoryTransferredPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "InventoryReserved",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002B",
+      "aggregate_type": "inventory_reservation",
+      "payload": {
+        "$ref": "#/$defs/InventoryReservedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "InventoryReservationReleased",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002B",
+      "aggregate_type": "inventory_reservation",
+      "payload": {
+        "$ref": "#/$defs/InventoryReservationReleasedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "ContainerSplit",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002B",
+      "aggregate_type": "material_container",
+      "payload": {
+        "$ref": "#/$defs/ContainerSplitPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "ContainerMerged",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002B",
+      "aggregate_type": "material_container",
+      "payload": {
+        "$ref": "#/$defs/ContainerMergedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    },
+    {
+      "event_type": "InventoryAdjusted",
+      "schema_version": "1.0",
+      "producer": "SPEC-MAT-002B",
+      "aggregate_type": "inventory_balance_projection",
+      "payload": {
+        "$ref": "#/$defs/InventoryAdjustedPayload"
+      },
+      "x-requirement-ids": [
+        "MAT-FR-001",
+        "MAT-FR-002",
+        "MAT-FR-003",
+        "MAT-FR-004",
+        "MAT-FR-005",
+        "MAT-FR-006",
+        "MAT-FR-007",
+        "MAT-FR-008"
+      ]
+    }
+  ]
+}

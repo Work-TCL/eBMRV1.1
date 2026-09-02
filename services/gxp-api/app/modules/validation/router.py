@@ -30,6 +30,29 @@ from app.modules.validation import (
     commands_test,
     commands_trace,
 )
+from app.modules.validation.models import (
+    DataIntegrityTestProfile,
+    DrQualificationExecution,
+    FunctionRiskAssessment,
+    InfrastructureFingerprint,
+    InterfaceValidationProfile,
+    IqExecution,
+    OqExecution,
+    Part11ScopeAssessment,
+    PeriodicValidationReview,
+    PerformanceRun,
+    SecurityQualificationSuite,
+    ValidationException,
+    ValidationMasterPlan,
+    ValidationTestDefinition,
+    ValidationTestExecution,
+)
+from app.modules.validation.signature_support import (
+    SignatureChallengeRequest,
+    create_validation_signature_challenge,
+    create_validation_signature_challenge_for_new_record,
+)
+from app.mutation.errors import NotFoundError
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/validation/v1", tags=["validation"])
@@ -63,6 +86,21 @@ async def post_master_plan_release(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="validation.plan.release", site_id=None)
         return await commands_plan.release_master_plan(session, cmd, actor.user_id, await _actor_site(actor))
+
+
+@router.post("/master-plans/{plan_id}/signature-challenges")
+async def post_master_plan_signature_challenge(
+    plan_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        plan = await session.get(ValidationMasterPlan, plan_id)
+        if plan is None:
+            raise NotFoundError("Validation master plan not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="validation_master_plan", record=plan,
+            action=body.action, allowed_actions=("release",),
+        )
 
 
 @router.get("/releases/{plan_id}/gate")
@@ -139,6 +177,21 @@ async def post_function_risk_approve(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="validation.function_risk.approve", site_id=None)
         return await commands_risk.approve_function_risk_assessment(session, cmd, actor.user_id, await _actor_site(actor))
+
+
+@router.post("/function-risks/{assessment_id}/signature-challenges")
+async def post_function_risk_signature_challenge(
+    assessment_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        assessment = await session.get(FunctionRiskAssessment, assessment_id)
+        if assessment is None:
+            raise NotFoundError("Function risk assessment not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="function_risk_assessment", record=assessment,
+            action=body.action, allowed_actions=("approve",),
+        )
 
 
 @router.get("/functions/{function_ref}/assurance")
@@ -252,6 +305,21 @@ async def post_tests_approve(
         return await commands_test.approve_test_definition(session, cmd, actor.user_id, await _actor_site(actor))
 
 
+@router.post("/tests/{test_id}/signature-challenges")
+async def post_test_signature_challenge(
+    test_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        test_def = await session.get(ValidationTestDefinition, test_id)
+        if test_def is None:
+            raise NotFoundError("Validation test definition not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="validation_test_definition", record=test_def,
+            action=body.action, allowed_actions=("approve",),
+        )
+
+
 @router.post("/executions", response_model=MutationReceipt)
 async def post_executions(
     cmd: commands_test.StartTestExecutionCommand, session: AsyncSession = Depends(get_session),
@@ -271,6 +339,21 @@ async def post_executions_complete(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="validation.test_execution.complete", site_id=None)
         return await commands_test.complete_test_execution(session, cmd, actor.user_id, await _actor_site(actor))
+
+
+@router.post("/executions/{execution_id}/signature-challenges")
+async def post_test_execution_signature_challenge(
+    execution_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        execution = await session.get(ValidationTestExecution, execution_id)
+        if execution is None:
+            raise NotFoundError("Validation test execution not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="validation_test_execution", record=execution,
+            action=body.action, allowed_actions=("complete",),
+        )
 
 
 @router.post("/automated-evidence", response_model=MutationReceipt)
@@ -330,6 +413,21 @@ async def post_iq_executions_approve(
         return await commands_iq.approve_iq_execution(session, cmd, actor.user_id, await _actor_site(actor))
 
 
+@router.post("/iq/executions/{execution_id}/signature-challenges")
+async def post_iq_execution_signature_challenge(
+    execution_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        execution = await session.get(IqExecution, execution_id)
+        if execution is None:
+            raise NotFoundError("IQ execution not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="iq_execution", record=execution,
+            action=body.action, allowed_actions=("complete", "approve"),
+        )
+
+
 # =====================================================================================================
 # Document 84 -- Operational Qualification (OQ)
 # =====================================================================================================
@@ -373,6 +471,21 @@ async def post_oq_approve(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="validation.oq.approve", site_id=None)
         return await commands_oq.approve_oq_execution(session, cmd, actor.user_id, await _actor_site(actor))
+
+
+@router.post("/oq/{execution_id}/signature-challenges")
+async def post_oq_signature_challenge(
+    execution_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        execution = await session.get(OqExecution, execution_id)
+        if execution is None:
+            raise NotFoundError("OQ execution not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="oq_execution", record=execution,
+            action=body.action, allowed_actions=("approve",),
+        )
 
 
 # =====================================================================================================
@@ -419,6 +532,21 @@ async def post_infrastructure_approve(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="validation.infrastructure.approve", site_id=None)
         return await commands_infra.approve_infrastructure_fingerprint(session, cmd, actor.user_id, await _actor_site(actor))
+
+
+@router.post("/infrastructure/{fingerprint_id}/signature-challenges")
+async def post_infrastructure_signature_challenge(
+    fingerprint_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        fingerprint = await session.get(InfrastructureFingerprint, fingerprint_id)
+        if fingerprint is None:
+            raise NotFoundError("Infrastructure fingerprint not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="infrastructure_fingerprint", record=fingerprint,
+            action=body.action, allowed_actions=("approve",),
+        )
 
 
 # =====================================================================================================
@@ -468,6 +596,21 @@ async def post_part11_approve(
         return await commands_part11.approve_part11_assessment(session, cmd, actor.user_id, await _actor_site(actor))
 
 
+@router.post("/part11/{assessment_id}/signature-challenges")
+async def post_part11_signature_challenge(
+    assessment_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        assessment = await session.get(Part11ScopeAssessment, assessment_id)
+        if assessment is None:
+            raise NotFoundError("Part 11 scope assessment not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="part11_scope_assessment", record=assessment,
+            action=body.action, allowed_actions=("approve",),
+        )
+
+
 # =====================================================================================================
 # Document 89 -- Audit Trail, Record Version Vault & Data Integrity Validation
 # =====================================================================================================
@@ -502,6 +645,21 @@ async def post_data_integrity_approve(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="validation.data_integrity.approve", site_id=None)
         return await commands_integrity.approve_data_integrity_profile(session, cmd, actor.user_id, await _actor_site(actor))
+
+
+@router.post("/data-integrity/{profile_id}/signature-challenges")
+async def post_data_integrity_signature_challenge(
+    profile_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        profile = await session.get(DataIntegrityTestProfile, profile_id)
+        if profile is None:
+            raise NotFoundError("Data integrity test profile not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="data_integrity_test_profile", record=profile,
+            action=body.action, allowed_actions=("approve",),
+        )
 
 
 # =====================================================================================================
@@ -550,6 +708,21 @@ async def post_interfaces_approve(
         return await commands_interface.approve_interface_profile(session, cmd, actor.user_id, await _actor_site(actor))
 
 
+@router.post("/interfaces/{profile_id}/signature-challenges")
+async def post_interfaces_signature_challenge(
+    profile_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        profile = await session.get(InterfaceValidationProfile, profile_id)
+        if profile is None:
+            raise NotFoundError("Interface validation profile not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="interface_validation_profile", record=profile,
+            action=body.action, allowed_actions=("approve",),
+        )
+
+
 # =====================================================================================================
 # Document 91 -- Backup, Restore, PITR & Disaster Recovery Qualification
 # =====================================================================================================
@@ -595,6 +768,21 @@ async def post_dr_approve(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="validation.dr.approve", site_id=None)
         return await commands_dr.approve_dr_execution(session, cmd, actor.user_id, await _actor_site(actor))
+
+
+@router.post("/dr/{execution_id}/signature-challenges")
+async def post_dr_signature_challenge(
+    execution_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        execution = await session.get(DrQualificationExecution, execution_id)
+        if execution is None:
+            raise NotFoundError("DR qualification execution not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="dr_qualification_execution", record=execution,
+            action=body.action, allowed_actions=("approve",),
+        )
 
 
 # =====================================================================================================
@@ -652,6 +840,21 @@ async def post_security_approve(
         return await commands_security.approve_security_suite(session, cmd, actor.user_id, await _actor_site(actor))
 
 
+@router.post("/security/{suite_id}/signature-challenges")
+async def post_security_signature_challenge(
+    suite_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        suite = await session.get(SecurityQualificationSuite, suite_id)
+        if suite is None:
+            raise NotFoundError("Security qualification suite not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="security_qualification_suite", record=suite,
+            action=body.action, allowed_actions=("approve",),
+        )
+
+
 # =====================================================================================================
 # Document 93 -- Performance, Load, Capacity & Reliability Qualification
 # =====================================================================================================
@@ -667,6 +870,23 @@ async def post_performance_scenarios(
         return await commands_performance.create_performance_scenario(session, cmd, actor.user_id, await _actor_site(actor))
 
 
+@router.post("/performance/scenarios/signature-challenges")
+async def post_performance_scenario_signature_challenge(
+    body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Signed-CREATE (Document 106 rows 159-161) -- see `signature_support.py` module docstring and
+    `commands_performance.py::create_performance_scenario`. The returned `new_record_id` must be passed
+    back as `CreatePerformanceScenarioCommand.new_record_id`."""
+    async with session.begin():
+        new_id = uuid.uuid4()
+        result = await create_validation_signature_challenge_for_new_record(
+            session, actor_user_id=actor.user_id, record_type="performance_qualification_scenario",
+            record_id=new_id, action=body.action, allowed_actions=("create",),
+        )
+        return {**result, "new_record_id": str(new_id)}
+
+
 @router.post("/performance/runs", response_model=MutationReceipt)
 async def post_performance_runs(
     cmd: commands_performance.RecordPerformanceRunCommand, session: AsyncSession = Depends(get_session),
@@ -675,6 +895,22 @@ async def post_performance_runs(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="validation.performance.manage", site_id=None)
         return await commands_performance.record_performance_run(session, cmd, actor.user_id, await _actor_site(actor))
+
+
+@router.post("/performance/runs/signature-challenges")
+async def post_performance_run_signature_challenge(
+    body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Signed-CREATE (Document 106 row 159) -- see `commands_performance.py::record_performance_run`.
+    The returned `new_record_id` must be passed back as `RecordPerformanceRunCommand.new_record_id`."""
+    async with session.begin():
+        new_id = uuid.uuid4()
+        result = await create_validation_signature_challenge_for_new_record(
+            session, actor_user_id=actor.user_id, record_type="performance_run",
+            record_id=new_id, action=body.action, allowed_actions=("create",),
+        )
+        return {**result, "new_record_id": str(new_id)}
 
 
 @router.post("/performance/{run_id}/evaluate", response_model=MutationReceipt)
@@ -686,6 +922,21 @@ async def post_performance_evaluate(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="validation.performance.manage", site_id=None)
         return await commands_performance.evaluate_performance_run(session, cmd, actor.user_id, await _actor_site(actor))
+
+
+@router.post("/performance/{run_id}/signature-challenges")
+async def post_performance_run_evaluate_signature_challenge(
+    run_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        run = await session.get(PerformanceRun, run_id)
+        if run is None:
+            raise NotFoundError("Performance run not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="performance_run", record=run,
+            action=body.action, allowed_actions=("evaluate",),
+        )
 
 
 @router.get("/performance/sizing")
@@ -710,6 +961,22 @@ async def post_exceptions(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="validation.exception.create", site_id=None)
         return await commands_exception.create_exception(session, cmd, actor.user_id, await _actor_site(actor))
+
+
+@router.post("/exceptions/signature-challenges")
+async def post_exception_create_signature_challenge(
+    body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Signed-CREATE (Document 106 row 162) -- see `commands_exception.py::create_exception`. The
+    returned `new_record_id` must be passed back as `CreateExceptionCommand.new_record_id`."""
+    async with session.begin():
+        new_id = uuid.uuid4()
+        result = await create_validation_signature_challenge_for_new_record(
+            session, actor_user_id=actor.user_id, record_type="validation_exception",
+            record_id=new_id, action=body.action, allowed_actions=("create",),
+        )
+        return {**result, "new_record_id": str(new_id)}
 
 
 @router.post("/exceptions/{exception_id}/triage", response_model=MutationReceipt)
@@ -743,6 +1010,21 @@ async def post_exceptions_disposition(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="validation.exception.disposition", site_id=None)
         return await commands_exception.disposition_exception(session, cmd, actor.user_id, await _actor_site(actor))
+
+
+@router.post("/exceptions/{exception_id}/signature-challenges")
+async def post_exception_signature_challenge(
+    exception_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        exception = await session.get(ValidationException, exception_id)
+        if exception is None:
+            raise NotFoundError("Validation exception not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="validation_exception", record=exception,
+            action=body.action, allowed_actions=("triage", "retest_plan", "disposition"),
+        )
 
 
 @router.get("/releases/{release_ref}/exception-gate")
@@ -799,6 +1081,22 @@ async def post_periodic_reviews(
         return await commands_periodic.create_periodic_review(session, cmd, actor.user_id, await _actor_site(actor))
 
 
+@router.post("/periodic-reviews/signature-challenges")
+async def post_periodic_review_create_signature_challenge(
+    body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Signed-CREATE (Document 106 row 170) -- see `commands_periodic.py::create_periodic_review`. The
+    returned `new_record_id` must be passed back as `CreatePeriodicReviewCommand.new_record_id`."""
+    async with session.begin():
+        new_id = uuid.uuid4()
+        result = await create_validation_signature_challenge_for_new_record(
+            session, actor_user_id=actor.user_id, record_type="periodic_validation_review",
+            record_id=new_id, action=body.action, allowed_actions=("create",),
+        )
+        return {**result, "new_record_id": str(new_id)}
+
+
 @router.post("/periodic-reviews/{review_id}/decision", response_model=MutationReceipt)
 async def post_periodic_reviews_decision(
     review_id: uuid.UUID, cmd: commands_periodic.DecidePeriodicReviewCommand, session: AsyncSession = Depends(get_session),
@@ -808,6 +1106,21 @@ async def post_periodic_reviews_decision(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="validation.periodic_review.decide", site_id=None)
         return await commands_periodic.decide_periodic_review(session, cmd, actor.user_id, await _actor_site(actor))
+
+
+@router.post("/periodic-reviews/{review_id}/signature-challenges")
+async def post_periodic_review_decision_signature_challenge(
+    review_id: uuid.UUID, body: SignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        review = await session.get(PeriodicValidationReview, review_id)
+        if review is None:
+            raise NotFoundError("Periodic validation review not found")
+        return await create_validation_signature_challenge(
+            session, actor_user_id=actor.user_id, record_type="periodic_validation_review", record=review,
+            action=body.action, allowed_actions=("decision",),
+        )
 
 
 @router.post("/decommission", response_model=MutationReceipt)

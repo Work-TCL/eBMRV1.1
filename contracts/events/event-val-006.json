@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-val-006.json",
+  "title": "SPEC-VAL-006 — Operational Qualification (OQ) Events",
+  "description": "Document 113 event contract for the events app/modules/validation/commands_oq.py actually emits. All 4 of the catalogue's declared Document 84 events are implemented: OQSuiteDerived, OQCoverageEvaluated, OQExecutionCompleted, OQApproved. Verified directly against source, including indirection through the shared `finalize()` helper (payload = new_value) and, where present, dict-keyed event-type lookups and parameterized shared helpers -- not a literal-string grep alone.",
+  "x-requirement-ids": [
+    "OQ-FR-001",
+    "OQ-FR-002",
+    "OQ-FR-003",
+    "OQ-FR-004",
+    "OQ-FR-005",
+    "OQ-FR-006",
+    "OQ-FR-007",
+    "OQ-FR-008"
+  ],
+  "$defs": {
+    "OQSuiteDerivedPayload": {
+      "type": "object",
+      "required": [
+        "baseline_id",
+        "test_count"
+      ],
+      "properties": {
+        "baseline_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "test_count": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "OQ-FR-001",
+        "OQ-FR-002",
+        "OQ-FR-003",
+        "OQ-FR-004",
+        "OQ-FR-005",
+        "OQ-FR-006",
+        "OQ-FR-007",
+        "OQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "OQCoverageEvaluatedPayload": {
+      "type": "object",
+      "required": [
+        "coverage_basis_points"
+      ],
+      "properties": {
+        "coverage_basis_points": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "OQ-FR-001",
+        "OQ-FR-002",
+        "OQ-FR-003",
+        "OQ-FR-004",
+        "OQ-FR-005",
+        "OQ-FR-006",
+        "OQ-FR-007",
+        "OQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "OQExecutionCompletedPayload": {
+      "type": "object",
+      "required": [
+        "suite_id",
+        "coverage_basis_points",
+        "status"
+      ],
+      "properties": {
+        "suite_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "coverage_basis_points": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "OQ-FR-001",
+        "OQ-FR-002",
+        "OQ-FR-003",
+        "OQ-FR-004",
+        "OQ-FR-005",
+        "OQ-FR-006",
+        "OQ-FR-007",
+        "OQ-FR-008"
+      ],
+      "additionalProperties": false
+    },
+    "OQApprovedPayload": {
+      "type": "object",
+      "required": [
+        "approved"
+      ],
+      "properties": {
+        "approved": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "OQ-FR-001",
+        "OQ-FR-002",
+        "OQ-FR-003",
+        "OQ-FR-004",
+        "OQ-FR-005",
+        "OQ-FR-006",
+        "OQ-FR-007",
+        "OQ-FR-008"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "events": [
+    {
+      "event_type": "OQSuiteDerived",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-006",
+      "aggregate_type": "oq_suite",
+      "payload": {
+        "$ref": "#/$defs/OQSuiteDerivedPayload"
+      },
+      "x-requirement-ids": [
+        "OQ-FR-001",
+        "OQ-FR-002",
+        "OQ-FR-003",
+        "OQ-FR-004",
+        "OQ-FR-005",
+        "OQ-FR-006",
+        "OQ-FR-007",
+        "OQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "OQCoverageEvaluated",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-006",
+      "aggregate_type": "oq_execution",
+      "payload": {
+        "$ref": "#/$defs/OQCoverageEvaluatedPayload"
+      },
+      "x-requirement-ids": [
+        "OQ-FR-001",
+        "OQ-FR-002",
+        "OQ-FR-003",
+        "OQ-FR-004",
+        "OQ-FR-005",
+        "OQ-FR-006",
+        "OQ-FR-007",
+        "OQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "OQExecutionCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-006",
+      "aggregate_type": "oq_execution",
+      "payload": {
+        "$ref": "#/$defs/OQExecutionCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "OQ-FR-001",
+        "OQ-FR-002",
+        "OQ-FR-003",
+        "OQ-FR-004",
+        "OQ-FR-005",
+        "OQ-FR-006",
+        "OQ-FR-007",
+        "OQ-FR-008"
+      ]
+    },
+    {
+      "event_type": "OQApproved",
+      "schema_version": "1.0",
+      "producer": "SPEC-VAL-006",
+      "aggregate_type": "oq_execution",
+      "payload": {
+        "$ref": "#/$defs/OQApprovedPayload"
+      },
+      "x-requirement-ids": [
+        "OQ-FR-001",
+        "OQ-FR-002",
+        "OQ-FR-003",
+        "OQ-FR-004",
+        "OQ-FR-005",
+        "OQ-FR-006",
+        "OQ-FR-007",
+        "OQ-FR-008"
+      ]
+    }
+  ]
+}
