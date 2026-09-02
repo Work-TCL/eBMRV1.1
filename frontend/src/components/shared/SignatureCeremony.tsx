@@ -9,12 +9,18 @@ import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 
 /** Arguments handed to the caller's `onSign`: everything a signed mutation endpoint in this codebase
- * expects on its body, already assembled. The caller adds the domain fields and picks the URL. */
+ * expects on its body, already assembled. The caller adds the domain fields and picks the URL.
+ * `[extra: string]` carries any additional field the challenge endpoint's own response included beyond
+ * `challenge_id`/`meaning`/`expires_at` — e.g. a signed-CREATE challenge's pre-generated `new_record_id`
+ * (see `app.modules.validation.signature_support.create_validation_signature_challenge_for_new_record`),
+ * which the caller must thread into the mutation body so the inserted row's id matches what the
+ * challenge was issued against. */
 export interface SignaturePayload {
   challenge_id: string;
   reauth_password: string;
   idempotency_key: string;
   reason: string | null;
+  [extra: string]: unknown;
 }
 
 /**
@@ -68,6 +74,7 @@ export function SignatureCeremony({
 }) {
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [meaning, setMeaning] = useState<string | null>(null);
+  const [challengeExtra, setChallengeExtra] = useState<Record<string, unknown>>({});
   const [password, setPassword] = useState("");
   const [reasonText, setReasonText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -81,13 +88,22 @@ export function SignatureCeremony({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setChallengeId(null);
     setMeaning(null);
+    setChallengeExtra({});
     setError(null);
     api
-      .post<{ challenge_id: string; meaning?: string }>(challengePath, challengeBody ?? { action })
+      .post<{ challenge_id: string; meaning?: string; expires_at?: string; [k: string]: unknown }>(
+        challengePath,
+        challengeBody ?? { action }
+      )
       .then((c) => {
         if (cancelled) return;
         setChallengeId(c.challenge_id);
         setMeaning(c.meaning ?? null);
+        const { challenge_id: _cid, meaning: _m, expires_at: _e, ...extra } = c;
+        void _cid;
+        void _m;
+        void _e;
+        setChallengeExtra(extra);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -108,6 +124,7 @@ export function SignatureCeremony({
     setError(null);
     try {
       await onSign({
+        ...challengeExtra,
         challenge_id: challengeId,
         reauth_password: password,
         idempotency_key: newIdempotencyKey(),
