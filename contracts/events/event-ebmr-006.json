@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-ebmr-006.json",
+  "title": "SPEC-EBMR-006 — Release / Disposition Engine Events",
+  "description": "Document 113 event contract for the events app/modules/release/commands.py actually emits. 5 of the catalogue's 9 declared Document 15 events are implemented: ReleaseEvaluationCompleted, ReleaseEligibilityChanged, ReleaseHoldPlaced, ProductReleased, ProductRejected. ReworkDispositionApproved, ReprocessDispositionApproved, DestructionDispositionApproved and PostReleaseHoldPlaced are declared in 07_EVENT_CATALOGUE.yaml but have no producing code path -- this module's `_decide_terminal_or_hold()` helper only has two callers (hold, reject); the three non-standard disposition types (rework/reprocess/destruction) and a post-release hold are not yet built. Verified directly against source (both the direct event_type=\"...\" call sites and every caller of the shared decision helper), not assumed.",
+  "x-requirement-ids": [
+    "REL-FR-001",
+    "REL-FR-002",
+    "REL-FR-003",
+    "REL-FR-004",
+    "REL-FR-005",
+    "REL-FR-006",
+    "REL-FR-007",
+    "REL-FR-008"
+  ],
+  "$defs": {
+    "ReleaseEvaluationCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "eligible"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eligible": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "REL-FR-001",
+        "REL-FR-002",
+        "REL-FR-003",
+        "REL-FR-004",
+        "REL-FR-005",
+        "REL-FR-006",
+        "REL-FR-007",
+        "REL-FR-008"
+      ]
+    },
+    "ReleaseEligibilityChangedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "eligible"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eligible": {
+          "type": "boolean"
+        }
+      },
+      "x-requirement-ids": [
+        "REL-FR-001",
+        "REL-FR-002",
+        "REL-FR-003",
+        "REL-FR-004",
+        "REL-FR-005",
+        "REL-FR-006",
+        "REL-FR-007",
+        "REL-FR-008"
+      ]
+    },
+    "ReleaseHoldPlacedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "REL-FR-001",
+        "REL-FR-002",
+        "REL-FR-003",
+        "REL-FR-004",
+        "REL-FR-005",
+        "REL-FR-006",
+        "REL-FR-007",
+        "REL-FR-008"
+      ]
+    },
+    "ProductReleasedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "batch_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "REL-FR-001",
+        "REL-FR-002",
+        "REL-FR-003",
+        "REL-FR-004",
+        "REL-FR-005",
+        "REL-FR-006",
+        "REL-FR-007",
+        "REL-FR-008"
+      ]
+    },
+    "ProductRejectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "REL-FR-001",
+        "REL-FR-002",
+        "REL-FR-003",
+        "REL-FR-004",
+        "REL-FR-005",
+        "REL-FR-006",
+        "REL-FR-007",
+        "REL-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "ReleaseEvaluationCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-006",
+      "aggregate_type": "release_scope",
+      "payload": {
+        "$ref": "#/$defs/ReleaseEvaluationCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "REL-FR-001",
+        "REL-FR-002",
+        "REL-FR-003",
+        "REL-FR-004",
+        "REL-FR-005",
+        "REL-FR-006",
+        "REL-FR-007",
+        "REL-FR-008"
+      ]
+    },
+    {
+      "event_type": "ReleaseEligibilityChanged",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-006",
+      "aggregate_type": "release_scope",
+      "payload": {
+        "$ref": "#/$defs/ReleaseEligibilityChangedPayload"
+      },
+      "x-requirement-ids": [
+        "REL-FR-001",
+        "REL-FR-002",
+        "REL-FR-003",
+        "REL-FR-004",
+        "REL-FR-005",
+        "REL-FR-006",
+        "REL-FR-007",
+        "REL-FR-008"
+      ]
+    },
+    {
+      "event_type": "ReleaseHoldPlaced",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-006",
+      "aggregate_type": "release_scope",
+      "payload": {
+        "$ref": "#/$defs/ReleaseHoldPlacedPayload"
+      },
+      "x-requirement-ids": [
+        "REL-FR-001",
+        "REL-FR-002",
+        "REL-FR-003",
+        "REL-FR-004",
+        "REL-FR-005",
+        "REL-FR-006",
+        "REL-FR-007",
+        "REL-FR-008"
+      ]
+    },
+    {
+      "event_type": "ProductReleased",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-006",
+      "aggregate_type": "release_scope",
+      "payload": {
+        "$ref": "#/$defs/ProductReleasedPayload"
+      },
+      "x-requirement-ids": [
+        "REL-FR-001",
+        "REL-FR-002",
+        "REL-FR-003",
+        "REL-FR-004",
+        "REL-FR-005",
+        "REL-FR-006",
+        "REL-FR-007",
+        "REL-FR-008"
+      ]
+    },
+    {
+      "event_type": "ProductRejected",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-006",
+      "aggregate_type": "release_scope",
+      "payload": {
+        "$ref": "#/$defs/ProductRejectedPayload"
+      },
+      "x-requirement-ids": [
+        "REL-FR-001",
+        "REL-FR-002",
+        "REL-FR-003",
+        "REL-FR-004",
+        "REL-FR-005",
+        "REL-FR-006",
+        "REL-FR-007",
+        "REL-FR-008"
+      ]
+    }
+  ]
+}

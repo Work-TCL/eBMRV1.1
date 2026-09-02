@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-ebmr-004.json",
+  "title": "SPEC-EBMR-004 — Genealogy & Traceability Engine Events",
+  "description": "Document 113 event contract for the events app/modules/genealogy/service.py actually emits. 3 of the catalogue's 5 declared Document 13 events are implemented: GenealogyNodeCreated, GenealogyEdgeCreated, GenealogyEdgeCorrected. ImpactAssessmentCreated and ImpactAssessmentApproved are declared in 07_EVENT_CATALOGUE.yaml but no producing code path exists in this codebase -- genealogy impact assessment (\"what else is affected if this lot/edge is wrong\") is not yet built; verified directly against source (grep across app/, not assumption), not silently normalized out of the catalogue.",
+  "x-requirement-ids": [
+    "GEN-FR-001",
+    "GEN-FR-002",
+    "GEN-FR-003",
+    "GEN-FR-004",
+    "GEN-FR-005",
+    "GEN-FR-006",
+    "GEN-FR-007",
+    "GEN-FR-008"
+  ],
+  "$defs": {
+    "GenealogyNodeCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "node_type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "node_type": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "GEN-FR-001",
+        "GEN-FR-002",
+        "GEN-FR-003",
+        "GEN-FR-004",
+        "GEN-FR-005",
+        "GEN-FR-006",
+        "GEN-FR-007",
+        "GEN-FR-008"
+      ]
+    },
+    "GenealogyEdgeCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "edge_type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "edge_type": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "GEN-FR-001",
+        "GEN-FR-002",
+        "GEN-FR-003",
+        "GEN-FR-004",
+        "GEN-FR-005",
+        "GEN-FR-006",
+        "GEN-FR-007",
+        "GEN-FR-008"
+      ]
+    },
+    "GenealogyEdgeCorrectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "corrected_by_edge_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "corrected_by_edge_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "GEN-FR-001",
+        "GEN-FR-002",
+        "GEN-FR-003",
+        "GEN-FR-004",
+        "GEN-FR-005",
+        "GEN-FR-006",
+        "GEN-FR-007",
+        "GEN-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "GenealogyNodeCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-004",
+      "aggregate_type": "genealogy_node",
+      "payload": {
+        "$ref": "#/$defs/GenealogyNodeCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "GEN-FR-001",
+        "GEN-FR-002",
+        "GEN-FR-003",
+        "GEN-FR-004",
+        "GEN-FR-005",
+        "GEN-FR-006",
+        "GEN-FR-007",
+        "GEN-FR-008"
+      ]
+    },
+    {
+      "event_type": "GenealogyEdgeCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-004",
+      "aggregate_type": "genealogy_edge",
+      "payload": {
+        "$ref": "#/$defs/GenealogyEdgeCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "GEN-FR-001",
+        "GEN-FR-002",
+        "GEN-FR-003",
+        "GEN-FR-004",
+        "GEN-FR-005",
+        "GEN-FR-006",
+        "GEN-FR-007",
+        "GEN-FR-008"
+      ]
+    },
+    {
+      "event_type": "GenealogyEdgeCorrected",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-004",
+      "aggregate_type": "genealogy_edge",
+      "payload": {
+        "$ref": "#/$defs/GenealogyEdgeCorrectedPayload"
+      },
+      "x-requirement-ids": [
+        "GEN-FR-001",
+        "GEN-FR-002",
+        "GEN-FR-003",
+        "GEN-FR-004",
+        "GEN-FR-005",
+        "GEN-FR-006",
+        "GEN-FR-007",
+        "GEN-FR-008"
+      ]
+    }
+  ]
+}

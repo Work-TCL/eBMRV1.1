@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-ebmr-005.json",
+  "title": "SPEC-EBMR-005 — Review-by-Exception & QA Review Events",
+  "description": "Document 113 event contract for the events app/modules/qa_review/commands.py actually emits. 4 of the catalogue's 6 declared Document 14 events are implemented: QAReviewPackageCreated, QAExceptionIndexed, QAReviewReopened, QAReviewCompleted (QAExceptionIndexed doubles as the re-index-on-reopen event when the package does not transition to REOPENED). QAReviewStarted and QAActionRequested are declared in 07_EVENT_CATALOGUE.yaml but have no producing code path -- review-package creation goes straight to indexed/completed state without a separate \"started\"/\"action requested\" step in this build; verified directly against source, not assumed.",
+  "x-requirement-ids": [
+    "RBE-FR-001",
+    "RBE-FR-002",
+    "RBE-FR-003",
+    "RBE-FR-004",
+    "RBE-FR-005",
+    "RBE-FR-006",
+    "RBE-FR-007",
+    "RBE-FR-008"
+  ],
+  "$defs": {
+    "QAReviewPackageCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "batch_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "batch_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "RBE-FR-001",
+        "RBE-FR-002",
+        "RBE-FR-003",
+        "RBE-FR-004",
+        "RBE-FR-005",
+        "RBE-FR-006",
+        "RBE-FR-007",
+        "RBE-FR-008"
+      ]
+    },
+    "QAExceptionIndexedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "completeness_status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "completeness_status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "RBE-FR-001",
+        "RBE-FR-002",
+        "RBE-FR-003",
+        "RBE-FR-004",
+        "RBE-FR-005",
+        "RBE-FR-006",
+        "RBE-FR-007",
+        "RBE-FR-008"
+      ]
+    },
+    "QAReviewReopenedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "completeness_status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "completeness_status": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "RBE-FR-001",
+        "RBE-FR-002",
+        "RBE-FR-003",
+        "RBE-FR-004",
+        "RBE-FR-005",
+        "RBE-FR-006",
+        "RBE-FR-007",
+        "RBE-FR-008"
+      ]
+    },
+    "QAReviewCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "RBE-FR-001",
+        "RBE-FR-002",
+        "RBE-FR-003",
+        "RBE-FR-004",
+        "RBE-FR-005",
+        "RBE-FR-006",
+        "RBE-FR-007",
+        "RBE-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "QAReviewPackageCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-005",
+      "aggregate_type": "qa_review_package",
+      "payload": {
+        "$ref": "#/$defs/QAReviewPackageCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "RBE-FR-001",
+        "RBE-FR-002",
+        "RBE-FR-003",
+        "RBE-FR-004",
+        "RBE-FR-005",
+        "RBE-FR-006",
+        "RBE-FR-007",
+        "RBE-FR-008"
+      ]
+    },
+    {
+      "event_type": "QAExceptionIndexed",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-005",
+      "aggregate_type": "qa_review_package",
+      "payload": {
+        "$ref": "#/$defs/QAExceptionIndexedPayload"
+      },
+      "x-requirement-ids": [
+        "RBE-FR-001",
+        "RBE-FR-002",
+        "RBE-FR-003",
+        "RBE-FR-004",
+        "RBE-FR-005",
+        "RBE-FR-006",
+        "RBE-FR-007",
+        "RBE-FR-008"
+      ]
+    },
+    {
+      "event_type": "QAReviewReopened",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-005",
+      "aggregate_type": "qa_review_package",
+      "payload": {
+        "$ref": "#/$defs/QAReviewReopenedPayload"
+      },
+      "x-requirement-ids": [
+        "RBE-FR-001",
+        "RBE-FR-002",
+        "RBE-FR-003",
+        "RBE-FR-004",
+        "RBE-FR-005",
+        "RBE-FR-006",
+        "RBE-FR-007",
+        "RBE-FR-008"
+      ]
+    },
+    {
+      "event_type": "QAReviewCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-005",
+      "aggregate_type": "qa_review_package",
+      "payload": {
+        "$ref": "#/$defs/QAReviewCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "RBE-FR-001",
+        "RBE-FR-002",
+        "RBE-FR-003",
+        "RBE-FR-004",
+        "RBE-FR-005",
+        "RBE-FR-006",
+        "RBE-FR-007",
+        "RBE-FR-008"
+      ]
+    }
+  ]
+}

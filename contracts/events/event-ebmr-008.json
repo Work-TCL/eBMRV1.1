@@ -1,0 +1,312 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-ebmr-008.json",
+  "title": "SPEC-EBMR-008 — Yield, Calculations & Manufacturing Reconciliation Events",
+  "description": "Document 113 event contract for the events app/modules/yield_reconciliation/commands.py actually emits. 6 of the catalogue's 7 declared Document 17 events are implemented: YieldCalculated, YieldOutOfLimit (mutually exclusive on the same call site -- ternary on out_of_limit), MaterialReconciliationCalculated, ReconciliationFailed (mutually exclusive -- ternary on within-tolerance), YieldVerified, ReconciliationVerified (mutually exclusive -- ternary on cmd.record_kind). ReconciliationSuperseded is declared in 07_EVENT_CATALOGUE.yaml but has no producing code path -- superseding an already-verified reconciliation record is not yet built. Verified directly against source, not assumed.",
+  "x-requirement-ids": [
+    "YLD-FR-001",
+    "YLD-FR-002",
+    "YLD-FR-003",
+    "YLD-FR-004",
+    "YLD-FR-005",
+    "YLD-FR-006",
+    "YLD-FR-007",
+    "YLD-FR-008"
+  ],
+  "$defs": {
+    "YieldCalculatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "YLD-FR-001",
+        "YLD-FR-002",
+        "YLD-FR-003",
+        "YLD-FR-004",
+        "YLD-FR-005",
+        "YLD-FR-006",
+        "YLD-FR-007",
+        "YLD-FR-008"
+      ]
+    },
+    "YieldOutOfLimitPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "YLD-FR-001",
+        "YLD-FR-002",
+        "YLD-FR-003",
+        "YLD-FR-004",
+        "YLD-FR-005",
+        "YLD-FR-006",
+        "YLD-FR-007",
+        "YLD-FR-008"
+      ]
+    },
+    "MaterialReconciliationCalculatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "variance"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        },
+        "variance": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "YLD-FR-001",
+        "YLD-FR-002",
+        "YLD-FR-003",
+        "YLD-FR-004",
+        "YLD-FR-005",
+        "YLD-FR-006",
+        "YLD-FR-007",
+        "YLD-FR-008"
+      ]
+    },
+    "ReconciliationFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "variance"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        },
+        "variance": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "YLD-FR-001",
+        "YLD-FR-002",
+        "YLD-FR-003",
+        "YLD-FR-004",
+        "YLD-FR-005",
+        "YLD-FR-006",
+        "YLD-FR-007",
+        "YLD-FR-008"
+      ]
+    },
+    "YieldVerifiedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "YLD-FR-001",
+        "YLD-FR-002",
+        "YLD-FR-003",
+        "YLD-FR-004",
+        "YLD-FR-005",
+        "YLD-FR-006",
+        "YLD-FR-007",
+        "YLD-FR-008"
+      ]
+    },
+    "ReconciliationVerifiedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "YLD-FR-001",
+        "YLD-FR-002",
+        "YLD-FR-003",
+        "YLD-FR-004",
+        "YLD-FR-005",
+        "YLD-FR-006",
+        "YLD-FR-007",
+        "YLD-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "YieldCalculated",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-008",
+      "aggregate_type": "manufacturing_calculation",
+      "payload": {
+        "$ref": "#/$defs/YieldCalculatedPayload"
+      },
+      "x-requirement-ids": [
+        "YLD-FR-001",
+        "YLD-FR-002",
+        "YLD-FR-003",
+        "YLD-FR-004",
+        "YLD-FR-005",
+        "YLD-FR-006",
+        "YLD-FR-007",
+        "YLD-FR-008"
+      ]
+    },
+    {
+      "event_type": "YieldOutOfLimit",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-008",
+      "aggregate_type": "manufacturing_calculation",
+      "payload": {
+        "$ref": "#/$defs/YieldOutOfLimitPayload"
+      },
+      "x-requirement-ids": [
+        "YLD-FR-001",
+        "YLD-FR-002",
+        "YLD-FR-003",
+        "YLD-FR-004",
+        "YLD-FR-005",
+        "YLD-FR-006",
+        "YLD-FR-007",
+        "YLD-FR-008"
+      ]
+    },
+    {
+      "event_type": "MaterialReconciliationCalculated",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-008",
+      "aggregate_type": "reconciliation_record",
+      "payload": {
+        "$ref": "#/$defs/MaterialReconciliationCalculatedPayload"
+      },
+      "x-requirement-ids": [
+        "YLD-FR-001",
+        "YLD-FR-002",
+        "YLD-FR-003",
+        "YLD-FR-004",
+        "YLD-FR-005",
+        "YLD-FR-006",
+        "YLD-FR-007",
+        "YLD-FR-008"
+      ]
+    },
+    {
+      "event_type": "ReconciliationFailed",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-008",
+      "aggregate_type": "reconciliation_record",
+      "payload": {
+        "$ref": "#/$defs/ReconciliationFailedPayload"
+      },
+      "x-requirement-ids": [
+        "YLD-FR-001",
+        "YLD-FR-002",
+        "YLD-FR-003",
+        "YLD-FR-004",
+        "YLD-FR-005",
+        "YLD-FR-006",
+        "YLD-FR-007",
+        "YLD-FR-008"
+      ]
+    },
+    {
+      "event_type": "YieldVerified",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-008",
+      "aggregate_type": "manufacturing_calculation",
+      "payload": {
+        "$ref": "#/$defs/YieldVerifiedPayload"
+      },
+      "x-requirement-ids": [
+        "YLD-FR-001",
+        "YLD-FR-002",
+        "YLD-FR-003",
+        "YLD-FR-004",
+        "YLD-FR-005",
+        "YLD-FR-006",
+        "YLD-FR-007",
+        "YLD-FR-008"
+      ]
+    },
+    {
+      "event_type": "ReconciliationVerified",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-008",
+      "aggregate_type": "reconciliation_record",
+      "payload": {
+        "$ref": "#/$defs/ReconciliationVerifiedPayload"
+      },
+      "x-requirement-ids": [
+        "YLD-FR-001",
+        "YLD-FR-002",
+        "YLD-FR-003",
+        "YLD-FR-004",
+        "YLD-FR-005",
+        "YLD-FR-006",
+        "YLD-FR-007",
+        "YLD-FR-008"
+      ]
+    }
+  ]
+}

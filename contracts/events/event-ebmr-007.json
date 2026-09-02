@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-ebmr-007.json",
+  "title": "SPEC-EBMR-007 — Packaging, Labeling & Reconciliation Events",
+  "description": "Document 113 event contract for the events app/modules/packaging/commands.py actually emits. 6 of the catalogue's 11 declared Document 16 events are implemented: PackagingRunStarted, LineClearanceCompleted, LabelIssued, LabelReconciliationCompleted, PackagingReconciliationCompleted, PackagingCompleted. LabelPrinted, LabelReprinted, LabelApplied, LabelMismatchDetected and PackageAggregated are declared in 07_EVENT_CATALOGUE.yaml but have no producing code path -- this module models label issuance and reconciliation as a single controlled step (LabelIssued -> LabelReconciliationCompleted) rather than tracking print/reprint/apply/mismatch as separate signed events, and does not yet implement multi-unit package aggregation. Verified directly against source, not assumed.",
+  "x-requirement-ids": [
+    "PKG-FR-001",
+    "PKG-FR-002",
+    "PKG-FR-003",
+    "PKG-FR-004",
+    "PKG-FR-005",
+    "PKG-FR-006",
+    "PKG-FR-007",
+    "PKG-FR-008"
+  ],
+  "$defs": {
+    "PackagingRunStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "PKG-FR-001",
+        "PKG-FR-002",
+        "PKG-FR-003",
+        "PKG-FR-004",
+        "PKG-FR-005",
+        "PKG-FR-006",
+        "PKG-FR-007",
+        "PKG-FR-008"
+      ]
+    },
+    "LineClearanceCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "PKG-FR-001",
+        "PKG-FR-002",
+        "PKG-FR-003",
+        "PKG-FR-004",
+        "PKG-FR-005",
+        "PKG-FR-006",
+        "PKG-FR-007",
+        "PKG-FR-008"
+      ]
+    },
+    "LabelIssuedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label_issue_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "label_issue_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "PKG-FR-001",
+        "PKG-FR-002",
+        "PKG-FR-003",
+        "PKG-FR-004",
+        "PKG-FR-005",
+        "PKG-FR-006",
+        "PKG-FR-007",
+        "PKG-FR-008"
+      ]
+    },
+    "LabelReconciliationCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PKG-FR-001",
+        "PKG-FR-002",
+        "PKG-FR-003",
+        "PKG-FR-004",
+        "PKG-FR-005",
+        "PKG-FR-006",
+        "PKG-FR-007",
+        "PKG-FR-008"
+      ]
+    },
+    "PackagingReconciliationCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "result": {
+          "type": "string"
+        }
+      },
+      "x-requirement-ids": [
+        "PKG-FR-001",
+        "PKG-FR-002",
+        "PKG-FR-003",
+        "PKG-FR-004",
+        "PKG-FR-005",
+        "PKG-FR-006",
+        "PKG-FR-007",
+        "PKG-FR-008"
+      ]
+    },
+    "PackagingCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "PKG-FR-001",
+        "PKG-FR-002",
+        "PKG-FR-003",
+        "PKG-FR-004",
+        "PKG-FR-005",
+        "PKG-FR-006",
+        "PKG-FR-007",
+        "PKG-FR-008"
+      ]
+    }
+  },
+  "events": [
+    {
+      "event_type": "PackagingRunStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-007",
+      "aggregate_type": "packaging_run",
+      "payload": {
+        "$ref": "#/$defs/PackagingRunStartedPayload"
+      },
+      "x-requirement-ids": [
+        "PKG-FR-001",
+        "PKG-FR-002",
+        "PKG-FR-003",
+        "PKG-FR-004",
+        "PKG-FR-005",
+        "PKG-FR-006",
+        "PKG-FR-007",
+        "PKG-FR-008"
+      ]
+    },
+    {
+      "event_type": "LineClearanceCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-007",
+      "aggregate_type": "packaging_run",
+      "payload": {
+        "$ref": "#/$defs/LineClearanceCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "PKG-FR-001",
+        "PKG-FR-002",
+        "PKG-FR-003",
+        "PKG-FR-004",
+        "PKG-FR-005",
+        "PKG-FR-006",
+        "PKG-FR-007",
+        "PKG-FR-008"
+      ]
+    },
+    {
+      "event_type": "LabelIssued",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-007",
+      "aggregate_type": "packaging_run",
+      "payload": {
+        "$ref": "#/$defs/LabelIssuedPayload"
+      },
+      "x-requirement-ids": [
+        "PKG-FR-001",
+        "PKG-FR-002",
+        "PKG-FR-003",
+        "PKG-FR-004",
+        "PKG-FR-005",
+        "PKG-FR-006",
+        "PKG-FR-007",
+        "PKG-FR-008"
+      ]
+    },
+    {
+      "event_type": "LabelReconciliationCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-007",
+      "aggregate_type": "packaging_run",
+      "payload": {
+        "$ref": "#/$defs/LabelReconciliationCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "PKG-FR-001",
+        "PKG-FR-002",
+        "PKG-FR-003",
+        "PKG-FR-004",
+        "PKG-FR-005",
+        "PKG-FR-006",
+        "PKG-FR-007",
+        "PKG-FR-008"
+      ]
+    },
+    {
+      "event_type": "PackagingReconciliationCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-007",
+      "aggregate_type": "packaging_run",
+      "payload": {
+        "$ref": "#/$defs/PackagingReconciliationCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "PKG-FR-001",
+        "PKG-FR-002",
+        "PKG-FR-003",
+        "PKG-FR-004",
+        "PKG-FR-005",
+        "PKG-FR-006",
+        "PKG-FR-007",
+        "PKG-FR-008"
+      ]
+    },
+    {
+      "event_type": "PackagingCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-007",
+      "aggregate_type": "packaging_run",
+      "payload": {
+        "$ref": "#/$defs/PackagingCompletedPayload"
+      },
+      "x-requirement-ids": [
+        "PKG-FR-001",
+        "PKG-FR-002",
+        "PKG-FR-003",
+        "PKG-FR-004",
+        "PKG-FR-005",
+        "PKG-FR-006",
+        "PKG-FR-007",
+        "PKG-FR-008"
+      ]
+    }
+  ]
+}
