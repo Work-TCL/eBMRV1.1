@@ -10119,8 +10119,15 @@ Also missing until this session: no `ai_governance` router existed at all (see S
 no HTTP entry point to request a challenge from regardless. Five `POST /ai-governance/v1/{resource}/
 signature-challenges` endpoints now exist (`app/modules/ai_governance/router.py`), each accepting a body
 that mirrors its command's non-transport fields and returning `SIGNATURE_POLICY_UNRESOLVED` (409) exactly
-as before, per the SG-138 precedent — verified directly: `resolve_signature_requirement()` is still called
-unconditionally and still raises with zero Document 106 rows present.
+as before, per the SG-138 precedent — confirmed by real test execution, not inspection alone:
+`tests/test_ai_governance.py` (pre-existing, unmodified by this session) runs each of the 5 signed
+functions directly against the seeded test database and asserts `SignaturePolicyUnresolvedError` on every
+one — **`test_ai_governance.py`: 23/24 passed** (the one unrelated failure,
+`test_authorize_tool_call_read_tool_fails_closed_on_signature`, is a pre-existing test-data gap — the
+`seeded` fixture never inserts an `AIToolRegistry` row for the `gxp_read_lookup` tool name the test
+references, so the call fails one check earlier than the test expects, on `AIToolNotAllowlistedError`
+rather than the intended `SignaturePolicyUnresolvedError`; unrelated to this session's router/hash-binding
+changes, which the test never reaches).
 
 Not guessed, per CLAUDE.md §4: signature meaning, required signer role, independent-signer requirement and
 reason-required flag for these 5 pairs are regulated decisions reserved to Document 106's approver.
@@ -10420,7 +10427,26 @@ SG-138 pattern for this module (`create_validation_signature_challenge()` for ex
 content-hash-bound endpoint for `validated_release_authorization.authorize` that mirrors
 `create_challenge_hash()`'s exact field set so the two hashes match. Every endpoint calls
 `resolve_signature_requirement()` unconditionally and still returns `SIGNATURE_POLICY_UNRESOLVED` (409) —
-no policy row was seeded, no meaning/signer role/independence flag was invented. **The policy-data half
+no policy row was seeded, no meaning/signer role/independence flag was invented.
+
+Confirmed by real, solo (non-concurrent) test execution against the shared test database, not inspection
+alone: **`test_validation_wp12_part1-4.py` + `test_validation_wp14_part1-3.py`: 24 passed, 36 failed**,
+every one of the 36 failures a `SignaturePolicyUnresolvedError` raised from inside the pre-existing,
+unmodified test files' own `_challenge()` helpers calling `signature_service.resolve_signature_
+requirement()` directly for a `validation_*` record type — i.e. the tests are failing for exactly the
+reason this gap describes, not because of a defect in this session's router/endpoint work (which none of
+these 36 tests reach; they call the command layer directly). A related discovery while investigating:
+several of these tests' own docstrings (e.g. `test_exception_create_signed_by_independent_releaser_
+sg167_resolved`, `test_exception_triage_and_retest_plan_require_independent_releaser_signature`) say
+"Document 106 row NNN, now resolved," implying their author's `tests/conftest.py` once seeded
+`SignaturePolicy` test-floor rows for these validation record types (mirroring the `batch_step`/
+`material_lot`/etc. rows the committed `conftest.py` seeds today) — that fixture code did not survive the
+2026-09-01 git-filter-repo incident (`conftest.py` is one of the files this project's memory records as
+having lost uncommitted deltas). Those rows, had they survived, would have been the author's own **test
+fixture** convenience seeding, not evidence that Document 106's real approver ever supplied these values —
+recreating them now from the test docstrings' bare mention of a row number, with no record of the actual
+`meaning`/`required_role_id`/`requires_independent_signer` values the author chose, would be exactly the
+kind of regulated-attestation guess CLAUDE.md §4 prohibits, so they were not recreated. **The policy-data half
 remains completely open**: no `validation_*` record type is seeded in Document 106, so all 26 pairs are
 still unsatisfiable by any actor.
 

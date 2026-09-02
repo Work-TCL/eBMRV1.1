@@ -1,6 +1,6 @@
 {
  "package": "eBMR / eDHR platform build status",
- "generated": "2026-09-01",
+ "generated": "2026-09-02",
  "baseline": "Documents 01-115",
  "stage_model": [
   "NOT_STARTED",
@@ -276,7 +276,7 @@
     "WP-01",
     "WP-11"
    ],
-   "stage": "NOT_STARTED",
+   "stage": "IN_DEVELOPMENT",
    "modules_done": 0,
    "modules_total": 15
   },
@@ -291,7 +291,7 @@
     "WP-10",
     "WP-12"
    ],
-   "stage": "NOT_STARTED",
+   "stage": "IN_DEVELOPMENT",
    "modules_done": 0,
    "modules_total": 1
   },
@@ -306,7 +306,7 @@
    "depends_on": [
     "WP-12"
    ],
-   "stage": "NOT_STARTED",
+   "stage": "IN_DEVELOPMENT",
    "modules_done": 0,
    "modules_total": 3
   }
@@ -5690,7 +5690,7 @@
    "module": "SPEC-VAL-001",
    "title": "Validation Master Plan & Computer Software Assurance Strategy",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 28,
    "requirements_state": {
@@ -5727,10 +5727,17 @@
    "apis": 4,
    "events": 4,
    "test_cases": 59,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -5746,7 +5753,7 @@
    "module": "SPEC-VAL-002",
    "title": "Intended Use, GxP Criticality & Software Function Risk Classification",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 22,
    "requirements_state": {
@@ -5777,10 +5784,17 @@
    "apis": 4,
    "events": 5,
    "test_cases": 44,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -5796,7 +5810,7 @@
    "module": "SPEC-VAL-003",
    "title": "Requirements, Design Inputs & Validation Traceability Management",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 23,
    "requirements_state": {
@@ -5828,10 +5842,17 @@
    "apis": 5,
    "events": 4,
    "test_cases": 47,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -5847,7 +5868,7 @@
    "module": "SPEC-VAL-004",
    "title": "Validation Test Strategy, Test Methods & Objective Evidence Governance",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 24,
    "requirements_state": {
@@ -5880,10 +5901,17 @@
    "apis": 5,
    "events": 5,
    "test_cases": 42,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -5899,7 +5927,7 @@
    "module": "SPEC-VAL-005",
    "title": "Installation Qualification (IQ) & Installed Baseline Verification",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 21,
    "requirements_state": {
@@ -5929,10 +5957,17 @@
    "apis": 4,
    "events": 4,
    "test_cases": 37,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -5948,7 +5983,7 @@
    "module": "SPEC-VAL-006",
    "title": "Operational Qualification (OQ) & Functional Control Verification",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 18,
    "requirements_state": {
@@ -5975,10 +6010,17 @@
    "apis": 4,
    "events": 4,
    "test_cases": 35,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -5994,7 +6036,7 @@
    "module": "SPEC-VAL-007",
    "title": "Performance Qualification (PQ), UAT & Business Process Verification",
    "work_package": "WP-14",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 20,
    "requirements_state": {
@@ -6023,10 +6065,17 @@
    "apis": 4,
    "events": 4,
    "test_cases": 36,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -6042,7 +6091,7 @@
    "module": "SPEC-VAL-008",
    "title": "Infrastructure, Cloud, Platform & Environment Qualification",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 20,
    "requirements_state": {
@@ -6071,10 +6120,17 @@
    "apis": 4,
    "events": 3,
    "test_cases": 28,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -6090,7 +6146,7 @@
    "module": "SPEC-VAL-009",
    "title": "Data Migration, Conversion, Cutover & Reconciliation Validation",
    "work_package": "WP-14",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 22,
    "requirements_state": {
@@ -6121,10 +6177,17 @@
    "apis": 4,
    "events": 4,
    "test_cases": 42,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -6140,7 +6203,7 @@
    "module": "SPEC-VAL-010",
    "title": "21 CFR Part 11 Electronic Records & Electronic Signature Validation",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 26,
    "requirements_state": {
@@ -6175,10 +6238,17 @@
    "apis": 3,
    "events": 3,
    "test_cases": 58,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -6194,7 +6264,7 @@
    "module": "SPEC-VAL-011",
    "title": "Audit Trail, Record Version Vault & Data Integrity Validation",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 24,
    "requirements_state": {
@@ -6227,10 +6297,17 @@
    "apis": 3,
    "events": 4,
    "test_cases": 50,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -6246,7 +6323,7 @@
    "module": "SPEC-VAL-012",
    "title": "Integration, Edge, Device, Peripheral & Interface Validation",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 24,
    "requirements_state": {
@@ -6279,10 +6356,17 @@
    "apis": 4,
    "events": 4,
    "test_cases": 56,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -6298,7 +6382,7 @@
    "module": "SPEC-VAL-013",
    "title": "Backup, Restore, PITR & Disaster Recovery Qualification",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 22,
    "requirements_state": {
@@ -6329,10 +6413,17 @@
    "apis": 4,
    "events": 4,
    "test_cases": 70,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -6348,7 +6439,7 @@
    "module": "SPEC-VAL-014",
    "title": "Security Qualification, Vulnerability Verification & Penetration Testing",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 24,
    "requirements_state": {
@@ -6381,10 +6472,17 @@
    "apis": 5,
    "events": 4,
    "test_cases": 36,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -6400,7 +6498,7 @@
    "module": "SPEC-VAL-015",
    "title": "Performance, Load, Capacity & Reliability Qualification",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 24,
    "requirements_state": {
@@ -6433,10 +6531,17 @@
    "apis": 4,
    "events": 4,
    "test_cases": 46,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -6452,7 +6557,7 @@
    "module": "SPEC-VAL-016",
    "title": "Validation Defect, Deviation, Test Exception & Remediation Management",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 22,
    "requirements_state": {
@@ -6483,10 +6588,17 @@
    "apis": 5,
    "events": 4,
    "test_cases": 49,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -6502,7 +6614,7 @@
    "module": "SPEC-VAL-017",
    "title": "Validation Summary Report, Release-to-Production & Go-Live Authorization",
    "work_package": "WP-14",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 24,
    "requirements_state": {
@@ -6535,10 +6647,17 @@
    "apis": 5,
    "events": 6,
    "test_cases": 52,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -6554,7 +6673,7 @@
    "module": "SPEC-VAL-018",
    "title": "Periodic Review, Change Impact, Revalidation & Validated-State Maintenance",
    "work_package": "WP-12",
-   "code_location": "validation",
+   "code_location": "services/gxp-api/app/modules/validation",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 28,
    "requirements_state": {
@@ -6591,10 +6710,17 @@
    "apis": 6,
    "events": 6,
    "test_cases": 49,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED) despite the WP-12/WP-14 validation platform (app/modules/validation/router.py + router_wp14.py, 82 routes, 20 command files) already being built and passing its own test suites in a prior session -- discovered this session that neither router was ever included in main.py (0 live /validation/v1/* paths), a side effect of the 2026-09-01 git-filter-repo incident losing main.py's uncommitted wiring change (see SG-172). Fixed: main.py now includes both routers (0 -> 106 live paths, confirmed via openapi()); added app/modules/validation/signature_support.py + 24 signature-challenge endpoints for the 26 signed record_type/action pairs that had none (SG-172, mirrors SG-138's WP-05 QMS fix). Solo (non-concurrent) run of test_validation_wp12_part1-4.py + test_validation_wp14_part1-3.py: 24 passed, 36 failed -- every failure is SignaturePolicyUnresolvedError, the correct fail-closed result given Document 106 has zero validation record-type rows (SG-172, blocking), not a defect in this session's changes (confirmed: none of the 36 failing tests reach the new router endpoints; they call the command layer directly). Not set to CODE_COMPLETE: the policy-data half is blocking, and this session did not re-verify every requirement across all 18 SPEC-VAL modules individually -- this note is shared verbatim across SPEC-VAL-001..018 because the router-wiring fix was module-wide, not per-document."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -7122,7 +7248,7 @@
    "module": "SPEC-AI-001",
    "title": "AI Governance for Regulated Manufacturing",
    "work_package": "WP-13",
-   "code_location": "services/ai-gateway",
+   "code_location": "services/gxp-api/app/modules/ai_governance",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 56,
    "requirements_state": {
@@ -7183,20 +7309,29 @@
     "AI-FR-055": "NOT_STARTED",
     "AI-FR-056": "NOT_STARTED"
    },
-   "entities": 0,
-   "apis": 0,
-   "events": 0,
+   "entities": 12,
+   "apis": 24,
+   "events": 14,
    "test_cases": 158,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-01",
+     "by": "Claude Code",
+     "note": "This row was stale (NOT_STARTED, services/ai-gateway, 0 apis/events) despite the module's commands.py/models.py (13 functions, 12 tables) already being built and tested in a prior session -- likely lost to a build-status-race or the 2026-09-01 git-filter-repo incident. This session added the missing app/modules/ai_governance/router.py (24 routes: 13 command endpoints, 5 signature-challenge endpoints, 6 GET reads), wired it into main.py (0 -> 24 live /ai-governance/v1/* paths, confirmed via openapi()), fixed a real defect in _apply_signature() (content_challenge_hash() now excludes challenge_id/reauth_password/idempotency_key from the consumed-challenge hash -- the prior binding was structurally unsatisfiable, see SG-167), and passed stand-in model_client/evaluator callables that fail closed (DependencyUnavailableError) since no live AI provider is configured. tests/test_ai_governance.py: 23/24 passed (the 1 failure is a pre-existing unrelated test-data gap, not a regression -- see SG-167). Not set to CODE_COMPLETE: the 5 signed functions remain unsatisfiable pending Document 106 (SG-167, blocking), and this session did not re-verify all 56 AI-FR requirements individually."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-01",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
    "test_blocked": 0,
    "open_defects": 0,
-   "blockers": [],
+   "blockers": [
+    "SG-167: Document 106 has zero SPEC-AI-001 signature policy rows -- 5 signed functions unsatisfiable"
+   ],
    "prompt": "prompts/WP-13/105_SPEC-AI-001.md",
    "test_case_book": "test-cases/WP-13/Document_105_SPEC-AI-001_TEST_CASES.md",
    "evidence": "validation/evidence/oq/SPEC-AI-001/"
@@ -7206,7 +7341,7 @@
   "modules": 103,
   "requirements": 2965,
   "test_cases": 9150,
-  "modules_started": 64,
+  "modules_started": 83,
   "modules_released": 0
  }
 }
