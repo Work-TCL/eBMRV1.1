@@ -23,6 +23,11 @@ export function newIdempotencyKey(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+/** Dispatched on `window` the moment any API call comes back 401 (expired/invalid/revoked token) —
+ * `AuthGuard` listens for this to send the user back to /login, the one place in this module tree that
+ * holds a router. See its usage in `request()` below. */
+export const SESSION_EXPIRED_EVENT = "gxp:session-expired";
+
 export class ApiError extends Error {
   code: string;
   details: Record<string, unknown>;
@@ -62,6 +67,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       body = await res.json();
     } catch {
       // non-JSON error body
+    }
+    // A 401 here always means the bearer token is missing/expired/revoked (get_current_actor's only
+    // failure mode — see app/core/security.py) rather than a business rejection, so it's handled once,
+    // centrally, instead of leaving every page to notice its own API calls started failing and show a
+    // stale panel with error banners. This module has no router (it's called from outside any component
+    // tree), so it clears the token and raises a DOM event; AuthGuard — which does hold a router, the
+    // same way Sidebar's own "Sign out" button does — is what actually navigates to /login.
+    if (res.status === 401 && typeof window !== "undefined" && window.location.pathname !== "/login") {
+      setToken(null);
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
     }
     throw new ApiError(
       res.status,
@@ -105,9 +120,17 @@ export interface ListQuery {
 /** For populating a <select> with "all" rows — fine while row counts are small (Phase 1). 100 is the
  * backend's own hard cap (app/core/pagination.py page_size Query(..., le=100)) — once any resource can
  * realistically exceed that, this dropdown should become a searchable combobox hitting the paginated
- * endpoint directly instead of trying to raise the cap. */
-export async function listAll<T>(path: string): Promise<T[]> {
-  const result = await pagedFetcher<T>(path)({ page: 1, page_size: 100, q: "", sort_by: null, sort_dir: "asc" });
+ * endpoint directly instead of trying to raise the cap.
+ *
+ * `extraQuery` values are always set verbatim, including `""` — unlike `pagedFetcher`'s `extraParams`,
+ * which treats a blank value as "not filtering". That distinction matters for endpoints like DDCP's
+ * `GET /profiles`, where an explicit `state=` (empty) overrides a non-empty server-side default and an
+ * omitted `state` falls back to it — so a caller that means "no filter" must be able to send the empty
+ * string rather than have it silently dropped. */
+export async function listAll<T>(path: string, extraQuery?: Record<string, string>): Promise<T[]> {
+  const search = new URLSearchParams({ page: "1", page_size: "100", sort_dir: "asc" });
+  for (const [k, v] of Object.entries(extraQuery ?? {})) search.set(k, v);
+  const result = await api.get<Paged<T>>(`${path}?${search.toString()}`);
   return result.items;
 }
 
@@ -666,6 +689,15 @@ export interface EquipmentAsset {
   dedicated: boolean | null;
   firmware_version: string | null;
   version: number;
+}
+
+export interface EquipmentArea {
+  id: string;
+  site_id: string;
+  area_code: string;
+  area_type: string | null;
+  classification: string | null;
+  status: string;
 }
 
 // --- Packaging (Document 16) and supplier quality (Document 18) -----------------------------------
