@@ -12,14 +12,17 @@ class Settings(BaseSettings):
     migration_database_url: str | None = None
     jwt_secret: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60
+    access_token_expire_minutes: int = 1440
     signature_challenge_expire_minutes: int = 5
     # IAMSEC-FR-007 (Document 62): idle/absolute application-session lifetimes. No approved baseline
     # (Documents 106-115) defines a numeric session-timeout value anywhere -- same "numeric periods
     # unresolved" shape as SG-005's retention gap. These are engineering-default floors, not a guessed
     # regulated value; see docs/generated/18_SPEC_GAPS.md SG-163.
-    session_idle_timeout_minutes: int = 30
-    session_absolute_timeout_minutes: int = 480
+    # 2026-09-03: bumped 30/480 -> 1440/1440 (1 day) for client-demo convenience per user request.
+    # Still a SPEC_GAP-163 placeholder, not a validated regulated value -- revert before any
+    # qualification/production use.
+    session_idle_timeout_minutes: int = 1440
+    session_absolute_timeout_minutes: int = 1440
 
 
 settings = Settings()

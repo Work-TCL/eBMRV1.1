@@ -1,13 +1,13 @@
 # 18 — SPEC_GAP Register
 
 **Package:** eBMR / eDHR Claude Code Construction Package  
-**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open); SG-167 added 2026-09-01 (Document 105 signature policy backfill, consolidating the code-only "SG-168" reference — dependent content_challenge_hash() defect fixed + 5 signature-challenge endpoints added; policy-data half open); SG-169 added 2026-09-01, RESOLVED (WP-12/14 PDF export dependency — ReportLab approved, re-pinned after a lost pin, live SCA/license scan complete: 0 vulnerabilities, all licenses permissive); SG-170 added 2026-09-01 (Document 106 row 168 unresolvable VSR-generation signer class; implemented unsigned per the function catalogue); SG-171 added 2026-09-01, RESOLVED (ai_governance router built and wired into main.py — Document 105's 13 functions were previously unreachable via HTTP); SG-172 added 2026-09-01 (validation platform router was never wired into main.py — lost in the 2026-09-01 git-filter-repo incident — now fixed; 24 signature-challenge endpoints added for its 26 signed pairs; policy-data half open); SG-173 added 2026-09-01 (product/recipe/batch have two independent, both-live authoritative stores each — AG-05 violation found while scoping WP-02's SG-013 event-schema slice; not fixed, migration/cutover plan reserved for the project owner); SG-013 event half re-baselined 2026-09-01 (284/484 events now committed — WP-09/10/11/13/14 landed since the last note plus a new WP-03 slice, 24/38; WP-04/06/12 still fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued — SG-013 remains blocking); SG-174 added 2026-09-01 (cross-module event-name collisions — LineClearanceCompleted and, found in the WP-04 slice the same day, MaterialReconciliationCalculated — each emitted by two unrelated modules with no consumer-visible distinction; both found by tooling/events/validate.py itself, left failing/documented rather than silently renamed); SG-013 event half at 371/484 after the WP-04 slice (54/72, Documents 18-25 — material/QC; WP-12 62 events fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued); SG-013 event half reaches 431/484 (89%) after the WP-12 slice (60/62, Documents 79-96) — every catalogue-backed work package now done; SG-013 event half CLOSED except WP-02 after deriving events directly from code for every previously-uncatalogued module (WP-01/07/08 + WP-06's edge/OT half, Documents 43/47) — 542 entries / 537 distinct across 81 files, every module in app/modules/ with real events now contracted except the SG-173 scaffold (product/recipe/batch), left uncontracted by design; SG-013 stays OPEN/blocking on SG-173 alone — all others open  
+**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open); SG-167 added 2026-09-01 (Document 105 signature policy backfill, consolidating the code-only "SG-168" reference — dependent content_challenge_hash() defect fixed + 5 signature-challenge endpoints added; policy-data half open); SG-169 added 2026-09-01, RESOLVED (WP-12/14 PDF export dependency — ReportLab approved, re-pinned after a lost pin, live SCA/license scan complete: 0 vulnerabilities, all licenses permissive); SG-170 added 2026-09-01 (Document 106 row 168 unresolvable VSR-generation signer class; implemented unsigned per the function catalogue); SG-171 added 2026-09-01, RESOLVED (ai_governance router built and wired into main.py — Document 105's 13 functions were previously unreachable via HTTP); SG-172 added 2026-09-01 (validation platform router was never wired into main.py — lost in the 2026-09-01 git-filter-repo incident — now fixed; 24 signature-challenge endpoints added for its 26 signed pairs; policy-data half open); SG-173 added 2026-09-01 (product/recipe/batch have two independent, both-live authoritative stores each — AG-05 violation found while scoping WP-02's SG-013 event-schema slice; not fixed, migration/cutover plan reserved for the project owner); SG-013 event half re-baselined 2026-09-01 (284/484 events now committed — WP-09/10/11/13/14 landed since the last note plus a new WP-03 slice, 24/38; WP-04/06/12 still fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued — SG-013 remains blocking); SG-174 added 2026-09-01 (cross-module event-name collisions — LineClearanceCompleted and, found in the WP-04 slice the same day, MaterialReconciliationCalculated — each emitted by two unrelated modules with no consumer-visible distinction; both found by tooling/events/validate.py itself, left failing/documented rather than silently renamed); SG-013 event half at 371/484 after the WP-04 slice (54/72, Documents 18-25 — material/QC; WP-12 62 events fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued); SG-013 event half reaches 431/484 (89%) after the WP-12 slice (60/62, Documents 79-96) — every catalogue-backed work package now done; SG-013 event half CLOSED except WP-02 after deriving events directly from code for every previously-uncatalogued module (WP-01/07/08 + WP-06's edge/OT half, Documents 43/47) — 542 entries / 537 distinct across 81 files, every module in app/modules/ with real events now contracted except the SG-173 scaffold (product/recipe/batch), left uncontracted by design; SG-013 stays OPEN/blocking on SG-173 alone — all others open; SG-175 added 2026-09-03 (Product Master's `manufacturing_profile_code`/`sterile_profile_id`/`combination_product_type` on `gxp_product_version` and DDCP's own `ddcp_profile_version` are two unwired halves of the same combination-product concept — found while answering whether the DDCP page's "Product family" picker is data-driven from Product Master; not fixed, FK design/migration reserved for the project owner); SG-081 PARTIALLY RESOLVED 2026-09-07 for its read side only (project-owner-directed: GET /inventory/v1/warehouse-locations + GET /material-lots/{lot_id}/containers added, read-only, so the Inventory Transfer/Cycle-count/Adjustment forms can offer real dropdowns instead of hand-typed UUIDs; write-side CRUD for warehouse_location remains unresolved and not attempted); SG-081 write-create ALSO RESOLVED 2026-09-07 later same day (project-owner-directed, asked explicitly before building): POST /inventory/v1/warehouse-locations added with a dedicated warehouse_location.create permission code (Admin/Supervisor only) plus a "New location" UI -- update/delete/rename still unbuilt; SG-175 PARTIALLY RESOLVED 2026-09-07 for `sterile_profile_id` only (client-demo-flagged: field took any raw UUID with no existence check -- now FK-checked against Document 40's `equipment.aseptic_profile_versions`, existing RELEASED sterile/aseptic profile master data, at product_master draft create/update, plus a real GET /products/v1/sterile-profiles picker replacing the free-text Input in the frontend; `manufacturing_profile_code`/`product_family_id`/`combination_product_type` <-> `ddcp.ddcp_profile_version` linkage/authority question remains open, reserved for the project owner as originally written); SG-176 added and RESOLVED for create/list 2026-09-07, project-owner-directed (asked directly, chose the real-endpoint option): `aseptic_profile_version` had no create/release operation in Document 40's own 7-op API list either -- `POST`/`GET /aseptic/v1/profiles` added, gated by a new `aseptic_profile_version.create` permission code (Admin + Aseptic Supervisor), plus a "New sterile process profile" modal on `/aseptic` and an additive `headerAction` prop on the shared `OpsRecordPage` component; SG-176 update/delete ALSO RESOLVED 2026-09-07 later same day (project-owner-directed, asked explicitly: chose supersede-only over "supersede + retire" or "true hard delete"): migration 0085 adds `supersedes_profile_version_id`, `POST /aseptic/v1/profiles/{id}/supersede` creates a new version and marks the previous one SUPERSEDED (excluded from the RELEASED-only picker, kept forever in a new all-states `list_profile_versions`/`GET /aseptic/v1/profiles` listing that also answers the separate "where is show list?" gap by rendering as a browsable table on `/aseptic`) -- no true delete exists, by deliberate project-owner choice matching every other versioned regulated master-data record in this codebase; SG-177 added and RESOLVED for create/list 2026-09-07, project-owner-directed (asked directly: "develop the frontend for area"): `equipment_area` (shared master referenced by Documents 38/39/40/41/42's area_id/line_id fields) had no create operation in any of their declared API lists either -- `POST /equipment/v1/areas` added, gated by a new `equipment_area.create` permission code (Admin + Equipment Administrator), plus a "New area" button and an areas list table on `/equipment`; update/delete not built or offered as a choice (no established per-document ownership answer for this cross-document shared table); SG-035 `(product_version, release)` PARTIALLY RESOLVED 2026-09-07, project-owner-directed (hit live while demoing -- release failed `SIGNATURE_POLICY_UNRESOLVED` for every actor including Admin; asked directly which of self-signed/no-signature/leave-unresolved to take, chose self-signed): added a considered floor row (Admin signer, no independence check, since `product.release` is Admin-only with no reviewer-role split), a new `POST /products/v1/{id}/signature-challenges` endpoint (Product Master had none), a new re-runnable `scripts/sync_signature_policies.py` (mirroring `sync_permissions.py`, since `scripts.seed`'s own upsert only runs inside a destructive full reseed), and wired the frontend Release button to the shared `SignatureCeremony` component instead of posting unsigned; `vault_object/release`, `record_correction/complete`, `rule/release`, and `product_version/{suspend,reinstate}` all remain open/unresolved, deliberately not extended by this change; SG-178 added 2026-09-07 (recipe step `required_role_code` stored/shown but never enforced at step start, in either batch store) and RESOLVED 2026-09-08 project-owner-directed (Option A + documented override): migration 0086 adds `ebmr.gxp_batch_step.required_role_code`, `issue_batch` freezes it into the snapshot, and `start_step` on the regulated `/batch-execution` path fails closed with `STEP_ROLE_MISMATCH` unless the actor holds the role or supplies `override_reason` + the new `batch_step.role_override` permission (Admin/Supervisor); legacy `app/modules/batch` left unenforced per SG-173; authoring-SoD half also done — new `Process Engineer` role holds `recipe.author` (not `recipe.release`), `recipe.release` also granted to `QA Releaser`, standing-role-pair SoD rule left to the project owner; SG-035 further-partial 2026-09-08 (project-owner-directed) — `recipe_version/release` now has a signature policy (`required_role='QA Releaser'`, `requires_independent_signer=True`), both flags enforced in `release_recipe_version()` against the recipe's `Created` audit event (`SOD_CONFLICT` when author==releaser), new `POST /recipes/v2/drafts/{id}/signature-challenges` endpoint, frontend Release wired to `SignatureCeremony`; Decisions 1 & 2 added 2026-09-08 (project-owner-directed) — Decision 2: Product Master gets the same author≠releaser split (`product.author` -> Process Engineer + Admin, `product.release` -> QA Releaser + Admin, `product_version/release` signature upgraded to independent QA Releaser, `release_product_version()` enforces it against the `Created` audit event, new Document 107 rule IND-021); Decision 1 (defer standing-role-pair to the customer, long-term): new re-runnable `scripts/sync_sod_rules.py` + platform-floor row SOD-021 `(Process Engineer, QA Releaser)` REPORT_ONLY (person-level independence already enforced by IND-011/IND-021; PROHIBITED would break the all-roles `admin`, so the customer Quality org raises it at PQ); plus controlled repair migrations 0087/0088 removing the verification-only `RCP-SMOKE*`/`RCP-PICKER*`/`PRD-SMOKE*` families left in the live demo DB (audit/vault untouched, AG-08); SG-138 `deviation_record`/disposition+close PARTIALLY RESOLVED 2026-09-09, project-owner-directed (hit live while a user was testing the DDCP demo flow -- disposition failed `SIGNATURE_POLICY_UNRESOLVED`; asked directly, told to follow Document 106/107 as written): seeded from Document 106 rows 71/73 (QA Releaser, independent of investigator/owner per Document 107 IND-005, same mapping as `oos_record.disposition/close`), enforced in `qms/commands.py::_resolve_signature()`, frontend wired to the shared `SignatureCeremony` component; verified with `test_qms_deviation.py` 24/24 passed plus a live challenge-sign-close round trip against the demo DB (and a same-actor-as-owner attempt correctly refused with `SOD_INDEPENDENCE_REQUIRED`) -- the other 24 (record_type, action) pairs remain fully open, SG-138 stays blocking; SG-047 PARTIALLY RESOLVED 2026-09-09, project-owner-directed (a live demo batch got permanently stuck with no way to ever complete a step): `gxp_step_result` built (migration db47f27cf18b_0092), typed by reusing `gxp_recipe_parameter`'s own already-DDL-ready data_type/precision rather than inventing a new Document 110 policy; new signed `POST /batches/v1/{id}/steps/{id}/results`/`/complete` (Document 106 rows 19/21) plus a runtime half for BAT-FR-006's readiness computation (a 'pending' successor becomes 'ready' once every predecessor is 'complete') -- `gxp_step_evidence_link`/`gxp_batch_hold` remain open, SG-047 stays open for those two only; SG-047/SG-048 FURTHER PARTIALLY RESOLVED same day, project-owner-directed (asked which of six remaining demo gaps to build: chose step-level hold, Production Complete state, and material/equipment linkage -- built the first two, explicitly deferred the third once it turned out to be blocked on SG-045's own still-open schema question rather than guessing it): step-scoped `gxp_batch_hold` slice (`StepHold`, migration a6d525b2d585_0093, signed hold/resume) resolves SG-048 #020; `gxp_batch.state` gains `production_complete` (steps-completeness sub-clause only) resolves SG-048 #026; #012/#013 (material/equipment at step start) not attempted -- SG-045 (`recipe_material_requirement`/`recipe_equipment_requirement`) must resolve first; SG-180 added 2026-09-09 (found answering a client question for the Gujarati demo guide: `gxp_batch_step`'s generic recipe-step chain and DDCP's own 9-table execution record set both point at the same `ebmr.gxp_batch` row but neither reads nor writes the other — completing one does not complete/unblock the other, and the batch `/release` eligibility check, SG-056, reads neither; not fixed, three options recorded, project-owner decision needed); SG-181 added and RESOLVED 2026-09-09, project-owner-directed (hit live: a user clicked "Complete review" on `/qa-review` and got `SIGNATURE_POLICY_UNRESOLVED` — same SG-138 defect class, different work package, Documents 14/15 not the 12 QMS modules SG-138 covered): seeded Document 106 rows 29/32/33/34 (`qa_review_package.complete` → QA Reviewer; `release_scope.release/hold/reject` → QA Releaser, all `Released` per Document 106's own literal meaning column), added `signature-challenges` endpoints to both routers (neither had one), enforced required-role in both commands and Document 107 IND-002/003's QA-Reviewer-independence half in `release/commands.py` (via a new `_batch_qa_reviewer()` audit-event lookup — the package has no reviewer-identity column of its own), wired both frontend pages to `SignatureCeremony`; the "every PERFORMER on the batch" half of IND-002/003 has no data source anywhere in this codebase and stays deliberately unenforced (documented, not guessed) — SG-181 stays open for that piece only, not blocking
 **Specification baseline:** Documents 01–105, baseline date 2026-08-20  
 **Purpose:** Every missing or conflicting decision found in Documents 01–105, with impact, options and the document that resolves it.
 
 ---
 
-**Total gaps:** 69 | **Blocking:** 9 | **Non-blocking:** 60  
+**Total gaps:** 71 | **Blocking:** 9 | **Non-blocking:** 62  
 **Regulated decisions (class R):** 6 | **Design decisions (class D):** 24 | **Editorial/engineering (class E):** 27
 
 Class R gaps are **not** resolved by this package on its own authority. Each has a proposed resolution document containing analysis, options and a recommended baseline, and each carries an approval block that a named human must sign before the value becomes controlled truth. Until then the value is `PROPOSED` and Claude Code must treat it as configuration with an open gap reference.
@@ -96,7 +96,7 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-078 | D | no | DOC-FR-011/023/024 (Document 30): uncontrolled-copy marking, general search and export have no operation in Document 30's own 7-op API list | — (open) | Data Architect + QMS module owner |
 | SG-079 | D | no | DOC-FR-013/014 (Document 30): training assignment wiring and per-user acknowledgment capture are not performed this pass | — (open) | Data Architect + QMS module owner + Training module owner |
 | SG-080 | D | no | DOC-FR-022 (Document 30): no historical-document migration pathway exists distinct from the normal signed-release flow | — (open) | Data Architect + QMS module owner |
-| SG-081 | D | no | `warehouse_location` (INV-FR-001/002, Document 20) has no CRUD operation anywhere in Document 20's own 8-op API list | — (open) | Data Architect + Materials module owner |
+| SG-081 | D | no | `warehouse_location` (INV-FR-001/002, Document 20) has no CRUD operation anywhere in Document 20's own 8-op API list | 2026-09-07 partial (read + create live; update/delete/rename still open) | Data Architect + Materials module owner |
 | SG-082 | D | no | Document 20 requirements needing infrastructure this codebase does not have yet: barcode/scanner integration, storage-condition excursion/monitoring integration, label-reprint infrastructure, and ERP reconciliation | — (open) | Platform Architect + Materials module owner |
 | SG-083 | D | no | Document 20's FEFO/FIFO deviation-override path and material-spec-version-scoped eligibility, and alternative-material recipe/deviation compatibility, all need a deviation/change-approval entity and a material-specification-version entity that don't exist (SG-057 family) | — (open) | Data Architect + Materials module owner |
 | SG-084 | D | no | Document 20's cycle-count adjustment (INV-FR-020) has no Document 106 signature-policy row despite spec prose implying approval; physical-count freeze (INV-FR-021) has no entity/operation in Document 20's own API list | — (open) | Data Architect + Materials module owner |
@@ -130,7 +130,7 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-135 | D | no | No controlled catalogue exists for YLD-FR-021's loss reasons/categories | — (open) | Head of Quality + Product Owner |
 | SG-136 | R | no | Whether an ERP/WMS inventory mismatch should raise a QA hold is undefined | — (open) | Head of Quality + Platform Architect |
 | SG-137 | R | no | YLD-FR-030's final batch-record export has no owning module, format or signature policy (promoted out of SG-132) | — (open) | Product Owner + Head of Quality + Platform Architect |
-| SG-138 | R | **YES** | WP-05 QMS record types have no Document 106 signature policy rows, so 26 transitions are unsatisfiable — **UPDATED 2026-08-29**: both engineering-half defects now closed (all 14 signature-challenge endpoints built; the `training_assignment`/`create` id-ordering bug fixed and proven with a real challenge→create round-trip test, 25/25 passed) — policy-data half (the 26 unsatisfiable pairs themselves) remains fully open, still blocking | — (open) | Head of Quality + Regulatory Affairs + QMS module owner |
+| SG-138 | R | **YES** | WP-05 QMS record types have no Document 106 signature policy rows, so 26 transitions are unsatisfiable — **UPDATED 2026-08-29**: both engineering-half defects now closed (all 14 signature-challenge endpoints built; the `training_assignment`/`create` id-ordering bug fixed and proven with a real challenge→create round-trip test, 25/25 passed) — **`deviation_record`/disposition+close PARTIALLY RESOLVED 2026-09-09, project-owner-directed ("as per the ebmr-edhr docs")**: seeded from Document 106 rows 71/73 (QA Releaser, independent of investigator/owner per Document 107 IND-005), enforced in `qms/commands.py::_resolve_signature()`, frontend wired to the shared `SignatureCeremony` ceremony, proven end-to-end (24/24 `test_qms_deviation.py` passed + a live challenge→sign→close round trip against the demo DB) — the other 24 pairs remain fully open, still blocking | — (open) | Head of Quality + Regulatory Affairs + QMS module owner |
 | SG-139 | D | no | Documents 03/04 declare 7 API operations that are not implemented; Document 113 §6 records no exposure boundary for SPEC-GXP-001/002 | — (open) | Platform Architect + Contract Owner |
 | SG-140 | E | no | Document 101 §5, Document 113 §2 and the implementation give three different error envelopes; the built one omits `correlation_id` | — (open) | Contract Owner (API) + Platform Architect |
 | SG-141 | R | no | Signature meaning `Disposition` is issued in production but is not in Document 04's SIG-FR-003 catalogue and has no approval record | — (open) | Head of Quality + Signature module owner |
@@ -1847,6 +1847,48 @@ test_release_fails_closed_pending_signature_policy`. Folded into this gap rather
 since it's the identical root cause (Document 106 hasn't been extended for any WP-01+/WP-02 module built
 after its own baseline was approved).
 
+**2026-09-07 — `(product_version, release)` PARTIALLY RESOLVED, project-owner-directed.** Hit live while
+demoing: every attempt to release a Product Master version (including as Admin) failed with
+`SIGNATURE_POLICY_UNRESOLVED`, correctly, per this gap. Asked directly which of three options to take
+(self-signed by Admin / no signature required / leave unresolved) — chose **self-signed by Admin**. Added:
+- Floor row `("product_version", "release", "Released", "Admin", False, True, False)` in
+  `scripts/seed.py` `SIGNATURE_POLICY_FLOOR` for the live DB. **Deliberately not mirrored into
+  `tests/conftest.py`'s own global `SignaturePolicy` seed list** — unlike SG-176/177's permission-code
+  gotcha, at least 6 test files (`test_release.py`, `test_device.py`, `test_qa_review.py`,
+  `test_batch_execution.py`, `test_packaging.py`, `test_yield_reconciliation.py`) already add their own
+  *local*, per-test `product_version`/`release` row (`signature_required=False`, for cheap unsigned-release
+  test setup unrelated to what they're actually testing) — a global row would collide with every one of
+  them on `UniqueConstraint(record_type, action)`. `test_product_master.py`'s own tests that need the real,
+  signed version add their own local row instead (`_add_release_signature_policy` helper), same pattern as
+  everyone else, just with the real values. Not an
+  independent-QA-Releaser pattern like `batch.release`/`qc_test_specification.release` — `product.release`
+  is Admin-only in `ROLE_PERMISSIONS` and no independence-check code exists for this action (same honest
+  limitation already documented elsewhere for Product Master's missing author/release role split). This is
+  this project's own considered floor row, not a guess at what Document 106 will eventually say — the rest
+  of SG-035 (vault_object/release, record_correction/complete, rule/release, and
+  product_version/{suspend,reinstate}) remains open, deliberately not extended by this change.
+- New `POST /products/v1/{product_version_id}/signature-challenges` endpoint
+  (`app/modules/product_master/router.py`) — Product Master had no challenge-issuing endpoint at all
+  before this; only supports `action="release"`, refusing `suspend`/`reinstate` rather than guessing they
+  should get the same treatment.
+- New `scripts/sync_signature_policies.py` — Document 106 floor rows had no re-runnable sync script the
+  way `sync_permissions.py` exists for the permission catalogue; `scripts.seed` only upserts them as part
+  of a destructive fresh-org/site/user reseed, which can't be run against the live demo database. Mirrors
+  `sync_permissions.py`'s upsert style; never deletes a row (removing one would flip a resolved action back
+  to fail-closed for everyone, the opposite failure mode this floor exists to prevent).
+- Frontend: `frontend/src/app/product-master/page.tsx`'s Release button now opens the shared
+  `SignatureCeremony` component (`frontend/src/components/shared/SignatureCeremony.tsx`, already used by
+  Inventory's adjustment-approve flow) instead of posting unsigned — a real password re-entry ceremony,
+  not a bypassed one.
+- Tests: `tests/test_product_master.py::test_release_fails_closed_pending_signature_policy` replaced with
+  `test_release_requires_signature_and_succeeds_with_a_valid_challenge` (unsigned release now asserts
+  `MISSING_SIGNATURE`/428, then a real challenge+password release succeeds, then `suspend` on the same
+  now-released version still asserts `SIGNATURE_POLICY_UNRESOLVED`/409 — proving the remaining SG-035
+  scope is still correctly unresolved, not silently dropped). Two other tests that were bypassing the gap
+  with their own inline `signature_required=False` policy row (which would now conflict with the real
+  floor row's `UniqueConstraint(record_type, action)`) were updated to go through the real ceremony
+  instead.
+
 ```yaml
 spec_gap_id: SG-035
 title: "Document 106's signature-policy floor does not cover vault_object/release, record_correction/complete, rule/release, or product_version/{release,suspend,reinstate}"
@@ -1877,9 +1919,14 @@ affected_functions:
   - app/modules/vault/commands.py::create_vault_release
   - app/modules/vault/commands.py::complete_correction
   - app/modules/rules/commands.py::release_rule
-  - app/modules/product_master/commands.py::release_product_version
-  - app/modules/product_master/commands.py::suspend_product_version
-  - app/modules/product_master/commands.py::reinstate_product_version
+  - app/modules/product_master/commands.py::release_product_version (RESOLVED 2026-09-07)
+  - app/modules/product_master/commands.py::suspend_product_version (still open)
+  - app/modules/product_master/commands.py::reinstate_product_version (still open)
+  - app/modules/product_master/router.py::post_version_signature_challenge (2026-09-07, new)
+  - scripts/seed.py SIGNATURE_POLICY_FLOOR product_version/release row (2026-09-07, new)
+  - scripts/sync_signature_policies.py (2026-09-07, new)
+  - tests/test_product_master.py _add_release_signature_policy (2026-09-07, new, per-test local row -- deliberately not added to conftest.py's global list, see resolution note above)
+  - frontend/src/app/product-master/page.tsx Release button -> SignatureCeremony (2026-09-07)
 why_material: >
   Whether these actions require a signature, what meaning, and which signer class/count is a
   regulated decision (SIG-FR-004) that cannot be inferred from engineering convenience — it must come from
@@ -1891,14 +1938,19 @@ risk_if_guessed: >
 options:
   - (A) Extend Document 106's sig_policy table to cover (vault_object, release), (record_correction,
     complete), (rule, release) and (product_version, release/suspend/reinstate) — recommended; same
-    remediation path as SG-004's original scope.
-  - (B) Leave all of them permanently unresolved/fail-closed (rejected — blocks correction completion,
-    rule release, and product release/suspend indefinitely, which are real product capabilities, not edge
-    cases).
+    remediation path as SG-004's original scope. Still the properly-sourced path for the pieces this pass
+    didn't touch.
+  - (B) Leave all of them permanently unresolved/fail-closed (rejected for product_version/release once
+    asked directly, in favor of (C); still the current state for every other pair in this gap).
+  - (C) Add this project's own considered floor row for (product_version, release) only -- self-signed by
+    Admin, not an independent QA Releaser (no such role/permission split exists for Product Master) --
+    done 2026-09-07, explicitly project-owner-directed after being asked. vault_object/release,
+    record_correction/complete, rule/release, and product_version/{suspend,reinstate} all remain
+    unresolved/fail-closed.
 blocking: false
 owner: Head of Quality + Product Owner
-resolution_document: "Document 106 (pending extension)"
-status: OPEN
+resolution_document: "2026-09-07: product_version/release resolved (self-signed by Admin, project-owner-directed) -- POST /products/v1/{id}/signature-challenges added, scripts/sync_signature_policies.py added for re-runnable floor sync, frontend wired to the shared SignatureCeremony component. 2026-09-08: recipe_version/release ALSO resolved (project-owner-directed, asked directly among independent-QA-Releaser / self-signed / RBAC-only / leave-unresolved -- chose independent QA Releaser): floor row ('recipe_version','release','Released','QA Releaser',independent=True,signature_required=True); required_role_id + requires_independent_signer are enforced in release_recipe_version() (against the recipe version's own `Created` audit event for the author), matching the bespoke IND-001/CON-FR-014 pattern since resolve_signature_requirement() does not read those columns; new POST /recipes/v2/drafts/{id}/signature-challenges endpoint; frontend Release button wired to SignatureCeremony. 2026-09-08 (later, Decision 2): product_version/release UPGRADED from self-signed-by-Admin to the same independent-QA-Releaser model -- floor row changed to ('product_version','release','Released','QA Releaser',independent=True,signature_required=True); release_product_version() now runs the same required_role_id + requires_independent_signer enforcement as release_recipe_version() (against the product version's own `Created` audit event); product.author moved to a new Process Engineer + Admin grant, product.release to QA Releaser + Admin; new Document 107 rows IND-021 (ProductVersion/release/AUTHOR PROHIBITED) and SOD-021 (Process Engineer / QA Releaser standing pair, REPORT_ONLY -- customer Quality org raises to PROHIBITED at PQ) plus a new re-runnable scripts/sync_sod_rules.py. vault_object/release, record_correction/complete, rule/release, and product_version/{suspend,reinstate} remain open, pending Document 106"
+status: PARTIALLY RESOLVED (product_version/release AND recipe_version/release both signed by an independent QA Releaser, with author!=releaser enforced; vault_object/release, record_correction/complete, rule/release, and product_version/{suspend,reinstate} remain OPEN)
 ```
 
 ### SG-036 — The 11 combined Document 06 + Document 08 Frappe UI surfaces cannot be built yet
@@ -2330,6 +2382,13 @@ policies" would mean guessing whether that's one JSON blob, three separate polic
 else — exactly the class of regulated-content guess SG-022/023/043 already declined to make. RCP-FR-009
 (Material requirements) and RCP-FR-010 (Equipment requirements) are deferred.
 
+**2026-09-09 note (not a resolution):** this gap is now the direct blocker for SG-048 #012/#013
+(BAT-FR-012 material consumption / BAT-FR-013 equipment eligibility at batch step start) — the
+project owner asked for that wiring, and the reason it was not attempted is that `RecipeStep` has no
+field anywhere declaring which material or equipment a step needs; that declaration is exactly what
+this gap's `recipe_material_requirement`/`recipe_equipment_requirement` schema decision would define.
+Still open, still `owner: Data Architect + Recipe module owner`.
+
 ```yaml
 spec_gap_id: SG-045
 title: "recipe_material_requirement / recipe_equipment_requirement (Document 10) are ambiguous policy prose, not a column list"
@@ -2498,8 +2557,8 @@ options:
   - (B) Guess the schema now (rejected — the risk above).
 blocking: false
 owner: Data Architect + Batch Execution module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "2026-09-09, project-owner-directed (asked directly after a live demo batch got permanently stuck: every step past the recipe's root step stayed 'pending' forever because nothing could ever complete a step -- chose 'build step completion now' over 'leave it documented'). gxp_step_result built (migration db47f27cf18b_0092/services/gxp-api/app/modules/batch_execution/models.py::StepResult): the polymorphic-value question SG-047 flagged is resolved by reusing gxp_recipe_parameter's own already-DDL-ready data_type/uom/Numeric(24,8) precision as the discriminator, not by inventing a new Document 110 policy. New commands record_step_results/complete_step (commands.py) + POST /batches/v1/{id}/steps/{id}/results, /complete, /signature-challenges (router.py); both signed per Document 106 rows 19/21 (new SIGNATURE_POLICY_FLOOR rows batch_step/results, batch_step/complete -- scripts/seed.py, scripts/sync_signature_policies.py, tests/conftest.py); BAT-FR-006's readiness computation gained a runtime half (service.py::recompute_readiness) so a 'pending' successor becomes 'ready' once every declared predecessor is 'complete'. gxp_step_evidence_link and gxp_batch_hold are NOT built -- evidence-manifest alignment with Document 06 and a hold record's signature-policy binding are separate judgment calls this change does not make; SG-047 stays open for those two only. Verified: tests/test_batch_execution.py (21/21 passed, including 3 new tests) plus test_batch_flow.py/test_release.py/test_qa_review.py as an untouched-module control (34/34 passed). FURTHER PARTIAL RESOLUTION, same day, project-owner-directed (asked which of six remaining demo gaps to build; chose step-level hold + Production Complete + deferred material/equipment linkage): a narrow, step-scoped slice of gxp_batch_hold is now built -- StepHold (migration a6d525b2d585_0093), one row per hold episode (released_at IS NULL = active), both hold and resume signed reusing Document 106 row 14/17's shapes (new SIGNATURE_POLICY_FLOOR rows batch_step/hold, batch_step/resume) via new commands hold_step/resume_step + POST .../steps/{id}/hold, /resume. This resolves BAT-FR-020's step scope only -- gxp_batch_hold's full generality (arbitrary scope, quality-event linkage) and gxp_step_evidence_link both remain open. Verified: tests/test_batch_execution.py now 25/25 (2 more new tests) plus the same 34/34 control."
+status: PARTIALLY RESOLVED (gxp_step_result + a step-scoped slice of gxp_batch_hold only; gxp_step_evidence_link and gxp_batch_hold's full generality remain open)
 ```
 
 ### SG-048 — 24 Document 11 requirements depend on modules/infrastructure that don't exist yet
@@ -2583,8 +2642,8 @@ options:
   - (B) Build speculative versions now against guessed dependency shapes (rejected — the risk above).
 blocking: false
 owner: Platform Architect
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "2026-09-09, project-owner-directed, PARTIAL: two of the 24 requirements resolved. #020 (batch hold, step scope) -- see SG-047's further-partial resolution note (StepHold, migration a6d525b2d585_0093, signed hold/resume per Document 106 row 14/17's shapes). #026 (production completion, steps-completeness sub-clause only) -- gxp_batch.state gains 'production_complete', reachable once every gxp_batch_step is 'complete' (the yield/reconciliation sub-clause still needs Document 17, not checked); signed per Document 106 row 16 (new SIGNATURE_POLICY_FLOOR row batch/production_complete), POST /batches/v1/{id}/production-complete + /signature-challenges, error PRODUCTION_NOT_COMPLETE added matching Document 11 §7's own vocabulary. #012/#013 (material consume / equipment eligibility at step start) were considered and explicitly NOT built this pass -- both require RecipeStep to declare which material/equipment a step needs, and that declaration is itself SG-045's still-open, unresolved schema question (recipe_material_requirement/recipe_equipment_requirement -- 'tolerance rule', 'alternative policy', 'consume mode', 'calibration/qualification/cleaning policies' are policy concepts, not typed columns); building #012/#013 without SG-045 first would mean guessing that schema too, the exact risk this entry already names. The other 20 requirements remain fully open, same reasoning as before. Verified: tests/test_batch_execution.py 25/25 (2 new tests for hold/resume, 2 for production-complete) plus test_batch_flow.py/test_release.py/test_qa_review.py as an untouched-module control, 34/34."
+status: PARTIALLY RESOLVED (2 of 24 -- #020, #026; #012/#013 explicitly deferred, blocked on SG-045; 20 remain open)
 ```
 
 ### SG-049 — `device_component_usage`/`device_test_result`/`device_defect`/`device_evidence_inheritance` (Document 12) are prose-only field-name lists, not DDL-ready
@@ -4569,6 +4628,36 @@ list a `warehouse_location`. Same class as SG-058/061/064/068/069's "requirement
 document's own API list" pattern. Built as seed-only master data (same treatment as `iam.sites`/
 `iam.organizations`, and the RFQ precedent from SG-058), never as a guessed endpoint.
 
+**2026-09-07 — PARTIALLY RESOLVED for the read side only, project-owner-directed.** The Inventory UI
+(`frontend/src/app/inventory/page.tsx`, Transfer/Cycle-count/Adjustment forms) needed a way to pick an
+existing warehouse location without asking an operator to hand-type a raw UUID copied out of the
+production database — a worse usability/safety anti-pattern than the contract-conflict risk this gap
+originally weighed. `why_material`/`risk_if_guessed` below were written about a **write** contract
+(create/update/list together, as Document 20's data model implies a full CRUD entity); a **read-only**
+`GET /inventory/v1/warehouse-locations?site_id=...` listing carries none of that risk — there is no write
+contract to mismatch, and a future Document 113 addendum's create/update operations remain free to land
+exactly as originally reasoned. Added alongside a matching `GET /material-lots/{lot_id}/containers`
+listing (`material_container` — no prior resolution against this one; same additive-read reasoning).
+
+**2026-09-07 (later same day) — write side also RESOLVED, project-owner-directed.** Locations were
+genuinely uncreatable through the app — the read-only fix above just made the dropdown usable for
+*existing* seed-only rows, it didn't let anyone add a new one. Explicitly asked the project owner whether
+to build create capability given this reopens the exact write-contract risk `why_material`/
+`risk_if_guessed` describe below; they said yes, and specified a dedicated permission code (option
+below: neither the "no RBAC gate" precedent used for Material/Supplier master creation, nor Admin-only).
+Added `POST /inventory/v1/warehouse-locations` (`create_warehouse_location()`,
+`services/gxp-api/app/modules/material/commands.py`), gated by a new `warehouse_location.create`
+permission code granted to Admin/Supervisor only (`scripts/seed.py` — Operator excluded, matching this
+file's existing "who defines the layout vs who executes against it" split for `batch_execution.create`/
+`device.create`), plus a "New location" button/modal in the Inventory page. This is this project's own
+considered create contract (site_id + warehouse_code + location_code + zone_type, duplicate-checked,
+full audit/outbox), not a guess at a hypothetical future Document 113 addendum's contract — the
+risk that addendum's contract might differ still exists and isn't resolved by this, it's accepted by the
+project owner as the practical tradeoff against the app being otherwise permanently unable to add a
+location. No update/delete/rename capability exists — only create. See
+`services/gxp-api/app/modules/material/router.py` (`post_create_warehouse_location`) and
+`frontend/src/app/inventory/page.tsx` (`NewLocationModal`).
+
 ```yaml
 spec_gap_id: SG-081
 title: "warehouse_location (INV-FR-001/002) has no CRUD operation anywhere in Document 20's own 8-op API list"
@@ -4587,21 +4676,35 @@ affected_modules:
 affected_functions:
   - app/modules/material/models.py WarehouseLocation
   - scripts/seed.py WAREHOUSE_LOCATION_FLOOR
+  - app/modules/material/router.py list_warehouse_locations (2026-09-07, read-only)
+  - app/modules/material/commands.py create_warehouse_location (2026-09-07, write, project-owner-directed)
+  - app/modules/material/router.py post_create_warehouse_location
+  - scripts/seed.py warehouse_location.create permission code + Admin/Supervisor grants
 why_material: >
-  Inventing a CRUD endpoint the source document's own API section doesn't declare risks conflicting with a
-  future Document 113-style API-completion addendum that resolves this gap with a different contract.
+  Inventing a *write* CRUD endpoint the source document's own API section doesn't declare risks
+  conflicting with a future Document 113-style API-completion addendum that resolves this gap with a
+  different contract. (A plain read-only listing, added 2026-09-07, does not carry this risk. The create
+  endpoint added later the same day accepts that risk deliberately, project-owner-directed -- see
+  resolution notes above; the risk itself is not eliminated, only knowingly accepted.)
 risk_if_guessed: >
-  A guessed endpoint contract would very likely mismatch the real one a future addendum defines, and every
-  prior document in this project has treated "no operation in the document's own API list" as a gap to
-  raise, not a decision to guess around.
+  A guessed *write* endpoint contract would very likely mismatch the real one a future addendum defines,
+  and every prior document in this project has treated "no operation in the document's own API list" as a
+  gap to raise, not a decision to guess around. A read-only listing has no contract to mismatch; the
+  create endpoint does carry this exact risk and was added anyway, on explicit project-owner instruction,
+  not as an unnoticed guess.
 options:
   - (A) Author a Document 113-style API-completion addendum adding warehouse_location CRUD to Document 20's
-    own API section, then implement -- recommended.
-  - (B) Guess the endpoint/contract now (rejected -- the risk above).
+    own API section, then implement -- still the properly-sourced path if Document 113 is ever written;
+    update/delete/rename remain unbuilt and would still benefit from this.
+  - (B) Guess the full CRUD contract now (rejected as a blanket approach -- the risk above).
+  - (C) Add a read-only GET listing only -- done 2026-09-07 (first pass).
+  - (D) Add a create-only endpoint with this project's own considered contract (not (A)'s addendum, not a
+    blind guess -- a scoped, RBAC-gated, audited create) -- done 2026-09-07 (second pass, same day),
+    explicitly project-owner-directed after being asked. Update/delete/rename remain unbuilt.
 blocking: false
 owner: Data Architect + Materials module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "2026-09-07: read listing + create endpoint both live (GET + POST /inventory/v1/warehouse-locations); update/delete/rename still open"
+status: PARTIALLY RESOLVED (read + create only; update/delete/rename still OPEN)
 ```
 
 ### SG-082 — Document 20 requirements needing infrastructure this codebase does not have yet: barcode/scanner, storage-condition monitoring, label reprint, ERP reconciliation
@@ -7997,6 +8100,44 @@ only; it does not touch the policy-data half — `create`'s policy row is still 
 transition remains unsatisfiable by any actor until Document 106's approver supplies it. `blocking: true`
 and `status: OPEN` are unchanged.
 
+**`deviation_record`/disposition+close PARTIALLY RESOLVED 2026-09-09, project-owner-directed** — hit live
+while a user was testing the DDCP demo flow ("This transition requires an electronic signature ... hasn't
+been configured"); asked directly which of QA-Releaser-independent-of-investigator/owner vs. role-gate-only
+vs. a different rule to take, and was told to follow Document 106/107 as written ("signature policy will be
+as per the ebmr-edhr docs — there is mention [of] all the things"). Document 106 rows 71/73 (SPEC-QMS-001)
+already name a concrete `meaning`/signer-class/independence value for both — the only missing piece was
+mapping the abstract signer classes to a real role, resolved the same way as every other `Released`/
+`Approved`-class action already seeded (`oos_record.disposition/close`, `certificate.issue/rotate/revoke`,
+`security_incident.close`): "QA Approver / Batch Release" / "QA Approver for the record class" → **QA
+Releaser** — the only role RBAC already grants `qms_deviation.disposition`/`.close` to. Two new
+`SIGNATURE_POLICY_FLOOR` rows in `scripts/seed.py` (`("deviation_record", "disposition", "Released", "QA
+Releaser", True, True, True)`, `("deviation_record", "close", "Approved", "QA Releaser", True, True,
+True)`, `reason_required=True` per Document 106's own Reason column — already satisfied by the
+always-mandatory `disposition_rationale`/`conclusion` fields, no separate `reason` param added) and
+applied to the live demo DB via `scripts/sync_signature_policies.py` (2 created). Because
+`resolve_signature_requirement()` itself still doesn't read `required_role_id`/`requires_independent_signer`
+(same limitation SG-035 hit for `product_version`/`recipe_version` release), `qms/commands.py::_resolve_signature()`
+now enforces both explicitly: the required-role check against `effective_role_names()`, and the
+independence check against the record's own `investigator_subject_id`/`owner_subject_id` — Document 107
+IND-005 names exactly those two fields for `close` ("(Investigator, Owner) → Prohibited"); `disposition`'s
+broader "independent of every production performer on the record" wording has no narrower Document 107
+rule, so the same two-field check applies there too, using the existing `SodIndependenceRequiredError`
+(same error type `close_security_incident()` already uses for Document 106 row 140's identical shape).
+Frontend (`frontend/src/app/deviations/[id]/page.tsx`) was also fixed in the same pass: disposition/close
+previously posted the mutation directly with no `challenge_id`/`reauth_password` at all (harmless only
+because `SIGNATURE_POLICY_UNRESOLVED` always fired first) — now wired through the shared
+`SignatureCeremony` component (challenge → password re-entry → signed mutation), same pattern
+`quality/oos/page.tsx` already uses for the identical `disposition`/`close` shape. Verified, not just
+inspected: `test_qms_deviation.py` **24/24 passed** after the code change, plus a live end-to-end round
+trip against the demo DB (`ebmr_new_gxp`) — a fresh deviation walked OPEN → ... → IMPACT_ASSESSMENT as
+`operator1`/`supervisor1`/`qa.reviewer`, then disposition+close as `qa.releaser` (independent of both)
+succeeded with real `signature_id`s and `change_control_required=False`/`training_required=True` persisted
+exactly as sent; a same-record attempt by `admin` (who held both QA Releaser and, as the record's own
+`owner_subject_id`, the disqualifying identity) was correctly refused with `SOD_INDEPENDENCE_REQUIRED`,
+confirming the independence check is live, not merely present. The other 24 (record_type, action) pairs
+in the table above remain fully open and still fail closed — this update touches only `deviation_record`.
+`blocking: true` and `status: OPEN` are unchanged for that reason.
+
 ```yaml
 spec_gap_id: SG-138
 title: "WP-05 QMS record types have no Document 106 signature policy rows, so 26 transitions are unsatisfiable"
@@ -9092,6 +9233,95 @@ description: >
   Left NOT_STARTED rather than guessed. This is broader than DDCP alone -- any future module composition
   that needs to relate a DDCP/batch-execution-family batch to a legacy-batch-family batch hits the same
   wall; PFS-FR-020 is simply the first place this pass encountered it.
+
+**UPDATE 2026-09-08 -- detailed migration scope, project-owner-directed ("scope out the SG-149/SG-173
+unification now" -- not yet authorized to execute). This corrects and expands the FK-dependent count from
+the 2026-09-01 UPDATE below and adds the facts needed to actually authorize a cutover.**
+
+**Live-DB fact that changes the calculus: `ebmr.gxp_batch` has zero rows right now.** Queried directly
+against the running demo DB (`ebmr_new_gxp`): `ebmr.batches` = 2 rows (1 placeholder product's smoke batch
+from earlier code-testing, 1 `MJ-PFS-B-SMOKE-01` added this session), `ebmr.gxp_batch` = 0 rows,
+`ddcp.constituent_handoff` = 3 rows (all FK'd to the legacy placeholder batch). No customer has ever used
+`/batch-execution` to create a real batch in this deployment. **This means the data-migration risk this
+gap's own `risk_if_guessed` section warns about is, as of today, close to zero** -- there is no real
+production batch history on either side to lose. This is the cheapest this migration will ever be; it only
+gets harder once either side accumulates real customer batches.
+
+**Corrected FK-dependent inventory (full `ForeignKey(...)` sweep, superseding SG-173's 2026-09-01 count):**
+
+| Table | External FK dependents (excluding the owning module's own tables) | Column count |
+|---|---|---|
+| `ebmr.batches` (scaffold) | `ddcp/models.py` (11 columns, 9 tables -- `ddcp_unit_binding`, `device_assembly_record`, `reusable_device_pairing`, `constituent_handoff`, `fill_operation`, `ddcp_release_checkpoint`, `production_count_ledger`, `drug_coating_usage_ledger`, `batch_evidence_manifest`), `material/models.py` (7 columns), `machine_integration/models.py` (2 columns), `equipment/{sterilization_models,aseptic_models,models,cleaning_models,em_models}.py` (7 columns across 5 files -- **not the "1" SG-173 originally counted; that grep missed 4 of the 5 equipment files**) | **27** |
+| `ebmr.gxp_batch` (authoritative) | `packaging/models.py` (2), `yield_reconciliation/models.py` (2), `qc/models.py` (1), `release/models.py` (1), `qa_review/models.py` (1), `device/models.py` (1) | **8** |
+
+**Field-coupling is shallow, which lowers mechanical risk.** Across every legacy-side dependent
+(`ddcp`, `material`, `machine_integration`, `equipment`), the *only* `Batch` attributes ever read are
+`.id`, `.site_id` (65 call sites) and `.status` (exactly 2 call sites, both in
+`ddcp/commands.py::get_readiness()`: `if batch.status not in ("issued", "in_execution")`). Nothing reads
+`batch.product_id`/`batch.recipe_id`/`batch.recipe_version` -- the fields that don't exist on `gxp_batch`
+at all (it has `product_version_id`/`recipe_version_id` instead). `gxp_batch.state` uses the identical
+string values `"planned"`/`"issued"`/`"in_execution"` for its first three states, so that one check
+becomes a field-name rename (`.status` -> `.state`), not a value remap.
+
+**Where it is not shallow -- the real behavioural gap:** legacy `ebmr.batches` has its own terminal
+disposition states (`production_complete`, `qa_review`, `released`, `rejected`) driven entirely inside
+`app/modules/batch/commands.py` (`submit_for_review`, `review_batch`, `release_batch` -- this guide's §16
+Phase 12). `gxp_batch`'s own lifecycle (`ALLOWED_TRANSITIONS` in `batch_execution/models.py`) stops at
+`on_hold`/`aborted`; its disposition is handled entirely by two *separate* modules, `qa_review` and
+`release` (v1), which is how `packaging`/`qc`/`yield_reconciliation` already expect it to work. **Retargeting
+DDCP's FK to `gxp_batch` is not just a schema/import change -- it requires DDCP's own "batch is done, go to
+QA" step to call `qa_review`/`release/v1` instead of the legacy `batch.review`/`batch.release` endpoints.**
+That is a Document 54 requirements-compatibility question (does `release/v1`'s generic eligibility check
+already cover DDCP's evidence-freeze/IND-001 preconditions that Phase 11's readiness endpoint computes, or
+does it need a DDCP-specific extension?), not an engineering-only decision this pass can make.
+
+**Independent bug found while scoping, unrelated to which side wins but worth fixing regardless:**
+`app/modules/iam/commands.py::delete_site()`'s blocking-reference guard (`find_blocking_reference`) checks
+only the legacy `Product`/`Batch` tables (and `Material`/`MaterialLot`/`UserSiteRole`) before allowing a
+site to be deleted -- it never checks `gxp_product_version`, `gxp_recipe_version` or `gxp_batch`. **A site
+with real Product Master/Recipe Master/`batch_execution` data can be deleted today with no warning.** This
+is a real, narrow, low-risk fix independent of the larger unification -- add the three `gxp_*` tables to
+the same guard list -- and does not require resolving which side is authoritative first.
+
+**Recommended phased plan (Doc 100/70 expand -> migrate -> contract, `.claude/rules/08-database-migrations.md`),
+scoped to Batch only (Product/Recipe are lower-risk per SG-173's 2026-09-01 note -- no external FK
+dependents -- and are a separate scope decision):**
+
+1. **Phase 0 (independent, do anytime):** fix `delete_site()`'s guard to also check the three `gxp_*`
+   tables. No dependency on anything below.
+2. **Phase 1 -- data disposition (needs an explicit yes/no from the project owner before any migration
+   touches the DB):** the 2 rows in `ebmr.batches` and the 3 in `ddcp.constituent_handoff` are demo/
+   code-testing artifacts (`PFS-DEMO-PROD`, `MJ-PFS-B-SMOKE-01`), not customer records. Recommend deleting
+   them via a controlled repair migration, the same pattern already used for `RCP-SMOKE*`/`PRD-SMOKE*` in
+   migrations `0087`/`0088` -- cheaper and cleaner than writing a one-off row-migration path for 5 rows
+   that will never be looked at again. **Not done without confirmation -- these are still real rows in a
+   real table, Hard Prohibition #10.**
+3. **Phase 2 -- FK repoint (mechanical, ~27 column edits across 4 modules' `models.py` + one Alembic
+   migration dropping/re-adding the FK constraints on the same columns + swapping each module's
+   `from app.modules.batch.models import Batch` to `from app.modules.batch_execution.models import Batch`
+   + the one `.status`->`.state` rename in `ddcp/commands.py`):** low engineering risk given the shallow
+   field coupling found above; the bulk of the diff is mechanical.
+4. **Phase 3 -- behavioural cutover (the real work):** move DDCP's post-completion flow off
+   `batch.review`/`batch.release` onto `qa_review`/`release/v1`, after confirming (project owner + Doc 54
+   owner) that `release/v1`'s eligibility model already accounts for DDCP's evidence-freeze/IND-001
+   preconditions or extending it if not. Update this guide's §16 accordingly once decided.
+5. **Phase 4 -- frontend consolidation:** once Phase 3 lands, retarget `/batches/new`'s create form (and
+   `/batches/[id]`'s step/review/release UI) at `gxp_batch`, or retire those pages in favor of
+   `/batch-execution` + a DDCP-aware step/evidence UI ported over -- whichever the project owner prefers;
+   this is the last step, after the backend fully agrees on one table, not before.
+6. **Phase 5 -- contract (after a bake period, Doc 100 "at least two releases between expand and
+   contract"):** drop `app/modules/batch`'s routes/tables (`batches`, `batch_steps`, `batch_reviews`,
+   `batch_releases`) entirely.
+
+**What remains a project-owner decision even after this scope (not resolved by this update):**
+1. Delete vs. migrate the 5 existing demo rows (Phase 1) -- leaning delete, not decided.
+2. Whether `release/v1`'s generic eligibility check is sufficient for DDCP's own disposition preconditions,
+   or needs a DDCP-specific extension (Phase 3) -- a Document 54/15 requirements question, not schema.
+3. Timing -- execute now while both sides hold near-zero real data (cheapest window this migration will
+   ever have), or after go-live (harder, real customer batches on one or both sides by then).
+4. Scope -- Batch only (this update), or bundle Product/Recipe (SG-173's other two pairs) into the same
+   pass since they carry materially lower migration risk (no external FK dependents at all).
+
 source_documents:
   - Document 54 (SPEC-DDCP-001, PFS-FR-020)
   - Document 16 (SPEC-EBMR-007, Packaging/Labeling/Reconciliation)
@@ -10694,6 +10924,13 @@ This does not change the recommendation (option A below), only its accuracy and 
 migration: 4 real modules carry a hard schema dependency on the wrong table for Batch, not the 1
 (`ddcp`) implied by the original note.
 
+**UPDATE 2026-09-08 -- full detailed migration scope for Batch (exact column counts, live-DB row counts,
+field-coupling analysis, phased plan, `delete_site()` bug found along the way, and the open decisions still
+reserved for the project owner) moved into SG-149 to avoid duplicating it here -- see SG-149's own
+2026-09-08 update.** Headline: `ebmr.gxp_batch` currently holds zero rows in the live demo DB, so the
+data-migration risk this entry (SG-173) warns about is near-zero today -- this is the cheapest window this
+cutover will ever have.
+
 What is **not** resolvable without a project-owner decision: whether `product`/`recipe`/`batch` ever held
 real customer/demo data that would need migrating into the `_master`/`_execution` tables before removal,
 and the actual cutover plan for `ddcp`, `material` and `iam` (all three still importing the non-authoritative
@@ -10856,4 +11093,810 @@ blocking: false  # no live consumer exists yet to actually mis-route; a real but
 owner: Platform Architect
 resolution_document: "-- (open)"
 status: OPEN
+```
+
+### SG-175 — Product Master's combination-product fields and DDCP's own profile records are two unwired halves of the same concept
+
+Found while answering a user question about `/ddcp`'s "Product family" picker: is it driven by the
+platform's real Product Master data, or hardcoded? It's hardcoded — `frontend/src/components/ddcp/catalog.ts`
+declares a fixed 4-entry `DDCP_FAMILIES` array (Prefilled syringe/injectable, Autoinjector, Inhalation
+MDI/DPI, Coated/combination device), one per SPEC-DDCP-001..004 document, each wired to its own dedicated
+backend router and its own `ddcp.ddcp_profile_version` row (`site_id + profile_code + version` identity,
+no FK to anything in Product Master). That much is a defensible design choice on its own — DDCP profiles
+are engineering/manufacturing detail, not product commercial identity.
+
+What isn't defensible is that Product Master (`app/modules/product_master/`, Document 09/SPEC-EBMR-000)
+already models the *concept* of "this product is a combination product, here's its manufacturing profile"
+as first-class fields on `ebmr.gxp_product_version` — and nothing joins that concept to an actual DDCP
+profile record:
+
+- `manufacturing_profile_code` (`String(80)`, NOT NULL) is checked at draft-release time against a closed
+  Python set, not a foreign key: `SUPPORTED_MANUFACTURING_PROFILES = {"injectable_ddcp", "inhalation_ddcp",
+  "drug_eluting_device", "device", "pharma"}` (`product_master/service.py:20`, PRD-FR-032 "profile admission
+  gate"). Three of those five values map conceptually onto three of DDCP's four families (injectable_ddcp
+  ≈ prefilled syringe/injectable, inhalation_ddcp ≈ inhalation MDI/DPI, drug_eluting_device ≈ coated/
+  combination device) — but the string vocabularies don't actually match (`ddcp_profile_version.profile_code`
+  is a free-text business code like `"PFS-DEMO-001"`, not one of these five category tokens), and DDCP's
+  fourth family (Autoinjector, Document 55/SPEC-DDCP-002) has no corresponding `manufacturing_profile_code`
+  value at all — an autoinjector product cannot be correctly declared through this field today.
+- `sterile_profile_id` (`UUID`, nullable) is required by `PRD-FR-010` whenever `manufacturing_profile_code`
+  is `injectable_ddcp`/`inhalation_ddcp` (`STERILE_REQUIRED_PROFILES`, `product_master/models.py:85`) — but
+  the column carries no `ForeignKey(...)` at all. The completeness gate (`PRD-FR-031`, `product_master/
+  service.py:65`) only checks the column is non-NULL; it never verifies the UUID resolves to a real,
+  released record of any kind.
+- `product_family_id` (FK to the real, data-driven `ebmr.gxp_product_family` table) and
+  `combination_product_type` (free-text) are declared on `ProductVersion` and even show up in the frontend's
+  `ProductRow` TypeScript type (`frontend/src/app/product-master/page.tsx:35,38`) — but the Product Master
+  create/edit form never renders an input for either; they are dead fields end to end today, set by
+  no UI path.
+- `ddcp.ddcp_profile_version` carries no reciprocal reference back to `ebmr.gxp_product_version` (or to
+  `gxp_product_family`) either — nothing on the DDCP side records which Product(s) a given profile
+  implements.
+
+**✅ PARTIALLY RESOLVED 2026-09-07 — `sterile_profile_id`'s own "no target table even implied" half only.**
+Found while fixing a client-demo-flagged gap: the field's *own* real target already existed in the
+codebase and was simply never wired up — Document 40 (`equipment.aseptic_profile_versions`, WP-06), the
+literal sterile/aseptic manufacturing profile record (`profile_number`, `required_area_classification`,
+`sterile_input_requirements`, `filter_sterilization_requirements`, etc., state `RELEASED`), already backs
+real functionality elsewhere (`aseptic_commands.create_operation` FK-checks against it). This is a
+different, narrower target than the `ddcp.ddcp_profile_version` join this gap's own options discuss —
+Document 40's profile governs sterile/aseptic *manufacturing process* execution, not combination-product
+*engineering* configuration, and matches `sterile_profile_id`'s name and Document 09's PRD-FR-010 wording
+("released sterile process profile") directly. No new authoritative-linkage decision was made; this only
+makes the already-declared PRD-FR-010 gate real:
+- `product_master/commands.py::_validate_sterile_profile` (called from both `create_draft` and
+  `update_draft`) now rejects a `sterile_profile_id` that doesn't resolve to an existing, `RELEASED`,
+  same-site `equipment.aseptic_profile_versions` row — `ValidationFailedError`, not a silent accept.
+- `product_master/service.py::list_sterile_profiles` + `GET /products/v1/sterile-profiles` gives the
+  frontend real picker data; `frontend/src/app/product-master/page.tsx`'s New/Edit draft modals now render
+  a dropdown of the site's released sterile process profiles instead of a free-text UUID field.
+- Still no DB-level `ForeignKey(...)` on the column (would need a migration; the application-level check
+  above is the same "seed-only master data, checked at the command boundary" precedent
+  `aseptic_commands.create_operation` already established, not a new pattern).
+
+**Everything else in this gap is unchanged and still OPEN**: `manufacturing_profile_code`'s closed-string
+vocabulary vs. DDCP's four families (including the missing Autoinjector mapping), `product_family_id`/
+`combination_product_type` still not rendered in any UI form, and the `ddcp.ddcp_profile_version` ↔
+`ebmr.gxp_product_version` join/cardinality/authority question — all reserved for the project owner as
+originally written below.
+
+The net effect: a Product declared "this is an `injectable_ddcp` combination product requiring a sterile
+profile" has no way to reference which specific released `DdcpProfileVersion` actually governs it, and a
+DDCP profile released through `/ddcp` has no way to declare which Product record it belongs to. The two
+admission/completeness gates Document 09 already defines for exactly this scenario (PRD-FR-010, PRD-FR-032)
+can only check that *some* string/UUID was entered, never that it resolves to a real, released, matching
+combination-product engineering record.
+
+```yaml
+spec_gap_id: SG-175
+title: "Product Master's combination-product fields and DDCP's own profile records are two unwired halves of the same concept"
+class: R  # regulated decision -- which side is authoritative for "this product's manufacturing/combination-product profile", the join key/cardinality, and the migration for existing rows
+description: >
+  ebmr.gxp_product_version (Document 09/SPEC-EBMR-000, app/modules/product_master) declares
+  manufacturing_profile_code (validated only against a closed 5-value Python set, no FK), sterile_profile_id
+  (bare UUID, no FK, no target table even implied) and combination_product_type/product_family_id (both
+  present in the model and the frontend's TypeScript type but never rendered in any UI form). None of these
+  reference ddcp.ddcp_profile_version, the actual authoritative combination-product engineering record
+  produced by /ddcp (app/modules/ddcp, Documents 54-57/SPEC-DDCP-001..004). The two admission/completeness
+  gates that already exist for this (PRD-FR-010 sterile-profile requirement, PRD-FR-032 profile admission
+  gate) therefore cannot verify against a real released DDCP profile -- they only check a string is in an
+  allowed set or a UUID column is non-NULL. The frontend compounds this: DDCP's own "Product family"
+  picker (frontend/src/components/ddcp/catalog.ts) is a hardcoded 4-entry list wired to nothing in Product
+  Master, and Product Master's create/edit form never exposes the fields (product_family_id,
+  combination_product_type) that would need to carry the link. Additionally, DDCP's Autoinjector family
+  (Document 55) has no corresponding manufacturing_profile_code value in Product Master's closed set at
+  all, so that family cannot even be declared correctly today regardless of linkage.
+source_documents:
+  - Document 02 (DOC-002) AG-05
+  - Document 09 (SPEC-EBMR-000) PRD-FR-004, PRD-FR-006, PRD-FR-009, PRD-FR-010, PRD-FR-031, PRD-FR-032
+  - Document 54 (SPEC-DDCP-001) PFS-FR-001, PFS-FR-002
+  - Document 55 (SPEC-DDCP-002)
+source_requirement_ids:
+  - PRD-FR-009
+  - PRD-FR-010
+  - PRD-FR-032
+  - PFS-FR-001
+affected_modules:
+  - SPEC-EBMR-000
+  - SPEC-DDCP-001
+  - SPEC-DDCP-002
+  - SPEC-DDCP-003
+  - SPEC-DDCP-004
+affected_functions:
+  - app/modules/product_master/models.py (ProductVersion.manufacturing_profile_code, sterile_profile_id, product_family_id, combination_product_type)
+  - app/modules/product_master/service.py (validate_completeness PRD-FR-031, PRD-FR-032/PRD-FR-010 gates; list_sterile_profiles added 2026-09-07)
+  - app/modules/product_master/commands.py (_validate_sterile_profile added 2026-09-07 -- create_draft/update_draft now FK-check sterile_profile_id against equipment.aseptic_profile_versions)
+  - app/modules/product_master/router.py (GET /products/v1/sterile-profiles added 2026-09-07)
+  - app/modules/ddcp/models.py (DdcpProfileVersion -- no reciprocal reference; still open)
+  - frontend/src/components/ddcp/catalog.ts (DDCP_FAMILIES, hardcoded, not Product-Master-driven; still open)
+  - frontend/src/app/product-master/page.tsx (product_family_id/combination_product_type still declared but never rendered; sterile_profile_id field changed 2026-09-07 from free-text UUID Input to a real Select backed by GET /products/v1/sterile-profiles)
+why_material: >
+  Deciding which store is authoritative for "this product's manufacturing/combination-product profile",
+  what the join key and cardinality are (one Product version to one released DdcpProfileVersion? does a
+  DDCP profile belong to exactly one Product, or can several Product SKUs share one profile?), whether
+  existing rows on either side need backfilling, and how to close the Autoinjector vocabulary gap are all
+  regulated record-authority/data-model decisions CLAUDE.md Section 4 reserves for the project owner --
+  not something to invent silently while fixing a frontend dropdown.
+risk_if_guessed: >
+  Picking a join key or cardinality unilaterally could misassign which DDCP engineering record actually
+  governs a given product's manufacturing/sterile requirements, or silently strand PRD-FR-010's sterile-
+  profile gate as a check that can never truly fail closed (since it has never once verified a real target
+  exists). That is a quality/release-eligibility risk, not a cosmetic one.
+options:
+  - (A) Add a nullable ddcp_profile_version_id FK on ebmr.gxp_product_version pointing at the specific
+    released DdcpProfileVersion that implements it; retire manufacturing_profile_code's closed-string gate
+    in favor of deriving the same category from the linked profile's family; extend the DDCP family set
+    to add the missing Autoinjector mapping. Recommended -- keeps DDCP authoritative for combination-product
+    engineering detail and Product Master authoritative for commercial/regulatory identity, matches how
+    sterile_profile_id was clearly intended to work, and PRD-FR-010/032 become real checks instead of
+    string/non-NULL checks.
+  - (B) Add the reciprocal product_version_id FK on ddcp.ddcp_profile_version instead (DDCP profile
+    declares which Product it belongs to). Rejected as first choice -- DDCP profiles and Product versions
+    do not share a version cadence (a profile can be superseded independently of the product's own release
+    cycle), which complicates "what is currently effective for this product" resolution more than option A.
+  - (C) Wire the frontend DDCP family dropdown to read Product Master's gxp_product_family for display only,
+    with no authoritative FK either direction. Rejected -- cosmetic sync that hides the gap (PRD-FR-010/032
+    still can't verify a real target) rather than resolving it.
+  - (D) Leave unlinked, accepted debt. Rejected -- two of Document 09's own completeness/admission gates
+    already assume this link conceptually; leaving it unwired means those gates can never enforce what they
+    were written to enforce.
+blocking: false  # both sides function independently today; nothing is broken or crashes, but two regulated admission gates are checking the wrong thing
+owner: Platform Architect + Head of Quality (data-integrity sign-off)
+resolution_document: "2026-09-07: sterile_profile_id existence/state/site FK-check + real picker added (product_master/commands.py::_validate_sterile_profile, GET /products/v1/sterile-profiles) against equipment.aseptic_profile_versions -- manufacturing_profile_code/product_family_id/combination_product_type <-> ddcp.ddcp_profile_version linkage/authority question remains open, unchanged. 2026-09-08: the DDCP-linkage half addressed, project-owner-directed -- asked directly which option after the client demo guide surfaced the same gap independently (a comparison of /ddcp's 'Product family' picker against Product Master); chose Option B over the originally-recommended Option A ('Enforced FK + family derived from product', with the version-cadence concern noted above judged manageable here because every DDCP execution op already takes an explicit profile_version_id as a caller-supplied input -- there is no 'currently effective for this product' resolution anywhere in this module for a mismatched cadence to complicate). Migration 0089 adds a nullable ddcp.ddcp_profile_version.product_version_id FK -> ebmr.gxp_product_version.id. All 4 families' create-profile commands (commands.py::create_injectable_profile_version, injector_commands.py::create_injector_profile_version, inhalation_commands.py::create_inhalation_profile_version, coated_device_commands.py::create_coated_device_profile_version) now require it and validate it through a new shared commands.py::_assert_product_version_for_profile helper: the referenced product version must exist, be lifecycle_state='released', and be at the same site; for PFS and Inhalation specifically (the two families with an unambiguous 1:1 Product Master manufacturing_profile_code -- injectable_ddcp, inhalation_ddcp) it must also match that code. Frontend: a new productVersionSelect field type (DdcpFieldControl.tsx's ProductVersionPickerField, a two-step Product-then-released-version picker mirroring Recipe Master's own Product/Product-version dropdowns) added as a required field on all 4 families' profileFields in catalog.ts, showing the picked version's manufacturing_profile_code inline. Verified against the live dev DB (migration applied, column+FK confirmed present) and by import/typecheck (tsc --noEmit, eslint clean); the project's pytest suite could not be run to green in this environment -- both the DDCP test files and an unrelated control file (test_qc.py) fail identically on a pre-existing test-database credential/drift issue unconnected to this change (documented separately), though all affected test fixtures (test_ddcp_flow.py, test_injector_flow.py, test_inhalation_flow.py, test_coated_device_flow.py) were updated to supply a real released product_version_id at every call site. Residual, deliberately not addressed: Autoinjector and Coated device still have no manufacturing_profile_code value naming them specifically (no family-match check for those two, existence/released/site only) -- guessing one would be exactly the class of decision CLAUDE.md Section 4 reserves for a human; and Option A's original angle (Product Master itself pointing at a specific DdcpProfileVersion) was not built, so a Product Master record still cannot itself declare/discover which DDCP profile governs it -- only the reverse lookup now exists."
+status: PARTIALLY RESOLVED -- sterile_profile_id (2026-09-07) and the DDCP-profile<->product_version link, existence/released/site + PFS/Inhalation family-match (2026-09-08, Option B) are done; OPEN: Autoinjector/Coated device family-match (no corresponding manufacturing_profile_code value exists), and Product Master's own side never gained a reciprocal reference (Option A not built)
+```
+
+### SG-176 — `aseptic_profile_version` (ASP-FR-001/002/003) has no create/release operation anywhere in Document 40's own 7-op API list
+
+Same class as SG-081's `warehouse_location` gap, found while resolving SG-175's `sterile_profile_id` half
+(above): Document 40's own §6 API list has exactly 7 operations, all against `aseptic_operation`
+(create/start/interventions/events/complete/readiness/review-summary) — none of them create, update or
+list an `aseptic_profile_version`. `aseptic_models.py`'s own docstring already called this out as
+seed-only, same treatment as `cleaning_procedure_version`/`process_cycle_profile_version`. Before
+2026-09-07 only one row existed per site (the seeded `ASP-PROC-001`), created directly in
+`scripts/seed.py`/`tests/conftest.py`, with no way to add a second through the app.
+
+**2026-09-07 — RESOLVED, project-owner-directed** (asked explicitly: "Build a real 'Create profile' UI +
+endpoint" over "just add more via seed script" or "leave it"). Added:
+- `POST /aseptic/v1/profiles` (`create_profile_version()`, `app/modules/equipment/aseptic_commands.py`) —
+  this project's own considered create contract (site_id + profile_number + version_no + optional
+  required_area_classification/validation_reference/product_id/JSONB detail fields), duplicate-checked
+  against the table's own `UniqueConstraint(profile_number, version_no)`, full audit/outbox, created
+  directly at `state="RELEASED"` (no draft/review stage exists for this record either, so a lesser state
+  would be permanently stuck).
+- `GET /aseptic/v1/profiles?site_id=...` — real listing, also the function `product_master`'s own
+  `GET /products/v1/sterile-profiles` calls through (cross-module query interface, AG-02/AG-05 — see
+  SG-175's resolution note above, which also fixed that endpoint to stop importing/querying
+  `AsepticProfileVersion` directly from outside its owning module).
+- New `aseptic_profile_version.create` permission code, granted to Admin + Aseptic Supervisor only
+  (`scripts/seed.py` and `tests/conftest.py` — both maintain independent copies of the permission
+  catalogue/role grants, so both needed the new code and grant), not Aseptic Operator — same "who defines
+  the process profile vs who executes against it" split as Document 38's `equipment_asset.create` going
+  to Equipment Administrator, not the operator role.
+- "New sterile process profile" button + modal on `frontend/src/app/aseptic/page.tsx` (the same page
+  Document 40's `aseptic_operation` records already live on) — required extending the shared
+  `OpsRecordPage` component with an optional `headerAction` prop (additive; every other caller is
+  unaffected) so a second, unrelated create form could sit in the same page header.
+
+Same residual risk as SG-081's write-side resolution: a future Document 113-style API-completion addendum
+for Document 40 could define a different create/release contract, and this doesn't preempt or guess at
+it — the risk is accepted by the project owner as the practical tradeoff, not eliminated.
+
+**2026-09-07 (later same day) — update/delete also RESOLVED, project-owner-directed** (asked explicitly
+which of "supersede only" / "supersede + retire" / "true hard delete" — chose **supersede only**, matching
+this codebase's existing pattern for every other versioned regulated master-data record: a RELEASED row's
+content is never edited or removed, a change creates a new version and the prior one is marked
+`SUPERSEDED`, same as `ddcp/commands.py::release_injectable_profile_version`'s own supersession of the
+prior `DdcpProfileVersion`). No true delete was built or considered further once that choice was made.
+Added:
+- Migration `0085_aseptic_profile_version_supersession` (`supersedes_profile_version_id`, nullable
+  self-FK) — additive only, no existing row rewritten (AG-08). Applied to the live DB via
+  `alembic upgrade head`; the test database's `alembic_version` bookkeeping was found stale relative to
+  its actual schema (unrelated pre-existing drift, not caused by this change), so the same DDL was applied
+  there directly instead of via `alembic upgrade` to avoid replaying a long, untested migration chain
+  against a database whose tracked revision doesn't match its real state.
+- `POST /aseptic/v1/profiles/{id}/supersede` (`supersede_profile_version()`) — loads the previous row
+  `with_for_update()`, requires `expected_version` (optimistic concurrency) and `state == "RELEASED"`,
+  creates a new row at `version_no + 1` (same `profile_number`/`site_id` — identity fields, not editable,
+  same "wholesale replace, identity fixed" precedent as `product_master.update_draft`), marks the previous
+  row `SUPERSEDED`, and writes an audit event for *both* the new row's creation and the old row's state
+  change. Gated by the same `aseptic_profile_version.create` permission code as plain create (superseding
+  is authoring a new version, same actor/activity, no new permission code needed).
+- `list_released_profile_versions` (the picker feed) already excluded non-`RELEASED` rows by construction,
+  so a superseded profile drops out of Product Master's picker automatically with no extra filtering code.
+  A new, separate `list_profile_versions` (all states) backs `GET /aseptic/v1/profiles`'s now-broader
+  response, feeding a new "Sterile process profiles" list section on `frontend/src/app/aseptic/page.tsx`
+  (this is also the "where is show list?" gap a user question surfaced — the endpoint existed from the
+  first pass above but nothing rendered it as a browsable list until now) with a per-row "Supersede"
+  action (RELEASED rows only).
+
+```yaml
+spec_gap_id: SG-176
+title: "aseptic_profile_version (ASP-FR-001/002/003) has no create/release operation anywhere in Document 40's own 7-op API list"
+class: D
+description: >
+  aseptic_profile_version (Document 40/SPEC-EQP-003, app/modules/equipment/aseptic_models.py) is DDL-ready
+  but has no create/update/list/release operation in Document 40's own declared 7-op API section (all 7
+  operations target aseptic_operation, the execution record, not the profile it references). There was no
+  way to manage sterile/aseptic process profile master data through the app -- it was seeded like
+  iam.sites/iam.organizations instead, same class as SG-081's warehouse_location gap.
+source_documents:
+  - Document 40 (SPEC-EQP-003, section 6)
+source_requirement_ids:
+  - ASP-FR-001
+  - ASP-FR-002
+  - ASP-FR-003
+affected_modules:
+  - SPEC-EQP-003
+affected_functions:
+  - app/modules/equipment/aseptic_models.py AsepticProfileVersion, PROFILE_STATES, supersedes_profile_version_id (2026-09-07)
+  - migrations/versions/0ee74a161068_0085_aseptic_profile_version_supersession.py (2026-09-07)
+  - scripts/seed.py aseptic_profile seed row + aseptic_profile_version.create permission code
+  - tests/conftest.py aseptic_profile seed row + aseptic_profile_version.create permission code (independent copy)
+  - app/modules/equipment/aseptic_commands.py create_profile_version, supersede_profile_version (2026-09-07), get_released_profile_version, list_released_profile_versions, list_profile_versions (2026-09-07, all-states)
+  - app/modules/equipment/aseptic_router.py post_create_profile, post_supersede_profile (2026-09-07), list_profiles
+  - app/modules/product_master/service.py list_sterile_profiles (2026-09-07, refactored to call the cross-module query function above instead of importing AsepticProfileVersion directly)
+  - frontend/src/app/aseptic/page.tsx NewProfileModal, SupersedeProfileModal, ProfileListCard (2026-09-07)
+  - frontend/src/components/shared/OpsRecordPage.tsx headerAction prop (2026-09-07, additive)
+why_material: >
+  Inventing a create/release contract the source document's own API section doesn't declare risks
+  conflicting with a future Document 113-style API-completion addendum that resolves this gap with a
+  different contract -- same reasoning as SG-081. Built anyway, project-owner-directed, after being asked.
+risk_if_guessed: >
+  A guessed contract could mismatch the real one a future addendum defines. This one was built with that
+  risk explicitly accepted by the project owner (asked directly, chose the "build a real endpoint" option
+  over seed-script-only or leaving it unbuilt), not guessed silently.
+options:
+  - (A) Author a Document 113-style API-completion addendum adding aseptic_profile_version CRUD to
+    Document 40's own API section, then implement -- still the properly-sourced path if Document 113 is
+    ever written; update/delete/supersede remain unbuilt and would still benefit from this.
+  - (B) Guess the full CRUD contract now (would have been rejected as a blanket approach, same as SG-081).
+  - (C) Add seed-data only, no endpoint (the pre-2026-09-07 state; rejected once asked, in favor of (D)).
+  - (D) Add a create-only endpoint with this project's own considered contract (not (A)'s addendum, not a
+    blind guess) -- done 2026-09-07 (first pass), explicitly project-owner-directed after being asked.
+  - (E) For update/delete: supersede-only, matching every other versioned regulated master-data record in
+    this codebase (no true delete) -- done 2026-09-07 (second pass, same day), chosen explicitly by the
+    project owner over "supersede + separate retire" and "true hard delete" alternatives offered.
+  - (F) True hard delete (offered, not chosen). Would have broken from AG-08/VLT-FR-009 and every other
+    regulated master-data pattern in this codebase; rejected in favor of (E).
+blocking: false
+owner: Equipment/Sterile module owner (Document 40)
+resolution_document: "2026-09-07: POST/GET /aseptic/v1/profiles + POST .../supersede live, migration 0085 adds supersedes_profile_version_id, gated by aseptic_profile_version.create (Admin + Aseptic Supervisor); no true delete exists or is planned (supersede-only, project-owner-directed)"
+status: RESOLVED for create/list/supersede; true delete deliberately not built (supersede is this app's equivalent, by project-owner choice)
+```
+
+### SG-177 — `equipment_area` (referenced by Document 38/39/40/41/42) has no create operation anywhere in any of their declared API lists
+
+Same class as SG-081 (`warehouse_location`) and SG-176 (`aseptic_profile_version`), found while asking a
+user question about the `/aseptic` "Create aseptic operation" form's Area field: `EquipmentArea`
+(`equipment.equipment_areas`, `app/modules/equipment/cleaning_models.py`) is a shared master table
+referenced by `area_id`/`line_id` across `cleaning_execution`/`line_clearance` (Document 39),
+`em_location` (Document 41), `aseptic_operation` (Document 40) and DDCP readiness (Document 54) — but its
+own docstring already called it "provisioned outside the app today," and none of those documents' own API
+lists declare a create/update operation for it. Before 2026-09-07 the only rows were the ones
+`scripts/seed.py`/`tests/conftest.py` insert directly (`AREA-GRADE-A`/`AREA-GRADE-C`/`AREA-WAREHOUSE`), no
+way to add a new one through the app.
+
+**2026-09-07 — RESOLVED for create/list, project-owner-directed** (asked directly: "i want you to develop
+the frontend for area" — the answer to "why is the picker's dropdown static or dynamic" surfaced this same
+gap one layer down: the picker itself is real, but the rows behind it were uncreatable). Added:
+- `POST /equipment/v1/areas` (`create_equipment_area()`, `app/modules/equipment/commands.py`) — this
+  project's own considered create contract (site_id + area_code + optional area_type/classification/
+  criticality/cleanliness_status), duplicate-checked against the table's own `UniqueConstraint(area_code)`,
+  full audit/outbox. No qualification/release workflow exists for an area (unlike `EquipmentAsset`'s
+  INSTALLED->...->QUALIFIED_AVAILABLE chain), so it enters directly at `status="active"`, matching the
+  model's own default.
+- New `equipment_area.create` permission code, granted to Admin + Equipment Administrator — the same roles
+  already granted `equipment_asset.create` (same "who defines the physical layout vs who executes against
+  it" split this file already draws elsewhere).
+- `_area_dict()` (the existing `GET /areas`/`GET /areas/{id}` response shape) extended to also return
+  `criticality`/`cleanliness_status`, previously omitted even though the column existed — additive, no
+  existing consumer depended on their absence.
+- "New area" button + an "Equipment areas" list table added to `frontend/src/app/equipment/page.tsx`
+  (the same page equipment assets already live on) — plain page-level state/fetch, not the shared
+  `OpsRecordPage` component (this page doesn't use it).
+
+Same residual risk as SG-081/SG-176's write-side resolutions: a future Document 113-style API-completion
+addendum for any of Documents 38/39/40/41/42 could define a different create contract for this shared
+table, and this doesn't preempt or guess at it — the risk is accepted by the project owner as the
+practical tradeoff. No update/delete/deactivate capability exists — only create, matching the "no
+established update/delete precedent for this class of shared, cross-document master data" restraint
+(unlike `aseptic_profile_version`, this table has no per-document "who owns changing it" answer at all,
+so update/delete wasn't offered as a choice here the way it was for SG-176 — would need its own separate
+ask if wanted).
+
+```yaml
+spec_gap_id: SG-177
+title: "equipment_area (referenced by Document 38/39/40/41/42) has no create operation anywhere in any of their declared API lists"
+class: D
+description: >
+  EquipmentArea (app/modules/equipment/cleaning_models.py, table equipment.equipment_areas) is a shared
+  master referenced by area_id/line_id across cleaning_execution/line_clearance (Document 39), em_location
+  (Document 41), aseptic_operation (Document 40) and DDCP readiness (Document 54), but none of those
+  documents' own API lists declare a create/update operation for it -- "provisioned outside the app
+  today" per its own docstring. There was no way to manage area master data through the app; it was
+  seeded like iam.sites/iam.organizations instead, same class as SG-081/SG-176.
+source_documents:
+  - Document 38 (SPEC-EQP-001)
+  - Document 39 (SPEC-EQP-002)
+  - Document 40 (SPEC-EQP-003)
+  - Document 41 (SPEC-EQP-004)
+source_requirement_ids:
+  - EQP-FR-001
+affected_modules:
+  - SPEC-EQP-001
+  - SPEC-EQP-002
+  - SPEC-EQP-003
+  - SPEC-EQP-004
+affected_functions:
+  - app/modules/equipment/cleaning_models.py EquipmentArea
+  - scripts/seed.py equipment_area.create permission code + Admin/Equipment Administrator grants
+  - tests/conftest.py equipment_area.create permission code + grant (independent copy)
+  - app/modules/equipment/commands.py create_equipment_area (2026-09-07)
+  - app/modules/equipment/router.py post_create_area, _area_dict criticality/cleanliness_status fields (2026-09-07)
+  - frontend/src/app/equipment/page.tsx CreateAreaModal, areas list table (2026-09-07)
+why_material: >
+  Inventing a create contract the source documents' own API sections don't declare risks conflicting with
+  a future Document 113-style API-completion addendum that resolves this gap with a different contract --
+  same reasoning as SG-081/SG-176. Built anyway, project-owner-directed, after being asked.
+risk_if_guessed: >
+  A guessed contract could mismatch the real one a future addendum defines. This one was built with that
+  risk explicitly accepted by the project owner (asked directly, chose to build the real frontend/endpoint
+  rather than leave the gap or seed-script-only), not guessed silently.
+options:
+  - (A) Author a Document 113-style API-completion addendum adding equipment_area CRUD to the relevant
+    document's own API section, then implement -- still the properly-sourced path if Document 113 is
+    ever written; update/delete remain unbuilt and would still benefit from this.
+  - (B) Guess the full CRUD contract now (would have been rejected as a blanket approach, same as SG-081/SG-176).
+  - (C) Leave seed-data only, no endpoint (the pre-2026-09-07 state; rejected once asked, in favor of (D)).
+  - (D) Add a create-only endpoint with this project's own considered contract (not (A)'s addendum, not a
+    blind guess) -- done 2026-09-07, explicitly project-owner-directed after being asked. Update/delete
+    remain unbuilt and were not offered as a choice (no per-document "who owns changing it" answer exists
+    for this shared table the way SG-176 had for aseptic_profile_version's own supersession model).
+blocking: false
+owner: Equipment module owner (Documents 38/39/40/41 jointly reference this table)
+resolution_document: "2026-09-07: POST /equipment/v1/areas live, gated by new equipment_area.create permission (Admin + Equipment Administrator); update/delete not built or offered as a choice"
+status: RESOLVED for create/list; update/delete OPEN (not attempted -- no established ownership answer for this cross-document shared table)
+```
+
+### SG-178 — Recipe step `required_role_code` (BAT-FR-007) is stored and shown but never checked at step start, in either batch store
+
+Found while writing the client demo guide's role-wise/approver-reviewer walkthrough for Product Master,
+Recipe Master and Batch Execution (`docs/testing/DDCP_Client_Demo_Guide_Gujarati.md` §8-§11): Document 10
+(`recipe_master/models.py::RecipeStep.required_role_code`) lets an author declare which role must perform
+each step (e.g. `FILL-01` → `Operator`, an assembly step → `DDCP Operator`) — matching BAT-FR-007
+("Authorized operator may claim/start ready step"). Neither of this codebase's two batch stores enforces
+it at start-step time:
+
+- `app/modules/batch_execution/commands.py::start_step()` (the regulated `/batch-execution` UI path, Doc
+  11) loads the step and the batch, checks the step is `ready`, and moves it to `in_progress` — it never
+  reads `RecipeStep.required_role_code` or the step instance's own carried copy of it, and the router
+  (`batch_execution/router.py`) gates the whole endpoint on the single generic `batch_execution.execute`
+  permission, which both **Operator** and **Supervisor** hold. Either role can start *any* step regardless
+  of which role the recipe declared for it.
+- `app/modules/batch/commands.py::start_step()` (the legacy/duplicate store already tracked by SG-173) has
+  the identical shape: gated only by the generic `batch_step.start` permission, no per-step role check.
+- `frontend/src/app/batch-execution/page.tsx` does not read `required_role_code` at all (grepped — zero
+  occurrences) — it does not hide or disable the "Start step" action for a user whose role doesn't match
+  the step's declared role, so there is no UI-side mitigation either.
+
+Net effect: `required_role_code` is presently a **display-only annotation** (it does round-trip through
+`recipe_master`'s create/edit/validate/compare/issue-eligibility surface correctly) rather than an
+enforced authorization rule. This is a real SoD-shaped gap, not a documentation nit — it means, for
+example, a plain `Operator` can claim and complete a step the recipe explicitly reserved for
+`DDCP Operator`, and the system records that as a normal, permitted `StepStarted` event with no denial.
+
+**RESOLVED 2026-09-08 (project-owner-directed — Option A + documented override).** Asked the project
+owner directly which enforcement mode to take (hard block regulated path / hard block both stores /
+advisory / UI-field-only) and whether a cross-trained override should exist. Chosen: **hard block in the
+regulated `/batch-execution` path only** (legacy `app/modules/batch` left as-is, consistent with SG-173),
+**with a documented override** for a `batch_step.role_override` holder. Built:
+
+- Migration `0086_batch_step_required_role_code` — adds `ebmr.gxp_batch_step.required_role_code`
+  (nullable, additive). `issue_batch` freezes `RecipeStep.required_role_code` into both the Vault
+  execution snapshot and the `gxp_batch_step` row at issue time (BAT-FR-003 / VLT-FR-006/007), so
+  enforcement is against the *released* recipe, not a later-mutated one.
+- `batch_execution/commands.py::start_step` — new `_enforce_step_role`: if the step carries a
+  `required_role_code` the actor's effective role set (`policy.effective_role_names`, site-scoped) must
+  include it, or the call fails closed with the new `STEP_ROLE_MISMATCH` (403). A non-empty
+  `override_reason` plus the new `batch_step.role_override` permission (Admin + Supervisor) lets a
+  cross-trained actor proceed; the reason is written to the audit event (`reason` + `new_value`'s
+  `role_override`/`required_role_code`) and the `StepStarted` outbox event carries `role_override`.
+- New permission `batch_step.role_override` and re-runnable live sync: `scripts/sync_permissions.py` now
+  also upserts any missing `ROLE_NAMES` role, so new roles/permissions land without a destructive reseed.
+- Frontend: Recipe Master authoring form gained a "Required role" step field (real `/roles` picker) plus
+  an `is_critical` field; `/batch-execution` shows each step's required role and a StartStep
+  "override reason" box that appears for a restricted step / on a `STEP_ROLE_MISMATCH`.
+- Tests: 6 new in `test_batch_execution.py` (snapshot carries the code; hard block with no reason;
+  native-role holder passes; documented override by a `role_override` holder; override denied without
+  the permission; unrestricted step unaffected) — all pass.
+
+**Authoring-SoD half (also 2026-09-08, project-owner-directed — "Process Engineer + separate releaser"):**
+`recipe.author` and `recipe.release` were both Admin-only (no author≠releaser split, flagged in
+`DDCP_Client_Demo_Guide` §9.1). Added a dedicated **`Process Engineer`** role holding
+`recipe.author`/`recipe.view`/`product.view`/`rules.evaluate` (NOT `recipe.release`), and granted
+`recipe.release` to `QA Releaser` so a real deployment can hold authoring and release in different roles.
+Tests: `test_recipe_master.py::test_process_engineer_authors_but_a_separate_role_releases`,
+`test_recipe_release_is_signed_by_an_independent_qa_releaser`.
+
+**Decisions 1 & 2 (2026-09-08, later same session, project-owner-directed).** Decision 2: the same
+author≠releaser split was extended to **Product Master** — `product.author` now sits with Process
+Engineer + Admin, `product.release` with QA Releaser + Admin, and `release_product_version()` runs the
+same `required_role_id` + `requires_independent_signer` enforcement (against the product version's own
+`Created` audit event; new Document 107 rule **IND-021** = ProductVersion/release/AUTHOR PROHIBITED). See
+SG-035 for the signature-policy change. Test:
+`test_product_master.py::test_product_authored_by_process_engineer_is_released_by_an_independent_qa_releaser`.
+Decision 1 (the standing-role-pair question, "defer to the customer's Quality org — long-term"): the
+`iam.sod_rules` table is already the Document 107 §3 data model, but had no re-runnable live-sync path
+(only a destructive full reseed). Added **`scripts/sync_sod_rules.py`** (mirrors `sync_permissions.py` /
+`sync_signature_policies.py`; upsert-by-`code`, never deletes) and a platform-floor row **SOD-021**
+= `(Process Engineer, QA Releaser)` **`REPORT_ONLY`** — documented-and-flagged, not blocking, since
+person-level independence is already hard-enforced by IND-011 (recipe) + IND-021 (product). PROHIBITED
+would break the all-roles break-glass `admin`; a customer's Quality org raises SOD-021 to PROHIBITED in
+their own matrix at PQ. `evaluate_policy()` only enforces `PROHIBITED` standing pairs, so SOD-021 has
+zero runtime effect today — it is a maintained, inspectable entry in the shipped SoD matrix.
+
+**Release-signature half (2026-09-08, same session — see SG-035):** `recipe_version/release` had no
+signature policy, so Release failed `SIGNATURE_POLICY_UNRESOLVED` for everyone. Project-owner chose "QA
+Releaser, independent of author". Added the floor row (`required_role='QA Releaser'`,
+`requires_independent_signer=True`, `signature_required=True`); `release_recipe_version()` now enforces
+both flags (role via `effective_role_names`, independence against the recipe version's `Created` audit
+event → `SOD_CONFLICT` if author == releaser), a new
+`POST /recipes/v2/drafts/{id}/signature-challenges` endpoint was added, and the frontend Release button
+now runs the shared `SignatureCeremony`. This completes the author≠releaser control both at the
+permission layer and the signature layer.
+
+```yaml
+spec_gap_id: SG-178
+title: "Recipe step required_role_code (BAT-FR-007) is stored and shown but never checked at step start, in either batch store"
+class: D
+description: >
+  RecipeStep.required_role_code (Document 10, recipe_master/models.py) declares which role must perform
+  a given batch step, and Document 11's BAT-FR-007 requires only an "authorized operator" to claim/start
+  a ready step. Neither app/modules/batch_execution/commands.py::start_step() (the regulated
+  /batch-execution path) nor app/modules/batch/commands.py::start_step() (the SG-173 legacy/duplicate
+  store) reads required_role_code or compares it to the acting user's role -- both gate solely on a
+  single generic execute permission (batch_execution.execute / batch_step.start) held by every Operator
+  and Supervisor. The frontend batch-execution page does not hide/disable the action by role either.
+  required_role_code is round-tripped correctly everywhere else (author/edit/validate/compare/
+  issue-eligibility) -- only step-start enforcement is missing.
+source_documents:
+  - Document 10 (SPEC-EBMR-002)
+  - Document 11 (SPEC-EBMR-003)
+source_requirement_ids:
+  - BAT-FR-007
+affected_modules:
+  - SPEC-EBMR-002
+  - SPEC-EBMR-003
+affected_functions:
+  - app/modules/recipe_master/models.py RecipeStep.required_role_code (declared, correctly authored/edited/shown -- not the defect)
+  - app/modules/batch_execution/commands.py start_step() (no required_role_code check)
+  - app/modules/batch_execution/router.py post_start_step() (gates on batch_execution.execute only)
+  - app/modules/batch/commands.py start_step() (legacy/duplicate store, same gap, gates on batch_step.start only)
+  - frontend/src/app/batch-execution/page.tsx (no required_role_code read anywhere; no per-role hide/disable on the Start-step action)
+why_material: >
+  Deciding how to enforce this touches authorization/SoD semantics directly (CLAUDE.md §4): should a
+  role mismatch hard-block start_step (fail closed, matching this codebase's IND-001/CON-FR-014
+  independent-verification pattern elsewhere), soft-warn, or require a documented override with reason
+  -- none of that is specified by Document 10/11 beyond declaring the field exists, so implementing
+  enforcement now would mean guessing a regulated authorization behavior rather than reading it from a
+  spec.
+risk_if_guessed: >
+  A guessed enforcement mode could be either too strict (blocking a legitimately cross-trained operator
+  a real deployment intends to allow) or too permissive (a silent no-op that gives false assurance the
+  field is enforced when it visually looks configured in the Recipe Master UI). Given this field's whole
+  purpose is a per-step SoD control, guessing which failure mode to prefer is exactly the class of
+  decision CLAUDE.md §4 reserves for a human.
+options:
+  - (A) Enforce required_role_code as a hard block in both start_step() implementations (fail closed if
+    the actor's roles don't include the step's declared role) -- closest to this codebase's existing
+    IND-001/CON-FR-014 pattern (hard block + clear reason in the API error), but not yet built or chosen.
+  - (B) Enforce it only in the regulated app/modules/batch_execution path and leave the SG-173 legacy
+    `app/modules/batch` store as-is (consistent with SG-173's general treatment of that store as
+    deprecated) -- reduces scope but still requires the project owner to confirm the legacy store is
+    truly unused before leaving a live authorization gap in it.
+  - (C) Treat required_role_code as advisory-only by design (UI hint, no hard enforcement) and fix only
+    the frontend to visually flag a mismatch -- weaker SoD guarantee, would need explicit project-owner
+    sign-off that this is the intended posture given BAT-FR-007's "authorized operator" wording.
+  - (D) Leave unresolved and documented (chosen this pass) -- the client demo guide (§9/§11) now states
+    this accurately instead of the previous doc text's inaccurate claim that the UI hides/disables the
+    button for a role mismatch.
+blocking: false
+owner: Batch Execution / Recipe Master module owner (Documents 10/11)
+resolution_document: "2026-09-08: Option A + documented override, project-owner-directed. Migration 0086 adds ebmr.gxp_batch_step.required_role_code; issue_batch freezes it into the snapshot; start_step (regulated /batch-execution path only) fails closed with STEP_ROLE_MISMATCH unless the actor holds the role or supplies override_reason + the new batch_step.role_override permission (Admin/Supervisor). Legacy app/modules/batch left as-is per SG-173. Authoring-SoD half: new Process Engineer role (recipe.author, not recipe.release); recipe.release also granted to QA Releaser. A standing-role-pair SoD rule for Process Engineer vs the releasing role is left to the project owner (Document 107)."
+status: RESOLVED (regulated path); legacy app/modules/batch enforcement intentionally not added (SG-173); Document 107 standing-role-pair rule for the new Process Engineer role OPEN
+```
+
+### SG-179 — PFS-FR-003's "bulk drug/biologic batch reference" has no supporting capability anywhere in this platform; DRUG/BIOLOGIC constituent handoffs could never be accepted
+
+Found live while the client tested the DDCP demo end to end (2026-09-08): accepting a `DRUG` constituent
+handoff whose `source_batch_reference` correctly named a released `materials.material_lots` row
+(`LOT-DRUG-2601`, QC-released the same way as the device component) failed closed with
+`BULK_NOT_RELEASED` every time.
+
+Document 54's own text is precise and, read literally, distinct between the two constituent classes:
+
+- **PFS-FR-003** (bulk drug/biologic): "Receive **released bulk drug/biologic batch reference** with
+  assay/potency, concentration, sterility/bioburden status and expiry/hold constraints."
+- **PFS-FR-004** (primary components): "Require **released lots** for barrel/syringe, stopper/plunger,
+  needle/closure and other product-contact components."
+
+`decide_constituent_handoff()` implemented this literally: for `from_constituent in ("DRUG", "BIOLOGIC")`
+it only ever resolved `source_batch_reference.batch_id` against a `Batch` row (`ebmr.gxp_batch` since
+SG-149/SG-173's cutover) and required `state == "released"` (itself also latently broken --
+`gxp_batch.state` never reaches a value called `"released"`, only `"complete"`, so this branch could
+never succeed even with a real batch id); every other constituent type resolved `lot_id` against
+`materials.material_lots`. There is no capability anywhere in this platform -- not `app/modules/batch`,
+not `app/modules/batch_execution`, not any other module -- to create or release a "batch" record for an
+externally-supplied bulk drug/biologic substance as a thing distinct from receiving it into inventory.
+Every real onboarding path this codebase has (Document 18 Supplier -> Document 19 Material Receipt ->
+Material Lot, exactly as built and demoed for both `Meridizumab Bulk Drug Substance` and the device
+barrel/needle) models bulk drug procurement as a **material with lots**, identically to a primary
+component. As literally coded, this made DRUG/BIOLOGIC handoff acceptance unconditionally impossible in
+any deployment built on this platform's existing master-data model -- not a narrow edge case.
+
+```yaml
+spec_gap_id: SG-179
+title: "PFS-FR-003's bulk drug/biologic batch reference has no supporting capability; DRUG/BIOLOGIC handoffs could never be accepted"
+class: R  # regulated decision -- which store is authoritative "released" evidence for a bulk drug/biologic constituent
+description: >
+  decide_constituent_handoff() (Document 54, PFS-FR-003/004) required a DRUG/BIOLOGIC constituent's
+  source_batch_reference to resolve to a released Batch row, and only a Batch row -- never a Material
+  Lot, even though this platform's only real bulk-drug onboarding path (Document 18/19/20: Supplier ->
+  Material Receipt -> Material Lot) produces a lot, not a batch. No feature anywhere in this codebase
+  creates or releases a batch record for externally-supplied bulk drug/biologic substance. The check
+  also had a latent second defect: it compared gxp_batch.state to the literal string "released", a value
+  gxp_batch's own state machine (planned/issued/in_execution/on_hold/aborted/complete) never produces.
+  Net effect: every DRUG/BIOLOGIC constituent handoff in every deployment built on this platform's
+  existing master data would fail BULK_NOT_RELEASED regardless of the referenced lot's actual release
+  status.
+source_documents:
+  - Document 54 (SPEC-DDCP-001, PFS-FR-003/004)
+  - Document 18 (SPEC-QMS-005, Supplier), Document 19/20 (Material Receipt/Inventory)
+source_requirement_ids:
+  - PFS-FR-003
+  - PFS-FR-004
+affected_modules:
+  - SPEC-DDCP-001
+affected_functions:
+  - services/gxp-api/app/modules/ddcp/commands.py decide_constituent_handoff() -- DRUG/BIOLOGIC branch batch-only, and its release-state comparison used a value gxp_batch never produces
+why_material: >
+  Which store is authoritative "released" evidence for a bulk drug/biologic constituent is a quality/
+  release decision (CLAUDE.md §4) -- picking the wrong one silently either blocks every real accept
+  (as found) or accepts a constituent that was never actually QC-released by this platform's own
+  disposition control, depending on which direction a guess goes.
+risk_if_guessed: >
+  Guessing "just accept the lot, ignore PFS-FR-003's batch wording" without checking whether Document 54
+  intended a real, separate upstream-batch concept could silently widen what counts as "released" bulk
+  drug evidence beyond what the spec's own literal text describes. Guessing the opposite (leave batch-only)
+  leaves DRUG/BIOLOGIC handoffs permanently unusable in every deployment this platform can currently build.
+options:
+  - (A) Accept a released Material Lot for DRUG/BIOLOGIC too, exactly like PFS-FR-004's own component
+    check -- recommended, matches how every real onboarding path in this platform already works.
+  - (B) Keep batch-only, matching PFS-FR-003's literal wording, and build a new capability (create/
+    release a batch record for supplier-received bulk drug/biologic substance) to support it -- larger,
+    separate scope; DRUG/BIOLOGIC handoffs stay blocked until built.
+  - (C) Leave unresolved, documented as a known limitation -- DRUG/BIOLOGIC handoff acceptance stays
+    non-functional.
+blocking: false
+owner: DDCP module owner (Document 54)
+resolution_document: "2026-09-08: Option A, project-owner-directed (asked directly, live-blocked demo).
+  decide_constituent_handoff() now resolves whichever of batch_id/lot_id the handoff's
+  source_batch_reference actually carries: batch_id only valid for DRUG/BIOLOGIC (checked against
+  ebmr.gxp_batch, state == released -- kept for the literal PFS-FR-003 wording and the latent state-value
+  bug fixed alongside it, though nothing in this codebase can produce such a batch yet); lot_id valid for
+  any constituent type (checked against materials.material_lots, status == released, BulkNotReleasedError
+  for DRUG/BIOLOGIC or PrimaryComponentNotReleasedError otherwise). Neither key present is now a clean
+  VALIDATION_FAILED instead of a silent fall-through. No migration -- source_batch_reference is JSONB,
+  no schema change."
+status: RESOLVED
+```
+
+### SG-180 — `gxp_batch_step` (generic Batch Execution, Document 11) and DDCP's own execution records (Document 54) are two independent, unsynchronized progress trackers on the same batch
+
+Found while answering a client question about the difference between "batch execution" and "DDCP batch
+release/execution" for the Gujarati demo guide (2026-09-09). Since migration `e5f7a9c1b3d6_0090`'s
+cutover, DDCP's execution tables (`constituent_handoff`, `fill_operation`, `device_assembly_record`,
+`reusable_device_pairing`, `ddcp_release_checkpoint`, etc. — 9 tables) all correctly FK into the same
+`ebmr.gxp_batch` row as the generic recipe-step chain (`ebmr.gxp_batch_step`, freshly gained real
+completion this pass — SG-047 partial resolution). But nothing anywhere in `app/modules/ddcp/*.py` reads
+or writes `gxp_batch_step`, `batch_execution.service.recompute_readiness()`, or
+`batch_execution.commands.complete_step()` — confirmed by exhaustive grep, zero hits. The two systems
+track "is this batch progressing" independently, for the same batch, with no cross-reference:
+
+- Completing DDCP steps on `/ddcp` (constituent handoff accept, fill run complete, assembly verify, …)
+  does **not** advance or complete the matching generic recipe step (`DISP-01`/`FILL-01`/`ASSY-01`/… per
+  the recipe's own `stable_step_code` naming, which was clearly authored to *mean* the same real-world
+  operations DDCP executes) on `/batch-execution`.
+- Completing generic recipe steps on `/batch-execution` does not update DDCP's own readiness/evidence-
+  freeze computation (Document 54's `GET .../readiness`, `POST .../release-readiness`) at all.
+- Separately (already covered by SG-056, not new): the batch's actual `/release` eligibility check
+  (`release/service.py::evaluate_eligibility()`) reads neither of these — only QA-review-package
+  completeness and Vault execution-snapshot integrity. A batch can be signed "Released" with every DDCP
+  step incomplete and every generic recipe step still "pending", and the Release button will not
+  block it.
+
+A demo operator who diligently completes every `/ddcp` execution tab sees `/batch-execution`'s step list
+still show every step but the root as blocked, and vice versa — this is not a UI bug, it is because the
+two record sets are genuinely disconnected. Document 11 §7's own literal event list (`StepCompleted`) and
+Document 54's own DDCP events were never designed against each other; neither document says which one is
+supposed to drive the other, or whether they are meant to be two independently-modelled progress views of
+the same batch (also plausible — a recipe step can be coarser-grained than one DDCP operation, or model
+work DDCP doesn't cover, e.g. `LC-01` line clearance, `TEST-CCI-01`/`TEST-VIS-01` QC steps that are not
+DDCP `fill_operation`/`device_assembly_record` rows at all).
+
+```yaml
+spec_gap_id: SG-180
+title: "gxp_batch_step (generic Batch Execution) and DDCP's own execution records are two independent, unsynchronized progress trackers on the same batch"
+class: R  # regulated decision -- whether/how one execution track should drive or reconcile with the other
+description: >
+  DDCP's 9 execution tables (constituent_handoff, fill_operation, device_assembly_record, etc.) and the
+  generic gxp_batch_step chain both FK into the same ebmr.gxp_batch row (post-SG-149/SG-173 cutover,
+  migration 0090) but neither reads nor writes the other. Completing DDCP's execution steps does not
+  complete the matching generic recipe step and vice versa; the batch /release eligibility check
+  (SG-056) reads neither. A batch can show "released" while either or both step chains are incomplete.
+source_documents:
+  - Document 11 (SPEC-EBMR-002, gxp_batch_step / BAT-FR-006/007/009/015)
+  - Document 54 (SPEC-DDCP-001, constituent handoff/fill/assembly execution)
+  - Document 15 (SPEC-EBMR-006, release eligibility — SG-056, related but distinct)
+source_requirement_ids:
+  - BAT-FR-006
+  - BAT-FR-026
+  - REL-FR-003
+affected_modules:
+  - SPEC-EBMR-002
+  - SPEC-DDCP-001
+affected_functions:
+  - app/modules/ddcp/commands.py (every execution command — none calls batch_execution.commands.complete_step or .service.recompute_readiness)
+  - app/modules/batch_execution/service.py::get_execution_view (returns blockers/readiness computed only from gxp_batch_step, blind to DDCP's own execution state)
+why_material: >
+  Whether DDCP execution should drive the generic recipe-step chain (or the reverse, or neither — two
+  independently valid progress views) is a regulated production-completeness decision (BAT-FR-026,
+  "Production Complete only when all required applicable steps ... are resolved") this pass has no
+  authority to invent. Auto-completing one from the other, or silently ignoring the mismatch, would each
+  be guessing at what "this batch's work is done" means.
+risk_if_guessed: >
+  Auto-linking them incorrectly could mark a recipe step "complete" (and downstream steps "ready") from a
+  DDCP action that doesn't actually satisfy that step's real requirement (parameters/evidence/signature),
+  or the reverse — let an operator "complete" a generic step that doesn't reflect any real DDCP execution
+  evidence, defeating the point of gxp_step_result. Either direction risks a false completeness signal on
+  a regulated batch record.
+options:
+  - (A) Keep them deliberately independent, documented as two distinct views (generic recipe-step
+    checklist vs. DDCP-specific execution evidence) — cheapest, but the demo/user confusion this gap was
+    found from recurs for every future user unless clearly documented (this pass's Gujarati-guide
+    response does exactly that).
+  - (B) Have DDCP execution commands call complete_step()/record_step_results() against the matching
+    recipe_step_code when one exists, so the generic chain reflects real DDCP progress automatically —
+    needs a declared mapping (which DDCP action code corresponds to which stable_step_code) that doesn't
+    exist in either Document 11 or Document 54 yet, and a decision on partial/1-to-many mappings.
+  - (C) Fold DDCP's own readiness/evidence-freeze computation and the generic gxp_batch_step readiness
+    into one production-completeness gate feeding BAT-FR-026/REL-FR-003 (closing SG-056's related gap at
+    the same time) — largest scope, needs a project-owner decision on authoritative ownership.
+blocking: false
+owner: Batch Execution + DDCP module owners, project-owner decision on options A/B/C
+resolution_document: "— (open)"
+status: OPEN
+```
+
+### SG-181 — `qa_review_package`/`complete` and `release_scope`/`release`+`hold`+`reject` had no Document 106 signature policy row and no signature-challenges endpoint — same defect class as SG-138, different work package
+
+Hit live 2026-09-09 by a user clicking "Complete review" on `/qa-review`: `SIGNATURE_POLICY_UNRESOLVED`.
+Document 14 (SPEC-EBMR-005) and Document 15 (SPEC-EBMR-006) are WP-03, not WP-05 QMS, so SG-138's original
+scope (12 QMS modules) never covered them — both defects SG-138 found (no policy row, no
+`signature-challenges` endpoint) existed here too, uncatalogued until now:
+
+| Record type | Action | Document 106 row |
+|---|---|---|
+| `qa_review_package` | complete | 29 |
+| `release_scope` | release | 34 |
+| `release_scope` | hold | 32 |
+| `release_scope` | reject | 33 |
+
+`release_scope`'s `evaluate` (row 37) and `destroy`/`reprocess`/`rework` (rows 31/35/36) are unaffected —
+`evaluate_release_scope()` doesn't call `resolve_signature_requirement()` at all (unsigned eligibility
+check) and destroy/reprocess/rework have no command handler yet (SG-055/SG-056: no approved route entity
+exists to link them to) — Document 106 naming a row for an action this codebase doesn't implement is not
+this gap's concern.
+
+**RESOLVED 2026-09-09, project-owner-directed** (same instruction as SG-138's deviation slice: "signature
+policy will be as per the ebmr-edhr docs — there is mention [of] all the things"). Both defects fixed for
+all four pairs above:
+
+- **Policy data** — `SIGNATURE_POLICY_FLOOR` gained `("qa_review_package", "complete", "Reviewed", "QA
+  Reviewer", True, True, False)` and three `release_scope` rows (`release`/`hold`/`reject`, meaning
+  `Released` for all three — Document 106 literally gives every one of rows 31-37 the same meaning, taken
+  verbatim rather than "corrected" per CLAUDE.md's no-guessing rule — signer "QA Approver / Batch Release"
+  → QA Releaser, the only role RBAC already grants `release.release`/`release.reject` to; `release.hold`
+  is also RBAC-granted to QA Reviewer, so a QA Reviewer can reach the hold endpoint but is refused by this
+  signature policy's required-role check, since Document 106 gives hold no narrower signer class than
+  release/reject). Applied to the live demo DB via `scripts/sync_signature_policies.py` (4 rows created).
+- **Engineering (role/independence enforcement)** — neither module's command layer read
+  `required_role_id`/`requires_independent_signer` before this pass (same gap SG-035 found for
+  `product_version`/`recipe_version` release). `qa_review/commands.py::complete_review_package()` now
+  enforces the required role; the row's independence requirement ("independent of the performer") is
+  recorded as data (`independent=True`, matching Document 106 verbatim) but deliberately **not**
+  enforced in code — no concrete Document 107 IND rule names it and `QaReviewPackage` carries no
+  performer/reviewer identity column to check against (only `completed_at`), and inventing a mechanism
+  would be exactly the kind of guess CLAUDE.md §4 prohibits. `release/commands.py::_resolve_signature()`
+  now enforces both the required role and independence — Document 107 IND-002/IND-003 name two
+  independence subjects for `release`/`reject` ("every PERFORMER on the batch, and the QA Reviewer where
+  two-stage review is configured" / "every PERFORMER on the batch"); only the QA-Reviewer half is
+  implemented, found via a new `_batch_qa_reviewer()` helper that queries the `Reviewed` audit event on
+  the batch's `qa_review_package` (the package itself has no reviewer-identity column either) — the
+  "every PERFORMER on the batch" half has no data source anywhere in this codebase (no table tracks the
+  full set of operators who touched a batch's steps) and is **not implemented**; this is the one
+  intentionally partial piece of this resolution. `reason_required=True` (Document 106's own Reason
+  column) is enforced against `ReleaseDecisionCommand.reason`, an existing field, not a new one.
+- **Engineering (challenge endpoint)** — neither module had a `signature-challenges` endpoint at all
+  (silently unreachable, not merely unresolved). Added `POST /qa-review/v1/packages/{id}/signature-
+  challenges` and `POST /release/v1/scopes/{id}/signature-challenges`, same shape as recipe_master's own
+  `POST /drafts/{id}/signature-challenges` (SG-035 precedent) — resolve the action's meaning, call
+  `create_challenge()`, return `{challenge_id, meaning, expires_at}`.
+- **Frontend** — `/qa-review`'s "Complete review" button and `/release`'s Release/Hold/Reject buttons
+  previously posted the mutation directly with no `challenge_id`/`reauth_password` at all (harmless only
+  because `SIGNATURE_POLICY_UNRESOLVED` always fired first) — both now wired through the shared
+  `SignatureCeremony` component (challenge → password re-entry → signed mutation), same pattern
+  `quality/oos/page.tsx` and the SG-138 deviation fix already use.
+
+Verified, not just inspected: `test_qa_review.py` **10/10 passed**, `test_release.py` **11/11 passed**
+after the code change (their own local `SignaturePolicy` fixtures leave `signature_required=False`, so
+these suites don't exercise the new role/independence code, but confirm nothing broke). `test_release_
+gate.py` had 2 pre-existing failures (`UndefinedColumnError: material_lots.supplier_id does not exist`) —
+a test-database schema drift unrelated to this change (the column exists in `app/modules/material/
+models.py`, migration 0084, but not in the shared test DB's actual table), left as-is per this project's
+"a failed test is evidence and stays" rule rather than silently worked around. Live round trip against the
+demo DB: `qa.reviewer` completed the one real review package with a real `signature_id`; `qa.releaser`
+(independent of `qa.reviewer`) then evaluated and released the batch with a real `signature_id`;
+`qa.reviewer` was separately refused a release-signature challenge with `ROLE_MISSING` (RBAC alone already
+blocks it before the new independence check would even run); `_batch_qa_reviewer()` was confirmed
+read-only against the live batch to resolve the real `qa.reviewer` user id, proving the independence
+lookup targets the correct actor.
+
+```yaml
+spec_gap_id: SG-181
+title: "qa_review_package/complete and release_scope/release+hold+reject had no Document 106 signature policy row and no signature-challenges endpoint"
+class: R  # signature meaning/signer role/independence are regulated decisions; the missing endpoint itself is engineering, not regulated
+description: >
+  Document 14 (SPEC-EBMR-005) row 29 and Document 15 (SPEC-EBMR-006) rows 32-34 name a meaning/signer
+  class/independence requirement for qa_review_package.complete and release_scope.release/hold/reject, but
+  no SignaturePolicy row existed for any of the four and neither module exposed a signature-challenges
+  endpoint (the SG-138 defect class, uncatalogued for this work package). Both defects are now fixed; the
+  "every PERFORMER on the batch" half of the release independence requirement (Document 107 IND-002/003)
+  remains unenforced (no data source exists) and is the one deliberately incomplete piece.
+source_documents:
+  - Document 106 (signature policy) SIGP-FR-004, rows 29/32/33/34
+  - Document 107 (SoD baseline) IND-002, IND-003
+  - Document 14 (SPEC-EBMR-005) RBE-FR-020/022/023
+  - Document 15 (SPEC-EBMR-006) REL-FR-006/007/008/011/012
+affected_modules:
+  - SPEC-EBMR-005
+  - SPEC-EBMR-006
+affected_functions:
+  - app.modules.qa_review.commands.complete_review_package
+  - app.modules.release.commands.release_scope_decision
+  - app.modules.release.commands.hold_scope
+  - app.modules.release.commands.reject_scope
+why_material: >
+  Signature meaning, required signer role and independence are regulated decisions reserved to Document
+  106/107's approver, exactly as SG-138 established for WP-05 QMS -- this is the identical defect class
+  found in a different work package (WP-03 vs WP-05), not a new category of gap.
+risk_if_guessed: >
+  A guessed independence mechanism (e.g. inventing a performer-tracking table) would assert a completeness
+  guarantee about "every performer on the batch" this codebase cannot actually back with data -- worse
+  than leaving it unenforced and documented, which is at least honest about what is and isn't checked.
+options:
+  - (A) Resolve the two engineering defects (policy row + challenge endpoint) and the concrete half of the
+    independence check (QA Reviewer, backed by a real audit-event lookup) now; leave the "every performer"
+    half unenforced and documented -- taken, matching SG-138/SG-035's precedent of resolving what real
+    data can support and recording the rest as an open gap rather than inventing it.
+  - (B) Leave all four pairs unsatisfiable (SIGNATURE_POLICY_UNRESOLVED) until a full performer-tracking
+    mechanism exists -- rejected: blocks a live demo user from a working QA review/release flow over a
+    gap (broad performer independence) this codebase has never implemented for batch.release either.
+  - (C) Seed signature_required=False to unblock without a role/independence decision -- rejected, same
+    reasoning as SG-035/SG-138: an affirmative regulated decision no approver has made.
+blocking: false  # role-gated + QA-Reviewer-independence path now satisfiable by the intended actors (QA Reviewer completes, QA Releaser releases/holds/rejects)
+owner: Head of Quality (approver) + QA Review/Release module owners
+resolution_document: "Document 106 rows 29/32/33/34 seeded 2026-09-09 (scripts/seed.py SIGNATURE_POLICY_FLOOR); Document 107 IND-002/003 QA-Reviewer half enforced in release/commands.py::_resolve_signature(); qa_review/release signature-challenges endpoints added; frontend wired to SignatureCeremony."
+status: OPEN  # "every PERFORMER on the batch" half of IND-002/IND-003 remains unenforced -- see description
 ```

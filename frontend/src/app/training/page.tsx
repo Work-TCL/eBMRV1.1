@@ -9,7 +9,8 @@ import {
   isOverdue,
   newIdempotencyKey,
 } from "@/lib/api";
-import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -81,6 +82,7 @@ export default function TrainingPage() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [subjectId, setSubjectId] = useState("");
   const [lookupId, setLookupId] = useState<string | null>(null);
+  const entities = useEntityOptions();
 
   const matrix = useApiResource<Matrix>(
     siteId ? `/training/v1/matrix?site_id=${siteId}&_=${reloadToken}` : null
@@ -102,7 +104,7 @@ export default function TrainingPage() {
     <div>
       <PageHead
         title="Training"
-        subtitle="Document 31 — training requirements, assignments, assessment and qualification."
+        subtitle="Training requirements, assignments, assessment and qualification."
         action={
           canAssignTraining(me) ? (
             <div className="flex gap-2">
@@ -217,16 +219,18 @@ export default function TrainingPage() {
                     e.preventDefault();
                     setLookupId(subjectId.trim() || null);
                   }}
-                  className="flex items-end gap-4 mb-4"
+                  className="flex flex-wrap items-end gap-4 mb-4"
                 >
-                  <Field label="Subject (user ID)">
-                    <Input
+                  <div style={{ minWidth: 260, maxWidth: 360, width: "100%" }}>
+                    <EntityPickerField
+                      label="Person"
                       value={subjectId}
-                      onChange={(e) => setSubjectId(e.target.value)}
-                      placeholder={me?.user_id ?? "user id"}
-                      style={{ minWidth: 320 }}
+                      onChange={setSubjectId}
+                      options={entities.users}
+                      status={entities.usersStatus}
+                      kind="user"
                     />
-                  </Field>
+                  </div>
                   <Button type="submit" variant="secondary" disabled={!subjectId.trim()}>
                     <Icon name="search" /> Look up
                   </Button>
@@ -448,8 +452,7 @@ function AssignmentActionModal({
         }}
       >
         <Banner tone="warn" title="This transition requires an electronic signature">
-          No Document 106 policy row exists yet for <code>training_assignment.{action}</code> (SG-138), so
-          the backend fails it closed.
+          This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
         </Banner>
 
         {action === "assess" && (
@@ -578,6 +581,7 @@ function AssignModal({
 }) {
   const { me } = useMe();
   const { busy, error, run } = useCommand(onDone);
+  const entities = useEntityOptions();
   const [requirementId, setRequirementId] = useState(requirements[0]?.requirement_id ?? "");
   const [subject, setSubject] = useState(me?.user_id ?? "");
   const [dueAt, setDueAt] = useState("");
@@ -598,8 +602,7 @@ function AssignModal({
         }}
       >
         <Banner tone="warn" title="This transition requires an electronic signature">
-          No Document 106 policy row exists yet for <code>training_assignment.create</code> (SG-138), so
-          the backend fails it closed.
+          This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
         </Banner>
 
         <Field label="Requirement" required>
@@ -612,9 +615,15 @@ function AssignModal({
             ))}
           </Select>
         </Field>
-        <Field label="Subject (user ID)" required>
-          <Input value={subject} onChange={(e) => setSubject(e.target.value)} required />
-        </Field>
+        <EntityPickerField
+          label="Person"
+          required
+          value={subject}
+          onChange={setSubject}
+          options={entities.users}
+          status={entities.usersStatus}
+          kind="user"
+        />
         <Field label="Due date">
           <Input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
         </Field>

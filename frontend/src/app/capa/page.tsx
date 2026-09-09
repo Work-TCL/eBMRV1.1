@@ -91,7 +91,7 @@ export default function CapaPage() {
     <>
       <QmsListPage<Capa>
         title="CAPA"
-        subtitle="Document 27 — corrective and preventive actions from plan through implementation to effectiveness."
+        subtitle="Corrective and preventive actions from plan through implementation to effectiveness."
         path="/qms/v1/capas"
         columns={columns}
         states={CAPA_STATES}

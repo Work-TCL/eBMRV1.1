@@ -13,7 +13,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
-from app.modules.iam.models import User
+from app.modules.audit.models import AuditEvent
+from app.modules.equipment import aseptic_commands as aseptic_service
+from app.modules.iam.models import Role, User
+from app.modules.policy.service import effective_role_names
 from app.modules.product_master import service as product_master_service
 from app.modules.product_master.models import (
     ALLOWED_TRANSITIONS,
@@ -28,6 +31,8 @@ from app.mutation.errors import (
     InvalidTransitionError,
     MissingSignatureError,
     NotFoundError,
+    RoleMissingError,
+    SodConflictError,
     StaleVersionError,
     UomUnknownError,
     ValidationFailedError,
@@ -40,6 +45,36 @@ from app.mutation.gateway import (
 )
 from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import CommandEnvelope, MutationReceipt
+
+
+async def _validate_sterile_profile(
+    session: AsyncSession, sterile_profile_id: uuid.UUID | None, site_id: uuid.UUID
+) -> None:
+    """PRD-FR-010: when a sterile process profile is declared, it must reference a real, RELEASED row in
+    the one sterile-profile registry this codebase actually has -- Document 40's
+    `equipment.aseptic_profile_versions` (seed-only master data, same as `aseptic_commands.create_operation`
+    already validates against). Closes the gap the DDCP client demo guide flagged: the field previously
+    took any raw UUID with no existence check at all. Reads through `aseptic_commands`'s own cross-module
+    query function (AG-02/AG-05) rather than importing/querying the equipment module's table directly."""
+    if sterile_profile_id is None:
+        return
+    profile = await aseptic_service.get_released_profile_version(session, sterile_profile_id)
+    if profile is None:
+        raise ValidationFailedError(
+            "sterile_profile_id does not reference an existing sterile process profile (PRD-FR-010)",
+            sterile_profile_id=str(sterile_profile_id),
+        )
+    if profile.state != "RELEASED":
+        raise ValidationFailedError(
+            "sterile_profile_id references a sterile process profile that is not RELEASED (PRD-FR-010)",
+            sterile_profile_id=str(sterile_profile_id),
+            state=profile.state,
+        )
+    if profile.site_id != site_id:
+        raise ValidationFailedError(
+            "sterile_profile_id references a sterile process profile at a different site (PRD-FR-010)",
+            sterile_profile_id=str(sterile_profile_id),
+        )
 
 
 async def _resolve_uom_id(session: AsyncSession, uom: str | None) -> uuid.UUID | None:
@@ -164,6 +199,30 @@ async def create_draft(session: AsyncSession, cmd: CreateProductDraftCommand, ac
             version_no=cmd.version_no,
         )
 
+    # `ProductVersion` also carries a second, independent UniqueConstraint("product_code", "version_no")
+    # (migration d5d48a66187f) -- a different product_business_id reusing the same product_code+version_no
+    # was previously left to hit that raw DB constraint uncaught, surfacing as an opaque SYSTEM_FAULT
+    # ("An internal error occurred") instead of a clear validation message. Pre-checked here the same way
+    # as the business_id/version_no conflict above, so it fails closed with an actionable error instead of
+    # crashing.
+    code_conflict = (
+        await session.execute(
+            select(ProductVersion).where(
+                ProductVersion.product_code == cmd.product_code,
+                ProductVersion.version_no == cmd.version_no,
+            )
+        )
+    ).scalar_one_or_none()
+    if code_conflict is not None:
+        raise ValidationFailedError(
+            "A draft or released version already exists at this product_code/version_no",
+            product_code=cmd.product_code,
+            version_no=cmd.version_no,
+            existing_business_id=code_conflict.product_business_id,
+        )
+
+    await _validate_sterile_profile(session, cmd.sterile_profile_id, cmd.site_id)
+
     version = ProductVersion(
         product_business_id=cmd.product_business_id,
         version_no=cmd.version_no,
@@ -263,6 +322,8 @@ async def update_draft(session: AsyncSession, cmd: UpdateProductDraftCommand, ac
     version = await _load_for_update(session, cmd.product_version_id, cmd.expected_version)
     if version.lifecycle_state != "draft":
         raise ValidationFailedError("Only a draft can be edited", current_state=version.lifecycle_state)
+
+    await _validate_sterile_profile(session, cmd.sterile_profile_id, version.site_id)
 
     version.name = cmd.name
     version.manufacturing_profile_code = cmd.manufacturing_profile_code
@@ -493,6 +554,37 @@ async def release_product_version(
         raise ValidationFailedError("Product version is not release-ready", findings=findings)
 
     policy = await signature_service.resolve_signature_requirement(session, record_type="product_version", action="release")
+
+    # SG-035 / Decision 2 (2026-09-08): resolve_signature_requirement() does not read required_role_id /
+    # requires_independent_signer, so enforce them here -- the same bespoke pattern release_recipe_version()
+    # (IND-011) and IND-021 use. The product version's author is the actor on its own `Created` audit
+    # event.
+    if policy.required_role_id is not None:
+        required_role_name = await session.scalar(select(Role.name).where(Role.id == policy.required_role_id))
+        if required_role_name not in await effective_role_names(session, actor_user_id, version.site_id):
+            raise RoleMissingError(
+                "Releasing a product version requires the signing role named by the signature policy",
+                action="product.release",
+                required_role=required_role_name,
+            )
+    if policy.requires_independent_signer:
+        author_id = await session.scalar(
+            select(AuditEvent.actor_id)
+            .where(
+                AuditEvent.aggregate_type == "product_version",
+                AuditEvent.aggregate_id == version.id,
+                AuditEvent.action == "Created",
+            )
+            .order_by(AuditEvent.occurred_at)
+            .limit(1)
+        )
+        if author_id is not None and author_id == actor_user_id:
+            raise SodConflictError(
+                "The author of a product version cannot also release it (author != releaser)",
+                record_type="product_version",
+                action="release",
+            )
+
     signature_id = None
     if policy.signature_required:
         if cmd.challenge_id is None or not cmd.reauth_password:

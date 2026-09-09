@@ -157,6 +157,251 @@ async def create_operation(
 
 
 # ---------------------------------------------------------------------------
+# Cross-module query interface (AG-02/AG-05) — callers outside this module (product_master's
+# sterile_profile_id FK-check/picker, added 2026-09-07) resolve/list profiles through these two functions
+# instead of importing AsepticProfileVersion and querying equipment.aseptic_profile_versions directly.
+# ---------------------------------------------------------------------------
+
+
+async def get_released_profile_version(session: AsyncSession, profile_version_id: uuid.UUID) -> AsepticProfileVersion | None:
+    return await session.get(AsepticProfileVersion, profile_version_id)
+
+
+async def list_profile_versions(session: AsyncSession, site_id: uuid.UUID) -> list[AsepticProfileVersion]:
+    """Every state (RELEASED and SUPERSEDED) — the browsable list on `/aseptic`'s own page, so a
+    superseded profile's history stays visible even though `list_released_profile_versions` below
+    (the picker feed) excludes it."""
+    return (
+        (
+            await session.execute(
+                select(AsepticProfileVersion)
+                .where(AsepticProfileVersion.site_id == site_id)
+                .order_by(AsepticProfileVersion.profile_number, AsepticProfileVersion.version_no.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def list_released_profile_versions(session: AsyncSession, site_id: uuid.UUID) -> list[AsepticProfileVersion]:
+    return (
+        (
+            await session.execute(
+                select(AsepticProfileVersion)
+                .where(AsepticProfileVersion.site_id == site_id, AsepticProfileVersion.state == "RELEASED")
+                .order_by(AsepticProfileVersion.profile_number, AsepticProfileVersion.version_no)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+# ---------------------------------------------------------------------------
+# CreateAsepticProfileVersion — added 2026-09-07, project-owner-directed. Document 40's own 7-op API list
+# (§6) declares no create/release operation for aseptic_profile_version either — `aseptic_models.py`'s own
+# docstring calls it "seed-only", same precedent as `cleaning_procedure_version`/
+# `process_cycle_profile_version`. It was genuinely uncreatable through the app (only the one seeded
+# `ASP-PROC-001` row existed per site) and Product Master's `sterile_profile_id` picker needed real
+# profiles to choose from beyond that single row — same "own considered create contract, not a guessed
+# one" precedent SG-081 established for `warehouse_location.create`. Created directly at state=RELEASED
+# (no draft/review stage — there is no transition endpoint for this record either, so a draft row would
+# be permanently stuck); no signature (Document 106 has no row for it, same "row absent, not optional"
+# precedent as every other unsigned create in this module).
+# ---------------------------------------------------------------------------
+
+
+class CreateAsepticProfileVersionCommand(CommandEnvelope):
+    site_id: uuid.UUID
+    profile_number: str
+    version_no: int = 1
+    product_id: uuid.UUID | None = None
+    required_area_classification: str | None = None
+    personnel_qualifications: dict | None = None
+    sterile_input_requirements: dict | None = None
+    intervention_catalogue: dict | None = None
+    hold_time_rules: dict | None = None
+    em_dependencies: dict | None = None
+    filter_sterilization_requirements: dict | None = None
+    release_blockers: dict | None = None
+    validation_reference: str | None = None
+
+
+async def create_profile_version(
+    session: AsyncSession, cmd: CreateAsepticProfileVersionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.profile_number.strip():
+        raise ValidationFailedError("profile_number is required")
+
+    # Matches the DB's own UniqueConstraint("profile_number", "version_no") — table-wide, not per-site.
+    duplicate = (
+        await session.execute(
+            select(AsepticProfileVersion).where(
+                AsepticProfileVersion.profile_number == cmd.profile_number,
+                AsepticProfileVersion.version_no == cmd.version_no,
+            )
+        )
+    ).scalar_one_or_none()
+    if duplicate is not None:
+        raise ValidationFailedError(
+            "A sterile process profile with this profile number and version already exists",
+            existing_id=str(duplicate.id),
+        )
+
+    profile = AsepticProfileVersion(
+        site_id=cmd.site_id,
+        profile_number=cmd.profile_number,
+        version_no=cmd.version_no,
+        product_id=cmd.product_id,
+        required_area_classification=cmd.required_area_classification,
+        personnel_qualifications=cmd.personnel_qualifications,
+        sterile_input_requirements=cmd.sterile_input_requirements,
+        intervention_catalogue=cmd.intervention_catalogue,
+        hold_time_rules=cmd.hold_time_rules,
+        em_dependencies=cmd.em_dependencies,
+        filter_sterilization_requirements=cmd.filter_sterilization_requirements,
+        release_blockers=cmd.release_blockers,
+        validation_reference=cmd.validation_reference,
+        state="RELEASED",
+        version=1,
+    )
+    session.add(profile)
+    await session.flush()
+
+    return await _write_receipt(
+        session, cmd=cmd, payload_hash=payload_hash, site_id=cmd.site_id, aggregate_type="aseptic_profile_version",
+        aggregate_id=profile.id, version=1, action="Created", actor_user_id=actor_user_id, reason=None,
+        old_state=None, event_type="AsepticProfileVersionCreated",
+        event_payload={"id": str(profile.id), "profile_number": profile.profile_number, "version_no": profile.version_no},
+        expected_version=None, command_type="CreateAsepticProfileVersion",
+    )
+
+
+# ---------------------------------------------------------------------------
+# SupersedeAsepticProfileVersion — added 2026-09-07, project-owner-directed follow-up to
+# CreateAsepticProfileVersion above (SG-176). This is the "update"/"delete" equivalent for a RELEASED
+# sterile process profile: this record's content is never edited or removed in place (AG-08/DATA-FR-017,
+# same restraint as ProductVersion/DdcpProfileVersion), so a change instead creates a new version
+# (`version_no + 1`, same `profile_number`/`site_id` — those are identity fields, not editable, same
+# "wholesale field replace, identity fixed" precedent as `product_master.update_draft`) and marks the
+# previous version SUPERSEDED. A SUPERSEDED row is immediately excluded from `list_released_profile_versions`
+# (state != "RELEASED") and from `get_released_profile_version`'s own state check callers (product_master's
+# `_validate_sterile_profile`) — so it drops out of every picker without ever being deleted, same
+# "supersede is this app's delete" pattern DdcpProfileVersion's own release-time supersession already
+# established (`ddcp/commands.py::release_injectable_profile_version`).
+# ---------------------------------------------------------------------------
+
+
+class SupersedeAsepticProfileVersionCommand(CommandEnvelope):
+    previous_profile_version_id: uuid.UUID
+    expected_version: int
+    product_id: uuid.UUID | None = None
+    required_area_classification: str | None = None
+    personnel_qualifications: dict | None = None
+    sterile_input_requirements: dict | None = None
+    intervention_catalogue: dict | None = None
+    hold_time_rules: dict | None = None
+    em_dependencies: dict | None = None
+    filter_sterilization_requirements: dict | None = None
+    release_blockers: dict | None = None
+    validation_reference: str | None = None
+
+
+async def supersede_profile_version(
+    session: AsyncSession, cmd: SupersedeAsepticProfileVersionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(
+        select(AsepticProfileVersion).where(AsepticProfileVersion.id == cmd.previous_profile_version_id).with_for_update()
+    )
+    previous = result.scalar_one_or_none()
+    if previous is None:
+        raise NotFoundError("Sterile process profile not found")
+    if previous.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Sterile process profile was modified by another actor since it was read",
+            expected_version=cmd.expected_version, current_version=previous.version,
+        )
+    if previous.state != "RELEASED":
+        raise ValidationFailedError(
+            "Only a RELEASED sterile process profile can be superseded", current_state=previous.state,
+        )
+
+    new_version_no = previous.version_no + 1
+    duplicate = (
+        await session.execute(
+            select(AsepticProfileVersion).where(
+                AsepticProfileVersion.profile_number == previous.profile_number,
+                AsepticProfileVersion.version_no == new_version_no,
+            )
+        )
+    ).scalar_one_or_none()
+    if duplicate is not None:
+        raise ValidationFailedError(
+            "A sterile process profile with this profile number and version already exists",
+            existing_id=str(duplicate.id),
+        )
+
+    new_profile = AsepticProfileVersion(
+        site_id=previous.site_id,
+        profile_number=previous.profile_number,
+        version_no=new_version_no,
+        product_id=cmd.product_id,
+        required_area_classification=cmd.required_area_classification,
+        personnel_qualifications=cmd.personnel_qualifications,
+        sterile_input_requirements=cmd.sterile_input_requirements,
+        intervention_catalogue=cmd.intervention_catalogue,
+        hold_time_rules=cmd.hold_time_rules,
+        em_dependencies=cmd.em_dependencies,
+        filter_sterilization_requirements=cmd.filter_sterilization_requirements,
+        release_blockers=cmd.release_blockers,
+        validation_reference=cmd.validation_reference,
+        state="RELEASED",
+        supersedes_profile_version_id=previous.id,
+        version=1,
+    )
+    session.add(new_profile)
+    await session.flush()
+
+    old_state = previous.state
+    previous.state = "SUPERSEDED"
+    previous.version += 1
+
+    correlation_id = uuid.uuid4()
+    await write_audit_event(
+        session, site_id=previous.site_id, aggregate_type="aseptic_profile_version", aggregate_id=previous.id,
+        aggregate_version=previous.version, action="Changed", actor_id=actor_user_id, correlation_id=correlation_id,
+        old_value={"state": old_state}, new_value={"state": "SUPERSEDED", "superseded_by": str(new_profile.id)},
+    )
+    await write_outbox_event(
+        session, event_type="AsepticProfileVersionSuperseded", aggregate_type="aseptic_profile_version",
+        aggregate_id=previous.id, aggregate_version=previous.version,
+        payload={"id": str(previous.id), "superseded_by": str(new_profile.id)}, correlation_id=correlation_id,
+    )
+
+    return await _write_receipt(
+        session, cmd=cmd, payload_hash=payload_hash, site_id=new_profile.site_id, aggregate_type="aseptic_profile_version",
+        aggregate_id=new_profile.id, version=1, action="Created", actor_user_id=actor_user_id, reason=None,
+        old_state=None, event_type="AsepticProfileVersionCreated",
+        event_payload={
+            "id": str(new_profile.id), "profile_number": new_profile.profile_number,
+            "version_no": new_profile.version_no, "supersedes_profile_version_id": str(previous.id),
+        },
+        expected_version=None, command_type="SupersedeAsepticProfileVersion",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Readiness composition — ASP-FR-005/006/007/008. The cross-module payoff: real reads against Document 41
 # (EM area readiness), Document 39 (line clearance), Document 38 (equipment eligibility) and Document 42
 # (sterile input status), not stubs.

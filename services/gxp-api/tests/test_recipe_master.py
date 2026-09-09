@@ -4,6 +4,8 @@ suite passes unmodified, proving that. Release correctly fails closed pending Do
 extended to recipe_version) -- the same honest pattern as every other new regulated action this session.
 """
 
+import uuid
+
 from app.core.security import hash_password
 from app.modules.iam.models import User, UserSiteRole
 from app.modules.signature.models import SignaturePolicy
@@ -93,6 +95,19 @@ async def test_create_draft_requires_recipe_author_permission(client, seeded, db
     )
     assert resp.status_code == 403
     assert resp.json()["code"] == "ROLE_MISSING"
+
+
+async def test_draft_rejects_unknown_product_version_with_404(client, seeded, db):
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe1b")
+    admin_token = await login(client, "admin.recipe1b")
+    resp = await client.post(
+        "/recipes/v2/drafts",
+        json=_two_step_body(str(uuid.uuid4()), seeded["site_id"], "RCP-NOPV"),
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "NOT_FOUND"
 
 
 async def test_draft_with_sections_steps_dependencies_round_trips(client, seeded, db):
@@ -343,3 +358,183 @@ async def test_concurrent_draft_update_rejects_stale_version(client, seeded, db)
     )
     assert stale.status_code == 409
     assert stale.json()["code"] == "STALE_VERSION"
+
+
+async def test_families_listing_summarises_each_recipe_family(client, seeded, db):
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe11")
+    admin_token = await login(client, "admin.recipe11")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"])
+
+    # Two versions in one family (RCP-FAM), plus a separate single-version family (RCP-SOLO).
+    fam_v1 = (
+        await client.post(
+            "/recipes/v2/drafts",
+            json=_two_step_body(product_version_id, seeded["site_id"], "RCP-FAM", version_no=1),
+            headers=auth_headers(admin_token),
+        )
+    ).json()["aggregate_id"]
+    await client.post(
+        "/recipes/v2/drafts",
+        json=_two_step_body(product_version_id, seeded["site_id"], "RCP-FAM", version_no=2),
+        headers=auth_headers(admin_token),
+    )
+    await client.post(
+        "/recipes/v2/drafts",
+        json=_two_step_body(product_version_id, seeded["site_id"], "RCP-SOLO", version_no=1),
+        headers=auth_headers(admin_token),
+    )
+
+    resp = await client.get("/recipes/v2/families", headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    by_code = {row["recipe_code"]: row for row in resp.json()}
+
+    assert by_code["RCP-FAM"]["version_count"] == 2
+    assert by_code["RCP-FAM"]["latest_version_no"] == 2
+    assert by_code["RCP-FAM"]["latest_lifecycle_state"] == "draft"
+    assert by_code["RCP-FAM"]["latest_recipe_version_id"] is not None
+    assert by_code["RCP-FAM"]["has_released"] is False
+    assert by_code["RCP-FAM"]["product_business_id"] == "RCPPRD-1"
+    assert by_code["RCP-SOLO"]["version_count"] == 1
+
+    # The listed family id round-trips through the existing per-family versions endpoint.
+    fam_id = by_code["RCP-FAM"]["recipe_family_id"]
+    versions = (await client.get(f"/recipes/v2/{fam_id}/versions", headers=auth_headers(admin_token))).json()
+    assert {v["recipe_version_id"] for v in versions} >= {fam_v1}
+
+
+async def test_families_listing_rejects_unauthenticated(client):
+    resp = await client.get("/recipes/v2/families", headers={})
+    assert resp.status_code == 401
+
+
+async def _make_user_with_role(db, seeded, username, role_name):
+    user = User(
+        username=username,
+        email=f"{username}@example.com",
+        full_name=username,
+        password_hash=hash_password(DEMO_PASSWORD),
+        status="active",
+    )
+    db.add(user)
+    await db.flush()
+    db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"][role_name].id))
+    return user
+
+
+async def test_process_engineer_authors_but_a_separate_role_releases(client, seeded, db):
+    """SG-178 authoring-SoD half: Process Engineer holds recipe.author (draft/edit/submit) but not
+    recipe.release; a distinct role (QA Releaser) holds recipe.release. author != releaser."""
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe12")
+        await _make_user_with_role(db, seeded, "pe.recipe12", "Process Engineer")
+        await _make_user_with_role(db, seeded, "releaser.recipe12", "QA Releaser")
+        db.add(SignaturePolicy(record_type="recipe_version", action="release", meaning="Released", signature_required=False))
+    admin_token = await login(client, "admin.recipe12")
+    pe_token = await login(client, "pe.recipe12")
+    releaser_token = await login(client, "releaser.recipe12")
+
+    # Admin owns the product master; the Process Engineer only authors the recipe against it.
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], business_id="RCPPE-1")
+
+    resp = await client.post(
+        "/recipes/v2/drafts",
+        json=_two_step_body(product_version_id, seeded["site_id"], "RCP-PE"),
+        headers=auth_headers(pe_token),
+    )
+    assert resp.status_code == 200, resp.text
+    recipe_version_id = resp.json()["aggregate_id"]
+
+    resp = await client.post(
+        f"/recipes/v2/drafts/{recipe_version_id}/submit",
+        json={"idempotency_key": idem(), "recipe_version_id": recipe_version_id, "expected_version": 1},
+        headers=auth_headers(pe_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    # The author cannot release.
+    resp = await client.post(
+        f"/recipes/v2/drafts/{recipe_version_id}/release",
+        json={"idempotency_key": idem(), "recipe_version_id": recipe_version_id, "expected_version": 2},
+        headers=auth_headers(pe_token),
+    )
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+    # A separate role can.
+    resp = await client.post(
+        f"/recipes/v2/drafts/{recipe_version_id}/release",
+        json={"idempotency_key": idem(), "recipe_version_id": recipe_version_id, "expected_version": 2},
+        headers=auth_headers(releaser_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/recipes/v2/versions/{recipe_version_id}", headers=auth_headers(pe_token))).json()
+    assert detail["lifecycle_state"] == "released"
+
+
+async def test_recipe_release_is_signed_by_an_independent_qa_releaser(client, seeded, db):
+    """recipe_version/release signature policy (2026-09-08): signature_required + required_role
+    'QA Releaser' + requires_independent_signer. The author cannot sign their own release even if they
+    also hold the releasing role."""
+    async with db.begin():
+        # One person who can BOTH author and (role-wise) release — proves independence still blocks them.
+        dual = await _make_user_with_role(db, seeded, "dual.recipe13", "Process Engineer")
+        db.add(UserSiteRole(user_id=dual.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+        await _make_admin(db, seeded, "admin.recipe13")
+        await _make_user_with_role(db, seeded, "releaser.recipe13", "QA Releaser")
+        db.add(
+            SignaturePolicy(
+                record_type="recipe_version",
+                action="release",
+                meaning="Released",
+                required_role_id=seeded["roles"]["QA Releaser"].id,
+                requires_independent_signer=True,
+                signature_required=True,
+            )
+        )
+    admin_token = await login(client, "admin.recipe13")
+    dual_token = await login(client, "dual.recipe13")
+    releaser_token = await login(client, "releaser.recipe13")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], business_id="RCPSIG-1")
+
+    rv = (
+        await client.post(
+            "/recipes/v2/drafts",
+            json=_two_step_body(product_version_id, seeded["site_id"], "RCP-SIG"),
+            headers=auth_headers(dual_token),
+        )
+    ).json()["aggregate_id"]
+    await client.post(
+        f"/recipes/v2/drafts/{rv}/submit",
+        json={"idempotency_key": idem(), "recipe_version_id": rv, "expected_version": 1},
+        headers=auth_headers(dual_token),
+    )
+
+    body = {"idempotency_key": idem(), "recipe_version_id": rv, "expected_version": 2}
+
+    # Author (who also holds QA Releaser) tries to release their own recipe -> independence blocks it.
+    resp = await client.post(f"/recipes/v2/drafts/{rv}/release", json=body, headers=auth_headers(dual_token))
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "SOD_CONFLICT"
+
+    # Independent QA Releaser, unsigned -> 428.
+    resp = await client.post(
+        f"/recipes/v2/drafts/{rv}/release", json={**body, "idempotency_key": idem()}, headers=auth_headers(releaser_token)
+    )
+    assert resp.status_code == 428
+
+    # Independent QA Releaser, signed -> released.
+    ch = (
+        await client.post(
+            f"/recipes/v2/drafts/{rv}/signature-challenges", json={"action": "release"}, headers=auth_headers(releaser_token)
+        )
+    ).json()
+    resp = await client.post(
+        f"/recipes/v2/drafts/{rv}/release",
+        json={**body, "idempotency_key": idem(), "challenge_id": ch["challenge_id"], "reauth_password": DEMO_PASSWORD},
+        headers=auth_headers(releaser_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/recipes/v2/versions/{rv}", headers=auth_headers(releaser_token))).json()
+    assert detail["lifecycle_state"] == "released"
+    assert detail["released_vault_object_id"] is not None

@@ -7,9 +7,11 @@ docstring for the full rationale.
 import uuid
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.ddcp import coated_device_commands
 from app.modules.ddcp import commands as ddcp_commands
@@ -20,6 +22,16 @@ from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/ddcp/v1/coated-device", tags=["ddcp-coated-device"])
 
+PROFILE_SORTABLE = {"profile_code": DdcpProfileVersion.profile_code, "created_at": DdcpProfileVersion.created_at}
+
+
+def _profile_summary_dict(profile: DdcpProfileVersion) -> dict:
+    return {
+        "id": str(profile.id), "profile_code": profile.profile_code, "subtype": profile.subtype,
+        "version": profile.version, "state": profile.state,
+        "product_version_id": str(profile.product_version_id) if profile.product_version_id else None,
+    }
+
 
 @router.post("/profiles", response_model=MutationReceipt)
 async def post_create_profile(
@@ -29,6 +41,26 @@ async def post_create_profile(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="ddcp_profile.author", site_id=cmd.site_id)
         return await coated_device_commands.create_coated_device_profile_version(session, cmd, actor.user_id)
+
+
+# Read-only list — same rationale as Document 54's own `/profiles` list. Document 57 declares no subtype
+# vocabulary of its own (COAT-FR-001) — `create_coated_device_profile_version` always leaves `subtype`
+# NULL — so that's this family's own discriminator against the other three, which all set a subtype
+# value when one applies. The one known gap: a PFS profile created with no subtype (optional on that
+# document only) would also show up here, since it's equally NULL — disclosed, not fixable without a
+# real family column on the shared table.
+@router.get("/profiles")
+async def list_profiles(
+    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params), state: str | None = "RELEASED",
+) -> dict:
+    async with session.begin():
+        stmt = select(DdcpProfileVersion).where(DdcpProfileVersion.subtype.is_(None))
+        if params.q:
+            stmt = stmt.where(DdcpProfileVersion.profile_code.ilike(f"%{params.q}%"))
+        if state:
+            stmt = stmt.where(DdcpProfileVersion.state == state)
+        rows, envelope = await paginate(session, stmt, params, sortable=PROFILE_SORTABLE, default_sort=DdcpProfileVersion.created_at)
+        return {**envelope, "items": [_profile_summary_dict(p) for (p,) in rows]}
 
 
 @router.post("/profiles/{profile_id}/release", response_model=MutationReceipt)

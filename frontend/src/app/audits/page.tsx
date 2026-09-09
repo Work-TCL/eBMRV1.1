@@ -50,7 +50,7 @@ export default function AuditsPage() {
     <>
       <QmsListPage<InternalAudit>
         title="Internal audits"
-        subtitle="Document 34 — the audit programme, its findings, auditee responses and closure verification."
+        subtitle="The audit programme, its findings, auditee responses and closure verification."
         path="/qms/v1/audits"
         columns={columns}
         states={AUDIT_STATES}

@@ -109,6 +109,18 @@ async def post_release_rule(
         return await release_rule(session, cmd, actor.user_id)
 
 
+@router.get("")
+async def get_released_rules(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Picker data for any field that references a rule by its `rule_id` (e.g. Recipe Master's
+    dependency `condition_rule_id`). One row per rule with a currently-effective released version.
+    Registered ahead of `GET /{rule_id}/versions` so an empty path is never parsed as a rule_id."""
+    await evaluate_policy(session, actor.user_id, action="rules.evaluate", site_id=None)
+    return await rules_service.list_released_rules(session)
+
+
 @router.get("/{rule_id}/versions")
 async def get_versions(
     rule_id: str,

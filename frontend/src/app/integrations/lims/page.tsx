@@ -1,18 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { api, ApiError, formatDateTime, holdsAnyRole, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { api, ApiError, formatDateTime, holdsAnyRole, listAll, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
-import { Field } from "@/components/ui/Field";
-import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { StatePill } from "@/components/ui/StatePill";
 import { WorkflowActionButton } from "@/components/shared/WorkflowActionButton";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
+import type { EntityOption, EntityOptionsStatus } from "@/lib/hooks";
 
 // GET /integrations/lims/{instance_id}/health
 interface LimsHealth {
@@ -24,12 +24,45 @@ interface LimsHealth {
   last_message_at: string | null;
 }
 
+// GET /integrations/lims
+interface LimsInstanceSummary {
+  id: string;
+  instance_code: string;
+  provider_type: string;
+  status: string;
+}
+
+/** LIMS instances are provisioned as configuration data (no create screen in this app), so the list is
+ * usually tiny — but showing real instance codes beats requiring the operator to already know a raw
+ * UUID, and the manual-ID fallback below still covers an instance outside the 100-row cap. */
+function useLimsInstances(): { options: EntityOption[]; status: EntityOptionsStatus } {
+  const [options, setOptions] = useState<EntityOption[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
+  useEffect(() => {
+    let cancelled = false;
+    listAll<LimsInstanceSummary>("/integrations/lims")
+      .then((rows) => {
+        if (cancelled) return;
+      setOptions(rows.map((r) => ({ value: r.id, label: `${r.instance_code} — ${r.provider_type} (${r.status})` })));
+        setStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return { options, status };
+}
+
 export default function LimsPage() {
   const { me } = useMe();
   const [instanceId, setInstanceId] = useState("");
   const [health, setHealth] = useState<LimsHealth | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const instances = useLimsInstances();
 
   const canReconcile = holdsAnyRole(me, ["Admin", "Integration Administrator", "QA Reviewer"]);
 
@@ -41,7 +74,7 @@ export default function LimsPage() {
       setHealth(await api.get<LimsHealth>(`/integrations/lims/${id.trim()}/health`));
       setInstanceId(id.trim());
     } catch (err) {
-      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Lookup failed");
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Couldn't load that instance's health. Check the instance and try again.");
       setHealth(null);
     } finally {
       setLoading(false);
@@ -52,14 +85,8 @@ export default function LimsPage() {
     <div>
       <PageHead
         title="LIMS integration"
-        subtitle="Document 24 — per-instance message health, dead letters and the reconciliation trigger."
+        subtitle="Per-instance message health, dead letters and the reconciliation trigger."
       />
-
-      <p className="hint mb-4">
-        The platform API exposes LIMS instances by ID, not as a browsable registry — enter an instance ID to
-        see its health. A message monitor and dead-letter browser are not available as read endpoints in this
-        build.
-      </p>
 
       <Card pad className="mb-4">
         <form
@@ -67,11 +94,18 @@ export default function LimsPage() {
             e.preventDefault();
             load();
           }}
-          className="flex items-end gap-3"
+          className="flex flex-wrap items-end gap-3"
         >
-          <Field label="LIMS instance ID">
-            <Input value={instanceId} onChange={(e) => setInstanceId(e.target.value)} style={{ minWidth: 320 }} />
-          </Field>
+          <div style={{ minWidth: 260, maxWidth: 360, width: "100%" }}>
+            <EntityPickerField
+              label="LIMS instance"
+              value={instanceId}
+              onChange={setInstanceId}
+              options={instances.options}
+              status={instances.status}
+              kind="LIMS instance"
+            />
+          </div>
           <Button type="submit" variant="secondary" disabled={loading || !instanceId.trim()}>
             <Icon name="search" /> {loading ? "Checking…" : "Check health"}
           </Button>

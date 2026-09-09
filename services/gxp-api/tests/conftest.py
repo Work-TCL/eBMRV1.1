@@ -474,6 +474,8 @@ async def seeded(db: AsyncSession) -> dict:
             "Sterilization Operator",
             # Document 40 (SPEC-EQP-003) — same rows scripts/seed.py's ROLE_NAMES adds.
             "Aseptic Operator", "Aseptic Supervisor",
+            # Document 10 (SPEC-EBMR-002) — dedicated master-recipe author (SG-178 authoring-SoD half).
+            "Process Engineer",
             # WP-07 (Documents 48/52/53) — same row scripts/seed.py's ROLE_NAMES adds.
             "Integration Administrator",
             # WP-08 (Document 54, SPEC-DDCP-001) — same rows scripts/seed.py's ROLE_NAMES adds.
@@ -502,6 +504,7 @@ async def seeded(db: AsyncSession) -> dict:
             ("sterilization.operator", "Sterilization Operator"),
             ("aseptic.operator", "Aseptic Operator"),
             ("aseptic.supervisor", "Aseptic Supervisor"),
+            ("process.engineer", "Process Engineer"),
             ("integration.admin", "Integration Administrator"),
             ("ddcp.engineer", "DDCP Engineer"),
             ("ddcp.operator", "DDCP Operator"),
@@ -536,6 +539,66 @@ async def seeded(db: AsyncSession) -> dict:
             SignaturePolicy(
                 record_type="batch_step",
                 action="complete_step",
+                meaning="Performed",
+                required_role_id=None,
+                requires_independent_signer=False,
+                signature_required=True,
+                policy_source="PLATFORM_FLOOR",
+            )
+        )
+        # Document 106 rows 19/21 -- the new batch_execution module's own results/complete endpoints
+        # (SG-047 partial resolution, 2026-09-09), distinct from the legacy complete_step row above.
+        db.add(
+            SignaturePolicy(
+                record_type="batch_step",
+                action="results",
+                meaning="Performed",
+                required_role_id=None,
+                requires_independent_signer=False,
+                signature_required=True,
+                policy_source="PLATFORM_FLOOR",
+            )
+        )
+        db.add(
+            SignaturePolicy(
+                record_type="batch_step",
+                action="complete",
+                meaning="Performed",
+                required_role_id=None,
+                requires_independent_signer=False,
+                signature_required=True,
+                policy_source="PLATFORM_FLOOR",
+            )
+        )
+        # BAT-FR-020 step-scoped hold/resume + BAT-FR-026 production-complete (SG-047/SG-048 further
+        # partial resolution, 2026-09-09).
+        db.add(
+            SignaturePolicy(
+                record_type="batch_step",
+                action="hold",
+                meaning="Performed",
+                required_role_id=None,
+                requires_independent_signer=False,
+                signature_required=True,
+                reason_required=True,
+                policy_source="PLATFORM_FLOOR",
+            )
+        )
+        db.add(
+            SignaturePolicy(
+                record_type="batch_step",
+                action="resume",
+                meaning="Approved",
+                required_role_id=None,
+                requires_independent_signer=False,
+                signature_required=True,
+                policy_source="PLATFORM_FLOOR",
+            )
+        )
+        db.add(
+            SignaturePolicy(
+                record_type="batch",
+                action="production_complete",
                 meaning="Performed",
                 required_role_id=None,
                 requires_independent_signer=False,
@@ -968,12 +1031,24 @@ async def seeded(db: AsyncSession) -> dict:
             )
         )
 
+        # NOTE: no global product_version/release row here, deliberately -- SG-035 PARTIALLY RESOLVED
+        # 2026-09-07 (project-owner-directed: self-signed by Admin) added this row to the *live-DB* floor
+        # (scripts/seed.py SIGNATURE_POLICY_FLOOR, applied via scripts/sync_signature_policies.py), but at
+        # least 6 other test files (test_release.py, test_device.py, test_qa_review.py,
+        # test_batch_execution.py, test_packaging.py, test_yield_reconciliation.py) already add their own
+        # *local*, per-test product_version/release row (with signature_required=False, for cheap
+        # unsigned-release test setup unrelated to what they're actually testing) -- adding it here too
+        # would collide with every one of them on UniqueConstraint(record_type, action). Product Master's
+        # own tests (test_product_master.py) that need the real, signed version add their own local row
+        # instead, same pattern as everyone else, just with the real values.
+
         # WP-01 Document 07 permission catalog + role grants — same rows scripts/seed.py upserts. Every
         # rewired evaluate_policy() call site needs these or it fail-closes with ROLE_MISSING for all
         # six roles, same fail-closed discipline as the signature floor above.
         permissions = {}
         for code, action, resource_type in (
             ("batch_step.start", "execute", "batch_step"),
+            ("batch_step.role_override", "role_override", "batch_step"),
             ("batch.review", "review", "batch"),
             ("batch.release", "release", "batch"),
             ("material_lot.disposition", "approve", "material_lot"),
@@ -1134,6 +1209,7 @@ async def seeded(db: AsyncSession) -> dict:
             ("effectiveness_check.create", "create", "effectiveness_check"),
             ("effectiveness_check.evaluate", "evaluate", "effectiveness_check"),
             ("equipment_asset.create", "create", "equipment_asset"),
+            ("equipment_area.create", "create", "equipment_area"),
             ("equipment_asset.qualify", "qualify", "equipment_asset"),
             ("equipment_asset.calibrate", "calibrate", "equipment_asset"),
             ("equipment_asset.maintain", "maintain", "equipment_asset"),
@@ -1159,6 +1235,7 @@ async def seeded(db: AsyncSession) -> dict:
             ("aseptic_operation.intervention", "intervention", "aseptic_operation"),
             ("aseptic_operation.event", "event", "aseptic_operation"),
             ("aseptic_operation.complete", "complete", "aseptic_operation"),
+            ("aseptic_profile_version.create", "create", "aseptic_profile_version"),
             ("edge_gateway.enroll", "enroll", "edge_gateway"),
             ("edge_gateway.certificate_rotation", "certificate_rotation", "edge_gateway"),
             ("erp_instance.administer", "administer", "erp_instance"),
@@ -1403,6 +1480,7 @@ async def seeded(db: AsyncSession) -> dict:
                     "product.author", "product.release", "product.suspend", "product.view",
                     "recipe.author", "recipe.release", "recipe.view",
                     "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view",
+                    "batch_step.role_override",
                     "device.create", "device.execute", "device.view", "genealogy.view",
                     "qa_review.create", "qa_review.execute", "qa_review.view",
                     "release.evaluate", "release.release", "release.hold", "release.reject", "release.view",
@@ -1447,6 +1525,7 @@ async def seeded(db: AsyncSession) -> dict:
                     "effectiveness_check.create", "effectiveness_check.evaluate",
                     "equipment_asset.create", "equipment_asset.qualify", "equipment_asset.calibrate",
                     "equipment_asset.maintain", "equipment_asset.hold", "equipment_asset.return_to_service",
+                    "equipment_area.create",
                     "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify",
                     "line_clearance.create", "line_clearance.complete",
                     "em_program.create", "em_sample.create", "em_sample.record_result", "em_sample.review",
@@ -1454,7 +1533,7 @@ async def seeded(db: AsyncSession) -> dict:
                     "process_cycle.create", "process_cycle.start", "process_cycle.review",
                     "sterile_filter_use.create", "sterile_filter_use.complete",
                     "aseptic_operation.create", "aseptic_operation.start", "aseptic_operation.intervention",
-                    "aseptic_operation.event", "aseptic_operation.complete",
+                    "aseptic_operation.event", "aseptic_operation.complete", "aseptic_profile_version.create",
                     "edge_gateway.enroll",
                     "erp_instance.administer", "erp_mapping.propose", "erp_mapping.approve", "erp_mapping.resolve_conflict",
                     "erp_sync.checkpoint", "integration_command.queue", "integration_command.dispatch",
@@ -1532,11 +1611,12 @@ async def seeded(db: AsyncSession) -> dict:
                 ],
             ),
             ("Operator", ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.execute", "batch_execution.view", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "equipment_asset.hold", "cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", "validation.plan.manage", "validation.gate.view", "validation.package.view", "validation.intended_use.manage", "validation.function_risk.manage", "validation.function_risk.view", "validation.requirement.manage", "validation.trace_link.manage", "validation.baseline.manage", "validation.traceability.view", "validation.test_definition.manage", "validation.test_execution.manage", "validation.test_execution.complete", "validation.iq.manage", "validation.iq.complete", "validation.oq.manage", "validation.oq.view", "validation.infrastructure.manage", "validation.part11.manage", "validation.data_integrity.manage", "validation.interface.manage", "validation.dr.manage", "validation.security.manage", "validation.security.view", "validation.performance.manage", "validation.performance.view", "validation.exception.view", "validation.change_impact.manage", "validation.periodic_review.manage", "validation.periodic_review.decide", "validation.state_baseline.decommission", "validation.pq.manage", "validation.pq.execute", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"]),
-            ("Supervisor", ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view", "device.create", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate"]),
+            ("Supervisor", ["batch_step.start", "batch_step.role_override", "rules.evaluate", "product.view", "recipe.view", "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view", "device.create", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate"]),
+            ("Process Engineer", ["product.author", "product.view", "recipe.author", "recipe.view", "rules.evaluate"]),
             ("QA Reviewer", ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation", "equipment_asset.hold", "equipment_asset.return_to_service", "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify", "em_sample.review", "em_excursion.impact", "process_cycle.create", "process_cycle.start", "process_cycle.review", "reconciliation.verify", "machine_evidence.review_view", "evidence.upload", "evidence.download", "evidence.manifest", "evidence.legal_hold", "evidence.integrity_check", "ai_governance.use_case.register", "ai_governance.use_case.assess_risk", "ai_governance.context.build", "ai_governance.advisory.execute", "ai_governance.disposition.record", "ai_governance.evaluation.run", "ai_governance.release_gate.evaluate", "ai_governance.injection.detect", "validation.gate.view", "validation.package.view", "validation.function_risk.approve", "validation.function_risk.view", "validation.traceability.view", "validation.oq.view", "validation.security.view", "validation.performance.view", "validation.exception.view", "validation.periodic_review.decide", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"]),
-            ("QA Releaser", ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "supplier_qualification.approve", "qc_test_specification.release", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", "security_incident.close", "validation.exception.create", "validation.exception.triage", "validation.exception.retest_plan", "validation.exception.disposition", "validation.plan.release", "validation.function_risk.approve", "validation.test_definition.approve", "validation.iq.approve", "validation.oq.approve", "validation.infrastructure.approve", "validation.part11.approve", "validation.data_integrity.approve", "validation.interface.approve", "validation.dr.approve", "validation.security.approve", "validation.pq.approve", "validation.migration.approve", "validation.vsr.approve", "validation.release_auth.authorize", "validation.release_auth.deployment_check", "validation.post_go_live.record"]),
+            ("QA Releaser", ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "product.view", "product.release", "recipe.view", "recipe.release", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "supplier_qualification.approve", "qc_test_specification.release", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", "security_incident.close", "validation.exception.create", "validation.exception.triage", "validation.exception.retest_plan", "validation.exception.disposition", "validation.plan.release", "validation.function_risk.approve", "validation.test_definition.approve", "validation.iq.approve", "validation.oq.approve", "validation.infrastructure.approve", "validation.part11.approve", "validation.data_integrity.approve", "validation.interface.approve", "validation.dr.approve", "validation.security.approve", "validation.pq.approve", "validation.migration.approve", "validation.vsr.approve", "validation.release_auth.authorize", "validation.release_auth.deployment_check", "validation.post_go_live.record"]),
             ("QC Reviewer", ["material_lot.disposition", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.view", "qc_result.correct", "material_lot.collect_sample", "material_lot.retest", "dispensing_order.verify", "cleaning_execution.verify", "em_sample.review", "process_cycle.review"]),
-            ("Equipment Administrator", ["equipment_asset.create", "equipment_asset.qualify", "machine_command.submit"]),
+            ("Equipment Administrator", ["equipment_asset.create", "equipment_asset.qualify", "machine_command.submit", "equipment_area.create"]),
             ("Engineering Manager", ["equipment_asset.return_to_service"]),
             ("Calibration Technician", ["equipment_asset.calibrate"]),
             ("Maintenance Technician", ["equipment_asset.maintain"]),
@@ -1545,7 +1625,7 @@ async def seeded(db: AsyncSession) -> dict:
             ("Microbiology Analyst", ["em_sample.record_result"]),
             ("Sterilization Operator", ["process_cycle.create", "process_cycle.start", "sterile_filter_use.create", "sterile_filter_use.complete"]),
             ("Aseptic Operator", ["aseptic_operation.create", "aseptic_operation.intervention", "aseptic_operation.event", "aseptic_operation.complete"]),
-            ("Aseptic Supervisor", ["aseptic_operation.start"]),
+            ("Aseptic Supervisor", ["aseptic_operation.start", "aseptic_profile_version.create"]),
             ("Integration Administrator", [
                 "erp_instance.administer", "erp_mapping.propose", "erp_mapping.approve", "erp_mapping.resolve_conflict",
                 "erp_sync.checkpoint", "integration_command.queue", "integration_command.dispatch",
@@ -1557,6 +1637,7 @@ async def seeded(db: AsyncSession) -> dict:
                 "ddcp_constituent.handoff", "ddcp_constituent.decide", "ddcp_fill.start", "ddcp_fill.record_ipc",
                 "ddcp_fill.record_count", "ddcp_fill.record_intervention", "ddcp_fill.complete", "ddcp_device.assemble",
                 "ddcp_device.verify", "ddcp_device.record_test", "ddcp_release.evaluate", "ddcp_release.export",
+                "batch_execution.view",
             ]),
         ):
             for code in codes:

@@ -60,7 +60,7 @@ export default function NonconformancesPage() {
     <>
       <QmsListPage<Nonconformance>
         title="Nonconformances"
-        subtitle="Document 28 — nonconforming product from segregation through evaluation and disposition to verification."
+        subtitle="Nonconforming product from segregation through evaluation and disposition to verification."
         path="/qms/v1/nonconformances"
         columns={columns}
         states={NCR_STATES}

@@ -14,7 +14,7 @@ import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
-import { JsonPanel } from "@/components/ui/JsonPanel";
+import { JsonPanel, summarizeJson } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
@@ -58,7 +58,7 @@ export default function QualityMetricsPage() {
     <div>
       <PageHead
         title="Quality metrics"
-        subtitle="Document 37 — metric definitions, periodic snapshots and the management review package."
+        subtitle="Metric definitions, periodic snapshots and the management review package."
         action={
           canInvestigateQms(me) || canApproveQms(me) ? (
             <div className="flex gap-2">
@@ -134,7 +134,7 @@ export default function QualityMetricsPage() {
                   </td>
                   <td className="fs-2">
                     {m.latest_snapshot?.result ? (
-                      <span className="tabular">{JSON.stringify(m.latest_snapshot.result)}</span>
+                      <span>{summarizeJson(m.latest_snapshot.result)}</span>
                     ) : (
                       <span className="text-muted">—</span>
                     )}
@@ -395,8 +395,8 @@ function ManagementReviewCard({
     <Card pad className="mt-4">
       <CardHeader title="Management review package" />
       <p className="fs-2 text-muted mb-3">
-        Freezes the selected metric snapshots into one signed management-review package (Document 37). The
-        snapshot values themselves stay authoritative.
+        Freezes the selected metric snapshots into one signed management-review package. The snapshot
+        values themselves stay authoritative.
       </p>
       {withSnapshots.length === 0 ? (
         <p className="hint">No calculated snapshots to include yet.</p>

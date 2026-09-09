@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,8 +25,10 @@ from app.modules.product_master.commands import (
     update_draft,
     validate_completeness_command,
 )
-from app.modules.product_master.models import ConstituentCompatibilityVersion
-from app.mutation.errors import ValidationFailedError
+from app.modules.product_master.models import ConstituentCompatibilityVersion, ProductVersion
+from app.modules.signature.service import create_challenge
+from app.mutation.errors import NotFoundError, ValidationFailedError
+from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/products/v1", tags=["product_master"])
@@ -126,6 +129,44 @@ async def post_submit_draft(
         return await submit_draft(session, cmd, actor.user_id)
 
 
+class VersionSignatureChallengeRequest(BaseModel):
+    action: str  # "release" -- "suspend"/"reinstate" remain SIGNATURE_POLICY_UNRESOLVED (SG-035, open)
+
+
+# Matches release_product_version()'s own record_hash formula exactly (commands.py) -- consume_challenge
+# rejects a mismatched hash as "record changed since challenge" (SIG-FR-012/013/014 equivalent).
+def _version_record_hash(version: ProductVersion) -> str:
+    return sha256_hex({"id": str(version.id), "version": version.version})
+
+
+_VERSION_CHALLENGE_MEANINGS = {"release": "Released"}
+
+
+@router.post("/{product_version_id}/signature-challenges")
+async def post_version_signature_challenge(
+    product_version_id: uuid.UUID,
+    body: VersionSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """SG-035 (partial, 2026-09-07, project-owner-directed): only `release` has a real Document 106 floor
+    row so far -- self-signed by Admin (`scripts/seed.py` SIGNATURE_POLICY_FLOOR). `suspend`/`reinstate`
+    stay unresolved on purpose (SG-035's remaining scope); this endpoint refuses to issue a challenge for
+    either rather than guessing they'd want the same treatment."""
+    async with session.begin():
+        version = await session.get(ProductVersion, product_version_id)
+        if version is None:
+            raise NotFoundError("Product version not found")
+        meaning = _VERSION_CHALLENGE_MEANINGS.get(body.action)
+        if meaning is None:
+            raise ValidationFailedError("Unknown or unsigned action", action=body.action)
+        challenge = await create_challenge(
+            session, user_id=actor.user_id, record_type="product_version", record_id=version.id,
+            record_version=version.version, record_hash=_version_record_hash(version), meaning=meaning,
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
+
+
 @router.post("/drafts/{product_version_id}/release", response_model=MutationReceipt)
 async def post_release_draft(
     product_version_id: uuid.UUID,
@@ -166,6 +207,54 @@ async def post_reinstate(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=None)
         return await reinstate_product_version(session, cmd, actor.user_id)
+
+
+@router.get("/business-ids")
+async def get_business_ids(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Real picker data for any "Constituent's Business ID"-shaped field (product_master/service.py::
+    list_product_business_ids) -- registered ahead of the single-segment `/{product_version_id}` GET and
+    the `/{product_business_id}/versions` GET below so "business-ids" is never parsed as either."""
+    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
+    versions = await product_master_service.list_product_business_ids(session)
+    return [
+        {
+            # 2026-09-07: added for the page's own "Products" list (frontend/src/app/product-master/
+            # page.tsx) to open a row's latest version directly -- additive, the Constituent editor's own
+            # picker usage never read this field and is unaffected.
+            "product_version_id": str(v.id),
+            "product_business_id": v.product_business_id,
+            "name": v.name,
+            "version_no": v.version_no,
+            "lifecycle_state": v.lifecycle_state,
+        }
+        for v in versions
+    ]
+
+
+@router.get("/sterile-profiles")
+async def get_sterile_profiles(
+    site_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Real picker data for the Sterile process profile ID field on the draft/edit forms -- registered
+    ahead of the single-segment `/{product_version_id}` GET below so "sterile-profiles" is never parsed
+    as a product_version_id."""
+    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
+    profiles = await product_master_service.list_sterile_profiles(session, site_id)
+    return [
+        {
+            "id": str(p.id),
+            "profile_number": p.profile_number,
+            "version_no": p.version_no,
+            "state": p.state,
+            "required_area_classification": p.required_area_classification,
+        }
+        for p in profiles
+    ]
 
 
 @router.get("/{product_business_id}/versions")

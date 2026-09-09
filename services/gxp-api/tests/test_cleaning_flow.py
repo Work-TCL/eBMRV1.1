@@ -225,6 +225,27 @@ async def test_line_clearance_full_flow(client, seeded):
     assert resp.status_code == 200, resp.text
     detail = (await client.get(f"/line-clearance/v1/{clearance_id}")).json()
     assert detail["state"] == "CLEARED"
+    assert detail["area_code"] == "AREA-WAREHOUSE"
+
+
+async def test_line_clearance_is_listed_with_resolved_area(client, seeded):
+    op_token = await login(client, "sanitation.operator")
+    site_id = seeded["site_id"]
+    area_id = str(seeded["areas"]["AREA-WAREHOUSE"].id)
+
+    resp = await client.post(
+        "/line-clearance/v1",
+        json={"idempotency_key": idem(), "site_id": str(site_id), "area_id": area_id, "checklist_version": "LC-LIST-1"},
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+    clearance_id = resp.json()["aggregate_id"]
+
+    listing = (await client.get(f"/line-clearance/v1?site_id={site_id}")).json()
+    row = next((r for r in listing["items"] if r["id"] == clearance_id), None)
+    assert row is not None
+    assert row["area_code"] == "AREA-WAREHOUSE"
+    assert row["state"] == "IN_PROGRESS"
 
 
 async def test_duplicate_idempotency_key_returns_same_receipt(client, seeded):

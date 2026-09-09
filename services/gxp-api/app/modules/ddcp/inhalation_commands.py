@@ -17,9 +17,9 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.batch.models import Batch
+from app.modules.batch_execution.models import Batch
 from app.modules.ddcp import commands as ddcp_commands
-from app.modules.ddcp.commands import _receipt_from_existing, _write_receipt
+from app.modules.ddcp.commands import _assert_product_version_for_profile, _receipt_from_existing, _write_receipt
 from app.modules.ddcp.models import (
     INHALATION_SUBTYPES,
     RELEASE_CHECKPOINT_CODES,
@@ -63,6 +63,7 @@ from app.mutation.schemas import CommandEnvelope, MutationReceipt
 class CreateInhalationProfileVersionCommand(CommandEnvelope):
     site_id: uuid.UUID
     profile_code: str
+    product_version_id: uuid.UUID  # SG-175 -- must be a RELEASED product with manufacturing_profile_code="inhalation_ddcp"
     subtype: str  # MDI | DPI
     fill_route: str | None = None
     environment_profile_id: str | None = None
@@ -85,6 +86,10 @@ async def create_inhalation_profile_version(
     for req in cmd.constituent_requirements:
         if not req.get("component_role"):
             raise ProfileSchemaInvalidError("Every constituent_requirement needs a component_role")
+    await _assert_product_version_for_profile(
+        session, product_version_id=cmd.product_version_id, site_id=cmd.site_id,
+        expected_manufacturing_profile_code="inhalation_ddcp",
+    )
 
     next_version = (
         await session.execute(
@@ -95,7 +100,8 @@ async def create_inhalation_profile_version(
     ).scalar() or 0
 
     profile = DdcpProfileVersion(
-        site_id=cmd.site_id, profile_code=cmd.profile_code, subtype=cmd.subtype, version=next_version + 1,
+        site_id=cmd.site_id, profile_code=cmd.profile_code, product_version_id=cmd.product_version_id,
+        subtype=cmd.subtype, version=next_version + 1,
         state="DRAFT",
         constituent_architecture={"fillRoute": cmd.fill_route, "environmentProfileId": cmd.environment_profile_id, **cmd.constituent_architecture},
         required_controls=cmd.required_controls, release_checkpoint_set=cmd.release_checkpoint_set,

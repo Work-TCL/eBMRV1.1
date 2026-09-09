@@ -19,6 +19,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.equipment.cleaning_models import EquipmentArea
 from app.modules.equipment.models import (
     CALIBRATION_RESULTS,
     MAINTENANCE_TYPES,
@@ -213,6 +214,75 @@ async def create_equipment_asset(
         reason=None, old_state="INSTALLED", event_type="EquipmentInstalled",
         event_payload={"id": str(asset.id), "equipment_code": asset.equipment_code}, expected_version=None,
         command_type="CreateEquipmentAsset",
+    )
+
+
+# ---------------------------------------------------------------------------
+# CreateEquipmentArea — added 2026-09-07, project-owner-directed. `EquipmentArea`'s own docstring
+# (cleaning_models.py) called it a shared master "provisioned outside the app today" -- no write endpoint
+# existed anywhere in Document 38/39/40/41/42's declared API lists, only the read-only `GET
+# /equipment/v1/areas` listing this pass's own real-picker work added for the `areaSelect` field type.
+# Found while building that same picker for the `/aseptic` "Create aseptic operation" form and asked
+# directly whether to also build create capability for the rows behind it -- same "own considered create
+# contract, not a guessed one" precedent as `warehouse_location.create`/`aseptic_profile_version.create`.
+# No qualification/release workflow exists for an area (unlike EquipmentAsset's INSTALLED->...->
+# QUALIFIED_AVAILABLE chain) -- created directly at status="active", matching the model's own default.
+# ---------------------------------------------------------------------------
+
+
+class CreateEquipmentAreaCommand(CommandEnvelope):
+    site_id: uuid.UUID
+    area_code: str
+    area_type: str | None = None
+    classification: str | None = None
+    criticality: str | None = None
+    cleanliness_status: str | None = None
+
+
+async def create_equipment_area(
+    session: AsyncSession, cmd: CreateEquipmentAreaCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.area_code.strip():
+        raise ValidationFailedError("area_code is required")
+    # Matches the DB's own UniqueConstraint("area_code") — table-wide, not per-site.
+    conflict = (
+        await session.execute(select(EquipmentArea).where(EquipmentArea.area_code == cmd.area_code))
+    ).scalar_one_or_none()
+    if conflict is not None:
+        raise ValidationFailedError("area_code is already in use", area_code=cmd.area_code, existing_id=str(conflict.id))
+
+    area = EquipmentArea(
+        site_id=cmd.site_id, area_code=cmd.area_code, area_type=cmd.area_type,
+        classification=cmd.classification, criticality=cmd.criticality,
+        cleanliness_status=cmd.cleanliness_status, status="active", version=1,
+    )
+    session.add(area)
+    await session.flush()
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=area.site_id, aggregate_type="equipment_area", aggregate_id=area.id,
+        aggregate_version=1, action="Created", actor_id=actor_user_id, correlation_id=correlation_id,
+        new_value={"area_code": area.area_code, "classification": area.classification},
+    )
+    await write_outbox_event(
+        session, event_type="EquipmentAreaCreated", aggregate_type="equipment_area", aggregate_id=area.id,
+        aggregate_version=1, payload={"id": str(area.id), "area_code": area.area_code}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=area.site_id, command_type="CreateEquipmentArea", aggregate_type="equipment_area",
+        aggregate_id=area.id, expected_version=None, resulting_version=1,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=area.id, resulting_version=1,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
     )
 
 

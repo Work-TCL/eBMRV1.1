@@ -11,8 +11,10 @@ import {
   newIdempotencyKey,
   type Deviation,
 } from "@/lib/api";
-import { useApiResource, useMe } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe, type EntityOption } from "@/lib/hooks";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Tabs } from "@/components/ui/Tabs";
 import { Card } from "@/components/ui/Card";
@@ -69,8 +71,11 @@ const ALLOWED_FROM: Record<string, Transition[]> = {
   REOPENED: ["impact", "investigation"],
 };
 
-// Document 106 has no signature policy row for these (SG-138), so the backend fails them closed. The UI
-// still offers them — the resulting SIGNATURE_POLICY_UNRESOLVED is the honest, visible outcome.
+// Document 106 rows 71/73 (2026-09-09, resolved — signature policy seeded: `deviation_record`
+// disposition/close, QA Releaser, independent of the record's own investigator_subject_id/
+// owner_subject_id per Document 107 IND-005). The backend enforces the role+independence check itself
+// (SOD_INDEPENDENCE_REQUIRED) before the password ceremony, so a QA Releaser who is also this record's
+// owner or investigator is still correctly refused.
 const SIGNATURE_GATED: Transition[] = ["disposition", "close"];
 
 const TRANSITION_LABEL: Record<Transition, string> = {
@@ -98,9 +103,35 @@ const IMPACT_CATEGORIES = [
   ["regulatory_impact", "Regulatory impact"],
 ] as const;
 
+// Which of useEntityOptions()'s lists a given source_type resolves against — same mapping the "Raise
+// deviation" picker on the list page uses to build its dropdown, kept here so a plain id can be turned
+// back into the record's human-readable label instead of showing the raw UUID.
+function sourceOptionsFor(sourceType: string, entities: ReturnType<typeof useEntityOptions>): EntityOption[] | null {
+  switch (sourceType) {
+    case "batch":
+      return entities.batches;
+    case "qc":
+      return entities.qcSamples;
+    case "material":
+      return entities.materialLots;
+    case "equipment":
+      return entities.equipment;
+    case "supplier":
+      return entities.suppliers;
+    default:
+      return null;
+  }
+}
+
+function labelFor(id: string | null | undefined, options: EntityOption[] | null): string {
+  if (!id) return "—";
+  return options?.find((o) => o.value === id)?.label ?? id;
+}
+
 export default function DeviationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { me } = useMe();
+  const entities = useEntityOptions();
   const [pending, setPending] = useState<Transition | null>(null);
   const { data, loading, error, reload } = useApiResource<DeviationDetail>(`/qms/v1/deviations/${id}`);
 
@@ -157,9 +188,13 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
             <Fact label="Raised">{formatDateTime(data.created_at)}</Fact>
             <Fact label="Closed">{data.closed_at ? formatDateTime(data.closed_at) : "—"}</Fact>
             <Fact label="Record version">{data.version}</Fact>
-            <IdFact label="Owner" value={data.owner_subject_id} />
-            <IdFact label="Investigator" value={data.investigator_subject_id} />
-            <IdFact label="Source record" value={data.source_id} />
+            <Fact label="Owner">{labelFor(data.owner_subject_id, entities.users)}</Fact>
+            <Fact label="Investigator">{labelFor(data.investigator_subject_id, entities.users)}</Fact>
+            <Fact label="Source record">
+              {labelFor(data.source_id, sourceOptionsFor(data.source_type, entities))}
+            </Fact>
+            {/* Not a foreign key — a UUID generated for this deviation itself (Document 26's own
+               "quality event" concept), so there's no separate record to resolve a label from. */}
             <IdFact label="Quality event" value={data.quality_event_id} />
           </>
         )
@@ -170,7 +205,7 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
           {data.planned && data.planned_scope != null && (
             <Banner tone="warn" title="Planned deviation">
               This record has a declared end date. Once it passes, the deviation can no longer be advanced
-              through the pipeline (DEV-FR-016).
+              through the pipeline.
             </Banner>
           )}
 
@@ -302,6 +337,7 @@ function TransitionModal({
   onDone: () => void;
 }) {
   const { busy, error, run } = useCommand(onDone);
+  const entities = useEntityOptions();
 
   const [severity, setSeverity] = useState(deviation.severity);
   const [priority, setPriority] = useState("high");
@@ -317,6 +353,10 @@ function TransitionModal({
   const [rationale, setRationale] = useState("");
   const [capaRequired, setCapaRequired] = useState(false);
   const [capaRationale, setCapaRationale] = useState("");
+  const [changeControlRequired, setChangeControlRequired] = useState(false);
+  const [changeControlRationale, setChangeControlRationale] = useState("");
+  const [trainingRequired, setTrainingRequired] = useState(false);
+  const [trainingRationale, setTrainingRationale] = useState("");
   const [conclusion, setConclusion] = useState("");
   const [reason, setReason] = useState("");
   const [riskReview, setRiskReview] = useState("");
@@ -359,14 +399,6 @@ function TransitionModal({
           });
         case "impact":
           return api.post(`${path}/impact`, { ...base, impact_assessment: impact, reason: reason || null });
-        case "disposition":
-          return api.post(`${path}/disposition`, {
-            ...base,
-            disposition_code: dispositionCode,
-            disposition_rationale: rationale,
-            capa_required: capaRequired,
-            capa_rationale: capaRationale,
-          });
         case "extend":
           return api.post(`${path}/extend`, {
             ...base,
@@ -374,15 +406,176 @@ function TransitionModal({
             reason,
             risk_review: riskReview,
           });
-        case "close":
-          return api.post(`${path}/close`, { ...base, conclusion });
         case "reopen":
           return api.post(`${path}/reopen`, { ...base, reason, new_evidence: newEvidence });
+        default:
+          // disposition/close are signature-gated and never reach this form -- see the early returns
+          // below that render <SignatureCeremony> for them instead.
+          throw new Error(`${transition} does not submit through the plain form`);
       }
     });
   }
 
-  const signatureGated = SIGNATURE_GATED.includes(transition);
+  const path = `/qms/v1/deviations/${deviation.id}`;
+
+  // Document 106 rows 71/73: disposition/close are signature-gated (SIGNATURE_GATED above) and
+  // independence-checked by the backend against the record's own investigator/owner -- both go through
+  // the shared Part 11 ceremony (challenge -> password re-entry -> signed mutation) instead of the plain
+  // form the other transitions use below.
+  if (transition === "disposition") {
+    const dispositionDisabled =
+      !rationale.trim() ||
+      !capaRationale.trim() ||
+      (changeControlRequired && !changeControlRationale.trim()) ||
+      (trainingRequired && !trainingRationale.trim());
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="disposition"
+        title={`Disposition — ${deviation.deviation_number}`}
+        summary="Records the final disposition of this deviation. This is a released quality decision — signer must be independent of the record's investigator and owner."
+        submitLabel="Sign & record disposition"
+        disabled={dispositionDisabled}
+        extraFields={
+          <>
+            <Field label="Disposition code" required>
+              <Select value={dispositionCode} onChange={(e) => setDispositionCode(e.target.value)}>
+                {DISPOSITION_CODES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Disposition rationale" required>
+              <textarea
+                className="input"
+                rows={3}
+                value={rationale}
+                onChange={(e) => setRationale(e.target.value)}
+                required
+              />
+            </Field>
+            <label className="flex items-center gap-2 fs-2 mb-3">
+              <input type="checkbox" checked={capaRequired} onChange={(e) => setCapaRequired(e.target.checked)} />
+              CAPA required
+            </label>
+            <Field
+              label="CAPA rationale"
+              required
+              hint="Required either way — a decision not to raise a CAPA must also be justified."
+            >
+              <textarea
+                className="input"
+                rows={2}
+                value={capaRationale}
+                onChange={(e) => setCapaRationale(e.target.value)}
+                required
+              />
+            </Field>
+
+            <label className="flex items-center gap-2 fs-2 mb-3">
+              <input
+                type="checkbox"
+                checked={changeControlRequired}
+                onChange={(e) => setChangeControlRequired(e.target.checked)}
+              />
+              Change control required
+            </label>
+            {changeControlRequired && (
+              <Field label="Change control rationale" required hint="What the change control needs to cover.">
+                <textarea
+                  className="input"
+                  rows={2}
+                  value={changeControlRationale}
+                  onChange={(e) => setChangeControlRationale(e.target.value)}
+                  required
+                />
+              </Field>
+            )}
+
+            <label className="flex items-center gap-2 fs-2 mb-3">
+              <input
+                type="checkbox"
+                checked={trainingRequired}
+                onChange={(e) => setTrainingRequired(e.target.checked)}
+              />
+              Training / qualification action required
+            </label>
+            {trainingRequired && (
+              <Field label="Training rationale" required hint="Who needs to be retrained or requalified, and why.">
+                <textarea
+                  className="input"
+                  rows={2}
+                  value={trainingRationale}
+                  onChange={(e) => setTrainingRationale(e.target.value)}
+                  required
+                />
+              </Field>
+            )}
+          </>
+        }
+        onSign={(p) =>
+          api.post(`${path}/disposition`, {
+            idempotency_key: p.idempotency_key,
+            deviation_id: deviation.id,
+            expected_version: deviation.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            disposition_code: dispositionCode,
+            disposition_rationale: rationale,
+            capa_required: capaRequired,
+            capa_rationale: capaRationale,
+            change_control_required: changeControlRequired,
+            change_control_rationale: changeControlRationale || null,
+            training_required: trainingRequired,
+            training_rationale: trainingRationale || null,
+          })
+        }
+      />
+    );
+  }
+
+  if (transition === "close") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="close"
+        title={`Close — ${deviation.deviation_number}`}
+        summary="Closes the deviation record permanently — signer must be independent of the record's investigator and owner."
+        submitLabel="Sign & close"
+        submitVariant="success"
+        disabled={!conclusion.trim()}
+        extraFields={
+          <Field label="Conclusion" required>
+            <textarea
+              className="input"
+              rows={3}
+              value={conclusion}
+              onChange={(e) => setConclusion(e.target.value)}
+              required
+            />
+          </Field>
+        }
+        onSign={(p) =>
+          api.post(`${path}/close`, {
+            idempotency_key: p.idempotency_key,
+            deviation_id: deviation.id,
+            expected_version: deviation.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            conclusion,
+          })
+        }
+      />
+    );
+  }
 
   return (
     <Modal
@@ -392,13 +585,6 @@ function TransitionModal({
       title={`${TRANSITION_LABEL[transition]} — ${deviation.deviation_number}`}
     >
       <form onSubmit={submit}>
-        {signatureGated && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            No Document 106 signature policy row exists yet for this action, so the backend will refuse it
-            (SG-138). The error below is the platform failing closed, not a bug in this form.
-          </Banner>
-        )}
-
         {transition === "triage" && (
           <>
             <div className="grid grid-cols-2 gap-4">
@@ -446,9 +632,15 @@ function TransitionModal({
 
         {transition === "investigation" && (
           <>
-            <Field label="Investigator (user ID)" required>
-              <Input value={investigator} onChange={(e) => setInvestigator(e.target.value)} required />
-            </Field>
+            <EntityPickerField
+              label="Investigator"
+              required
+              value={investigator}
+              onChange={setInvestigator}
+              options={entities.users}
+              status={entities.usersStatus}
+              kind="user"
+            />
             <Field label="Due date" required hint="Required to open an investigation.">
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
             </Field>
@@ -486,46 +678,6 @@ function TransitionModal({
           </>
         )}
 
-        {transition === "disposition" && (
-          <>
-            <Field label="Disposition code" required>
-              <Select value={dispositionCode} onChange={(e) => setDispositionCode(e.target.value)}>
-                {DISPOSITION_CODES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Disposition rationale" required>
-              <textarea
-                className="input"
-                rows={3}
-                value={rationale}
-                onChange={(e) => setRationale(e.target.value)}
-                required
-              />
-            </Field>
-            <label className="flex items-center gap-2 fs-2 mb-3">
-              <input type="checkbox" checked={capaRequired} onChange={(e) => setCapaRequired(e.target.checked)} />
-              CAPA required
-            </label>
-            <Field
-              label="CAPA rationale"
-              required
-              hint="Required either way — a decision not to raise a CAPA must also be justified."
-            >
-              <textarea
-                className="input"
-                rows={2}
-                value={capaRationale}
-                onChange={(e) => setCapaRationale(e.target.value)}
-                required
-              />
-            </Field>
-          </>
-        )}
-
         {transition === "extend" && (
           <>
             <Field label="New due date" required>
@@ -544,18 +696,6 @@ function TransitionModal({
               />
             </Field>
           </>
-        )}
-
-        {transition === "close" && (
-          <Field label="Conclusion" required>
-            <textarea
-              className="input"
-              rows={3}
-              value={conclusion}
-              onChange={(e) => setConclusion(e.target.value)}
-              required
-            />
-          </Field>
         )}
 
         {transition === "reopen" && (

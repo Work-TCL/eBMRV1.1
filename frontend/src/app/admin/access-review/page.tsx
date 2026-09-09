@@ -93,7 +93,7 @@ export default function AccessReviewPage() {
     <div>
       <PageHead
         title="Access review"
-        subtitle="Who holds which role at which site, and a live authorization-decision check (Document 07)."
+        subtitle="Who holds which role at which site, and a live authorization-decision check."
       />
 
       <Card className="mb-4">

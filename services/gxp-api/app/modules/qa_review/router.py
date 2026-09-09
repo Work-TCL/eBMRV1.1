@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
@@ -15,10 +16,19 @@ from app.modules.qa_review.commands import (
     create_review_package,
     reindex_review_package,
 )
+from app.modules.signature.service import create_challenge
 from app.mutation.errors import ValidationFailedError
+from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/qa-review/v1", tags=["qa_review"])
+
+# Document 106 row 29 (SPEC-EBMR-005) -- the only signed qa_review_package action.
+_CHALLENGE_MEANINGS = {"complete": "Reviewed"}
+
+
+class QaReviewSignatureChallengeRequest(BaseModel):
+    action: str
 
 
 def _package_dict(package) -> dict:
@@ -87,6 +97,30 @@ async def post_reindex_package(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="qa_review.execute", site_id=None)
         return await reindex_review_package(session, cmd, actor.user_id)
+
+
+@router.post("/packages/{package_id}/signature-challenges")
+async def post_signature_challenge(
+    package_id: uuid.UUID,
+    body: QaReviewSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Issue the Part 11 challenge for `POST .../complete`. record_version + record_hash match
+    complete_review_package()'s own consume_challenge call exactly (SIG-FR-012/013/014) -- same shape as
+    recipe_master's `POST /drafts/{id}/signature-challenges` (SG-035 precedent)."""
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qa_review.execute", site_id=None)
+        package = await qa_review_service.get_package(session, package_id)
+        meaning = _CHALLENGE_MEANINGS.get(body.action)
+        if meaning is None:
+            raise ValidationFailedError("Unknown or unsigned action", action=body.action)
+        challenge = await create_challenge(
+            session, user_id=actor.user_id, record_type="qa_review_package", record_id=package.id,
+            record_version=package.version, record_hash=sha256_hex({"id": str(package.id), "version": package.version}),
+            meaning=meaning,
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
 
 
 @router.post("/packages/{package_id}/complete", response_model=MutationReceipt)

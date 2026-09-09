@@ -166,7 +166,11 @@ a{color:inherit}
    ========================================================================== */
 .btn{
   display:inline-flex;align-items:center;justify-content:center;gap:8px;
-  font-family:var(--font-body);font-size:var(--fs-4);font-weight:var(--fw-semibold);line-height:1;
+  font-family:var(--font-body);font-size:var(--fs-4);font-weight:var(--fw-semibold);
+  /* Matches .input/.select's inherited body line-height (1.45), not 1 — a .btn next to an .input in a
+     flex row (the "Field + Button" pattern used throughout the app) must be the same height, or the
+     row visually misaligns even when both are bottom-anchored with items-end (DB131-AC-001 §7). */
+  line-height:1.45;
   padding:9px var(--space-4);border-radius:var(--radius-sm);
   border:1px solid transparent;cursor:pointer;white-space:nowrap;
   text-decoration:none;
@@ -223,6 +227,13 @@ a{color:inherit}
    7. FORMS
    ========================================================================== */
 .field{margin-bottom:var(--space-4)}
+/* A Field placed in a horizontal "lookup row" (Field beside a bare action Button — the standard
+   `className="flex items-end gap-*"` pattern used throughout the app, or `items-start` for a row
+   whose Field can carry extra trailing content — see the DDCP profile lookup/release rows) must not
+   carry its own margin-bottom: whichever edge `align-items` aligns by, that margin pushes the Field's
+   content off the line the Button is meant to share. `gap` already provides the row's spacing
+   (including between wrapped lines), so the margin is redundant here and only harmful. */
+.flex.items-end .field,.flex.items-start .field{margin-bottom:0}
 .label{display:block;font-size:var(--fs-3);font-weight:var(--fw-semibold);color:var(--ink-primary);margin-bottom:6px}
 .label .req{color:var(--status-critical-solid)}
 .hint{font-size:var(--fs-2);color:var(--ink-muted);margin-top:5px}
@@ -338,6 +349,26 @@ table.data-table{width:100%;border-collapse:collapse;font-size:var(--fs-3);min-w
 
 .progress-track{height:8px;border-radius:999px;background:var(--surface-sunken);overflow:hidden}
 .progress-fill{height:100%;background:var(--brand-500);border-radius:999px}
+
+/* DDCP execution wizard (frontend/src/app/ddcp/page.tsx) — "what are you recording?" step's grouped,
+   clickable action cards, and the plain-language summary list on the review step. The step-by-step
+   header itself reuses .stepper/.step-item above rather than a parallel set of classes. */
+.op-choice-group + .op-choice-group{margin-top:var(--space-4)}
+.op-choice-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:var(--space-3)}
+.op-choice{
+  text-align:left;padding:var(--space-3);border-radius:var(--radius-md);border:1px solid var(--border-hairline);
+  background:var(--surface-card);cursor:pointer;
+}
+.op-choice:hover{border-color:var(--brand-300)}
+.op-choice[data-selected="true"]{border-color:var(--brand-500);box-shadow:0 0 0 1px var(--brand-500)}
+.op-choice-title{font-size:var(--fs-3);font-weight:var(--fw-bold);color:var(--ink-primary)}
+.op-choice-about{font-size:var(--fs-2);color:var(--ink-muted);margin-top:2px}
+
+.review-list{display:flex;flex-direction:column}
+.review-row{display:flex;gap:var(--space-4);padding:var(--space-2) 0;border-bottom:1px solid var(--gridline)}
+.review-row:last-child{border-bottom:none}
+.review-row dt{flex:0 0 220px;font-size:var(--fs-2);color:var(--ink-muted)}
+.review-row dd{flex:1;margin:0;font-size:var(--fs-3);color:var(--ink-primary);word-break:break-word}
 
 /* ==========================================================================
    13. SIGNATURE

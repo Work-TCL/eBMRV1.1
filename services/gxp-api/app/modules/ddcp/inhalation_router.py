@@ -8,18 +8,30 @@ tables/functions -- see injector_router.py's module docstring for the full ratio
 import uuid
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.ddcp import commands as ddcp_commands
 from app.modules.ddcp import inhalation_commands
-from app.modules.ddcp.models import DdcpProcessOperation, DdcpProfileVersion
+from app.modules.ddcp.models import INHALATION_SUBTYPES, DdcpProcessOperation, DdcpProfileVersion
 from app.modules.policy.service import evaluate_policy
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/ddcp/v1/inhalation", tags=["ddcp-inhalation"])
+
+PROFILE_SORTABLE = {"profile_code": DdcpProfileVersion.profile_code, "created_at": DdcpProfileVersion.created_at}
+
+
+def _profile_summary_dict(profile: DdcpProfileVersion) -> dict:
+    return {
+        "id": str(profile.id), "profile_code": profile.profile_code, "subtype": profile.subtype,
+        "version": profile.version, "state": profile.state,
+        "product_version_id": str(profile.product_version_id) if profile.product_version_id else None,
+    }
 
 
 @router.post("/profiles", response_model=MutationReceipt)
@@ -30,6 +42,23 @@ async def post_create_profile(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="ddcp_profile.author", site_id=cmd.site_id)
         return await inhalation_commands.create_inhalation_profile_version(session, cmd, actor.user_id)
+
+
+# Read-only list — same rationale as Document 54's own `/profiles` list. `subtype` (MDI|DPI) is
+# required on every inhalation profile, so filtering by INHALATION_SUBTYPES exactly separates this
+# family from the other three sharing the same table.
+@router.get("/profiles")
+async def list_profiles(
+    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params), state: str | None = "RELEASED",
+) -> dict:
+    async with session.begin():
+        stmt = select(DdcpProfileVersion).where(DdcpProfileVersion.subtype.in_(INHALATION_SUBTYPES))
+        if params.q:
+            stmt = stmt.where(DdcpProfileVersion.profile_code.ilike(f"%{params.q}%"))
+        if state:
+            stmt = stmt.where(DdcpProfileVersion.state == state)
+        rows, envelope = await paginate(session, stmt, params, sortable=PROFILE_SORTABLE, default_sort=DdcpProfileVersion.created_at)
+        return {**envelope, "items": [_profile_summary_dict(p) for (p,) in rows]}
 
 
 @router.post("/profiles/{profile_id}/release", response_model=MutationReceipt)

@@ -68,7 +68,7 @@ export default function OosPage() {
     <div>
       <PageHead
         title="OOS / OOT"
-        subtitle="Document 25 — out-of-specification investigation: lab phase, assignable-cause decision, extended investigation, disposition and closure."
+        subtitle="Out-of-specification investigation: lab phase, assignable-cause decision, extended investigation, disposition and closure."
       />
 
       <div className="grid grid-cols-2 gap-4 mb-4">
@@ -80,10 +80,10 @@ export default function OosPage() {
               e.preventDefault();
               load();
             }}
-            className="flex items-end gap-3 mt-3"
+            className="flex flex-wrap items-end gap-3 mt-3"
           >
             <Field label="OOS record ID">
-              <Input value={oosId} onChange={(e) => setOosId(e.target.value)} style={{ minWidth: 260 }} />
+              <Input value={oosId} onChange={(e) => setOosId(e.target.value)} style={{ minWidth: 200, maxWidth: 260, width: "100%" }} />
             </Field>
             <Button type="submit" variant="secondary" disabled={loading || !oosId.trim()}>
               <Icon name="search" /> {loading ? "Loading…" : "Open"}
@@ -144,7 +144,7 @@ export default function OosPage() {
               ) : (
                 <ul className="fs-2 mt-2" style={{ paddingLeft: "1.2em" }}>
                   {oos.retest_plans.map((p) => (
-                    <li key={p.id}>{p.status}</li>
+                    <li key={p.id}><WorkflowStatePill state={p.status} /></li>
                   ))}
                 </ul>
               )}
@@ -156,7 +156,7 @@ export default function OosPage() {
               ) : (
                 <ul className="fs-2 mt-2" style={{ paddingLeft: "1.2em" }}>
                   {oos.resample_plans.map((p) => (
-                    <li key={p.id}>{p.status}</li>
+                    <li key={p.id}><WorkflowStatePill state={p.status} /></li>
                   ))}
                 </ul>
               )}

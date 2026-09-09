@@ -13,8 +13,13 @@ document's substitutions:
 - `aseptic_operation.environment_snapshot_ref uuid` -> `readiness_snapshot JSONB` (the full computed
   readiness result captured at `start`, not a dangling FK to a table this document never declares).
 
-`aseptic_profile_version` is seed-only (no create/release endpoint in Document 40's own 7-op API list),
-same precedent as `cleaning_procedure_version`/`process_cycle_profile_version`.
+`aseptic_profile_version` was seed-only through 2026-09-06 (no create/release endpoint in Document 40's
+own 7-op API list), same precedent as `cleaning_procedure_version`/`process_cycle_profile_version`.
+**2026-09-07, project-owner-directed** (see `aseptic_commands.py::create_profile_version`'s own docstring):
+a `POST /aseptic/v1/profiles` create endpoint was added — still no *release* stage (rows go straight to
+`state="RELEASED"`, same as the seed row), so this remains outside Document 40's declared API list, not a
+literal implementation of it; logged in `18_SPEC_GAPS.md` (SG-176) as a deliberate deviation, same
+treatment as SG-081's `warehouse_location.create`.
 """
 
 import uuid
@@ -32,8 +37,14 @@ INTERVENTION_TYPES = ("inherent", "routine", "corrective", "non_routine")
 EVENT_SEVERITIES = ("info", "warning", "critical")
 
 
+PROFILE_STATES = ("RELEASED", "SUPERSEDED")
+
+
 class AsepticProfileVersion(Base):
-    """ASP-FR-001/002/003/007/008/010/013/014/020. Seed-only (see module docstring)."""
+    """ASP-FR-001/002/003/007/008/010/013/014/020. Seed-only through 2026-09-06 (see module docstring);
+    create/supersede added 2026-09-07 (SG-176). `state` transitions RELEASED -> SUPERSEDED only, on the
+    *old* row, when a new version supersedes it -- the row's own content columns are never rewritten after
+    creation (AG-08/DATA-FR-017), only this lifecycle marker and `version` (optimistic concurrency)."""
 
     __tablename__ = "aseptic_profile_versions"
     __table_args__ = (UniqueConstraint("profile_number", "version_no"), {"schema": "equipment"})
@@ -53,6 +64,9 @@ class AsepticProfileVersion(Base):
     release_blockers: Mapped[dict | None] = mapped_column(JSONB)
     validation_reference: Mapped[str | None] = mapped_column(String(200))
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="RELEASED")
+    supersedes_profile_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("equipment.aseptic_profile_versions.id")
+    )
     version: Mapped[int] = mapped_column(nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -82,8 +96,8 @@ class AsepticOperation(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
-    batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"))
-    batch_step_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batch_steps.id"))
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"))
+    batch_step_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch_step.id"))
     area_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("equipment.equipment_areas.id"), nullable=False)
     profile_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("equipment.aseptic_profile_versions.id"), nullable=False)
     sterile_input_refs: Mapped[dict | None] = mapped_column(JSONB)

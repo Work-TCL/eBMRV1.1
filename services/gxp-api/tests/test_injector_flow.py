@@ -25,6 +25,7 @@ from app.modules.ddcp.models import (
 )
 from app.modules.material.models import Material, MaterialLot
 from app.modules.product.models import Product
+from app.modules.product_master.models import ProductVersion
 from app.modules.qms import change_commands
 from app.modules.recipe.models import Recipe
 from app.modules.rules import commands as rules_commands
@@ -96,11 +97,29 @@ async def _create_material_lot(db, seeded, *, code: str, actor_id) -> MaterialLo
     return lot
 
 
+async def _create_released_product_version(
+    db, seeded, *, code: str, manufacturing_profile_code: str = "device",
+) -> ProductVersion:
+    # SG-175: every DDCP profile now needs a real, RELEASED Product Master version
+    # (`product_version_id`, migration 0089). No manufacturing_profile_code value names "autoinjector"
+    # specifically (SG-175's residual half), so "device" is used here purely as fixture data -- the
+    # command layer for this family checks existence/released/site only, never this value.
+    pv = ProductVersion(
+        product_business_id=f"PM-{code}", version_no=1, product_code=f"PM-{code}", name=f"Test product {code}",
+        manufacturing_profile_code=manufacturing_profile_code, lifecycle_state="released", site_id=seeded["site_id"],
+    )
+    db.add(pv)
+    await db.flush()
+    return pv
+
+
 async def _create_and_release_profile(db, seeded, actor_id, *, profile_code: str) -> DdcpProfileVersion:
+    product_version = await _create_released_product_version(db, seeded, code=profile_code)
     receipt = await injector_commands.create_injector_profile_version(
         db,
         injector_commands.CreateInjectorProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code=profile_code, injector_type="AUTOINJECTOR",
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=product_version.id,
+            profile_code=profile_code, injector_type="AUTOINJECTOR",
             constituent_requirements=[
                 {"constituent_type": "DRUG", "component_role": "drug_container", "required_state": "RELEASED"},
                 {"constituent_type": "DEVICE", "component_role": "housing", "required_state": "RELEASED"},
@@ -127,10 +146,12 @@ async def _accept_constituents(db, seeded, actor_id, batch, bulk_batch, device_l
 
 async def test_create_profile_and_release_requires_constituent_requirements(seeded, db):
     actor_id = seeded["users"]["ddcp.engineer"].id
+    empty_product = await _create_released_product_version(db, seeded, code="INJ-EMPTY")
     empty = await injector_commands.create_injector_profile_version(
         db,
         injector_commands.CreateInjectorProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code="INJ-EMPTY", injector_type="PEN_REUSABLE",
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=empty_product.id,
+            profile_code="INJ-EMPTY", injector_type="PEN_REUSABLE",
         ),
         actor_id,
     )
@@ -447,10 +468,12 @@ async def test_human_factors_reference_captured_on_profile(seeded, db):
     own required_controls JSONB -- no usability-acceptability decision is made or implied here."""
 
     actor_id = seeded["users"]["ddcp.engineer"].id
+    hf_product = await _create_released_product_version(db, seeded, code="INJ-HF-1")
     receipt = await injector_commands.create_injector_profile_version(
         db,
         injector_commands.CreateInjectorProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code="INJ-HF-1", injector_type="AUTOINJECTOR",
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=hf_product.id,
+            profile_code="INJ-HF-1", injector_type="AUTOINJECTOR",
             required_controls={"humanFactorsReference": {"dhf_id": "DHF-2026-001", "critical_tasks": ["activation", "needle_shield_engage"]}},
         ),
         actor_id,
@@ -529,10 +552,15 @@ async def test_profile_family_inheritance_via_version_supersede(seeded, db):
     version 2 supersedes version 1 under the same profile_code, carrying its own distinct required_controls."""
 
     actor_id = seeded["users"]["ddcp.engineer"].id
+    # Same profile_code reused across v1/v2 (that's the point of this test), so the Product Master
+    # version is created once and referenced by both -- product_version_id has no uniqueness constraint
+    # of its own on ddcp_profile_version, only profile_code+version does.
+    family_product = await _create_released_product_version(db, seeded, code="INJ-FAMILY-1")
     v1_receipt = await injector_commands.create_injector_profile_version(
         db,
         injector_commands.CreateInjectorProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code="INJ-FAMILY-1", injector_type="AUTOINJECTOR",
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=family_product.id,
+            profile_code="INJ-FAMILY-1", injector_type="AUTOINJECTOR",
             required_controls={"doseAccuracyLimit": "0.90-1.10"},
             constituent_requirements=[{"constituent_type": "DEVICE", "component_role": "housing", "required_state": "RELEASED"}],
         ),
@@ -546,7 +574,8 @@ async def test_profile_family_inheritance_via_version_supersede(seeded, db):
     v2_receipt = await injector_commands.create_injector_profile_version(
         db,
         injector_commands.CreateInjectorProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code="INJ-FAMILY-1", injector_type="AUTOINJECTOR",
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=family_product.id,
+            profile_code="INJ-FAMILY-1", injector_type="AUTOINJECTOR",
             required_controls={"doseAccuracyLimit": "0.95-1.05"},
             constituent_requirements=[{"constituent_type": "DEVICE", "component_role": "housing", "required_state": "RELEASED"}],
         ),

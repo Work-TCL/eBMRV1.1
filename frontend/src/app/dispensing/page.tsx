@@ -6,8 +6,10 @@ import {
   ApiError,
   holdsAnyRole,
   listAll,
+  listBatchesForSite,
   newIdempotencyKey,
   pagedFetcher,
+  type BatchSummary,
   type Material,
 } from "@/lib/api";
 import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
@@ -105,7 +107,7 @@ export default function DispensingPage() {
     <div>
       <PageHead
         title="Dispensing"
-        subtitle="Document 21 — the weighing queue, source selection, readings, independent verification and completion."
+        subtitle="The weighing queue, source selection, readings, independent verification and completion."
         action={
           canDispense ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
@@ -167,6 +169,7 @@ function CreateOrderModal({
 }) {
   const { busy, error, run } = useCommand(onDone);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [batches, setBatches] = useState<BatchSummary[]>([]);
   const [batchId, setBatchId] = useState("");
   const [materialId, setMaterialId] = useState("");
   const [targetQty, setTargetQty] = useState("");
@@ -183,10 +186,19 @@ function CreateOrderModal({
         setMaterialId((current) => current || rows[0]?.id || "");
       })
       .catch(() => undefined);
+    if (siteId) {
+      listBatchesForSite(siteId)
+        .then((rows) => {
+          if (cancelled) return;
+          setBatches(rows);
+          setBatchId((current) => current || rows[0]?.id || "");
+        })
+        .catch(() => undefined);
+    }
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [siteId]);
 
   return (
     <Modal open onClose={onClose} title="New dispensing order" large>
@@ -208,8 +220,19 @@ function CreateOrderModal({
           );
         }}
       >
-        <Field label="Batch ID" required>
-          <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} required autoFocus />
+        <Field label="Batch" required hint={batches.length === 0 ? "No batches available yet." : undefined}>
+          {batches.length > 0 ? (
+            <Select value={batchId} onChange={(e) => setBatchId(e.target.value)} required autoFocus>
+ <option value="">Select a batch</option>
+              {batches.map((b) => (
+                <option key={b.id} value={b.id}>
+                    {b.batch_number} — {b.product_name} ({b.product_code})
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} placeholder="Batch ID" required autoFocus />
+          )}
         </Field>
         <Field label="Material" required>
           <Select value={materialId} onChange={(e) => setMaterialId(e.target.value)} required>

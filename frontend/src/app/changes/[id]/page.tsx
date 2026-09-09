@@ -11,7 +11,8 @@ import {
   newIdempotencyKey,
   type ChangeControl,
 } from "@/lib/api";
-import { useApiResource, useMe } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Tabs } from "@/components/ui/Tabs";
@@ -295,6 +296,7 @@ function TransitionModal({
 }) {
   const { me } = useMe();
   const { busy, error, run } = useCommand(onDone);
+  const entities = useEntityOptions();
 
   const [regulatory, setRegulatory] = useState("");
   const [regulatoryReview, setRegulatoryReview] = useState(false);
@@ -371,7 +373,7 @@ function TransitionModal({
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(transition) && (
           <Banner tone="warn" title="This transition requires an electronic signature">
-            No Document 106 policy row exists yet for this action (SG-138), so the backend fails it closed.
+            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
           </Banner>
         )}
 
@@ -413,9 +415,15 @@ function TransitionModal({
               <textarea className="input" rows={2} value={taskDescription} onChange={(e) => setTaskDescription(e.target.value)} required />
             </Field>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Owner (user ID)" required>
-                <Input value={taskOwner} onChange={(e) => setTaskOwner(e.target.value)} required />
-              </Field>
+              <EntityPickerField
+                label="Owner"
+                required
+                value={taskOwner}
+                onChange={setTaskOwner}
+                options={entities.users}
+                status={entities.usersStatus}
+                kind="user"
+              />
               <Field label="Due date" required>
                 <Input type="date" value={taskDue} onChange={(e) => setTaskDue(e.target.value)} required />
               </Field>

@@ -12,7 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
-from app.modules.iam.models import User
+from app.modules.audit.models import AuditEvent
+from app.modules.iam.models import Role, User
+from app.modules.policy.service import effective_role_names
+from app.modules.product_master.models import ProductVersion
 from app.modules.recipe_master import service as recipe_master_service
 from app.modules.recipe_master.models import (
     ALLOWED_TRANSITIONS,
@@ -31,6 +34,8 @@ from app.mutation.errors import (
     InvalidTransitionError,
     MissingSignatureError,
     NotFoundError,
+    RoleMissingError,
+    SodConflictError,
     StaleVersionError,
     UomUnknownError,
     ValidationFailedError,
@@ -288,6 +293,13 @@ async def create_draft(session: AsyncSession, cmd: CreateRecipeDraftCommand, act
     existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
     if existing is not None:
         return _receipt_from_existing(existing)
+
+    # Friendly pre-check: gxp_recipe_version.product_version_id is a real FK, so an unknown UUID would
+    # otherwise surface as an opaque IntegrityError/500. A non-released product version is allowed at
+    # authoring time (batch creation is where "released" is enforced), but a missing one never is.
+    product_version = await session.get(ProductVersion, cmd.product_version_id)
+    if product_version is None:
+        raise NotFoundError("Product version not found", product_version_id=str(cmd.product_version_id))
 
     family = await _get_or_create_family(
         session,
@@ -609,6 +621,37 @@ async def release_recipe_version(session: AsyncSession, cmd: ReleaseRecipeVersio
         raise ValidationFailedError("Recipe version is not release-ready", findings=findings)
 
     policy = await signature_service.resolve_signature_requirement(session, record_type="recipe_version", action="release")
+
+    # SG-035 further-partial (2026-09-08): resolve_signature_requirement() does not read required_role_id
+    # / requires_independent_signer, so enforce them here -- the same bespoke pattern IND-001 (ddcp
+    # assembly verify) and CON-FR-014 (inventory adjustment approve) use. The recipe version's author is
+    # the actor on its own `Created` audit event.
+    if policy.required_role_id is not None:
+        required_role_name = await session.scalar(select(Role.name).where(Role.id == policy.required_role_id))
+        if required_role_name not in await effective_role_names(session, actor_user_id, version.site_id):
+            raise RoleMissingError(
+                "Releasing a recipe version requires the signing role named by the signature policy",
+                action="recipe.release",
+                required_role=required_role_name,
+            )
+    if policy.requires_independent_signer:
+        author_id = await session.scalar(
+            select(AuditEvent.actor_id)
+            .where(
+                AuditEvent.aggregate_type == "recipe_version",
+                AuditEvent.aggregate_id == version.id,
+                AuditEvent.action == "Created",
+            )
+            .order_by(AuditEvent.occurred_at)
+            .limit(1)
+        )
+        if author_id is not None and author_id == actor_user_id:
+            raise SodConflictError(
+                "The author of a recipe version cannot also release it (author != releaser)",
+                record_type="recipe_version",
+                action="release",
+            )
+
     signature_id = None
     if policy.signature_required:
         if cmd.challenge_id is None or not cmd.reauth_password:

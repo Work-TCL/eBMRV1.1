@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   canExecutePackaging,
   formatDateTime,
+  listBatchesForSite,
   newIdempotencyKey,
   pagedFetcher,
+  type BatchSummary,
   type PackagingRun,
 } from "@/lib/api";
 import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
@@ -19,6 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
@@ -130,7 +133,7 @@ export default function PackagingPage() {
     <div>
       <PageHead
         title="Packaging"
-        subtitle="Document 16 — packaging runs, line clearance, label issue and the reconciliation gate."
+        subtitle="Packaging runs, line clearance, label issue and the reconciliation gate."
         action={
           canExecutePackaging(me) ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
@@ -185,8 +188,28 @@ export default function PackagingPage() {
 
 function CreateRunModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { busy, error, run } = useCommand(onDone);
+  const { siteId } = useSiteId();
+  const [batches, setBatches] = useState<BatchSummary[]>([]);
   const [batchId, setBatchId] = useState("");
   const [lineRef, setLineRef] = useState("");
+
+  // Populated once for the batch picker; Phase 1 row counts sit well inside a single page —
+  // same pattern the material/product/recipe pickers elsewhere in this app already use.
+  useEffect(() => {
+    let cancelled = false;
+    if (siteId) {
+      listBatchesForSite(siteId)
+        .then((rows) => {
+          if (cancelled) return;
+          setBatches(rows);
+          setBatchId((current) => current || rows[0]?.id || "");
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [siteId]);
 
   return (
     <Modal open onClose={onClose} title="New packaging run">
@@ -202,8 +225,19 @@ function CreateRunModal({ onClose, onDone }: { onClose: () => void; onDone: () =
           );
         }}
       >
-        <Field label="Batch ID" required>
-          <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} required autoFocus />
+        <Field label="Batch" required hint={batches.length === 0 ? "No batches available yet." : undefined}>
+          {batches.length > 0 ? (
+            <Select value={batchId} onChange={(e) => setBatchId(e.target.value)} required autoFocus>
+ <option value="">Select a batch</option>
+              {batches.map((b) => (
+                <option key={b.id} value={b.id}>
+                    {b.batch_number} — {b.product_name} ({b.product_code})
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} placeholder="Batch ID" required autoFocus />
+          )}
         </Field>
         <Field label="Line reference" hint="The packaging line this run occupies.">
           <Input value={lineRef} onChange={(e) => setLineRef(e.target.value)} />
@@ -296,7 +330,7 @@ function RunModal({
                 <td className="tabular" style={{ textAlign: "right" }}>
                   {i.quantity_issued}
                 </td>
-                <td className="fs-2">{i.state}</td>
+                <td className="fs-2"><WorkflowStatePill state={i.state} /></td>
               </tr>
             ))}
           </tbody>
@@ -362,7 +396,7 @@ function RunModal({
                 <tr key={n.id}>
                   <td>{n.package_level}</td>
                   <td className="tabular fs-2">{n.business_ref ?? "—"}</td>
-                  <td className="fs-2">{n.state}</td>
+                  <td className="fs-2"><WorkflowStatePill state={n.state} /></td>
                 </tr>
               ))}
             </tbody>

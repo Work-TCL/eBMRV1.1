@@ -13,11 +13,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
-from app.modules.iam.models import User
+from app.modules.iam.models import Role, User
+from app.modules.policy.service import effective_role_names
 from app.modules.qa_review import service as qa_review_service
 from app.modules.qa_review.models import ALLOWED_TRANSITIONS, QaReviewPackage
 from app.modules.signature import service as signature_service
-from app.mutation.errors import InvalidTransitionError, MissingSignatureError, NotFoundError, StaleVersionError, ValidationFailedError
+from app.mutation.errors import (
+    InvalidTransitionError,
+    MissingSignatureError,
+    NotFoundError,
+    RoleMissingError,
+    StaleVersionError,
+    ValidationFailedError,
+)
 from app.mutation.gateway import check_idempotency, record_command_receipt, write_audit_event, write_outbox_event
 from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import CommandEnvelope, MutationReceipt
@@ -205,6 +213,19 @@ async def complete_review_package(session: AsyncSession, cmd: CompleteReviewPack
     policy = await signature_service.resolve_signature_requirement(session, record_type="qa_review_package", action="complete")
     signature_id = None
     if policy.signature_required:
+        # Document 106 row 29 (SPEC-EBMR-005): required signer role that resolve_signature_requirement()
+        # itself does not read -- same bespoke enforcement as release/qms::_resolve_signature(). The row's
+        # independence requirement ("independent of the performer") has no concrete Document 107 IND rule
+        # and QaReviewPackage carries no performer/reviewer identity column to check against (only
+        # completed_at), so it is deliberately left unenforced here rather than invented -- role-gated
+        # only, same "no mechanism exists yet" treatment as equipment_asset.hold/destruction_record.execute.
+        if policy.required_role_id is not None:
+            required_role_name = await session.scalar(select(Role.name).where(Role.id == policy.required_role_id))
+            if required_role_name not in await effective_role_names(session, actor_user_id, None):
+                raise RoleMissingError(
+                    "Completing a QA review package requires the signing role named by the signature policy",
+                    action="qa_review.execute", required_role=required_role_name,
+                )
         if cmd.challenge_id is None or not cmd.reauth_password:
             raise MissingSignatureError("Completing a QA review package requires a signature", required_meaning=policy.meaning)
         actor = await session.get(User, actor_user_id)

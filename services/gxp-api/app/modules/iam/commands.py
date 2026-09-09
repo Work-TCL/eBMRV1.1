@@ -3,12 +3,9 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.referential import find_blocking_reference
+from app.core.referential import find_all_blocking_references, find_blocking_reference
 from app.core.security import hash_password
-from app.modules.batch.models import Batch
 from app.modules.iam.models import Organization, Permission, Role, RolePermission, Site, User, UserSiteRole
-from app.modules.material.models import Material, MaterialLot
-from app.modules.product.models import Product
 from app.modules.security import identity_commands as security_identity_commands
 from app.modules.security import privileged_access_commands as security_privileged_access_commands
 from app.mutation.errors import NotFoundError, ValidationFailedError
@@ -506,18 +503,15 @@ async def delete_site(
     if site is None:
         raise NotFoundError("Site not found")
 
-    blocker = await find_blocking_reference(
-        session,
-        [
-            (Product, Product.site_id, site.id, "product"),
-            (Material, Material.site_id, site.id, "material"),
-            (MaterialLot, MaterialLot.site_id, site.id, "material lot"),
-            (Batch, Batch.site_id, site.id, "batch"),
-            (UserSiteRole, UserSiteRole.site_id, site.id, "role assignment"),
-        ],
-    )
-    if blocker is not None:
-        raise ValidationFailedError(f"Cannot delete site: referenced by {blocker}")
+    # Schema-driven, not a hand-maintained model list (`iam.sites` has 112 FK columns across every
+    # module in the platform as of 2026-09-08 — see `find_all_blocking_references()`'s own docstring).
+    # A hand-maintained list here previously checked only 6 of those 112 tables; a site with real data
+    # in any of the other 106 (equipment, DDCP, QMS, machine_integration, postmarket, ...) would pass
+    # this guard and then fail as a raw, unhandled FK-violation 500 at the `session.delete(site)` below
+    # instead of the clean error this function exists to produce.
+    blockers = await find_all_blocking_references(session, "iam", "sites", site.id)
+    if blockers:
+        raise ValidationFailedError(f"Cannot delete site: referenced by {', '.join(blockers)}")
 
     old_value = {"code": site.code, "name": site.name}
     site_id = site.id

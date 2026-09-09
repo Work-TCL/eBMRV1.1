@@ -73,7 +73,7 @@ export default function ChangesPage() {
     <>
       <QmsListPage<ChangeControl>
         title="Change control"
-        subtitle="Document 29 — proposed changes through impact assessment, approval, implementation and verification."
+        subtitle="Proposed changes through impact assessment, approval, implementation and verification."
         path="/qms/v1/changes"
         columns={columns}
         states={CHANGE_STATES}

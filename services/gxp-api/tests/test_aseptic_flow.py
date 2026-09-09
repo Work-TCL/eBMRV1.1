@@ -583,3 +583,174 @@ async def test_duplicate_idempotency_key_returns_same_receipt(client, seeded):
     second = await client.post("/aseptic/v1/operations", json=payload, headers=auth_headers(op_token))
     assert first.status_code == 200 and second.status_code == 200
     assert first.json()["aggregate_id"] == second.json()["aggregate_id"]
+
+
+# ---------------------------------------------------------------------------
+# CreateAsepticProfileVersion -- added 2026-09-07, project-owner-directed (aseptic_commands.py's module
+# docstring precedent). Document 40's own 7-op API list has no create/release operation for the profile
+# itself either; these tests cover the RBAC gate, the duplicate check matching the DB's own
+# UniqueConstraint(profile_number, version_no), and that the listing/product_master's picker see it.
+# ---------------------------------------------------------------------------
+
+
+async def test_create_profile_version_requires_role(client, seeded):
+    """Aseptic Operator executes against a profile but does not define one -- same split as
+    test_start_requires_supervisor_role."""
+    op_token = await login(client, "aseptic.operator")
+    resp = await client.post(
+        "/aseptic/v1/profiles",
+        json={"idempotency_key": idem(), "site_id": str(seeded["site_id"]), "profile_number": "ASP-TEST-NOPERM", "version_no": 1},
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+
+async def test_aseptic_supervisor_can_create_profile_version_and_it_is_listed(client, seeded):
+    sup_token = await login(client, "aseptic.supervisor")
+    site_id = seeded["site_id"]
+    resp = await client.post(
+        "/aseptic/v1/profiles",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "profile_number": "ASP-TEST-002",
+            "version_no": 1, "required_area_classification": "ISO_7", "validation_reference": "MF-TEST-001",
+        },
+        headers=auth_headers(sup_token),
+    )
+    assert resp.status_code == 200, resp.text
+    new_id = resp.json()["aggregate_id"]
+
+    listing = (await client.get(f"/aseptic/v1/profiles?site_id={site_id}", headers=auth_headers(sup_token))).json()
+    assert any(p["id"] == new_id and p["state"] == "RELEASED" for p in listing)
+
+    # product_master's own picker (GET /products/v1/sterile-profiles) reads through the same
+    # cross-module query function and must see it too. qa.reviewer holds product.view in this fixture.
+    qa_token = await login(client, "qa.reviewer")
+    picker = (await client.get(f"/products/v1/sterile-profiles?site_id={site_id}", headers=auth_headers(qa_token))).json()
+    assert any(p["id"] == new_id for p in picker)
+
+
+async def test_create_profile_version_rejects_duplicate_number_and_version(client, seeded):
+    sup_token = await login(client, "aseptic.supervisor")
+    body = {"idempotency_key": idem(), "site_id": str(seeded["site_id"]), "profile_number": "ASP-TEST-003", "version_no": 1}
+    first = await client.post("/aseptic/v1/profiles", json=body, headers=auth_headers(sup_token))
+    assert first.status_code == 200, first.text
+
+    dup = {**body, "idempotency_key": idem()}
+    second = await client.post("/aseptic/v1/profiles", json=dup, headers=auth_headers(sup_token))
+    assert second.status_code == 422, second.text
+    assert second.json()["code"] == "VALIDATION_FAILED"
+
+
+# ---------------------------------------------------------------------------
+# SupersedeAsepticProfileVersion -- SG-176 follow-up. This is the "update"/"delete" equivalent for a
+# RELEASED sterile process profile: content is never edited or removed in place, a change creates a new
+# version and marks the previous one SUPERSEDED (excluded from the RELEASED-only picker, kept forever in
+# the full history listing).
+# ---------------------------------------------------------------------------
+
+
+async def test_supersede_creates_new_version_and_retires_previous_from_picker(client, seeded):
+    sup_token = await login(client, "aseptic.supervisor")
+    site_id = seeded["site_id"]
+
+    created = await client.post(
+        "/aseptic/v1/profiles",
+        json={"idempotency_key": idem(), "site_id": str(site_id), "profile_number": "ASP-TEST-SUP-1", "version_no": 1, "required_area_classification": "ISO_7"},
+        headers=auth_headers(sup_token),
+    )
+    assert created.status_code == 200, created.text
+    previous_id = created.json()["aggregate_id"]
+
+    superseded = await client.post(
+        f"/aseptic/v1/profiles/{previous_id}/supersede",
+        json={
+            "idempotency_key": idem(), "previous_profile_version_id": previous_id, "expected_version": 1,
+            "required_area_classification": "ISO_5", "validation_reference": "MF-SUP-1",
+        },
+        headers=auth_headers(sup_token),
+    )
+    assert superseded.status_code == 200, superseded.text
+    new_id = superseded.json()["aggregate_id"]
+    assert new_id != previous_id
+
+    # Full history listing shows both, in their correct states.
+    listing = (await client.get(f"/aseptic/v1/profiles?site_id={site_id}", headers=auth_headers(sup_token))).json()
+    by_id = {p["id"]: p for p in listing}
+    assert by_id[previous_id]["state"] == "SUPERSEDED"
+    assert by_id[new_id]["state"] == "RELEASED"
+    assert by_id[new_id]["supersedes_profile_version_id"] == previous_id
+    assert by_id[new_id]["version_no"] == by_id[previous_id]["version_no"] + 1
+    assert by_id[new_id]["profile_number"] == by_id[previous_id]["profile_number"] == "ASP-TEST-SUP-1"
+
+    # The RELEASED-only picker (product_master's own feed) drops the superseded row, keeps the new one.
+    qa_token = await login(client, "qa.reviewer")
+    picker = (await client.get(f"/products/v1/sterile-profiles?site_id={site_id}", headers=auth_headers(qa_token))).json()
+    picker_ids = {p["id"] for p in picker}
+    assert new_id in picker_ids
+    assert previous_id not in picker_ids
+
+
+async def test_supersede_requires_role(client, seeded):
+    sup_token = await login(client, "aseptic.supervisor")
+    created = await client.post(
+        "/aseptic/v1/profiles",
+        json={"idempotency_key": idem(), "site_id": str(seeded["site_id"]), "profile_number": "ASP-TEST-SUP-2", "version_no": 1},
+        headers=auth_headers(sup_token),
+    )
+    previous_id = created.json()["aggregate_id"]
+
+    op_token = await login(client, "aseptic.operator")
+    resp = await client.post(
+        f"/aseptic/v1/profiles/{previous_id}/supersede",
+        json={"idempotency_key": idem(), "previous_profile_version_id": previous_id, "expected_version": 1},
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+
+async def test_supersede_rejects_an_already_superseded_profile(client, seeded):
+    sup_token = await login(client, "aseptic.supervisor")
+    site_id = seeded["site_id"]
+    created = await client.post(
+        "/aseptic/v1/profiles",
+        json={"idempotency_key": idem(), "site_id": str(site_id), "profile_number": "ASP-TEST-SUP-3", "version_no": 1},
+        headers=auth_headers(sup_token),
+    )
+    previous_id = created.json()["aggregate_id"]
+
+    first = await client.post(
+        f"/aseptic/v1/profiles/{previous_id}/supersede",
+        json={"idempotency_key": idem(), "previous_profile_version_id": previous_id, "expected_version": 1},
+        headers=auth_headers(sup_token),
+    )
+    assert first.status_code == 200, first.text
+
+    # Trying to supersede the same (now-superseded) row again is rejected -- stale version first, since
+    # the row's own version counter already moved when it was marked SUPERSEDED.
+    second = await client.post(
+        f"/aseptic/v1/profiles/{previous_id}/supersede",
+        json={"idempotency_key": idem(), "previous_profile_version_id": previous_id, "expected_version": 1},
+        headers=auth_headers(sup_token),
+    )
+    assert second.status_code == 409, second.text
+    assert second.json()["code"] == "STALE_VERSION"
+
+
+async def test_supersede_rejects_stale_version(client, seeded):
+    sup_token = await login(client, "aseptic.supervisor")
+    created = await client.post(
+        "/aseptic/v1/profiles",
+        json={"idempotency_key": idem(), "site_id": str(seeded["site_id"]), "profile_number": "ASP-TEST-SUP-4", "version_no": 1},
+        headers=auth_headers(sup_token),
+    )
+    previous_id = created.json()["aggregate_id"]
+
+    resp = await client.post(
+        f"/aseptic/v1/profiles/{previous_id}/supersede",
+        json={"idempotency_key": idem(), "previous_profile_version_id": previous_id, "expected_version": 99},
+        headers=auth_headers(sup_token),
+    )
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "STALE_VERSION"

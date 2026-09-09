@@ -4,7 +4,7 @@ import AuthGuard from "./AuthGuard";
 
 export const metadata: Metadata = {
   title: "eBMR",
-  description: "eBMR batch record kernel — Phase 1",
+  description: "eBMR batch record kernel Phase 1",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

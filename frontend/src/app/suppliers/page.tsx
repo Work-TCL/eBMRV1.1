@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import {
   api,
+  ApiError,
   canApproveSupplier,
+  canCreateSupplier,
   formatDate,
   isOverdue,
   newIdempotencyKey,
@@ -23,9 +25,10 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
-import { JsonPanel } from "@/components/ui/JsonPanel";
+import { JsonPanel, summarizeJson } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
+import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
 
 interface SupplierSite {
   id: string;
@@ -85,9 +88,9 @@ export default function SuppliersPage() {
     <div>
       <PageHead
         title="Suppliers"
-        subtitle="Document 18 — the supplier register, its sites, and their qualification status."
+        subtitle="The supplier register, its sites, and their qualification status."
         action={
-          canApproveSupplier(me) ? (
+          canCreateSupplier(me) ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" /> New supplier
             </Button>
@@ -304,7 +307,7 @@ function SupplierModal({
 
       <div className="flex justify-between items-center mt-4 mb-2">
         <p className="fact-k">Qualifications</p>
-        {canApproveSupplier(me) && s.sites.length > 0 && (
+        {canCreateSupplier(me) && s.sites.length > 0 && (
           <Button size="sm" variant="secondary" onClick={() => setQualifyOpen(true)}>
             <Icon name="plus" /> Request qualification
           </Button>
@@ -317,6 +320,7 @@ function SupplierModal({
           <thead>
             <tr>
               <th>Risk class</th>
+              <th>Scope</th>
               <th>Status</th>
               <th>Effective</th>
               <th>Expires</th>
@@ -327,6 +331,7 @@ function SupplierModal({
             {s.qualifications.map((q) => (
               <tr key={q.id}>
                 <td className="fs-2">{q.risk_class ?? "—"}</td>
+                <td className="fs-2">{summarizeJson(q.scope)}</td>
                 <td>
                   <WorkflowStatePill state={q.status} />
                 </td>
@@ -391,7 +396,7 @@ function QualificationModal({
   const { busy, error, run } = useCommand(onDone);
   const [siteId, setSiteId] = useState(supplier.sites[0]?.id ?? "");
   const [riskClass, setRiskClass] = useState("medium");
-  const [scope, setScope] = useState("");
+  const [scope, setScope] = useState<KvRow[]>([{ key: "description", value: "" }]);
   const [effectiveFrom, setEffectiveFrom] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
 
@@ -400,17 +405,18 @@ function QualificationModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          run(() =>
-            api.post(`/suppliers/${supplier.id}/qualifications`, {
+          run(() => {
+            const scopeObj = buildKvObject(scope);
+            return api.post(`/suppliers/${supplier.id}/qualifications`, {
               idempotency_key: newIdempotencyKey(),
               supplier_id: supplier.id,
               supplier_site_id: siteId,
               risk_class: riskClass,
-              scope: scope ? { description: scope } : null,
+              scope: Object.keys(scopeObj).length ? scopeObj : null,
               effective_from: effectiveFrom ? new Date(effectiveFrom).toISOString() : null,
               expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
-            })
-          );
+            });
+          });
         }}
       >
         <Field label="Supplier site" required>
@@ -429,9 +435,12 @@ function QualificationModal({
             <option value="low">low</option>
           </Select>
         </Field>
-        <Field label="Scope" hint="What this supplier is qualified to provide.">
-          <textarea className="input" rows={2} value={scope} onChange={(e) => setScope(e.target.value)} />
-        </Field>
+        <KeyValueRows
+          label="Scope"
+          hint='What this supplier is qualified to provide — add one row per detail, e.g. "description" → "Raw material supply", "materials" → "Excipients only".'
+          value={scope}
+          onChange={setScope}
+        />
         <div className="grid grid-cols-2 gap-4">
           <Field label="Effective from">
             <Input type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />
@@ -478,15 +487,17 @@ function ApproveModal({
     api
       .post<{ challenge_id: string; meaning: string }>(
         `/supplier-qualifications/${qualification.id}/signature-challenges`,
-        {}
+        { action: "approve" }
       )
       .then((c) => {
         if (cancelled) return;
         setChallengeId(c.challenge_id);
         setMeaning(c.meaning);
       })
-      .catch(() => {
-        if (!cancelled) setError("Could not request a signature challenge");
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not request a signature challenge");
+        }
       });
     return () => {
       cancelled = true;

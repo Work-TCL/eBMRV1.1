@@ -5,17 +5,29 @@ this module's operations are genuinely public, matching its own §4 function cat
 import uuid
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.ddcp import commands as ddcp_commands
-from app.modules.ddcp.models import ConstituentHandoff, DdcpProfileVersion, DeviceAssemblyRecord, FillOperation
+from app.modules.ddcp.models import INJECTABLE_SUBTYPES, ConstituentHandoff, DdcpProfileVersion, DeviceAssemblyRecord, FillOperation
 from app.modules.policy.service import evaluate_policy
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/ddcp/v1/prefilled-syringe", tags=["ddcp-prefilled-syringe"])
+
+PROFILE_SORTABLE = {"profile_code": DdcpProfileVersion.profile_code, "created_at": DdcpProfileVersion.created_at}
+
+
+def _profile_summary_dict(profile: DdcpProfileVersion) -> dict:
+    return {
+        "id": str(profile.id), "profile_code": profile.profile_code, "subtype": profile.subtype,
+        "version": profile.version, "state": profile.state,
+        "product_version_id": str(profile.product_version_id) if profile.product_version_id else None,
+    }
 
 
 # --- DdcpProfileVersion (PFS-FR-001/002/028/029) -------------------------------------------------------
@@ -52,10 +64,32 @@ async def get_profile(profile_id: uuid.UUID, session: AsyncSession = Depends(get
         profile = await session.get(DdcpProfileVersion, profile_id)
         if profile is None:
             raise NotFoundError("Injectable profile version not found")
-        return {
-            "id": str(profile.id), "profile_code": profile.profile_code, "subtype": profile.subtype,
-            "version": profile.version, "state": profile.state,
-        }
+        return _profile_summary_dict(profile)
+
+
+# Read-only list — lets the frontend offer a "pick a profile" selector instead of requiring the operator
+# to already have the profile id in hand (the id is otherwise only ever shown once, in the create/release
+# response). `state` defaults to RELEASED (the only state a batch can actually use), matching what a
+# picker for "which profile does this batch follow" needs; pass state= explicitly for DRAFT/SUPERSEDED.
+#
+# `ddcp_profile_version` is the one table Documents 54/55/56/57 all share (see models.py's module
+# docstring) with no family/document-type column of its own, so a PFS-only list has to distinguish by
+# `subtype` — INJECTABLE_SUBTYPES never overlaps INJECTOR_SUBTYPES/INHALATION_SUBTYPES (grep-verified),
+# so this is exact for any profile that set a subtype. A PFS profile created with no subtype (it's
+# optional on this document only) won't appear here — under-inclusion, not the wrong-family
+# over-inclusion a blanket list would risk.
+@router.get("/profiles")
+async def list_profiles(
+    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params), state: str | None = "RELEASED",
+) -> dict:
+    async with session.begin():
+        stmt = select(DdcpProfileVersion).where(DdcpProfileVersion.subtype.in_(INJECTABLE_SUBTYPES))
+        if params.q:
+            stmt = stmt.where(DdcpProfileVersion.profile_code.ilike(f"%{params.q}%"))
+        if state:
+            stmt = stmt.where(DdcpProfileVersion.state == state)
+        rows, envelope = await paginate(session, stmt, params, sortable=PROFILE_SORTABLE, default_sort=DdcpProfileVersion.created_at)
+        return {**envelope, "items": [_profile_summary_dict(p) for (p,) in rows]}
 
 
 # --- ConstituentHandoff (PFS-FR-003/004, §8) -------------------------------------------------------------

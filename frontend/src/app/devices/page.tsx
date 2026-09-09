@@ -78,24 +78,24 @@ export default function DevicesPage() {
     <div>
       <PageHead
         title="Devices"
-        subtitle="Document 12 — device units by serial, their UDI and release status, and lot release readiness."
+        subtitle="Device units by serial, their UDI and release status, and lot release readiness."
       />
 
       <p className="hint mb-4">
-        Document 12 exposes device units by serial rather than as a browsable register, so this page looks
-        one up at a time. Component, assembly, test and inspection history is not built — see SG-049/SG-050.
+        Device units are looked up one at a time by serial number rather than browsed as a list. Component,
+        assembly, test and inspection history is not available yet.
       </p>
 
       {canCreateDevice(me) && <CreateLotCard siteId={siteId} />}
 
       <Card pad className="mb-4">
-        <form onSubmit={lookup} className="flex items-end gap-4">
+        <form onSubmit={lookup} className="flex flex-wrap items-end gap-4">
           <Field label="Serial number">
             <Input
               value={serial}
               onChange={(e) => setSerial(e.target.value)}
               placeholder="e.g. SN-000123"
-              style={{ minWidth: 300 }}
+              style={{ minWidth: 200, maxWidth: 300, width: "100%" }}
             />
           </Field>
           <Button type="submit" variant="secondary" disabled={loading || !serial.trim() || !siteId}>
@@ -151,9 +151,9 @@ export default function DevicesPage() {
 
       <Card pad>
         <CardHeader title="Lot release readiness" />
-        <form onSubmit={checkReadiness} className="flex items-end gap-4 mt-3">
+        <form onSubmit={checkReadiness} className="flex flex-wrap items-end gap-4 mt-3">
           <Field label="Device lot ID">
-            <Input value={lotId} onChange={(e) => setLotId(e.target.value)} style={{ minWidth: 320 }} />
+            <Input value={lotId} onChange={(e) => setLotId(e.target.value)} style={{ minWidth: 200, maxWidth: 320, width: "100%" }} />
           </Field>
           <Button type="submit" variant="secondary" disabled={!lotId.trim()}>
             <Icon name="search" /> Check readiness

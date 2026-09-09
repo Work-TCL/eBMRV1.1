@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { api, ApiError, holdsAnyRole, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { api, ApiError, holdsAnyRole, listAll, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
+import type { EntityOption, EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Banner } from "@/components/ui/Banner";
@@ -14,8 +15,41 @@ import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { WorkflowActionButton } from "@/components/shared/WorkflowActionButton";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 
 const ROOT = "/integration/v1";
+
+// GET /integration/v1/instances
+interface ErpInstanceSummary {
+  id: string;
+  instance_name: string;
+  vendor: string;
+  environment: string;
+  status: string;
+}
+
+/** Shared by every "ERP instance" field on this page — loaded once per card that needs it, refetched on
+ * `refreshToken` change so a newly-registered instance shows up without a remount. */
+function useErpInstances(refreshToken: number): { options: EntityOption[]; status: EntityOptionsStatus } {
+  const [options, setOptions] = useState<EntityOption[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
+  useEffect(() => {
+    let cancelled = false;
+    listAll<ErpInstanceSummary>(`${ROOT}/instances`)
+      .then((rows) => {
+        if (cancelled) return;
+      setOptions(rows.map((r) => ({ value: r.id, label: `${r.instance_name} — ${r.vendor}/${r.environment} (${r.status})` })));
+        setStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshToken]);
+  return { options, status };
+}
 
 interface ErpInstance {
   id: string;
@@ -40,12 +74,15 @@ interface IntegrationCommand {
 export default function ErpIntegrationPage() {
   const { me } = useMe();
   const isAdmin = holdsAnyRole(me, ["Admin", "Integration Administrator"]);
+  // Bumped after a successful instance registration so every instance picker on the page refetches and
+  // includes it immediately, rather than only after a full page reload.
+  const [instanceListVersion, setInstanceListVersion] = useState(0);
 
   return (
     <div>
       <PageHead
         title="ERP integration"
-        subtitle="Documents 48–53 — ERP instance registry, capability/health, the outbound command queue and reconciliation."
+        subtitle="ERP instance registry, capability/health, the outbound command queue and reconciliation."
       />
 
       {!isAdmin && (
@@ -55,20 +92,19 @@ export default function ErpIntegrationPage() {
       )}
 
       <p className="hint mb-4">
-        The platform exposes ERP instances and commands by ID, not as a browsable registry — enter an ID
-        to inspect one. Integration events appear in the Audit ledger with source <code>ERP</code>.
+        Integration events appear in the Audit ledger with source ERP.
       </p>
 
-      {isAdmin && <RegisterInstanceCard />}
-      <InstanceCard canAdmin={isAdmin} />
+      {isAdmin && <RegisterInstanceCard onRegistered={() => setInstanceListVersion((n) => n + 1)} />}
+      <InstanceCard canAdmin={isAdmin} instanceListVersion={instanceListVersion} />
       <CommandCard canAdmin={isAdmin} />
-      {isAdmin && <MappingCard />}
-      {isAdmin && <ReconciliationCard />}
+      {isAdmin && <MappingCard instanceListVersion={instanceListVersion} />}
+      {isAdmin && <ReconciliationCard instanceListVersion={instanceListVersion} />}
     </div>
   );
 }
 
-function RegisterInstanceCard() {
+function RegisterInstanceCard({ onRegistered }: { onRegistered: () => void }) {
   const { siteId } = useSiteId();
   const [f, setF] = useState({
     instance_name: "",
@@ -102,6 +138,7 @@ function RegisterInstanceCard() {
         site_id: siteId,
       });
       setNewId(receipt.aggregate_id);
+      onRegistered();
     } catch (err) {
       setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Register failed");
     } finally {
@@ -147,7 +184,8 @@ function RegisterInstanceCard() {
   );
 }
 
-function InstanceCard({ canAdmin }: { canAdmin: boolean }) {
+function InstanceCard({ canAdmin, instanceListVersion }: { canAdmin: boolean; instanceListVersion: number }) {
+  const instances = useErpInstances(instanceListVersion);
   const [id, setId] = useState("");
   const [instance, setInstance] = useState<ErpInstance | null>(null);
   const [caps, setCaps] = useState<Record<string, unknown> | null>(null);
@@ -185,11 +223,18 @@ function InstanceCard({ canAdmin }: { canAdmin: boolean }) {
           e.preventDefault();
           load();
         }}
-        className="flex items-end gap-3 mt-3"
+        className="flex flex-wrap items-end gap-3 mt-3"
       >
-        <Field label="Instance ID">
-          <Input value={id} onChange={(e) => setId(e.target.value)} style={{ minWidth: 320 }} />
-        </Field>
+        <div style={{ minWidth: 260, maxWidth: 360, width: "100%" }}>
+          <EntityPickerField
+            label="ERP instance"
+            value={id}
+            onChange={setId}
+            options={instances.options}
+            status={instances.status}
+            kind="ERP instance"
+          />
+        </div>
         <Button type="submit" variant="secondary" disabled={!id.trim()}>
           <Icon name="search" /> Look up
         </Button>
@@ -278,10 +323,10 @@ function CommandCard({ canAdmin }: { canAdmin: boolean }) {
           e.preventDefault();
           load();
         }}
-        className="flex items-end gap-3 mt-3"
+        className="flex flex-wrap items-end gap-3 mt-3"
       >
         <Field label="Command ID">
-          <Input value={id} onChange={(e) => setId(e.target.value)} style={{ minWidth: 320 }} />
+          <Input value={id} onChange={(e) => setId(e.target.value)} style={{ minWidth: 200, maxWidth: 320, width: "100%" }} />
         </Field>
         <Button type="submit" variant="secondary" disabled={!id.trim()}>
           <Icon name="search" /> Look up
@@ -366,7 +411,8 @@ function CommandCard({ canAdmin }: { canAdmin: boolean }) {
   );
 }
 
-function MappingCard() {
+function MappingCard({ instanceListVersion }: { instanceListVersion: number }) {
+  const instances = useErpInstances(instanceListVersion);
   const [erpInstanceId, setErpInstanceId] = useState("");
   const [entityType, setEntityType] = useState("material");
   const [internalId, setInternalId] = useState("");
@@ -399,9 +445,15 @@ function MappingCard() {
     <Card pad className="mb-4">
       <CardHeader title="Master-data mapping" />
       <form onSubmit={propose} className="grid grid-cols-2 gap-4 mt-3">
-        <Field label="ERP instance ID" required>
-          <Input value={erpInstanceId} onChange={(e) => setErpInstanceId(e.target.value)} required />
-        </Field>
+        <EntityPickerField
+          label="ERP instance"
+          required
+          value={erpInstanceId}
+          onChange={setErpInstanceId}
+          options={instances.options}
+          status={instances.status}
+          kind="ERP instance"
+        />
         <Field label="Entity type" required>
           <Input value={entityType} onChange={(e) => setEntityType(e.target.value)} required />
         </Field>
@@ -427,7 +479,8 @@ function MappingCard() {
   );
 }
 
-function ReconciliationCard() {
+function ReconciliationCard({ instanceListVersion }: { instanceListVersion: number }) {
+  const instances = useErpInstances(instanceListVersion);
   const [erpInstanceId, setErpInstanceId] = useState("");
   const [scope, setScope] = useState("inventory");
   const [reconciliationType, setReconciliationType] = useState("QUANTITY");
@@ -460,9 +513,15 @@ function ReconciliationCard() {
     <Card pad>
       <CardHeader title="Reconciliation run" />
       <form onSubmit={create} className="grid grid-cols-2 gap-4 mt-3">
-        <Field label="ERP instance ID" required>
-          <Input value={erpInstanceId} onChange={(e) => setErpInstanceId(e.target.value)} required />
-        </Field>
+        <EntityPickerField
+          label="ERP instance"
+          required
+          value={erpInstanceId}
+          onChange={setErpInstanceId}
+          options={instances.options}
+          status={instances.status}
+          kind="ERP instance"
+        />
         <Field label="Scope" required>
           <Input value={scope} onChange={(e) => setScope(e.target.value)} required />
         </Field>

@@ -4,7 +4,7 @@ release fails closed pending a Document 106 policy row (same honest pattern used
 the expression evaluator is a constrained AST, never `eval` (RUL-FR-005), and rejects float inputs (AG-03).
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from app.core.security import hash_password
 from app.modules.iam.models import User, UserSiteRole
 from app.modules.rules.expression import evaluate
-from app.modules.rules.models import RuleEvaluation, UnitOfMeasure, UomConversion
+from app.modules.rules.models import RuleDefinition, RuleEvaluation, UnitOfMeasure, UomConversion
 from app.modules.signature.models import SignaturePolicy
 from app.mutation.errors import (
     DivisionUndefinedError,
@@ -173,6 +173,33 @@ async def test_operator_cannot_author_rules(client, seeded):
     resp = await client.post("/rules/v1/drafts", json=_draft_body("X"), headers=auth_headers(op_token))
     assert resp.status_code == 403
     assert resp.json()["code"] == "ROLE_MISSING"
+
+
+async def test_list_released_rules_returns_only_effective_released(client, seeded, db):
+    """GET /rules/v1 -- picker data for Recipe Master's dependency condition_rule_id (SG-081 read-side
+    precedent). Lists one row per rule_id with a currently-effective released version; ignores drafts
+    and expired ones."""
+    now = datetime.now(timezone.utc)
+    common = dict(
+        rule_type="eligibility", expression_ast=ASSAY_RULE, input_contract=CONTRACT,
+        output_contract=OUTPUT_CONTRACT, unit_policy={}, precision_policy=POLICY,
+        rounding_policy={"policy_version": "DOCUMENT-110-v1.0"},
+    )
+    async with db.begin():
+        db.add(RuleDefinition(rule_id="LIVE-RULE", semantic_version="1.0.0", status="released",
+                              effective_from=now - timedelta(days=1), effective_to=None, **common))
+        db.add(RuleDefinition(rule_id="DRAFT-RULE", semantic_version="1.0.0", status="draft",
+                              effective_from=None, effective_to=None, **common))
+        db.add(RuleDefinition(rule_id="EXPIRED-RULE", semantic_version="1.0.0", status="released",
+                              effective_from=now - timedelta(days=10), effective_to=now - timedelta(days=1), **common))
+    op_token = await login(client, "operator1")  # holds rules.evaluate
+    resp = await client.get("/rules/v1", headers=auth_headers(op_token))
+    assert resp.status_code == 200, resp.text
+    by_id = {r["rule_id"]: r for r in resp.json()}
+    assert "LIVE-RULE" in by_id
+    assert by_id["LIVE-RULE"]["semantic_version"] == "1.0.0"
+    assert "DRAFT-RULE" not in by_id
+    assert "EXPIRED-RULE" not in by_id
 
 
 async def test_operator_can_call_evaluate_but_gets_not_found_for_unreleased_rule(client, seeded):

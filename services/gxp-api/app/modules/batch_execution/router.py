@@ -1,6 +1,8 @@
 import uuid
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
@@ -8,31 +10,59 @@ from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.batch_execution import service as batch_execution_service
 from app.modules.batch_execution.commands import (
     BatchTransitionCommand,
+    CompleteStepCommand,
     CreateBatchCommand,
+    HoldStepCommand,
     IssueBatchCommand,
+    ProductionCompleteBatchCommand,
+    RecordStepResultsCommand,
+    ResumeStepCommand,
     StartStepCommand,
+    _batch_record_hash,
+    _step_record_hash,
     abort_batch,
+    complete_step,
     create_batch,
     hold_batch,
+    hold_step,
     issue_batch,
+    production_complete_batch,
+    record_step_results,
     resume_batch,
+    resume_step,
     start_batch,
     start_step,
 )
+from app.modules.batch_execution.models import Batch, BatchStep
+from app.modules.iam.models import User
 from app.modules.policy.service import evaluate_policy
-from app.mutation.errors import ValidationFailedError
+from app.modules.product_master.models import ProductVersion
+from app.modules.recipe_master.models import RecipeFamily, RecipeParameter, RecipeVersion
+from app.modules.signature.service import create_challenge
+from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/batches/v1", tags=["batch_execution"])
 
 
-def _batch_dict(batch) -> dict:
+def _batch_dict(
+    batch,
+    product_version: ProductVersion | None = None,
+    recipe_context: tuple[str, int] | None = None,
+) -> dict:
+    recipe_code, recipe_version_no = recipe_context if recipe_context else (None, None)
     return {
         "batch_id": str(batch.id),
         "site_id": str(batch.site_id),
         "batch_number": batch.batch_number,
         "product_version_id": str(batch.product_version_id),
+        # Real dropdown/detail UX (project-owner-directed, SG-149/SG-173 cutover) -- callers building a
+        # batch picker or detail view need human labels, not bare UUIDs, without a second round trip.
+        "product_name": product_version.name if product_version else None,
+        "product_code": product_version.product_code if product_version else None,
         "recipe_version_id": str(batch.recipe_version_id),
+        "recipe_code": recipe_code,
+        "recipe_version_no": recipe_version_no,
         "recipe_vault_object_id": str(batch.recipe_vault_object_id) if batch.recipe_vault_object_id else None,
         "execution_snapshot_id": str(batch.execution_snapshot_id) if batch.execution_snapshot_id else None,
         "target_qty": str(batch.target_qty),
@@ -45,16 +75,108 @@ def _batch_dict(batch) -> dict:
     }
 
 
-def _step_dict(step) -> dict:
+async def _product_versions_by_id(session: AsyncSession, batches: list) -> dict[uuid.UUID, ProductVersion]:
+    if not batches:
+        return {}
+    pv_ids = {b.product_version_id for b in batches}
+    rows = (await session.execute(select(ProductVersion).where(ProductVersion.id.in_(pv_ids)))).scalars().all()
+    return {pv.id: pv for pv in rows}
+
+
+async def _recipe_context_by_id(session: AsyncSession, batches: list) -> dict[uuid.UUID, tuple[str, int]]:
+    """{recipe_version_id: (recipe_code, version_no)} -- same "real label, not a bare UUID" fix as
+    `_product_versions_by_id()`, for the batch's other master-data reference."""
+    if not batches:
+        return {}
+    rv_ids = {b.recipe_version_id for b in batches}
+    rows = (
+        await session.execute(
+            select(RecipeVersion.id, RecipeFamily.recipe_code, RecipeVersion.version_no)
+            .join(RecipeFamily, RecipeFamily.id == RecipeVersion.recipe_family_id)
+            .where(RecipeVersion.id.in_(rv_ids))
+        )
+    ).all()
+    return {row.id: (row.recipe_code, row.version_no) for row in rows}
+
+
+def _step_dict(step, assigned_user: User | None = None) -> dict:
     return {
         "step_id": str(step.id),
         "batch_id": str(step.batch_id),
         "recipe_step_code": step.recipe_step_code,
+        "required_role_code": step.required_role_code,
         "state": step.state,
         "version": step.version,
         "assigned_subject_id": str(step.assigned_subject_id) if step.assigned_subject_id else None,
+        # Real name/username, not a bare UUID -- same "show name and code" fix as the batch's own
+        # product/recipe fields above.
+        "assigned_full_name": assigned_user.full_name if assigned_user else None,
+        "assigned_username": assigned_user.username if assigned_user else None,
         "started_at": step.started_at.isoformat() if step.started_at else None,
+        "completed_at": step.completed_at.isoformat() if step.completed_at else None,
     }
+
+
+def _parameter_dict(p: RecipeParameter) -> dict:
+    return {
+        "parameter_code": p.parameter_code,
+        "data_type": p.data_type,
+        "uom": p.uom,
+        "target_value": str(p.target_value) if p.target_value is not None else None,
+        "min_value": str(p.min_value) if p.min_value is not None else None,
+        "max_value": str(p.max_value) if p.max_value is not None else None,
+        "precision_digits": p.precision_digits,
+        "required": p.required,
+    }
+
+
+def _result_dict(r) -> dict:
+    return {
+        "result_id": str(r.id),
+        "parameter_code": r.parameter_code,
+        "data_type": r.data_type,
+        "value_numeric": str(r.value_numeric) if r.value_numeric is not None else None,
+        "value_text": r.value_text,
+        "value_bool": r.value_bool,
+        "uom": r.uom,
+        "received_at": r.received_at.isoformat() if r.received_at else None,
+        "signature_id": str(r.signature_id) if r.signature_id else None,
+    }
+
+
+def _evidence_requirement_dict(e) -> dict:
+    return {
+        "evidence_type": e.evidence_type,
+        "required_count": e.required_count,
+        "allowed_mime_types": e.allowed_mime_types,
+        "retention_class": e.retention_class,
+    }
+
+
+# BAT-FR-005 ("execution has immutable parent instruction") + Document 11 §9's execution-UI field list
+# (instruction, section, target/limits context) -- the "step detail" view, read from the live recipe
+# graph (display-only; not used for any regulated decision -- the frozen execution snapshot in Vault
+# remains the authoritative instruction record, VLT-FR-006/007).
+def _step_detail_dict(step, recipe_step, section, predecessors: list[str], successors: list[str], evidence: list) -> dict:
+    return {
+        "step_type": recipe_step.step_type if recipe_step else None,
+        "instruction_text": recipe_step.instruction_text if recipe_step else None,
+        "is_critical": recipe_step.is_critical if recipe_step else None,
+        "sequence_hint": recipe_step.sequence_hint if recipe_step else None,
+        "section_code": section.stable_section_code if section else None,
+        "section_name": section.name if section else None,
+        "predecessor_codes": predecessors,
+        "successor_codes": successors,
+        "evidence_requirements": [_evidence_requirement_dict(e) for e in evidence],
+    }
+
+
+async def _users_by_id(session: AsyncSession, subject_ids: set[uuid.UUID]) -> dict[uuid.UUID, User]:
+    subject_ids = {s for s in subject_ids if s is not None}
+    if not subject_ids:
+        return {}
+    rows = (await session.execute(select(User).where(User.id.in_(subject_ids)))).scalars().all()
+    return {u.id: u for u in rows}
 
 
 @router.post("", response_model=MutationReceipt)
@@ -153,6 +275,159 @@ async def post_start_step(
         return await start_step(session, cmd, actor.user_id)
 
 
+class StepSignatureChallengeRequest(BaseModel):
+    action: str  # "results" | "complete" | "hold" | "resume" -- Document 106 rows 21/19/14/17 (nearest
+    # analogous shapes; no step-scoped row exists in Document 106 itself for hold/resume)
+
+
+# Meaning per action -- Document 106 rows 21/19 (batch_step/results, batch_step/complete) are both
+# `Performed`; hold reuses row 14's `Performed` (Authorized holder); resume reuses row 17's `Approved`
+# (the meaning a QA authority attests when lifting a hold, not merely "performing" a task).
+_STEP_CHALLENGE_MEANINGS = {"results": "Performed", "complete": "Performed", "hold": "Performed", "resume": "Approved"}
+
+
+@router.post("/{batch_id}/steps/{step_id}/signature-challenges")
+async def post_step_signature_challenge(
+    batch_id: uuid.UUID,
+    step_id: uuid.UUID,
+    body: StepSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Same shape as product_master's `/{id}/signature-challenges` (SG-035 precedent): the record
+    hash matches `_step_record_hash()` in commands.py exactly, so `consume_challenge` rejects the
+    signature as "record changed" if the step's version moved between challenge and submission
+    (SIG-FR-012/013/014 equivalent)."""
+    meaning = _STEP_CHALLENGE_MEANINGS.get(body.action)
+    if meaning is None:
+        raise ValidationFailedError("Unknown action", action=body.action)
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        step = await session.get(BatchStep, step_id)
+        if step is None or step.batch_id != batch_id:
+            raise NotFoundError("Batch step not found")
+        challenge = await create_challenge(
+            session,
+            user_id=actor.user_id,
+            record_type="batch_step",
+            record_id=step.id,
+            record_version=step.version,
+            record_hash=_step_record_hash(step),
+            meaning=meaning,
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
+
+
+@router.post("/{batch_id}/steps/{step_id}/results", response_model=MutationReceipt)
+async def post_record_step_results(
+    batch_id: uuid.UUID,
+    step_id: uuid.UUID,
+    cmd: RecordStepResultsCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.batch_id != batch_id or cmd.step_id != step_id:
+        raise ValidationFailedError("batch_id/step_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        return await record_step_results(session, cmd, actor.user_id)
+
+
+@router.post("/{batch_id}/steps/{step_id}/complete", response_model=MutationReceipt)
+async def post_complete_step(
+    batch_id: uuid.UUID,
+    step_id: uuid.UUID,
+    cmd: CompleteStepCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.batch_id != batch_id or cmd.step_id != step_id:
+        raise ValidationFailedError("batch_id/step_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        return await complete_step(session, cmd, actor.user_id)
+
+
+@router.post("/{batch_id}/steps/{step_id}/hold", response_model=MutationReceipt)
+async def post_hold_step(
+    batch_id: uuid.UUID,
+    step_id: uuid.UUID,
+    cmd: HoldStepCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.batch_id != batch_id or cmd.step_id != step_id:
+        raise ValidationFailedError("batch_id/step_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        return await hold_step(session, cmd, actor.user_id)
+
+
+@router.post("/{batch_id}/steps/{step_id}/resume", response_model=MutationReceipt)
+async def post_resume_step(
+    batch_id: uuid.UUID,
+    step_id: uuid.UUID,
+    cmd: ResumeStepCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.batch_id != batch_id or cmd.step_id != step_id:
+        raise ValidationFailedError("batch_id/step_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        return await resume_step(session, cmd, actor.user_id)
+
+
+class BatchSignatureChallengeRequest(BaseModel):
+    action: str  # "production_complete" -- Document 106 row 16 (batch/production-complete)
+
+
+_BATCH_CHALLENGE_MEANINGS = {"production_complete": "Performed"}
+
+
+@router.post("/{batch_id}/signature-challenges")
+async def post_batch_signature_challenge(
+    batch_id: uuid.UUID,
+    body: BatchSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Batch-scoped counterpart to `post_step_signature_challenge` above -- same shape, `record_hash`
+    matches `_batch_record_hash()` in commands.py exactly."""
+    meaning = _BATCH_CHALLENGE_MEANINGS.get(body.action)
+    if meaning is None:
+        raise ValidationFailedError("Unknown action", action=body.action)
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await session.get(Batch, batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        challenge = await create_challenge(
+            session,
+            user_id=actor.user_id,
+            record_type="batch",
+            record_id=batch.id,
+            record_version=batch.version,
+            record_hash=_batch_record_hash(batch),
+            meaning=meaning,
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
+
+
+@router.post("/{batch_id}/production-complete", response_model=MutationReceipt)
+async def post_production_complete_batch(
+    batch_id: uuid.UUID,
+    cmd: ProductionCompleteBatchCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.batch_id != batch_id:
+        raise ValidationFailedError("batch_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        return await production_complete_batch(session, cmd, actor.user_id)
+
+
 @router.get("")
 async def get_batch_list(
     site_id: uuid.UUID,
@@ -164,8 +439,13 @@ async def get_batch_list(
     overdue timers and operator-assignment analytics are not built this pass -- see SG-048."""
     await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
     batches = await batch_execution_service.list_batches(session, site_id, state)
+    product_versions = await _product_versions_by_id(session, batches)
+    recipe_contexts = await _recipe_context_by_id(session, batches)
     return {
-        "batches": [_batch_dict(b) for b in batches],
+        "batches": [
+            _batch_dict(b, product_versions.get(b.product_version_id), recipe_contexts.get(b.recipe_version_id))
+            for b in batches
+        ],
         "on_hold_count": sum(1 for b in batches if b.state == "on_hold"),
     }
 
@@ -178,7 +458,9 @@ async def get_batch_detail(
 ) -> dict:
     await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
     batch = await batch_execution_service.get_batch(session, batch_id)
-    return _batch_dict(batch)
+    product_version = await session.get(ProductVersion, batch.product_version_id)
+    recipe_contexts = await _recipe_context_by_id(session, [batch])
+    return _batch_dict(batch, product_version, recipe_contexts.get(batch.recipe_version_id))
 
 
 @router.get("/{batch_id}/execution-view")
@@ -189,8 +471,40 @@ async def get_execution_view(
 ) -> dict:
     await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
     view = await batch_execution_service.get_execution_view(session, batch_id)
+    product_version = await session.get(ProductVersion, view["batch"].product_version_id)
+    recipe_contexts = await _recipe_context_by_id(session, [view["batch"]])
+    assigned_users = await _users_by_id(session, {s.assigned_subject_id for s in view["steps"]})
     return {
-        "batch": _batch_dict(view["batch"]),
-        "steps": [_step_dict(s) for s in view["steps"]],
+        "batch": _batch_dict(view["batch"], product_version, recipe_contexts.get(view["batch"].recipe_version_id)),
+        "steps": [_step_dict(s, assigned_users.get(s.assigned_subject_id)) for s in view["steps"]],
         "blockers": view["blockers"],
+        # BAT-FR-009 form definition + any already-recorded results, keyed by step_id so the UI can render
+        # a per-step results form without a second round trip (SG-047 partial resolution).
+        "parameters_by_step_id": {
+            str(s.id): [_parameter_dict(p) for p in view["parameters_by_code"].get(s.recipe_step_code, [])]
+            for s in view["steps"]
+        },
+        "results_by_step_id": {
+            str(step_id): [_result_dict(r) for r in results] for step_id, results in view["results_by_step_id"].items()
+        },
+        # "Step detail" view -- instruction, section, dependencies, evidence requirements (2026-09-09,
+        # client-requested).
+        "step_detail_by_step_id": {
+            str(s.id): _step_detail_dict(
+                s,
+                view["step_by_code"].get(s.recipe_step_code),
+                view["section_by_id"].get(view["step_by_code"][s.recipe_step_code].section_id)
+                if s.recipe_step_code in view["step_by_code"]
+                else None,
+                view["predecessors_of"].get(s.recipe_step_code, []),
+                view["successors_of"].get(s.recipe_step_code, []),
+                view["evidence_by_code"].get(s.recipe_step_code, []),
+            )
+            for s in view["steps"]
+        },
+        # Active step-level hold, if any (BAT-FR-020 step scope, SG-047 further partial resolution).
+        "active_hold_by_step_id": {
+            str(step_id): {"reason": h.reason, "held_at": h.held_at.isoformat() if h.held_at else None}
+            for step_id, h in view["active_hold_by_step_id"].items()
+        },
     }
