@@ -16,13 +16,13 @@ import { KpiRow, KpiTile } from "@/components/ui/KpiTile";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
-import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 
 interface ReviewPackage {
   package_id: string;
@@ -38,6 +38,16 @@ interface ReviewPackage {
   stale?: boolean;
 }
 
+// GET /batches/v1 — same shape batch-execution's picker reads; only the fields the create-package
+// dropdown needs are declared here.
+interface BatchOption {
+  batch_id: string;
+  batch_number: string;
+  product_name: string | null;
+  product_code: string | null;
+  state: string;
+}
+
 interface Exceptions {
   package_id: string;
   batch_id: string;
@@ -46,7 +56,11 @@ interface Exceptions {
   batch_on_hold: boolean;
 }
 
-const PACKAGE_STATES = ["OPEN", "IN_REVIEW", "COMPLETE"];
+// qa_review/models.py::QA_REVIEW_STATES — the real state vocabulary. The previous OPEN/IN_REVIEW/COMPLETE
+// list never matched a real package row, so the state filter always returned zero rows and the "COMPLETE"
+// checks below always evaluated false (the actual bug behind the live INVALID_TRANSITION report: "Complete
+// review" stayed visible and clickable on an already-REVIEW_COMPLETE package).
+const PACKAGE_STATES = ["READY_FOR_REVIEW", "REVIEW_COMPLETE", "REOPENED"];
 
 export default function QaReviewPage() {
   const { me } = useMe();
@@ -61,14 +75,14 @@ export default function QaReviewPage() {
   );
 
   const packages = dashboard.data?.packages ?? [];
-  const complete = packages.filter((p) => p.state === "COMPLETE").length;
+  const complete = packages.filter((p) => p.state === "REVIEW_COMPLETE").length;
   const incomplete = packages.filter((p) => p.completeness_status !== "complete").length;
 
   return (
     <div>
       <PageHead
         title="QA review"
-        subtitle="Document 14 — batch review packages, their exception index and completeness gate."
+        subtitle="Batch review packages, their exception index and completeness gate."
         action={
           canExecuteQaReview(me) ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
@@ -91,8 +105,8 @@ export default function QaReviewPage() {
       </KpiRow>
 
       <p className="hint mb-4">
-        Exception-class and review-age filtering (the rest of RBE-FR-026) needs the `qa_review_item`
-        entity, which is unbuilt — see SG-053. State filtering is the implemented part.
+        Exception-class and review-age filtering are not available yet. State filtering is the part
+        available today.
       </p>
 
       {dashboard.error && (
@@ -174,6 +188,7 @@ export default function QaReviewPage() {
 
       {createOpen && (
         <CreatePackageModal
+          siteId={siteId}
           onClose={() => setCreateOpen(false)}
           onDone={() => {
             setCreateOpen(false);
@@ -192,9 +207,22 @@ export default function QaReviewPage() {
   );
 }
 
-function CreatePackageModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function CreatePackageModal({
+  siteId,
+  onClose,
+  onDone,
+}: {
+  siteId: string | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const { busy, error, run } = useCommand(onDone);
   const [batchId, setBatchId] = useState("");
+
+  const { data: batchList, loading: batchesLoading, error: batchesError } = useApiResource<{ batches: BatchOption[] }>(
+    siteId ? `/batches/v1?site_id=${siteId}` : null
+  );
+  const batches = batchList?.batches ?? [];
 
   return (
     <Modal open onClose={onClose} title="Create a review package">
@@ -210,11 +238,20 @@ function CreatePackageModal({ onClose, onDone }: { onClose: () => void; onDone: 
         }}
       >
         <Field
-          label="Batch ID"
+          label="Batch"
           required
           hint="The package snapshots the batch at its current version; a later batch change marks it stale."
         >
-          <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} required autoFocus />
+          <Select value={batchId} onChange={(e) => setBatchId(e.target.value)} disabled={batchesLoading} required autoFocus>
+            <option value="">
+              {batchesError ? "Could not load batches" : batchesLoading ? "Loading…" : batches.length ? "Select a batch…" : "No batches at this site"}
+            </option>
+            {batches.map((b) => (
+              <option key={b.batch_id} value={b.batch_id}>
+                {b.batch_number} — {b.product_name ? `${b.product_name} (${b.product_code})` : b.batch_id} · {b.state}
+              </option>
+            ))}
+          </Select>
         </Field>
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-3">
@@ -247,6 +284,7 @@ function PackageModal({
     exceptions.reload();
     onChanged();
   });
+  const [signing, setSigning] = useState(false);
 
   const p = pkg.data;
   const e = exceptions.data;
@@ -315,7 +353,10 @@ function PackageModal({
           Close
         </Button>
         <div className="flex gap-2">
-          {canAct && p.state !== "COMPLETE" && (
+          {/* reindex_review_package() works from any state (models.py QA_REVIEW_STATES: READY_FOR_REVIEW/
+             REVIEW_COMPLETE/REOPENED — there is no "COMPLETE") — including REVIEW_COMPLETE, where a
+             changed batch reopens it (RBE-FR-024). Never state-gated on the backend, so not gated here. */}
+          {canAct && (
             <Button
               variant="secondary"
               disabled={busy}
@@ -332,25 +373,43 @@ function PackageModal({
               <Icon name="refresh" /> Reindex
             </Button>
           )}
-          {canAct && p.state !== "COMPLETE" && (
-            <Button
-              variant="primary"
-              disabled={busy}
-              onClick={() =>
-                run(() =>
-                  api.post(`/qa-review/v1/packages/${p.package_id}/complete`, {
-                    idempotency_key: newIdempotencyKey(),
-                    package_id: p.package_id,
-                    expected_version: p.version,
-                  })
-                )
-              }
-            >
-              <Icon name="pen" /> {busy ? "Completing…" : "Complete review"}
+          {/* Only READY_FOR_REVIEW/REOPENED allow completing (ALLOWED_TRANSITIONS) — offering this once
+             already REVIEW_COMPLETE is exactly what produced the live INVALID_TRANSITION report: the old
+             `p.state !== "COMPLETE"` check compared against a state string this module never uses. */}
+          {canAct && p.state !== "REVIEW_COMPLETE" && (
+            <Button variant="primary" disabled={busy} onClick={() => setSigning(true)}>
+              <Icon name="pen" /> Complete review
             </Button>
           )}
         </div>
       </div>
+
+      {signing && (
+        <SignatureCeremony
+          open
+          onClose={() => setSigning(false)}
+          onDone={() => {
+            setSigning(false);
+            pkg.reload();
+            exceptions.reload();
+            onChanged();
+          }}
+          challengePath={`/qa-review/v1/packages/${p.package_id}/signature-challenges`}
+          action="complete"
+          title={`Complete review — batch ${p.batch_id}`}
+          summary="Marks this batch's QA review package complete. Requires your signature."
+          submitLabel="Sign & complete review"
+          onSign={(sig) =>
+            api.post(`/qa-review/v1/packages/${p.package_id}/complete`, {
+              idempotency_key: sig.idempotency_key,
+              package_id: p.package_id,
+              expected_version: p.version,
+              challenge_id: sig.challenge_id,
+              reauth_password: sig.reauth_password,
+            })
+          }
+        />
+      )}
     </Modal>
   );
 }

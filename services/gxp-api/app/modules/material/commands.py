@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.referential import find_blocking_reference
 from app.core.security import verify_password
-from app.modules.batch.models import Batch, BatchStep
+from app.modules.batch_execution.models import Batch, BatchStep
 from app.modules.iam.models import Qualification, User
 from app.modules.policy.service import evaluate_policy
 from app.modules.material.models import (
@@ -190,6 +190,7 @@ class ReceiveMaterialLotCommand(CommandEnvelope):
     material_id: uuid.UUID
     site_id: uuid.UUID
     internal_lot: str
+    supplier_id: uuid.UUID | None = None
     supplier_lot: str | None = None
     manufacturer_lot: str | None = None
     received_quantity: Decimal
@@ -209,9 +210,18 @@ async def receive_material_lot(
     if cmd.received_quantity <= 0:
         raise ValidationFailedError("received_quantity must be positive")
 
+    existing_lot = (
+        await session.execute(select(MaterialLot).where(MaterialLot.internal_lot == cmd.internal_lot))
+    ).scalar_one_or_none()
+    if existing_lot is not None:
+        raise ValidationFailedError(
+            "A material lot with this internal lot number already exists", internal_lot=cmd.internal_lot
+        )
+
     lot = MaterialLot(
         material_id=cmd.material_id,
         site_id=cmd.site_id,
+        supplier_id=cmd.supplier_id,
         supplier_lot=cmd.supplier_lot,
         manufacturer_lot=cmd.manufacturer_lot,
         internal_lot=cmd.internal_lot,
@@ -358,6 +368,9 @@ async def disposition_material_lot(
     )
     old_status = lot.status
     lot.status = cmd.decision
+    if cmd.decision == "released":
+        lot.released_at = datetime.now(timezone.utc)
+        lot.release_signature_id = signature_id
     lot.version += 1
 
     # Document 06 (VLT-FR-001/006): a QC disposition is a "regulated final record" too — same immutable
@@ -919,11 +932,20 @@ async def examine_receipt(
         receipt_row.discrepancy_type = discrepancy_type
         receipt_row.discrepancy_reason = cmd.discrepancy_reason or f"Automatic hold: {discrepancy_type}"
     else:
+        existing_lot = (
+            await session.execute(select(MaterialLot).where(MaterialLot.internal_lot == cmd.internal_lot))
+        ).scalar_one_or_none()
+        if existing_lot is not None:
+            raise ValidationFailedError(
+                "A material lot with this internal lot number already exists", internal_lot=cmd.internal_lot
+            )
+
         receipt_row.state = "examined"
         accepted_qty = receipt_row.accepted_quantity or receipt_row.received_gross_quantity
         lot = MaterialLot(
             material_id=receipt_row.material_id,
             site_id=receipt_row.site_id,
+            supplier_id=receipt_row.supplier_id,
             supplier_lot=receipt_row.supplier_lot,
             manufacturer_lot=receipt_row.manufacturer_lot,
             internal_lot=cmd.internal_lot,
@@ -1632,6 +1654,106 @@ async def get_release_readiness(session: AsyncSession, lot_id: uuid.UUID) -> dic
 # (expiry/retest-due exclusion): reuses MaterialLot.expiry_date/retest_date already enforced by Document
 # 19's own eligibility patterns.
 # ---------------------------------------------------------------------------
+
+# CreateWarehouseLocation -- SG-081 write-side, resolved 2026-09-07, project-owner-directed. Document
+# 20's own 8-op API list still doesn't declare a warehouse_location create operation, but locations were
+# genuinely un-creatable through the app (seed-only, scripts/seed.py WAREHOUSE_LOCATION_FLOOR) -- the
+# same read-only-vs-write distinction already resolved for the location *listing* endpoint doesn't apply
+# here (this really is new write capability, not an additive read), so it's gated by its own permission
+# code (warehouse_location.create, Admin/Supervisor only -- scripts/seed.py) rather than left open like
+# Material/Supplier master creation. No signature (Document 106 has no row for it, same "row absent, not
+# optional" precedent as every other unsigned create in this module) -- master-data registration, not a
+# quality/release decision.
+class CreateWarehouseLocationCommand(CommandEnvelope):
+    site_id: uuid.UUID
+    warehouse_code: str
+    location_code: str
+    zone_type: str
+
+
+async def create_warehouse_location(
+    session: AsyncSession, cmd: CreateWarehouseLocationCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.warehouse_code.strip() or not cmd.location_code.strip() or not cmd.zone_type.strip():
+        raise ValidationFailedError("warehouse_code, location_code and zone_type are all required")
+
+    duplicate = (
+        await session.execute(
+            select(WarehouseLocation).where(
+                WarehouseLocation.site_id == cmd.site_id,
+                WarehouseLocation.warehouse_code == cmd.warehouse_code,
+                WarehouseLocation.location_code == cmd.location_code,
+            )
+        )
+    ).scalar_one_or_none()
+    if duplicate is not None:
+        raise ValidationFailedError(
+            "A location with this warehouse code and location code already exists at this site",
+            existing_id=str(duplicate.id),
+        )
+
+    location = WarehouseLocation(
+        site_id=cmd.site_id,
+        warehouse_code=cmd.warehouse_code,
+        location_code=cmd.location_code,
+        zone_type=cmd.zone_type,
+        status="active",
+        version=1,
+    )
+    session.add(location)
+    await session.flush()
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=cmd.site_id,
+        aggregate_type="warehouse_location",
+        aggregate_id=location.id,
+        aggregate_version=1,
+        action="Created",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        new_value={
+            "warehouse_code": location.warehouse_code,
+            "location_code": location.location_code,
+            "zone_type": location.zone_type,
+        },
+    )
+    await write_outbox_event(
+        session,
+        event_type="WarehouseLocationCreated",
+        aggregate_type="warehouse_location",
+        aggregate_id=location.id,
+        aggregate_version=1,
+        payload={"id": str(location.id), "location_code": location.location_code},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=cmd.site_id,
+        command_type="CreateWarehouseLocation",
+        aggregate_type="warehouse_location",
+        aggregate_id=location.id,
+        expected_version=None,
+        resulting_version=1,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=location.id,
+        resulting_version=1,
+        audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
+    )
+
 
 # Section 6 selection algorithm's zone-compatibility rule (INV-FR-002/008): ordinary engineering decision
 # -- the spec gives no explicit status->zone_type compatibility table. A zone_type not in this map (return/

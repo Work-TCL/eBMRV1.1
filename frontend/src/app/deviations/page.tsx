@@ -10,8 +10,9 @@ import {
   newIdempotencyKey,
   type Deviation,
 } from "@/lib/api";
-import { useMe, useSiteId } from "@/lib/hooks";
+import { useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -34,6 +35,23 @@ const DEVIATION_STATES = [
 ];
 const SOURCE_TYPES = ["batch", "qc", "material", "equipment", "environment", "supplier", "document", "system"];
 const SEVERITIES = ["critical", "major", "minor"];
+
+// Not every source_type has a browsable list behind it yet (document/environment/system have no bulk-list
+// endpoint — Document 26 doesn't require one, and building one is out of scope for this picker). Where a
+// list does exist, `kind` names it for EntityPickerField's copy; where it doesn't, `manualHint` explains
+// what the free-text ID should be instead of silently reusing the "couldn't load the list" error copy.
+const SOURCE_PICKER_KIND: Partial<Record<string, string>> = {
+  batch: "batch",
+  qc: "QC sample",
+  material: "material lot",
+  equipment: "equipment asset",
+  supplier: "supplier",
+};
+const SOURCE_MANUAL_HINT: Partial<Record<string, string>> = {
+  environment: "The EM sample or task ID this deviation traces to.",
+  document: "The document version ID this deviation traces to.",
+  system: "No record picker for this source type — enter the relevant reference ID.",
+};
 
 export default function DeviationsPage() {
   const { me } = useMe();
@@ -75,7 +93,7 @@ export default function DeviationsPage() {
     <>
       <QmsListPage<Deviation>
         title="Deviations"
-        subtitle="Document 26 — quality events from raise through triage, containment, investigation, impact and disposition."
+        subtitle="Quality events from raise through triage, containment, investigation, impact and disposition."
         path="/qms/v1/deviations"
         columns={columns}
         states={DEVIATION_STATES}
@@ -107,10 +125,36 @@ export default function DeviationsPage() {
 function RaiseDeviationModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { siteId } = useSiteId();
   const { me } = useMe();
+  const entities = useEntityOptions();
   const [deviationNumber, setDeviationNumber] = useState("");
   const [deviationType, setDeviationType] = useState("process");
   const [sourceType, setSourceType] = useState(SOURCE_TYPES[0]);
   const [sourceId, setSourceId] = useState("");
+
+  // Reset the picked/typed record whenever the source type changes — an id chosen against one entity
+  // list (e.g. a batch) is never valid once the type switches to a different one (e.g. equipment).
+  function changeSourceType(value: string) {
+    setSourceType(value);
+    setSourceId("");
+  }
+
+  // Which of useEntityOptions()'s lists backs this source_type's picker, if any.
+  const sourcePicker: { options: EntityOption[]; status: EntityOptionsStatus } | null = (() => {
+    switch (sourceType) {
+      case "batch":
+        return { options: entities.batches, status: entities.batchesStatus };
+      case "qc":
+        return { options: entities.qcSamples, status: entities.qcSamplesStatus };
+      case "material":
+        return { options: entities.materialLots, status: entities.materialLotsStatus };
+      case "equipment":
+        return { options: entities.equipment, status: entities.equipmentStatus };
+      case "supplier":
+        return { options: entities.suppliers, status: entities.suppliersStatus };
+      default:
+        return null;
+    }
+  })();
   const [severity, setSeverity] = useState("major");
   const [planned, setPlanned] = useState(false);
   const [scope, setScope] = useState("");
@@ -175,7 +219,7 @@ function RaiseDeviationModal({ onClose, onDone }: { onClose: () => void; onDone:
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Source type" required>
-            <Select value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
+            <Select value={sourceType} onChange={(e) => changeSourceType(e.target.value)}>
               {SOURCE_TYPES.map((s) => (
                 <option key={s} value={s}>
                   {s}
@@ -183,9 +227,21 @@ function RaiseDeviationModal({ onClose, onDone }: { onClose: () => void; onDone:
               ))}
             </Select>
           </Field>
-          <Field label="Source record ID" required hint="The batch, lot, asset or document this arose from.">
-            <Input value={sourceId} onChange={(e) => setSourceId(e.target.value)} required />
-          </Field>
+          {sourcePicker ? (
+            <EntityPickerField
+              label="Source record"
+              required
+              value={sourceId}
+              onChange={setSourceId}
+              options={sourcePicker.options}
+              status={sourcePicker.status}
+              kind={SOURCE_PICKER_KIND[sourceType]!}
+            />
+          ) : (
+            <Field label="Source record ID" required hint={SOURCE_MANUAL_HINT[sourceType]}>
+              <Input value={sourceId} onChange={(e) => setSourceId(e.target.value)} required />
+            </Field>
+          )}
         </div>
 
         <label className="flex items-center gap-2 fs-2 mb-3">
@@ -205,7 +261,7 @@ function RaiseDeviationModal({ onClose, onDone }: { onClose: () => void; onDone:
               <Field
                 label="End date"
                 required
-                hint="Hard stop — the record cannot advance past this date (DEV-FR-016)."
+                hint="Hard stop — the record cannot advance past this date."
               >
                 <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
               </Field>

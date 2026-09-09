@@ -12,12 +12,23 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
-from app.modules.iam.models import User
+from app.modules.audit.models import AuditEvent
+from app.modules.iam.models import Role, User
+from app.modules.policy.service import effective_role_names
+from app.modules.qa_review.models import QaReviewPackage
 from app.modules.release import service as release_service
 from app.modules.release.models import ALLOWED_TRANSITIONS, ReleaseDecision, ReleaseEvaluation, ReleaseScope
 from app.modules.signature import service as signature_service
 from app.modules.vault import service as vault_service
-from app.mutation.errors import InvalidTransitionError, MissingSignatureError, NotFoundError, StaleVersionError, ValidationFailedError
+from app.mutation.errors import (
+    InvalidTransitionError,
+    MissingSignatureError,
+    NotFoundError,
+    RoleMissingError,
+    SodIndependenceRequiredError,
+    StaleVersionError,
+    ValidationFailedError,
+)
 from app.mutation.gateway import check_idempotency, record_command_receipt, write_audit_event, write_outbox_event
 from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import CommandEnvelope, MutationReceipt
@@ -47,10 +58,55 @@ async def _load_scope_for_update(session: AsyncSession, scope_id: uuid.UUID, exp
     return scope
 
 
-async def _resolve_signature(session: AsyncSession, *, action: str, actor_user_id: uuid.UUID, record_version: int, record_hash: str, challenge_id: uuid.UUID | None, reauth_password: str | None):
+async def _batch_qa_reviewer(session: AsyncSession, batch_id: uuid.UUID) -> uuid.UUID | None:
+    """The actor who completed this batch's QA review package (`Reviewed` audit event on
+    `qa_review_package`), if any -- `QaReviewPackage` itself carries no reviewer identity column (only
+    `completed_at`), so the actor has to come from its own audit trail, same lookup pattern
+    release_recipe_version()/release_product_version() already use for their `Created`-event author."""
+    package_id = await session.scalar(select(QaReviewPackage.id).where(QaReviewPackage.batch_id == batch_id))
+    if package_id is None:
+        return None
+    return await session.scalar(
+        select(AuditEvent.actor_id)
+        .where(AuditEvent.aggregate_type == "qa_review_package", AuditEvent.aggregate_id == package_id, AuditEvent.action == "Reviewed")
+        .order_by(AuditEvent.occurred_at.desc())
+        .limit(1)
+    )
+
+
+async def _resolve_signature(
+    session: AsyncSession, *, action: str, actor_user_id: uuid.UUID, batch_id: uuid.UUID, reason: str | None,
+    record_version: int, record_hash: str, challenge_id: uuid.UUID | None, reauth_password: str | None,
+):
     policy = await signature_service.resolve_signature_requirement(session, record_type="release_scope", action=action)
     if not policy.signature_required:
         return None
+
+    # Document 106 rows 32-34 (SPEC-EBMR-006, hold/reject/release): required signer role and independence
+    # that resolve_signature_requirement() itself does not read -- same bespoke enforcement as
+    # qms/commands.py::_resolve_signature() (deviation disposition/close) and release_recipe_version()/
+    # release_product_version(). Independence here checks only the QA Reviewer who completed this batch's
+    # review package (Document 107 IND-002/IND-003's "the QA Reviewer" half) -- the other half, "every
+    # PERFORMER on the batch", has no data source in this codebase to check against (no table tracks the
+    # full set of operators who touched a batch's steps) and is deliberately not implemented; see
+    # docs/generated/18_SPEC_GAPS.md SG-056/SG-138 for the recorded gap.
+    if policy.required_role_id is not None:
+        required_role_name = await session.scalar(select(Role.name).where(Role.id == policy.required_role_id))
+        if required_role_name not in await effective_role_names(session, actor_user_id, None):
+            raise RoleMissingError(
+                f"Release decision '{action}' requires the signing role named by the signature policy",
+                action=f"release.{action}", required_role=required_role_name,
+            )
+    if policy.requires_independent_signer:
+        reviewer_id = await _batch_qa_reviewer(session, batch_id)
+        if reviewer_id is not None and actor_user_id == reviewer_id:
+            raise SodIndependenceRequiredError(
+                f"Release decision '{action}' must be independent of the QA Reviewer who completed this batch's review (Document 107 IND-002/IND-003)",
+                action=f"release.{action}",
+            )
+    if policy.reason_required and not (reason or "").strip():
+        raise ValidationFailedError(f"Release decision '{action}' requires a reason (Document 106 row's own Reason column)")
+
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"Release decision '{action}' requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)
@@ -175,8 +231,8 @@ async def release_scope_decision(session: AsyncSession, cmd: ReleaseDecisionComm
     await session.flush()
 
     signature_id = await _resolve_signature(
-        session, action="release", actor_user_id=actor_user_id, record_version=scope.version,
-        record_hash=sha256_hex({"id": str(scope.id), "version": scope.version}),
+        session, action="release", actor_user_id=actor_user_id, batch_id=scope.batch_id, reason=cmd.reason,
+        record_version=scope.version, record_hash=sha256_hex({"id": str(scope.id), "version": scope.version}),
         challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
     )
 
@@ -237,8 +293,8 @@ async def _decide_terminal_or_hold(session: AsyncSession, cmd: ReleaseDecisionCo
         raise InvalidTransitionError("Illegal release scope transition", current_state=scope.state, requested=new_state)
 
     signature_id = await _resolve_signature(
-        session, action=action, actor_user_id=actor_user_id, record_version=scope.version,
-        record_hash=sha256_hex({"id": str(scope.id), "version": scope.version}),
+        session, action=action, actor_user_id=actor_user_id, batch_id=scope.batch_id, reason=cmd.reason,
+        record_version=scope.version, record_hash=sha256_hex({"id": str(scope.id), "version": scope.version}),
         challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
     )
 

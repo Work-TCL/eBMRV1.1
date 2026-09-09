@@ -468,3 +468,66 @@ async def test_return_to_service_rejected_while_dirty(client, seeded):
     resp = await _return_to_service(client, eng_token, asset_id, expected_version=3)
     assert resp.status_code == 409, resp.text
     assert resp.json()["code"] == "CLEANING_REQUIRED"
+
+
+# ---------------------------------------------------------------------------
+# CreateEquipmentArea -- added 2026-09-07, project-owner-directed follow-up: EquipmentArea was seed-only
+# ("provisioned outside the app today", cleaning_models.py's own docstring), found while building the
+# `areaSelect` picker for `/aseptic`'s "Create aseptic operation" form. Same roles as
+# equipment_asset.create (Admin + Equipment Administrator).
+# ---------------------------------------------------------------------------
+
+
+async def test_create_area_requires_equipment_administrator_role(client, seeded):
+    op_token = await login(client, "operator1")
+    resp = await client.post(
+        "/equipment/v1/areas",
+        json={"idempotency_key": idem(), "site_id": str(seeded["site_id"]), "area_code": "AREA-TEST-NOPERM"},
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+
+async def test_equipment_administrator_can_create_area_and_it_is_listed(client, seeded):
+    admin_token = await login(client, "equipment.admin")
+    site_id = seeded["site_id"]
+    resp = await client.post(
+        "/equipment/v1/areas",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "area_code": "AREA-TEST-001",
+            "area_type": "fill_suite", "classification": "ISO_7", "criticality": "high",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    area_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/equipment/v1/areas/{area_id}")).json()
+    assert detail["area_code"] == "AREA-TEST-001"
+    assert detail["classification"] == "ISO_7"
+    assert detail["status"] == "active"
+
+    listing = (await client.get(f"/equipment/v1/areas?q=AREA-TEST-001")).json()
+    assert any(a["id"] == area_id for a in listing["items"])
+
+
+async def test_create_area_rejects_duplicate_area_code(client, seeded):
+    admin_token = await login(client, "equipment.admin")
+    site_id = seeded["site_id"]
+    body = {"idempotency_key": idem(), "site_id": str(site_id), "area_code": "AREA-TEST-002"}
+    first = await client.post("/equipment/v1/areas", json=body, headers=auth_headers(admin_token))
+    assert first.status_code == 200, first.text
+
+    dup = {**body, "idempotency_key": idem()}
+    second = await client.post("/equipment/v1/areas", json=dup, headers=auth_headers(admin_token))
+    assert second.status_code == 422, second.text
+    assert second.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_create_area_unauthenticated_rejected(client, seeded):
+    resp = await client.post(
+        "/equipment/v1/areas",
+        json={"idempotency_key": idem(), "site_id": str(seeded["site_id"]), "area_code": "AREA-TEST-003"},
+    )
+    assert resp.status_code == 401

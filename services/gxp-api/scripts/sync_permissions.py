@@ -20,13 +20,25 @@ from sqlalchemy import select
 
 from app.core.db import SessionLocal
 from app.modules.iam.models import Permission, Role, RolePermission
-from scripts.seed import PERMISSION_CATALOG, ROLE_PERMISSIONS
+from scripts.seed import PERMISSION_CATALOG, ROLE_NAMES, ROLE_PERMISSIONS
 
 
 async def sync() -> None:
-    created = updated = granted = revoked = 0
+    created = updated = granted = revoked = roles_created = 0
     async with SessionLocal() as session:
         async with session.begin():
+            # Bring in any role ROLE_NAMES declares that this deployment has not created yet, so a new
+            # role (e.g. "Process Engineer", SG-178) can be introduced live without a destructive
+            # reseed. Existing rows are left untouched; nothing is ever deleted here.
+            for role_name in ROLE_NAMES:
+                exists = (
+                    await session.execute(select(Role).where(Role.name == role_name))
+                ).scalar_one_or_none()
+                if exists is None:
+                    session.add(Role(name=role_name))
+                    roles_created += 1
+            await session.flush()
+
             permissions: dict[str, Permission] = {}
             for code, action, resource_type, description in PERMISSION_CATALOG:
                 existing = (
@@ -78,6 +90,7 @@ async def sync() -> None:
                     revoked += 1
 
     print(
+        f"roles:       {roles_created} created\n"
         f"permissions: {created} created, {updated} updated, {len(PERMISSION_CATALOG)} total\n"
         f"grants:      {granted} added, {revoked} revoked"
     )

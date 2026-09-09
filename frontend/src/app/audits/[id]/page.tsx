@@ -12,7 +12,8 @@ import {
   type AuditFinding,
   type InternalAudit,
 } from "@/lib/api";
-import { useApiResource, useMe } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Card } from "@/components/ui/Card";
@@ -228,6 +229,7 @@ function AuditActionModal({
 }) {
   const { me } = useMe();
   const { busy, error, run } = useCommand(onDone);
+  const entities = useEntityOptions();
   const [findingNumber, setFindingNumber] = useState("");
   const [requirementRef, setRequirementRef] = useState("");
   const [observation, setObservation] = useState("");
@@ -276,7 +278,7 @@ function AuditActionModal({
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(action) && (
           <Banner tone="warn" title="This transition requires an electronic signature">
-            No Document 106 policy row exists yet for this action (SG-138), so the backend fails it closed.
+            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
           </Banner>
         )}
 
@@ -311,9 +313,15 @@ function AuditActionModal({
             <Field label="Observation" required hint="What was seen — factual, not the conclusion drawn from it.">
               <textarea className="input" rows={3} value={observation} onChange={(e) => setObservation(e.target.value)} required />
             </Field>
-            <Field label="Owner (user ID)" required>
-              <Input value={owner} onChange={(e) => setOwner(e.target.value)} required />
-            </Field>
+            <EntityPickerField
+              label="Owner"
+              required
+              value={owner}
+              onChange={setOwner}
+              options={entities.users}
+              status={entities.usersStatus}
+              kind="user"
+            />
           </>
         )}
 
@@ -394,8 +402,7 @@ function FindingActionModal({
       <form onSubmit={submit}>
         {action === "verify" && (
           <Banner tone="warn" title="This transition requires an electronic signature">
-            No Document 106 policy row exists yet for <code>audit_finding.verify</code> (SG-138), so the
-            backend fails it closed.
+            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
           </Banner>
         )}
 

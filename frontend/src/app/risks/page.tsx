@@ -91,7 +91,7 @@ export default function RisksPage() {
     <>
       <QmsListPage<RiskRecord>
         title="Risk register"
-        subtitle="Document 32 — hazards, assessments, controls and periodic review across product, process and system risk."
+        subtitle="Hazards, assessments, controls and periodic review across product, process and system risk."
         path="/qms/v1/risks"
         columns={columns}
         states={RISK_STATES}

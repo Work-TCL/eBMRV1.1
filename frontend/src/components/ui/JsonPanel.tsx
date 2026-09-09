@@ -81,6 +81,36 @@ function humanize(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+/** A one-line, human-readable preview of a JSON value for a table cell — where `JsonPanel`'s block
+ * layout doesn't fit. A flat object/array reads as plain text ("material: raw, packaging: —"); anything
+ * nested falls back to compact JSON, truncated, so the cell never overflows. */
+export function summarizeJson(value: unknown, maxLen = 140): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value !== "object") return String(value);
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "—";
+    const allScalar = value.every((entry) => entry === null || typeof entry !== "object");
+    if (allScalar) return truncate(value.map((entry) => String(entry)).join(", "), maxLen);
+    return truncate(JSON.stringify(value), maxLen);
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return "—";
+  const allScalar = entries.every(([, entry]) => entry === null || typeof entry !== "object");
+  if (allScalar) {
+    return truncate(
+      entries.map(([k, v]) => `${humanize(k)}: ${v === null || v === "" ? "—" : String(v)}`).join(", "),
+      maxLen
+    );
+  }
+  return truncate(JSON.stringify(value), maxLen);
+}
+
+function truncate(s: string, maxLen: number): string {
+  return s.length > maxLen ? `${s.slice(0, maxLen - 1)}…` : s;
+}
+
 /** A record's append-only history arrays (`closure_history`, `extension_history`, `review_history`).
  * Renders newest last, matching the order the backend appends. */
 export function HistoryPanel({ title, entries }: { title: ReactNode; entries: unknown }) {

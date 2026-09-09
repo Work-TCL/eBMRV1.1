@@ -17,6 +17,45 @@ async def get_rule(session: AsyncSession, rule_object_id: uuid.UUID) -> RuleDefi
     return rule
 
 
+async def list_released_rules(session: AsyncSession) -> list[dict]:
+    """Read-only picker data: one row per `rule_id` that has a currently-effective released version
+    (RUL-FR-003 — status=released, within the effective window). Same SG-081 read-side precedent as
+    recipe_master's `GET /recipes/v2/families` and product_master's `GET /products/v1/business-ids`:
+    a plain read-only GET listing does not conflict with any future write/CRUD contract, it only lets
+    a caller (e.g. the Recipe Master dependency editor's `condition_rule_id` field) pick a real rule
+    instead of hand-typing its identifier.
+    """
+    now = datetime.now(timezone.utc)
+    rows = (
+        (
+            await session.execute(
+                select(RuleDefinition)
+                .where(
+                    RuleDefinition.status == "released",
+                    RuleDefinition.effective_from <= now,
+                    (RuleDefinition.effective_to.is_(None)) | (RuleDefinition.effective_to > now),
+                )
+                .order_by(RuleDefinition.rule_id, RuleDefinition.effective_from)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    latest: dict[str, RuleDefinition] = {}
+    for row in rows:
+        latest[row.rule_id] = row  # last wins => newest effective_from per rule_id
+    return [
+        {
+            "rule_id": r.rule_id,
+            "rule_type": r.rule_type,
+            "semantic_version": r.semantic_version,
+            "effective_from": r.effective_from.isoformat() if r.effective_from else None,
+            "effective_to": r.effective_to.isoformat() if r.effective_to else None,
+        }
+        for r in sorted(latest.values(), key=lambda x: x.rule_id)
+    ]
+
+
 async def list_versions(session: AsyncSession, rule_id: str) -> list[RuleDefinition]:
     return (
         (

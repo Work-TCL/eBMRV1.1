@@ -39,9 +39,6 @@ const SECTIONS: NavSection[] = [
     label: "Production",
     show: signedIn,
     items: [
-      { href: "/products", label: "Products", icon: "package" },
-      { href: "/recipes", label: "Recipes", icon: "database" },
-      { href: "/batches", label: "Batches", icon: "flask" },
       { href: "/product-master", label: "Product master", icon: "package", show: canViewProduct },
       { href: "/recipe-master", label: "Recipe master", icon: "database", show: canViewRecipe },
       { href: "/ddcp", label: "DDCP profiles", icon: "layers" },
@@ -52,6 +49,7 @@ const SECTIONS: NavSection[] = [
     show: signedIn,
     items: [
       { href: "/materials", label: "Materials", icon: "scale" },
+      { href: "/material-receipts", label: "Material receipts", icon: "package" },
       { href: "/material-lots", label: "Material lots", icon: "list-checks" },
       { href: "/inventory", label: "Inventory", icon: "inbox" },
       { href: "/dispensing", label: "Dispensing", icon: "droplet" },
@@ -67,6 +65,7 @@ const SECTIONS: NavSection[] = [
       { href: "/batch-execution", label: "Batch execution", icon: "play" },
       { href: "/equipment", label: "Equipment", icon: "scan" },
       { href: "/cleaning", label: "Cleaning", icon: "droplet" },
+      { href: "/line-clearance", label: "Line clearance", icon: "flag" },
       { href: "/sterilization", label: "Sterilization", icon: "flask" },
       { href: "/aseptic", label: "Aseptic operations", icon: "shield-check" },
       { href: "/em", label: "Environmental monitoring", icon: "gauge" },

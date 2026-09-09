@@ -62,6 +62,32 @@ class SodConflictError(GxPError):
     status_code = 409
 
 
+class StepRoleMismatchError(GxPError):
+    """The recipe reserved this batch step for a role the actor does not hold (BAT-FR-007 / Document 10
+    RecipeStep.required_role_code / SG-178). A holder of `batch_step.role_override` (Supervisor/Admin)
+    may still proceed by supplying a documented `override_reason`, which is captured in the audit event."""
+
+    code = "STEP_ROLE_MISMATCH"
+    status_code = 403
+
+
+class ProductionNotCompleteError(GxPError):
+    """Document 11 §7's own named error code (BAT-FR-026): a batch cannot become 'production_complete'
+    while any of its gxp_batch_step rows is not yet 'complete'."""
+
+    code = "PRODUCTION_NOT_COMPLETE"
+    status_code = 422
+
+
+class ParameterRequiredError(GxPError):
+    """Document 11 §7's own named error code (BAT-FR-015): a step cannot be completed while one of its
+    recipe-declared required parameters (`gxp_recipe_parameter.required=True`) has no recorded
+    `gxp_step_result` row."""
+
+    code = "PARAMETER_REQUIRED"
+    status_code = 422
+
+
 class SignaturePolicyUnresolvedError(GxPError):
     """No signature policy resolved for a regulated action. Fail closed — never commit unsigned because
     policy data is missing (Doc 106 SIGP-FR-004)."""

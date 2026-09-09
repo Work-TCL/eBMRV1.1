@@ -4,6 +4,8 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
@@ -158,6 +160,27 @@ async def gxp_error_handler(request: Request, exc: GxPError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content={"code": exc.code, "message": exc.message, "details": exc.details},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """A path/query/body value FastAPI itself rejects before a route runs -- e.g. a `batch_id` path
+    param that isn't a UUID -- raises `RequestValidationError`, which FastAPI wires to its own default
+    handler ahead of `unhandled_exception_handler` below. Left alone that default handler returns
+    Starlette's raw `{"detail": [...]}` shape: inconsistent with every other error in this API (see
+    `errors.py`'s "callers branch on `.code`, never on message text") and unreadable by the frontend's
+    `ApiError` parsing (`frontend/src/lib/api.ts`), which only looks for `code`/`message`/`details` and
+    silently falls back to a generic status text. Normalize to the same envelope `ValidationFailedError`
+    uses (VALIDATION_FAILED/422) instead.
+    """
+    errors = jsonable_encoder(exc.errors())
+    first = errors[0] if errors else {}
+    field = ".".join(str(part) for part in first.get("loc", []) if part not in ("body", "query", "path"))
+    message = f"{field}: {first['msg']}" if field and "msg" in first else (first.get("msg") or "Request validation failed")
+    return JSONResponse(
+        status_code=422,
+        content={"code": "VALIDATION_FAILED", "message": message, "details": {"errors": errors}},
     )
 
 

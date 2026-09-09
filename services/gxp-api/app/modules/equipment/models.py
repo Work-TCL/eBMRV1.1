@@ -218,8 +218,8 @@ class EquipmentUseLog(Base):
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
 
     log_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"))
-    step_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batch_steps.id"))
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"))
+    step_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch_step.id"))
     product_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     operation: Mapped[str | None] = mapped_column(String(200))
 

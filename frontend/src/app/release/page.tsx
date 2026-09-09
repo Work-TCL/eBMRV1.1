@@ -9,20 +9,19 @@ import {
   formatDateTime,
   newIdempotencyKey,
 } from "@/lib/api";
-import { useApiResource, useMe } from "@/lib/hooks";
+import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
-import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
-import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
+import { summarizeJson } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
-import { useCommand } from "@/components/qms/QmsDetailShell";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 
 interface Scope {
   scope_id: string;
@@ -57,16 +56,35 @@ interface Decision {
   release_package_hash: string | null;
 }
 
-const SCOPE_TYPES = ["batch", "lot", "shipment"];
+// release/models.py::SCOPE_TYPES = ("batch",) — lot/shipment scopes aren't built yet (SG-056: they need
+// deeper Document 12/13 device-lot/serial integration this pass doesn't have). Offering them here would
+// just be a dropdown that always fails post_evaluate()'s "Only scope_type 'batch' is supported" check.
+const SCOPE_TYPES = ["batch"];
+
+// GET /batches/v1 — same shape batch-execution's picker reads; only the fields the target-ID dropdown
+// needs are declared here.
+interface BatchOption {
+  batch_id: string;
+  batch_number: string;
+  product_name: string | null;
+  product_code: string | null;
+  state: string;
+}
 
 export default function ReleasePage() {
   const { me } = useMe();
+  const { siteId } = useSiteId();
   const [scopeType, setScopeType] = useState(SCOPE_TYPES[0]);
   const [targetId, setTargetId] = useState("");
   const [scopeId, setScopeId] = useState<string | null>(null);
   const [evaluating, setEvaluating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [decision, setDecision] = useState<"release" | "hold" | "reject" | null>(null);
+
+  const { data: batchList, loading: batchesLoading, error: batchesError } = useApiResource<{ batches: BatchOption[] }>(
+    scopeType === "batch" && siteId ? `/batches/v1?site_id=${siteId}` : null
+  );
+  const batchOptions = batchList?.batches ?? [];
 
   const eligibility = useApiResource<{ scope: Scope; evaluation: Evaluation | null }>(
     scopeId ? `/release/v1/scopes/${scopeId}/eligibility` : null
@@ -80,8 +98,19 @@ export default function ReleasePage() {
     setEvaluating(true);
     setError(null);
     try {
-      // Evaluating creates the scope on first call and re-evaluates it thereafter; the receipt's
-      // aggregate_id is the scope to read back.
+      // A scope already in a terminal state (released/rejected) can never be re-evaluated --
+      // evaluate_release_scope() correctly refuses with INVALID_TRANSITION ("cannot be re-evaluated from
+      // a terminal state"). Without this lookup first, that made an already-decided batch permanently
+      // unviewable from this page: every click just failed. Look up any existing scope first; only a
+      // still-active one (or none yet) goes through evaluate — re-evaluating an active scope refreshes
+      // eligibility as before, and a first-time target still creates + evaluates it.
+      const existing = await api.get<{ scope_id: string; state: string } | null>(
+        `/release/v1/scopes/${scopeType}/${targetId}`
+      );
+      if (existing && (existing.state === "released" || existing.state === "rejected")) {
+        setScopeId(existing.scope_id);
+        return;
+      }
       const receipt = await api.post<{ aggregate_id: string }>(
         `/release/v1/scopes/${scopeType}/${targetId}/evaluate`,
         { idempotency_key: newIdempotencyKey(), scope_type: scopeType, scope_id: targetId }
@@ -102,15 +131,15 @@ export default function ReleasePage() {
     <div>
       <PageHead
         title="Release"
-        subtitle="Document 15 — release scope eligibility, the blocker set, and the final release decision."
+        subtitle="Release scope eligibility, the blocker set, and the final release decision."
       />
 
       <p className="hint mb-4">
-        DDCP constituent and compatibility detail in the release package (Document 15 §8) is not built —
-        see SG-056. Evaluation, blockers and the decision record are the implemented part.
+        DDCP constituent and compatibility detail is not yet included in the release package evaluation —
+        blockers and the decision record are the parts available today.
       </p>
 
-      <form onSubmit={evaluate} className="flex items-end gap-4 mb-4">
+      <form onSubmit={evaluate} className="flex flex-wrap items-end gap-4 mb-4">
         <Field label="Scope type">
           <Select value={scopeType} onChange={(e) => setScopeType(e.target.value)}>
             {SCOPE_TYPES.map((s) => (
@@ -120,8 +149,22 @@ export default function ReleasePage() {
             ))}
           </Select>
         </Field>
-        <Field label="Target ID" hint="The batch, lot or shipment being released.">
-          <Input value={targetId} onChange={(e) => setTargetId(e.target.value)} style={{ minWidth: 320 }} />
+        <Field label="Batch" hint="The batch being released.">
+          <Select
+            value={targetId}
+            onChange={(e) => setTargetId(e.target.value)}
+            disabled={batchesLoading}
+            style={{ minWidth: 260, maxWidth: 380, width: "100%" }}
+          >
+            <option value="">
+              {batchesError ? "Could not load batches" : batchesLoading ? "Loading…" : batchOptions.length ? "Select a batch…" : "No batches at this site"}
+            </option>
+            {batchOptions.map((b) => (
+              <option key={b.batch_id} value={b.batch_id}>
+                {b.batch_number} — {b.product_name ? `${b.product_name} (${b.product_code})` : b.batch_id} · {b.state}
+              </option>
+            ))}
+          </Select>
         </Field>
         {canEvaluateRelease(me) && (
           <Button type="submit" variant="secondary" disabled={evaluating || !targetId.trim()}>
@@ -144,11 +187,32 @@ export default function ReleasePage() {
 
       {scope && (
         <>
-          {evaluation?.eligible ? (
+          {/* Explains why no decision buttons render below for a terminal/held scope — otherwise "the
+             Release button is missing" reads as a bug rather than the correct, final outcome it is. */}
+          {scope.state === "released" && (
+            <Banner tone="ok" title="Already released" icon="check-circle">
+              This batch was released{scope.decision_at ? ` on ${formatDateTime(scope.decision_at)}` : ""}. That
+              decision is final and cannot be repeated — see the decision record below for who signed it.
+              Only Hold (a post-release recall) remains available.
+            </Banner>
+          )}
+          {scope.state === "rejected" && (
+            <Banner tone="critical" title="Already rejected" icon="x">
+              This batch was rejected{scope.decision_at ? ` on ${formatDateTime(scope.decision_at)}` : ""}. That
+              decision is final — see the decision record below for who signed it and why.
+            </Banner>
+          )}
+          {scope.state === "hold" && (
+            <Banner tone="warn" title="On hold" icon="lock">
+              This scope is on hold and cannot be released, held again, or rejected from here — Document
+              15&rsquo;s model has no resume-from-hold transition in this pass.
+            </Banner>
+          )}
+          {scope.state !== "released" && scope.state !== "rejected" && scope.state !== "hold" && evaluation?.eligible ? (
             <Banner tone="ok" title="Eligible for release">
               Every release gate passed as at {formatDateTime(evaluation.evaluation_time)}.
             </Banner>
-          ) : evaluation ? (
+          ) : scope.state !== "released" && scope.state !== "rejected" && scope.state !== "hold" && evaluation ? (
             <Banner tone="critical" title={`${evaluation.blockers.length} blocker(s) prevent release`}>
               A release decision cannot be made while any blocker stands.
             </Banner>
@@ -184,17 +248,30 @@ export default function ReleasePage() {
               <IdFact label="Released vault object" value={scope.released_vault_object_id} />
             </FactGrid>
 
-            {canDecideRelease(me) && scope.state !== "RELEASED" && scope.state !== "REJECTED" && (
+            {/* release/models.py::ALLOWED_TRANSITIONS is lowercase ("released"/"rejected"/…) and per-action
+               ("released" only from "eligible"; "rejected" only from "eligible"/"blocked"; "hold" from
+               anything except "hold"/"rejected", including post-release per REL-FR-031) — a single
+               uppercase-cased guard around all three (as this used to be) never actually hid anything,
+               since scope.state is never "RELEASED"/"REJECTED" literally, and offering an action the
+               backend will refuse is exactly the class of bug the live INVALID_TRANSITION report on
+               /qa-review turned out to be. */}
+            {canDecideRelease(me) && (
               <div className="flex gap-2 mt-4">
-                <Button variant="success" disabled={!evaluation?.eligible} onClick={() => setDecision("release")}>
-                  <Icon name="pen" /> Release
-                </Button>
-                <Button variant="secondary" onClick={() => setDecision("hold")}>
-                  <Icon name="lock" /> Hold
-                </Button>
-                <Button variant="danger" onClick={() => setDecision("reject")}>
-                  <Icon name="x" /> Reject
-                </Button>
+                {scope.state === "eligible" && (
+                  <Button variant="success" disabled={!evaluation?.eligible} onClick={() => setDecision("release")}>
+                    <Icon name="pen" /> Release
+                  </Button>
+                )}
+                {scope.state !== "hold" && scope.state !== "rejected" && (
+                  <Button variant="secondary" onClick={() => setDecision("hold")}>
+                    <Icon name="lock" /> Hold
+                  </Button>
+                )}
+                {(scope.state === "eligible" || scope.state === "blocked") && (
+                  <Button variant="danger" onClick={() => setDecision("reject")}>
+                    <Icon name="x" /> Reject
+                  </Button>
+                )}
               </div>
             )}
           </Card>
@@ -217,7 +294,7 @@ export default function ReleasePage() {
                       {evaluation.blockers.map((b, i) => (
                         <tr key={b.code ?? i}>
                           <td className="tabular fs-2">{b.code ?? "—"}</td>
-                          <td className="error-text">{b.message ?? JSON.stringify(b)}</td>
+                          <td className="error-text">{b.message ?? summarizeJson(b)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -240,7 +317,7 @@ export default function ReleasePage() {
                       {evaluation.warnings.map((w, i) => (
                         <tr key={w.code ?? i}>
                           <td className="tabular fs-2">{w.code ?? "—"}</td>
-                          <td>{w.message ?? JSON.stringify(w)}</td>
+                          <td>{w.message ?? summarizeJson(w)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -315,45 +392,29 @@ function DecisionModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { busy, error, run } = useCommand(onDone);
   const [reason, setReason] = useState("");
-  const [password, setPassword] = useState("");
 
   const title = { release: "Release", hold: "Place on hold", reject: "Reject" }[decision];
+  const variant = decision === "reject" ? "danger" : decision === "release" ? "success" : "primary";
 
   return (
-    <Modal
+    <SignatureCeremony
       open
       onClose={onClose}
+      onDone={onDone}
+      challengePath={`/release/v1/scopes/${scope.scope_id}/signature-challenges`}
+      action={decision}
       title={
         <span className="flex items-center gap-2">
           <Icon name="pen" /> {title} — {scope.scope_type} scope
         </span>
       }
-    >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(() =>
-            api.post(`/release/v1/scopes/${scope.scope_id}/${decision}`, {
-              idempotency_key: newIdempotencyKey(),
-              scope_id: scope.scope_id,
-              expected_version: scope.version,
-              reason: reason || null,
-              reauth_password: password || null,
-            })
-          );
-        }}
-      >
-        <div className="sig-hint mb-3">
-          A release decision is a signed act. If the signature policy requires a challenge, the backend
-          will say so rather than committing unsigned.
-        </div>
-        <Field
-          label="Reason"
-          required={decision !== "release"}
-          hint="Part of the permanent record."
-        >
+      summary="Records the final release decision for this scope. Signer must be independent of the QA Reviewer who completed this batch's review."
+      submitLabel={`Sign & ${title.toLowerCase()}`}
+      submitVariant={variant}
+      disabled={decision !== "release" && !reason.trim()}
+      extraFields={
+        <Field label="Reason" required={decision !== "release"} hint="Part of the permanent record.">
           <textarea
             className="input"
             rows={3}
@@ -362,28 +423,17 @@ function DecisionModal({
             required={decision !== "release"}
           />
         </Field>
-        <Field label="Password" hint="Fresh authentication for the step-up signature.">
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-          />
-        </Field>
-        {error && <p className="error-text mb-2">{error}</p>}
-        <div className="flex justify-between gap-3 mt-3">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant={decision === "reject" ? "danger" : decision === "release" ? "success" : "primary"}
-            disabled={busy}
-          >
-            {busy ? "Submitting…" : title}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+      }
+      onSign={(p) =>
+        api.post(`/release/v1/scopes/${scope.scope_id}/${decision}`, {
+          idempotency_key: p.idempotency_key,
+          scope_id: scope.scope_id,
+          expected_version: scope.version,
+          reason: reason || null,
+          challenge_id: p.challenge_id,
+          reauth_password: p.reauth_password,
+        })
+      }
+    />
   );
 }

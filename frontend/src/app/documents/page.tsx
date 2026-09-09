@@ -98,7 +98,7 @@ export default function DocumentsPage() {
     <div>
       <PageHead
         title="Controlled documents"
-        subtitle="Document 30 — document versions from draft through review, release, effectivity and obsolescence."
+        subtitle="Document versions from draft through review, release, effectivity and obsolescence."
         action={
           canAuthorDocument(me) ? (
             <Button variant="primary" onClick={() => setDraftOpen(true)}>
@@ -109,8 +109,8 @@ export default function DocumentsPage() {
       />
 
       <p className="hint mb-4">
-        Document 30 exposes versions by document code rather than a site-wide register, so this page looks
-        up one controlled document at a time.
+        Document versions are looked up one at a time by document code, rather than browsed as a site-wide
+        list.
       </p>
 
       <form
@@ -118,14 +118,14 @@ export default function DocumentsPage() {
           e.preventDefault();
           lookup();
         }}
-        className="flex items-end gap-4 mb-4"
+        className="flex flex-wrap items-end gap-4 mb-4"
       >
         <Field label="Document code">
           <Input
             value={documentCode}
             onChange={(e) => setDocumentCode(e.target.value)}
             placeholder="e.g. SOP-QA-001"
-            style={{ minWidth: 260 }}
+            style={{ minWidth: 200, maxWidth: 260, width: "100%" }}
           />
         </Field>
         <Button type="submit" variant="secondary" disabled={loading || !documentCode.trim()}>
@@ -397,8 +397,8 @@ function ActionModal({
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(action) && (
           <Banner tone="warn" title="This transition requires an electronic signature">
-            No Document 106 policy row exists yet for <code>controlled_document_version.release</code>{" "}
-            (SG-138), so the backend fails it closed.
+            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be
+            correctly refused rather than proceeding without one.
           </Banner>
         )}
 

@@ -15,7 +15,8 @@ import {
   type EquipmentAsset,
   type MutationReceipt,
 } from "@/lib/api";
-import { useApiResource, useMe } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -177,7 +178,7 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
       )}
       {eligibility.data?.eligible && (
         <Banner tone="ok" title="Eligible for use">
-          Qualification, calibration, maintenance and cleanliness all satisfy the use gate (EQP-FR-021).
+          Qualification, calibration, maintenance and cleanliness all satisfy the use gate.
         </Banner>
       )}
 
@@ -434,6 +435,7 @@ function ActionModal({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const entities = useEntityOptions();
 
   // Qualification
   const [qualificationStatus, setQualificationStatus] = useState("qualified");
@@ -447,6 +449,7 @@ function ActionModal({
   const [result, setResult] = useState("pass");
   const [standardReference, setStandardReference] = useState("");
   const [frequencyDays, setFrequencyDays] = useState("365");
+  const [reviewerId, setReviewerId] = useState("");
 
   // Maintenance
   const [maintenanceType, setMaintenanceType] = useState("planned");
@@ -509,6 +512,7 @@ function ActionModal({
           result,
           standard_reference: standardReference || null,
           frequency_days: frequencyDays ? Number(frequencyDays) : null,
+          reviewer_user_id: reviewerId || null,
           reason: reason || null,
         });
       } else if (action === "maintenance") {
@@ -600,7 +604,7 @@ function ActionModal({
                 <Select value={result} onChange={(e) => setResult(e.target.value)}>
                   <option value="pass">pass</option>
                   <option value="fail">fail</option>
-                  <option value="pass_with_adjustment">pass_with_adjustment</option>
+ <option value="oot">oot out of tolerance</option>
                 </Select>
               </Field>
             </div>
@@ -617,10 +621,18 @@ function ActionModal({
                 />
               </Field>
             </div>
-            {result === "fail" && (
-              <Banner tone="warn" title="A failed calibration triggers impact assessment">
-                Work performed on this instrument since the last passing calibration may be affected
-                (EQP-FR-015).
+            <EntityPickerField
+              label="Reviewer"
+              hint="Optional second-person reviewer for this calibration."
+              value={reviewerId}
+              onChange={setReviewerId}
+              options={entities.users}
+              status={entities.usersStatus}
+              kind="user"
+            />
+            {(result === "fail" || result === "oot") && (
+              <Banner tone="warn" title="This result triggers impact assessment">
+                Work performed on this instrument since the last passing calibration may be affected.
               </Banner>
             )}
           </>
@@ -633,7 +645,6 @@ function ActionModal({
                 <Select value={maintenanceType} onChange={(e) => setMaintenanceType(e.target.value)}>
                   <option value="planned">planned</option>
                   <option value="corrective">corrective</option>
-                  <option value="breakdown">breakdown</option>
                 </Select>
               </Field>
               <Field label="Next due date">

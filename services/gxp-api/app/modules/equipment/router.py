@@ -8,12 +8,14 @@ from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.equipment.commands import (
+    CreateEquipmentAreaCommand,
     CreateEquipmentAssetCommand,
     HoldEquipmentCommand,
     RecordCalibrationCommand,
     RecordMaintenanceCommand,
     RecordQualificationCommand,
     ReturnToServiceCommand,
+    create_equipment_area,
     create_equipment_asset,
     equipment_record_hash,
     get_dashboard,
@@ -25,6 +27,7 @@ from app.modules.equipment.commands import (
     record_qualification,
     return_to_service,
 )
+from app.modules.equipment.cleaning_models import EquipmentArea
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.policy.service import evaluate_policy
 from app.modules.signature.service import create_challenge
@@ -97,6 +100,66 @@ async def get_asset(asset_id: uuid.UUID, session: AsyncSession = Depends(get_ses
     if asset is None:
         raise NotFoundError("Equipment asset not found")
     return _asset_dict(asset)
+
+
+AREA_SORTABLE = {
+    "area_code": EquipmentArea.area_code,
+    "created_at": EquipmentArea.created_at,
+}
+
+
+def _area_dict(area: EquipmentArea) -> dict:
+    return {
+        "id": str(area.id),
+        "site_id": str(area.site_id),
+        "area_code": area.area_code,
+        "area_type": area.area_type,
+        "classification": area.classification,
+        "criticality": area.criticality,
+        "cleanliness_status": area.cleanliness_status,
+        "status": area.status,
+    }
+
+
+# Read-only master-data list — `EquipmentArea` (`equipment.equipment_areas`) is referenced by
+# `area_id`/`line_id` fields across cleaning, EM, aseptic and DDCP, all of which previously had no way
+# to look one up except a raw UUID the operator had to already know. This mirrors `/assets`'s read-only
+# list shape.
+#
+# **2026-09-07, project-owner-directed** — write capability (`POST /areas` below) was added too, same
+# "own considered create contract, not a guessed one" precedent as `warehouse_location.create`/
+# `aseptic_profile_version.create`: areas were genuinely uncreatable through the app otherwise (seed-only,
+# `EquipmentArea`'s own docstring called it "provisioned outside the app today"), found while building
+# this same picker for `/aseptic`'s "Create aseptic operation" form. Gated by a new
+# `equipment_area.create` permission code (Admin + Equipment Administrator — same roles as
+# `equipment_asset.create`). No qualification/release workflow exists for an area, so create enters
+# directly at `status="active"`.
+@router.post("/areas", response_model=MutationReceipt)
+async def post_create_area(
+    cmd: CreateEquipmentAreaCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="equipment_area.create", site_id=cmd.site_id)
+        return await create_equipment_area(session, cmd, actor.user_id)
+
+
+@router.get("/areas")
+async def list_areas(session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)) -> dict:
+    stmt = select(EquipmentArea)
+    if params.q:
+        stmt = stmt.where(EquipmentArea.area_code.ilike(f"%{params.q}%"))
+    rows, envelope = await paginate(session, stmt, params, sortable=AREA_SORTABLE, default_sort=EquipmentArea.created_at)
+    return {**envelope, "items": [_area_dict(a) for (a,) in rows]}
+
+
+@router.get("/areas/{area_id}")
+async def get_area(area_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+    area = await session.get(EquipmentArea, area_id)
+    if area is None:
+        raise NotFoundError("Equipment area not found")
+    return _area_dict(area)
 
 
 @router.post("/{asset_id}/qualifications", response_model=MutationReceipt)

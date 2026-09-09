@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.qc.commands import (
     ApproveDispositionCommand,
@@ -62,6 +63,7 @@ from app.modules.qc.models import (
     OotRecord,
     QcResult,
     QcSample,
+    QcTestDefinition,
     QcTestOrder,
     QcTestRun,
     QcTestSpecification,
@@ -72,6 +74,87 @@ from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/qc/v1", tags=["qc"])
 oos_router = APIRouter(prefix="/quality", tags=["oos_oot"])
+
+
+SPECIFICATION_SORTABLE = {
+    "spec_code": QcTestSpecification.spec_code,
+    "created_at": QcTestSpecification.created_at,
+}
+
+
+def _specification_dict(spec: QcTestSpecification, definitions: list[QcTestDefinition]) -> dict:
+    return {
+        "id": str(spec.id), "spec_code": spec.spec_code, "version_no": spec.version_no, "status": spec.status,
+        "scope_type": spec.scope_type, "scope_version_id": str(spec.scope_version_id), "version": spec.version,
+        "test_definitions": [
+            {
+                "id": str(d.id), "test_code": d.test_code, "test_name": d.test_name,
+                "result_data_type": d.result_data_type, "uom": d.uom,
+            }
+            for d in definitions
+        ],
+    }
+
+
+@router.get("/specifications")
+async def list_specifications(
+    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params),
+) -> dict:
+    """Real picker data for every place that needs a test specification/definition -- /qc's own "Add
+    test order" (previously free-text 'Test definition ID' entry) and the browsable list a spec/release
+    UI needs to exist at all; there was no way to see what specifications existed, only create one blind
+    via a direct API call. Same SG-081 read-side precedent as everywhere else this pass. Paginated (shared
+    envelope) so the frontend's DataTable can page/search/sort it like every other list; no site scoping
+    on this table (see model docstring)."""
+    async with session.begin():
+        stmt = select(QcTestSpecification)
+        if params.q:
+            stmt = stmt.where(QcTestSpecification.spec_code.ilike(f"%{params.q}%"))
+        rows, envelope = await paginate(
+            session, stmt, params, sortable=SPECIFICATION_SORTABLE, default_sort=QcTestSpecification.created_at
+        )
+        specs = [s for (s,) in rows]
+        defs_by_spec: dict[str, list[QcTestDefinition]] = {}
+        if specs:
+            def_rows = (
+                await session.execute(
+                    select(QcTestDefinition).where(QcTestDefinition.specification_id.in_([s.id for s in specs]))
+                )
+            ).scalars().all()
+            for d in def_rows:
+                defs_by_spec.setdefault(str(d.specification_id), []).append(d)
+        return {**envelope, "items": [_specification_dict(s, defs_by_spec.get(str(s.id), [])) for s in specs]}
+
+
+SAMPLE_SORTABLE = {
+    "sample_number": QcSample.sample_number,
+    "created_at": QcSample.created_at,
+}
+
+
+@router.get("/samples")
+async def list_samples(
+    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params),
+) -> dict:
+    """Browsable list for /qc's own "Samples" section -- previously no way to see what samples existed
+    at all, only open one already-known by id. Same SG-081 read-side precedent as everywhere else this
+    pass. No site scoping on this table (see model docstring)."""
+    async with session.begin():
+        stmt = select(QcSample)
+        if params.q:
+            stmt = stmt.where(QcSample.sample_number.ilike(f"%{params.q}%"))
+        rows, envelope = await paginate(session, stmt, params, sortable=SAMPLE_SORTABLE, default_sort=QcSample.created_at)
+        samples = [s for (s,) in rows]
+        return {
+            **envelope,
+            "items": [
+                {
+                    "id": str(s.id), "sample_number": s.sample_number, "sample_type": s.sample_type,
+                    "source_type": s.source_type, "state": s.state,
+                }
+                for s in samples
+            ],
+        }
 
 
 @router.post("/specifications/drafts", response_model=MutationReceipt)
@@ -173,6 +256,39 @@ async def get_sample_record(sample_id: str, session: AsyncSession = Depends(get_
         "source_type": sample.source_type,
         "test_orders": order_payload,
     }
+
+
+@router.get("/results")
+async def list_results_for_batch(batch_id: str, session: AsyncSession = Depends(get_session)) -> list[dict]:
+    """Real picker data for any field that references a `qc_result` row by id -- DDCP's "Link a device
+    functional test" `qc_record_reference` (ddcp/commands.py's own comment: "References the owning
+    qc.qc_result row, never duplicates it") is the first caller, previously free-text UUID entry with no
+    way to discover a real one. Same SG-081 read-side precedent as every other picker added this pass.
+
+    `QcSample.source_id` is a polymorphic reference (see that model's own docstring) validated only for
+    a handful of source_types -- 'batch' is one of them, so this filters on exactly that rather than
+    guessing at samples pulled some other way. Newest first."""
+    rows = (
+        await session.execute(
+            select(QcResult, QcTestDefinition.test_name)
+            .join(QcTestOrder, QcTestOrder.id == QcResult.test_order_id)
+            .join(QcSample, QcSample.id == QcTestOrder.sample_id)
+            .join(QcTestDefinition, QcTestDefinition.id == QcTestOrder.test_definition_id)
+            .where(QcSample.source_type == "batch", QcSample.source_id == batch_id)
+            .order_by(QcResult.created_at.desc())
+        )
+    ).all()
+    return [
+        {
+            "id": str(result.id),
+            "label": (
+                f"{test_name} — {result.result_type} "
+                f"{result.value_decimal if result.value_decimal is not None else (result.value_text or '')} "
+                f"({result.outcome})"
+            ).strip(),
+        }
+        for result, test_name in rows
+    ]
 
 
 @router.get("/release-readiness")

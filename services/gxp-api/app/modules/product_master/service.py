@@ -7,6 +7,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.equipment import aseptic_commands as aseptic_service
+from app.modules.equipment.aseptic_models import AsepticProfileVersion
 from app.modules.product_master.models import (
     STERILE_REQUIRED_PROFILES,
     ProductConstituent,
@@ -59,6 +61,41 @@ async def get_constituents(session: AsyncSession, product_version_id: uuid.UUID)
         .scalars()
         .all()
     )
+
+
+async def list_product_business_ids(session: AsyncSession) -> list[ProductVersion]:
+    """Read-only picker data for any field that references *another* Product Master record by its own
+    Business ID (e.g. this module's own Constituent editor — PRD-FR-004/006's "meal kit" model: the drug
+    substance and the device component are themselves Product Master versions). Document 09 declares no
+    "list all products" operation in its own API list (docs/generated/06_API_CATALOGUE.yaml) — same
+    SG-081 read-side precedent as `GET /inventory/v1/warehouse-locations` and
+    `GET /material-lots/{id}/containers`: a plain read-only GET listing does not conflict with any future
+    write/CRUD contract, it only replaces free-text Business-ID entry with a real picker. Returns one row
+    per distinct product_business_id — the highest version_no for that id — so callers get a name and
+    lifecycle_state to show without a second round trip; the caller still uses
+    `GET /products/v1/{business_id}/versions` to resolve the *specific* version to reference."""
+    rows = (
+        (
+            await session.execute(
+                select(ProductVersion).order_by(ProductVersion.product_business_id, ProductVersion.version_no.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    latest: dict[str, ProductVersion] = {}
+    for row in rows:
+        latest.setdefault(row.product_business_id, row)
+    return sorted(latest.values(), key=lambda v: v.product_business_id)
+
+
+async def list_sterile_profiles(session: AsyncSession, site_id: uuid.UUID) -> list[AsepticProfileVersion]:
+    """Real picker data for the draft/edit forms' Sterile process profile ID field — thin wrapper around
+    `aseptic_commands.list_released_profile_versions`, the equipment module's own cross-module query
+    interface (AG-02/AG-05) for Document 40's `equipment.aseptic_profile_versions` registry, restricted to
+    this site's RELEASED rows. Backs the PRD-FR-010 existence/state check
+    `commands.py::_validate_sterile_profile` enforces at draft create/update."""
+    return await aseptic_service.list_released_profile_versions(session, site_id)
 
 
 def validate_completeness(version: ProductVersion, constituents: list[ProductConstituent]) -> list[str]:

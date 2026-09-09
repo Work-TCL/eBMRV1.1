@@ -23,8 +23,8 @@ import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
-import { JsonPanel } from "@/components/ui/JsonPanel";
-import { StatePill, BoolPill } from "@/components/ui/StatePill";
+import { JsonPanel, summarizeJson } from "@/components/ui/JsonPanel";
+import { StatePill, BoolPill, WorkflowStatePill } from "@/components/ui/StatePill";
 
 interface ScopeItem {
   id: string;
@@ -249,10 +249,8 @@ function ScopeTab({ items }: { items: ScopeItem[] }) {
         <tbody>
           {items.map((i) => (
             <tr key={i.id}>
-              <td className="fs-2">
-                {i.lot_batch_serial_refs ? JSON.stringify(i.lot_batch_serial_refs) : "—"}
-              </td>
-              <td className="fs-2">{i.distribution_ref ? JSON.stringify(i.distribution_ref) : "—"}</td>
+              <td className="fs-2">{summarizeJson(i.lot_batch_serial_refs)}</td>
+              <td className="fs-2">{summarizeJson(i.distribution_ref)}</td>
               <td>
                 {i.distribution_hold ? (
                   <StatePill state="blocked" icon="lock">
@@ -262,7 +260,7 @@ function ScopeTab({ items }: { items: ScopeItem[] }) {
                   <span className="text-muted">—</span>
                 )}
               </td>
-              <td className="fs-2">{i.status}</td>
+              <td className="fs-2"><WorkflowStatePill state={i.status} /></td>
               <td className="fs-2">{i.action_required ?? "—"}</td>
               <td>
                 {i.action_completed ? (
@@ -418,7 +416,7 @@ function TransitionModal({
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(transition) && (
           <Banner tone="warn" title="This transition requires an electronic signature">
-            No Document 106 policy row exists yet for this action (SG-138), so the backend fails it closed.
+            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
           </Banner>
         )}
 

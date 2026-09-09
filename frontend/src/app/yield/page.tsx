@@ -9,7 +9,7 @@ import {
   newIdempotencyKey,
   type MutationReceipt,
 } from "@/lib/api";
-import { useMe } from "@/lib/hooks";
+import { useEntityOptions, useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -19,7 +19,9 @@ import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
 import { StatePill } from "@/components/ui/StatePill";
+import { summarizeJson } from "@/components/ui/JsonPanel";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 
 // GET /reconciliation/v1/batches/{batch_id}/summary — app/modules/yield_reconciliation/commands.py::get_batch_summary
 interface Calculation {
@@ -83,6 +85,7 @@ function resultPill(state: string) {
 
 export default function YieldPage() {
   const { me } = useMe();
+  const entities = useEntityOptions();
   const [batchId, setBatchId] = useState("");
   const [summary, setSummary] = useState<BatchSummary | null>(null);
   const [loading, setLoading] = useState(false);
@@ -107,7 +110,7 @@ export default function YieldPage() {
     <div>
       <PageHead
         title="Yield & reconciliation"
-        subtitle="Document 17 — theoretical vs actual quantities, tolerance outcome, and the verifier signature that clears a batch for release."
+        subtitle="Theoretical vs actual quantities, tolerance outcome, and the verifier signature that clears a batch for release."
       />
 
       <Card pad className="mb-4">
@@ -116,11 +119,16 @@ export default function YieldPage() {
             e.preventDefault();
             load();
           }}
-          className="flex items-end gap-4"
+          className="flex flex-wrap items-end gap-4"
         >
-          <Field label="Batch ID">
-            <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} placeholder="batch UUID" style={{ minWidth: 320 }} />
-          </Field>
+          <EntityPickerField
+            label="Batch"
+            value={batchId}
+            onChange={setBatchId}
+            options={entities.batches}
+            status={entities.batchesStatus}
+            kind="batch"
+          />
           <Button type="submit" variant="secondary" disabled={loading || !batchId.trim()}>
             <Icon name="search" /> {loading ? "Loading…" : "Load batch summary"}
           </Button>
@@ -211,11 +219,11 @@ export default function YieldPage() {
                   {summary.reconciliations.map((r) => (
                     <tr key={r.id}>
                       <td>{r.reconciliation_type}</td>
-                      <td className="fs-2 tabular" style={{ wordBreak: "break-word" }}>
-                        {r.item_ref ? JSON.stringify(r.item_ref) : "—"}
+                      <td className="fs-2" style={{ wordBreak: "break-word" }}>
+                        {summarizeJson(r.item_ref)}
                       </td>
-                      <td className="fs-1 tabular" style={{ wordBreak: "break-word" }}>
-                        {r.quantities ? JSON.stringify(r.quantities) : "—"} {r.uom ?? ""}
+                      <td className="fs-1" style={{ wordBreak: "break-word" }}>
+                        {summarizeJson(r.quantities)} {r.uom ?? ""}
                       </td>
                       <td>{resultPill(r.state)}</td>
                       <td style={{ textAlign: "right" }}>
@@ -247,7 +255,7 @@ export default function YieldPage() {
 
       {canEvaluateYield(me) && (
         <div className="mt-6">
-          <EvaluateYieldCard onEvaluated={() => load()} defaultBatchId={batchId} />
+          <EvaluateYieldCard onEvaluated={() => load()} defaultBatchId={batchId} entities={entities} />
         </div>
       )}
 
@@ -280,7 +288,15 @@ export default function YieldPage() {
   );
 }
 
-function EvaluateYieldCard({ onEvaluated, defaultBatchId }: { onEvaluated: () => void; defaultBatchId: string }) {
+function EvaluateYieldCard({
+  onEvaluated,
+  defaultBatchId,
+  entities,
+}: {
+  onEvaluated: () => void;
+  defaultBatchId: string;
+  entities: ReturnType<typeof useEntityOptions>;
+}) {
   const [batchId, setBatchId] = useState(defaultBatchId);
   const [phaseCode, setPhaseCode] = useState("");
   const [theoretical, setTheoretical] = useState("");
@@ -322,13 +338,19 @@ function EvaluateYieldCard({ onEvaluated, defaultBatchId }: { onEvaluated: () =>
     <Card pad>
       <CardHeader title="Evaluate yield" />
       <p className="fs-2 text-muted mb-3">
-        Runs the Document 17 §3 yield formula (actual ÷ theoretical × 100) against the batch and records the
-        tolerance outcome. Decimal quantities are exact strings.
+        Runs the yield formula (actual ÷ theoretical × 100) against the batch and records the tolerance
+        outcome. Enter the exact measured quantities — they are never rounded.
       </p>
       <form onSubmit={submit} className="grid grid-cols-3 gap-4">
-        <Field label="Batch ID" required>
-          <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} required />
-        </Field>
+        <EntityPickerField
+          label="Batch"
+          required
+          value={batchId}
+          onChange={setBatchId}
+          options={entities.batches}
+          status={entities.batchesStatus}
+          kind="batch"
+        />
         <Field label="Phase code" hint="Optional — omit for a whole-batch yield.">
           <Input value={phaseCode} onChange={(e) => setPhaseCode(e.target.value)} />
         </Field>

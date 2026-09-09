@@ -7,9 +7,15 @@ import {
   formatDateTime,
   holdsAnyRole,
   listAll,
+  listBatchesForSite,
   newIdempotencyKey,
   pagedFetcher,
+  type BatchSummary,
   type Material,
+  type MaterialContainer,
+  type MaterialLot,
+  type MutationReceipt,
+  type WarehouseLocation,
 } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
@@ -20,11 +26,13 @@ import { Banner } from "@/components/ui/Banner";
 import { Tabs } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { Field } from "@/components/ui/Field";
+import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
+import { StatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 
 interface AvailabilityRow {
   material_lot_id: string;
@@ -40,12 +48,127 @@ interface AvailabilityRow {
 interface LedgerRow {
   id: string;
   container_id: string | null;
+  container_code: string | null;
   transaction_type: string;
   quantity: string;
   uom: string;
   from_location_id: string | null;
+  from_location_code: string | null;
   to_location_id?: string | null;
+  to_location_code?: string | null;
   occurred_at?: string;
+}
+
+// GET /inventory/v1/adjustments — services/gxp-api/app/modules/material/router.py::list_adjustment_requests
+interface AdjustmentRequestRow {
+  id: string;
+  internal_lot: string;
+  material_code: string;
+  container_id: string | null;
+  location_code: string;
+  expected_quantity: string;
+  observed_quantity: string;
+  variance: string;
+  reason: string;
+  status: string;
+  requested_by: string;
+  created_at: string | null;
+  version: number;
+}
+
+const ADJUSTMENT_STATUS: Record<string, { state: "missing" | "accepted" | "failed"; label: string }> = {
+ requested: { state: "missing", label: "Requested pending approval" },
+  approved: { state: "accepted", label: "Approved" },
+};
+
+// CON-FR-014: the approver must be independent of the requester — enforced server-side
+// (approve_inventory_adjustment_request rejects a self-approval), mirrored here so the button is
+// disabled with an explanation rather than letting the user submit into a guaranteed rejection.
+function adjustmentColumns(
+  canApprove: boolean,
+  myUsername: string | null,
+  onApprove: (row: AdjustmentRequestRow) => void
+): DataTableColumn<AdjustmentRequestRow>[] {
+  return [
+    {
+      key: "internal_lot",
+      header: "Lot",
+      sortable: true,
+      render: (r) => (
+        <span className="tabular fs-2">
+        {r.internal_lot} — <span className="text-muted">{r.material_code}</span>
+        </span>
+      ),
+    },
+    { key: "location_code", header: "Location", render: (r) => <span className="fs-2">{r.location_code}</span> },
+    {
+      key: "expected_quantity",
+      header: "Expected",
+      align: "right",
+      render: (r) => <span className="tabular">{r.expected_quantity}</span>,
+    },
+    {
+      key: "observed_quantity",
+      header: "Observed",
+      align: "right",
+      render: (r) => <span className="tabular">{r.observed_quantity}</span>,
+    },
+    {
+      key: "variance",
+      header: "Variance",
+      align: "right",
+      render: (r) => (
+        <span
+          className="tabular font-semibold"
+          style={Number(r.variance) < 0 ? { color: "var(--status-critical-text)" } : undefined}
+        >
+          {r.variance}
+        </span>
+      ),
+    },
+    {
+      key: "reason",
+      header: "Reason",
+      render: (r) => (
+        <span className="fs-2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          {r.reason}
+        </span>
+      ),
+    },
+    { key: "requested_by", header: "Requested by", render: (r) => <span className="fs-2">{r.requested_by}</span> },
+    {
+      key: "created_at",
+      header: "Requested",
+      sortable: true,
+      render: (r) => <span className="tabular fs-2">{r.created_at ? formatDateTime(r.created_at) : "—"}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (r) => {
+        const s = ADJUSTMENT_STATUS[r.status] ?? { state: "missing" as const, label: r.status };
+        return (
+          <StatePill state={s.state} icon={r.status === "approved" ? "check-circle" : "clock"}>
+            {s.label}
+          </StatePill>
+        );
+      },
+    },
+    {
+      key: "actions",
+      header: "",
+      render: (r) => {
+        if (r.status !== "requested") return null;
+        if (!canApprove) return null;
+        const isSelf = myUsername != null && r.requested_by === myUsername;
+        return (
+        <Button size="sm" variant="primary" disabled={isSelf} onClick={() => onApprove(r)} title={isSelf ? "You requested this — an independent QA Releaser must approve it" : undefined}>
+            Approve
+          </Button>
+        );
+      },
+    },
+  ];
 }
 
 type Action = "reserve" | "transfer" | "cycle_count" | "adjustment";
@@ -61,6 +184,7 @@ export default function InventoryPage() {
   const { me } = useMe();
   const { siteId } = useSiteId();
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [materialLots, setMaterialLots] = useState<MaterialLot[]>([]);
   const [materialId, setMaterialId] = useState("");
   const [availability, setAvailability] = useState<AvailabilityRow[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -69,9 +193,13 @@ export default function InventoryPage() {
   const [ledgerLotId, setLedgerLotId] = useState("");
   const [activeLedgerLot, setActiveLedgerLot] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [approvingAdjustment, setApprovingAdjustment] = useState<AdjustmentRequestRow | null>(null);
+  const [locations, setLocations] = useState<WarehouseLocation[]>([]);
+  const [newLocationOpen, setNewLocationOpen] = useState(false);
 
   const canMove = holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
   const canApprove = holdsAnyRole(me, ["Admin", "QA Releaser"]);
+  const canManageLocations = holdsAnyRole(me, ["Admin", "Supervisor"]);
 
   // Populated once for the material picker; Phase 1 row counts sit well inside listAll's 100 cap.
   useEffect(() => {
@@ -85,6 +213,35 @@ export default function InventoryPage() {
       cancelled = true;
     };
   }, []);
+
+  // Same cap/pattern as materials above — shared with the Lot ledger picker below and passed down to
+  // ActionModal so Transfer/Cycle count/Adjustment don't each fetch their own copy.
+  useEffect(() => {
+    let cancelled = false;
+    listAll<MaterialLot>("/material-lots")
+      .then((rows) => {
+        if (!cancelled) setMaterialLots(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadToken]);
+
+  // Lifted to the parent (rather than fetched inside ActionModal) so a newly-created location
+  // (below) is immediately available to Transfer/Cycle count/Adjustment without reopening anything.
+  useEffect(() => {
+    if (!siteId) return;
+    let cancelled = false;
+    listAll<WarehouseLocation>("/inventory/v1/warehouse-locations", { site_id: siteId })
+      .then((rows) => {
+        if (!cancelled) setLocations(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [siteId, reloadToken]);
 
   async function loadAvailability(e: React.FormEvent) {
     e.preventDefault();
@@ -125,9 +282,14 @@ export default function InventoryPage() {
     {
       key: "container_id",
       header: "Container",
+      render: (t) => <span className="fs-2">{t.container_code ?? "—"}</span>,
+    },
+    {
+      key: "from_location_id",
+      header: "Location",
       render: (t) => (
-        <span className="tabular fs-2" style={{ wordBreak: "break-all" }}>
-          {t.container_id ?? "—"}
+        <span className="fs-2">
+          {t.from_location_code ?? "—"} → {t.to_location_code ?? "—"}
         </span>
       ),
     },
@@ -137,19 +299,28 @@ export default function InventoryPage() {
     <div>
       <PageHead
         title="Inventory"
-        subtitle="Document 20/22 — availability, reservations, movements, cycle counts and the lot ledger."
+        subtitle="Availability, reservations, movements, cycle counts and the lot ledger."
         action={
-          canMove ? (
+          canMove || canManageLocations ? (
             <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setAction("transfer")}>
-                Transfer
-              </Button>
-              <Button variant="secondary" onClick={() => setAction("cycle_count")}>
-                Cycle count
-              </Button>
-              <Button variant="primary" onClick={() => setAction("reserve")}>
-                <Icon name="plus" /> Reserve
-              </Button>
+              {canManageLocations && (
+                <Button variant="secondary" onClick={() => setNewLocationOpen(true)}>
+                  <Icon name="plus" /> New location
+                </Button>
+              )}
+              {canMove && (
+                <>
+                  <Button variant="secondary" onClick={() => setAction("transfer")}>
+                    Transfer
+                  </Button>
+                  <Button variant="secondary" onClick={() => setAction("cycle_count")}>
+                    Cycle count
+                  </Button>
+                  <Button variant="primary" onClick={() => setAction("reserve")}>
+                    <Icon name="plus" /> Reserve
+                  </Button>
+                </>
+              )}
             </div>
           ) : undefined
         }
@@ -162,9 +333,13 @@ export default function InventoryPage() {
             label: "Availability",
             content: (
               <div>
-                <form onSubmit={loadAvailability} className="flex items-end gap-4 mb-4">
+                {/* items-start, not items-end: the Material field carries a hint line below its select,
+                 * which items-end would bottom-align the row to instead of the select itself — dragging
+                 * the button down below the input it belongs beside. RowButtonSlot gives the button a
+                 * same-height invisible label so it still lines up with the select. */}
+                <form onSubmit={loadAvailability} className="flex flex-wrap items-start gap-4 mb-4">
                   <Field label="Material" hint="Lots are ordered FEFO — earliest expiry first.">
-                    <Select value={materialId} onChange={(e) => setMaterialId(e.target.value)} style={{ minWidth: 320 }}>
+                    <Select value={materialId} onChange={(e) => setMaterialId(e.target.value)} style={{ minWidth: 200, maxWidth: 320, width: "100%" }}>
                       <option value="">Select a material…</option>
                       {materials.map((m) => (
                         <option key={m.id} value={m.id}>
@@ -173,9 +348,11 @@ export default function InventoryPage() {
                       ))}
                     </Select>
                   </Field>
-                  <Button type="submit" variant="secondary" disabled={loading || !materialId || !siteId}>
-                    <Icon name="search" /> {loading ? "Loading…" : "Show availability"}
-                  </Button>
+                  <RowButtonSlot>
+                    <Button type="submit" variant="secondary" disabled={loading || !materialId || !siteId}>
+                      <Icon name="search" /> {loading ? "Loading…" : "Show availability"}
+                    </Button>
+                  </RowButtonSlot>
                 </form>
 
                 {error && (
@@ -238,24 +415,42 @@ export default function InventoryPage() {
             label: "Lot ledger",
             content: (
               <div>
+ {/* items-start, not items-end: see the Availability form above the hint below the
+                 * input would otherwise pull the button down past the input it belongs beside. */}
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     setActiveLedgerLot(ledgerLotId.trim() || null);
                   }}
-                  className="flex items-end gap-4 mb-4"
+                  className="flex flex-wrap items-start gap-4 mb-4"
                 >
-                  <Field label="Material lot ID" hint="Every movement affecting this lot, in order.">
-                    <Input value={ledgerLotId} onChange={(e) => setLedgerLotId(e.target.value)} style={{ minWidth: 340 }} />
+                  <Field label="Material lot" hint="Every movement affecting this lot, in order.">
+                    <Select
+                      value={ledgerLotId}
+                      onChange={(e) => setLedgerLotId(e.target.value)}
+                      style={{ minWidth: 240, maxWidth: 380, width: "100%" }}
+                    >
+                      <option value="">Select a lot…</option>
+                      {materialLots.map((l) => (
+                        <option key={l.id} value={l.id}>
+                  {l.internal_lot} — {l.material_code} ({l.status})
+                        </option>
+                      ))}
+                    </Select>
                   </Field>
-                  <Button type="submit" variant="secondary" disabled={!ledgerLotId.trim()}>
-                    <Icon name="history" /> Show ledger
-                  </Button>
+                  <RowButtonSlot>
+                    <Button type="submit" variant="secondary" disabled={!ledgerLotId}>
+                      <Icon name="history" /> Show ledger
+                    </Button>
+                  </RowButtonSlot>
                 </form>
 
                 {activeLedgerLot ? (
                   <Card>
-                    <CardHeader title="Inventory ledger" />
+                    <CardHeader
+                      title="Inventory ledger"
+                      meta={materialLots.find((l) => l.id === activeLedgerLot)?.internal_lot}
+                    />
                     <DataTable
                       columns={ledgerColumns}
                       fetchPage={pagedFetcher<LedgerRow>(`/inventory/v1/lots/${activeLedgerLot}/ledger`)}
@@ -268,7 +463,7 @@ export default function InventoryPage() {
                     />
                   </Card>
                 ) : (
-                  <EmptyState icon="history">Enter a material lot ID to see its movement history.</EmptyState>
+                  <EmptyState icon="history">Select a material lot to see its movement history.</EmptyState>
                 )}
               </div>
             ),
@@ -277,25 +472,41 @@ export default function InventoryPage() {
             id: "adjustments",
             label: "Adjustments",
             content: (
-              <Card pad>
-                <p className="fact-k mb-2">Exceptional inventory adjustment</p>
-                <p className="hint mb-3">
+              <div>
+                <Card pad className="mb-4">
+                  <p className="fact-k mb-2">Exceptional inventory adjustment</p>
+                  <p className="hint mb-3">
                   An adjustment is an exception, not a correction path — it needs a stated reason and an
-                  independent approver (Document 22). Cycle counts are the routine mechanism.
-                </p>
-                <div className="flex gap-2">
-                  {canMove && (
-                    <Button variant="secondary" onClick={() => setAction("adjustment")}>
-                      <Icon name="plus" /> Request adjustment
-                    </Button>
-                  )}
-                  {!canApprove && (
-                    <p className="hint">
+                    independent approver (CON-FR-013/014). Cycle counts are the routine mechanism.
+                  </p>
+                  <div className="flex gap-2">
+                    {canMove && (
+                      <Button variant="secondary" onClick={() => setAction("adjustment")}>
+                        <Icon name="plus" /> Request adjustment
+                      </Button>
+                    )}
+                    {!canApprove && (
+                      <p className="hint">
                       Approving an adjustment requires QA Releaser — you can raise one but not approve it.
-                    </p>
-                  )}
-                </div>
-              </Card>
+                      </p>
+                    )}
+                  </div>
+                </Card>
+
+                <Card>
+                  <CardHeader title="Adjustment requests" />
+                  <DataTable
+                    columns={adjustmentColumns(canApprove, me?.username ?? null, setApprovingAdjustment)}
+                    fetchPage={pagedFetcher<AdjustmentRequestRow>("/inventory/v1/adjustments")}
+                    rowKey={(r) => r.id}
+                    searchPlaceholder="Search by lot or material…"
+                    emptyIcon="scale"
+                    emptyMessage="No adjustment requests yet."
+                    defaultSort={{ by: "created_at", dir: "desc" }}
+                    reloadToken={reloadToken}
+                  />
+                </Card>
+              </div>
             ),
           },
         ]}
@@ -305,6 +516,8 @@ export default function InventoryPage() {
         <ActionModal
           action={action}
           materials={materials}
+          materialLots={materialLots}
+          locations={locations}
           siteId={siteId}
           onClose={() => setAction(null)}
           onDone={() => {
@@ -321,6 +534,52 @@ export default function InventoryPage() {
           }}
         />
       )}
+
+      {approvingAdjustment && (
+        <SignatureCeremony
+          open
+          onClose={() => setApprovingAdjustment(null)}
+          onDone={() => {
+            setApprovingAdjustment(null);
+            setReloadToken((n) => n + 1);
+          }}
+          challengePath={`/inventory/v1/adjustments/${approvingAdjustment.id}/signature-challenges`}
+          action="approve"
+ title={`Approve adjustment ${approvingAdjustment.internal_lot}`}
+          summary={
+            <>
+              Approving this changes the recorded stock at <strong>{approvingAdjustment.location_code}</strong> from{" "}
+              <strong>{approvingAdjustment.expected_quantity}</strong> to{" "}
+              <strong>{approvingAdjustment.observed_quantity}</strong> (variance{" "}
+ <strong>{approvingAdjustment.variance}</strong>) requested by{" "}
+              <strong>{approvingAdjustment.requested_by}</strong>: “{approvingAdjustment.reason}”. This cannot be
+              undone by re-approving; a further correction needs its own new adjustment request
+              (CON-FR-013/014).
+            </>
+          }
+          reason="required"
+          onSign={(p) =>
+            api.post<MutationReceipt>(`/inventory/v1/adjustments/${approvingAdjustment.id}/approve`, {
+              idempotency_key: p.idempotency_key,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+              expected_version: approvingAdjustment.version,
+              reason: p.reason,
+            })
+          }
+        />
+      )}
+
+      {newLocationOpen && (
+        <NewLocationModal
+          siteId={siteId}
+          onClose={() => setNewLocationOpen(false)}
+          onDone={() => {
+            setNewLocationOpen(false);
+            setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -328,12 +587,16 @@ export default function InventoryPage() {
 function ActionModal({
   action,
   materials,
+  materialLots,
+  locations,
   siteId,
   onClose,
   onDone,
 }: {
   action: Action;
   materials: Material[];
+  materialLots: MaterialLot[];
+  locations: WarehouseLocation[];
   siteId: string | null;
   onClose: () => void;
   onDone: () => void;
@@ -351,6 +614,65 @@ function ActionModal({
   const [expectedQuantity, setExpectedQuantity] = useState("");
   const [observedQuantity, setObservedQuantity] = useState("");
   const [reason, setReason] = useState("");
+
+  // Transfer/Cycle count/Adjustment all reference an existing material lot, container and warehouse
+  // location by UUID — none of those UUIDs are printed anywhere in the UI, so every one of these three
+  // actions is backed by a dropdown fetched from a real listing endpoint instead of asking the user to
+  // type one in by hand.
+  // Reserve references an existing Batch by UUID too (§11) — same fix, real /batches/v1 listing.
+  const [batches, setBatches] = useState<BatchSummary[]>([]);
+  useEffect(() => {
+    if (action !== "reserve" || !siteId) return;
+    let cancelled = false;
+    listBatchesForSite(siteId)
+      .then((rows) => {
+        if (!cancelled) setBatches(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [action, siteId]);
+
+  // Containers only exist for a lot received through Material Receipts → Examine (§6.2) — a lot created
+  // via the "Receive lot" quick shortcut has none, so this list can legitimately come back empty.
+  // `containersLotId` tracks which lot `containers` was actually fetched for, so a stale list from a
+  // previously-selected lot is never shown while the new lot's fetch is still in flight (render-time
+  // derivation instead of clearing state imperatively inside the effect).
+  const [containers, setContainers] = useState<MaterialContainer[]>([]);
+  const [containersLotId, setContainersLotId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!lotId) return;
+    let cancelled = false;
+    api
+      .get<{ items: MaterialContainer[] }>(`/material-lots/${lotId}/containers`)
+      .then((r) => {
+        if (cancelled) return;
+        setContainers(r.items);
+        setContainersLotId(lotId);
+      })
+      .catch(() => {
+        // Fetch failed -- treat as "no containers found" rather than leaving the picker stuck on
+        // "Loading…" forever (containersLoading is derived below from containersLotId, not a flag set
+        // directly in this effect).
+        if (!cancelled) {
+          setContainers([]);
+          setContainersLotId(lotId);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lotId]);
+  const currentContainers = containersLotId === lotId ? containers : [];
+  const containersLoading = !!lotId && containersLotId !== lotId;
+  // React-recommended "adjusting state when a prop changes" pattern (render-time, not an effect) --
+  // clears the picked container as soon as the lot selection itself changes.
+  const [containerResetForLotId, setContainerResetForLotId] = useState(lotId);
+  if (lotId !== containerResetForLotId) {
+    setContainerResetForLotId(lotId);
+    setContainerId("");
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -407,8 +729,15 @@ function ActionModal({
               Reservation selects source lots server-side by FEFO (INV-FR-010/012) — you name the material
               and quantity, not the lot.
             </p>
-            <Field label="Batch ID" required>
-              <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} required autoFocus />
+            <Field label="Batch" required>
+              <Select value={batchId} onChange={(e) => setBatchId(e.target.value)} required autoFocus>
+                <option value="">Select a batch…</option>
+                {batches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                  {b.batch_number} — {b.product_code} ({b.status})
+                  </option>
+                ))}
+              </Select>
             </Field>
             <Field label="Material" required>
               <Select value={materialId} onChange={(e) => setMaterialId(e.target.value)} required>
@@ -433,19 +762,60 @@ function ActionModal({
         {action === "transfer" && (
           <>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Material lot ID" required>
-                <Input value={lotId} onChange={(e) => setLotId(e.target.value)} required autoFocus />
+              <Field label="Material lot" required>
+                <Select value={lotId} onChange={(e) => setLotId(e.target.value)} required autoFocus>
+                  <option value="">Select a lot…</option>
+                  {materialLots.map((l) => (
+                    <option key={l.id} value={l.id}>
+                  {l.internal_lot} — {l.material_code} ({l.status})
+                    </option>
+                  ))}
+                </Select>
               </Field>
-              <Field label="Container ID" required>
-                <Input value={containerId} onChange={(e) => setContainerId(e.target.value)} required />
+              <Field
+                label="Container"
+                required
+                hint={
+                  lotId && !containersLoading && currentContainers.length === 0
+                    ? "No containers exist for this lot — it was created via the 'Receive lot' quick shortcut, which doesn't create one. Transfer needs a lot received via Material Receipts → Examine."
+                    : undefined
+                }
+              >
+                <Select
+                  value={containerId}
+                  onChange={(e) => setContainerId(e.target.value)}
+                  required
+                  disabled={!lotId || currentContainers.length === 0}
+                >
+                  <option value="">{containersLoading ? "Loading…" : "Select a container…"}</option>
+                  {currentContainers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                    {c.container_code} — {c.current_quantity} {c.uom}
+                    </option>
+                  ))}
+                </Select>
               </Field>
             </div>
             <div className="grid grid-cols-3 gap-4">
-              <Field label="From location ID">
-                <Input value={fromLocation} onChange={(e) => setFromLocation(e.target.value)} />
+              <Field label="From location" hint="Blank = first put-away for this container.">
+                <Select value={fromLocation} onChange={(e) => setFromLocation(e.target.value)}>
+ <option value="">(none put-away)</option>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.location_code} ({loc.zone_type})
+                    </option>
+                  ))}
+                </Select>
               </Field>
-              <Field label="To location ID" required>
-                <Input value={toLocation} onChange={(e) => setToLocation(e.target.value)} required />
+              <Field label="To location" required>
+                <Select value={toLocation} onChange={(e) => setToLocation(e.target.value)} required>
+                  <option value="">Select a location…</option>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.location_code} ({loc.zone_type})
+                    </option>
+                  ))}
+                </Select>
               </Field>
               <Field label="Quantity" required>
                 <Input type="number" step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
@@ -457,16 +827,37 @@ function ActionModal({
         {action === "cycle_count" && (
           <>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Material lot ID" required>
-                <Input value={lotId} onChange={(e) => setLotId(e.target.value)} required autoFocus />
+              <Field label="Material lot" required>
+                <Select value={lotId} onChange={(e) => setLotId(e.target.value)} required autoFocus>
+                  <option value="">Select a lot…</option>
+                  {materialLots.map((l) => (
+                    <option key={l.id} value={l.id}>
+                  {l.internal_lot} — {l.material_code} ({l.status})
+                    </option>
+                  ))}
+                </Select>
               </Field>
-              <Field label="Container ID">
-                <Input value={containerId} onChange={(e) => setContainerId(e.target.value)} />
+              <Field label="Container" hint="Optional — leave blank to count the lot's un-containerized balance at this location.">
+                <Select value={containerId} onChange={(e) => setContainerId(e.target.value)} disabled={!lotId}>
+                  <option value="">{containersLoading ? "Loading…" : "(none)"}</option>
+                  {currentContainers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                    {c.container_code} — {c.current_quantity} {c.uom}
+                    </option>
+                  ))}
+                </Select>
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Location ID" required>
-                <Input value={toLocation} onChange={(e) => setToLocation(e.target.value)} required />
+              <Field label="Location" required>
+                <Select value={toLocation} onChange={(e) => setToLocation(e.target.value)} required>
+                  <option value="">Select a location…</option>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.location_code} ({loc.zone_type})
+                    </option>
+                  ))}
+                </Select>
               </Field>
               <Field label="Counted quantity" required hint="What was physically counted, not what was expected.">
                 <Input
@@ -491,16 +882,37 @@ function ActionModal({
               approver before it takes effect.
             </Banner>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Material lot ID" required>
-                <Input value={lotId} onChange={(e) => setLotId(e.target.value)} required autoFocus />
+              <Field label="Material lot" required>
+                <Select value={lotId} onChange={(e) => setLotId(e.target.value)} required autoFocus>
+                  <option value="">Select a lot…</option>
+                  {materialLots.map((l) => (
+                    <option key={l.id} value={l.id}>
+                  {l.internal_lot} — {l.material_code} ({l.status})
+                    </option>
+                  ))}
+                </Select>
               </Field>
-              <Field label="Container ID">
-                <Input value={containerId} onChange={(e) => setContainerId(e.target.value)} />
+              <Field label="Container" hint="Optional — leave blank to adjust the lot's un-containerized balance at this location.">
+                <Select value={containerId} onChange={(e) => setContainerId(e.target.value)} disabled={!lotId}>
+                  <option value="">{containersLoading ? "Loading…" : "(none)"}</option>
+                  {currentContainers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                    {c.container_code} — {c.current_quantity} {c.uom}
+                    </option>
+                  ))}
+                </Select>
               </Field>
             </div>
             <div className="grid grid-cols-3 gap-4">
-              <Field label="Location ID" required>
-                <Input value={toLocation} onChange={(e) => setToLocation(e.target.value)} required />
+              <Field label="Location" required>
+                <Select value={toLocation} onChange={(e) => setToLocation(e.target.value)} required>
+                  <option value="">Select a location…</option>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.location_code} ({loc.zone_type})
+                    </option>
+                  ))}
+                </Select>
               </Field>
               <Field label="Expected quantity" required>
                 <Input
@@ -534,6 +946,95 @@ function ActionModal({
           </Button>
           <Button type="submit" variant="primary" disabled={busy}>
             {busy ? "Saving…" : ACTION_LABEL[action]}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// zone_type is a free-text column (no DB check constraint — code comment on _ZONE_STATUS_COMPAT in
+// material/commands.py), but these are the values the app's own zone-compatibility rule actually reads;
+// anything else is accepted but carries no automatic behavior (destruction/return/etc.).
+const ZONE_TYPES = [
+  "quarantine",
+  "released",
+  "rejected",
+  "sampling",
+  "testing",
+  "qc_disposition_pending",
+  "retest_due",
+  "controlled_temperature",
+  "sterile_component",
+  "return",
+  "destruction",
+  "other",
+];
+
+function NewLocationModal({
+  siteId,
+  onClose,
+  onDone,
+}: {
+  siteId: string | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { busy, error, run } = useCommand(onDone);
+  const [warehouseCode, setWarehouseCode] = useState("");
+  const [locationCode, setLocationCode] = useState("");
+  const [zoneType, setZoneType] = useState("quarantine");
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!siteId) return;
+    run(() =>
+      api.post<MutationReceipt>("/inventory/v1/warehouse-locations", {
+        idempotency_key: newIdempotencyKey(),
+        site_id: siteId,
+        warehouse_code: warehouseCode,
+        location_code: locationCode,
+        zone_type: zoneType,
+      })
+    );
+  }
+
+  return (
+    <Modal open onClose={onClose} title="New warehouse location">
+      <form onSubmit={submit}>
+        <p className="hint mb-3">
+          Master data (INV-FR-001/002) — no signature, but permanent once created (no delete/rename UI
+          exists yet). Used as the From/To location on Transfer, Cycle count and Adjustment.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Warehouse code" required hint="Groups locations, e.g. one per physical building.">
+            <Input value={warehouseCode} onChange={(e) => setWarehouseCode(e.target.value)} required autoFocus placeholder="WH1" />
+          </Field>
+          <Field label="Location code" required hint="Unique within the warehouse code above.">
+            <Input value={locationCode} onChange={(e) => setLocationCode(e.target.value)} required placeholder="QUARANTINE-02" />
+          </Field>
+        </div>
+        <Field
+          label="Zone type"
+          required
+          hint="released/quarantine/rejected drive the Transfer zone-compatibility check — pick the one matching what this location is actually for."
+        >
+          <Select value={zoneType} onChange={(e) => setZoneType(e.target.value)} required>
+            {ZONE_TYPES.map((z) => (
+              <option key={z} value={z}>
+                {z}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !siteId}>
+            {busy ? "Saving…" : "Create location"}
           </Button>
         </div>
       </form>

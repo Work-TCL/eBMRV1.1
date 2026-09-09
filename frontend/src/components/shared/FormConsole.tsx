@@ -2,23 +2,67 @@
 
 import { useState } from "react";
 import { api, ApiError, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
+import { useEntityOptions } from "@/lib/hooks";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { JsonPanel } from "@/components/ui/JsonPanel";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
+import {
+  RepeatableRows,
+  KeyValueRows,
+  StringListRows,
+  buildKvObject,
+  buildRepeatArray,
+  buildStringList,
+  type RepeatRow,
+  type KvRow,
+  type RepeatSubField,
+} from "@/components/shared/RepeatableFields";
 
 export interface FormField {
   name: string;
   label: string;
-  type?: "text" | "number" | "date" | "datetime" | "select" | "textarea" | "json" | "bool";
+  type?:
+    | "text"
+    | "number"
+    | "date"
+    | "datetime"
+    | "select"
+    | "textarea"
+    | "json"
+    | "bool"
+    // Added for structured-data forms (DDCP-style): a batch/equipment picker instead of a raw id, a
+    // repeatable row group instead of a JSON array, and a free-form key/value editor instead of a raw
+    // JSON object. None of the existing types above changed behaviour — these are purely additive.
+    | "batchSelect"
+    | "equipmentSelect"
+    | "areaSelect"
+    | "userSelect"
+    // A file picker for a command field the backend expects as base64 content (e.g. evidence upload) —
+    // reads the chosen file client-side and stores its base64 encoding, so the operator picks a file
+    // instead of pasting a base64 blob into a text box.
+    | "fileBase64"
+    | "repeat"
+    | "kv"
+    | "stringList";
   required?: boolean;
   hint?: string;
   placeholder?: string;
   options?: { value: string; label: string }[];
   /** Seed value. */
   default?: string;
+  /** "repeat" only — the shape of each row. */
+  subFields?: RepeatSubField[];
+  /** "repeat" only — used in "Add …" / "Remove …" text. Defaults to `label`. */
+  itemLabel?: string;
+  /** Set only for a field whose name fills a `{placeholder}` in the path but is NOT itself a field on
+   * the command model (rare — most path ids are also required in the body, and are sent there by
+   * default). Every command in this API sets `extra="forbid"`, so a path-only field must be excluded
+   * from the body rather than merely duplicated. */
+  pathOnly?: boolean;
 }
 
 export interface FormOp {
@@ -36,12 +80,7 @@ export interface FormOp {
   about?: string;
 }
 
-/** Names referenced as `{name}` in a path — filled from fields, not sent in the body. */
-function pathParams(path: string): Set<string> {
-  return new Set(Array.from(path.matchAll(/\{(\w+)\}/g), (m) => m[1]));
-}
-
-function coerce(field: FormField, raw: string): unknown {
+export function coerce(field: FormField, raw: string): unknown {
   const v = raw.trim();
   if (v === "") return field.required ? "" : null;
   switch (field.type) {
@@ -57,6 +96,265 @@ function coerce(field: FormField, raw: string): unknown {
     default:
       return v;
   }
+}
+
+export type ComplexValues = Record<string, RepeatRow[] | KvRow[] | string[]>;
+
+export function seedFieldValues(fields: FormField[]): Record<string, string> {
+  const s: Record<string, string> = {};
+  for (const f of fields) if (f.default !== undefined) s[f.name] = f.default;
+  return s;
+}
+
+export function seedComplexValues(fields: FormField[]): ComplexValues {
+  const s: ComplexValues = {};
+  for (const f of fields) if (f.type === "repeat" || f.type === "kv" || f.type === "stringList") s[f.name] = [];
+  return s;
+}
+
+/** Assembles the exact request body a set of `FormField`s describes — shared by `FormConsole` and
+ * `SignedJsonForm` so a signed operation with a flat-ish payload gets the same structured controls
+ * (and the same field-to-JSON assembly) as an unsigned one, instead of a bespoke copy. */
+export function buildFieldsBody(fields: FormField[], values: Record<string, string>, complexValues: ComplexValues): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  for (const f of fields) {
+    // A field named after a `{placeholder}` in the path is NOT skipped here by default — every
+    // mutation endpoint in this API that takes an id in its URL also requires that same id in
+    // the body and checks the two match ("X in path and body must match", grep-verified across
+    // every module), and every command model sets extra="forbid", so omitting it doesn't fall
+    // back to "the router already has it from the path" — it fails with a missing-field 422
+    // instead. The rare field that fills a path placeholder without being a real body field
+    // opts out explicitly via `pathOnly` (extra="forbid" would reject it as an unknown field).
+    if (f.pathOnly) continue;
+    if (f.type === "repeat") {
+      body[f.name] = buildRepeatArray(f.subFields ?? [], (complexValues[f.name] as RepeatRow[]) ?? []);
+      continue;
+    }
+    if (f.type === "kv") {
+      body[f.name] = buildKvObject((complexValues[f.name] as KvRow[]) ?? []);
+      continue;
+    }
+    if (f.type === "stringList") {
+      body[f.name] = buildStringList((complexValues[f.name] as string[]) ?? []);
+      continue;
+    }
+    const c = coerce(f, values[f.name] ?? "");
+    if (c !== null) body[f.name] = c;
+  }
+  return body;
+}
+
+export function missingRequiredFields(fields: FormField[], values: Record<string, string>, complexValues: ComplexValues): boolean {
+  return fields.some((f) => {
+    if (!f.required) return false;
+    if (f.type === "repeat") return ((complexValues[f.name] as RepeatRow[]) ?? []).length === 0;
+    // A free-form settings field usually has no meaningful "empty" state — but a handful of backend
+    // commands do require at least one key (e.g. a classification payload), so `required` still gates.
+    if (f.type === "kv") return !((complexValues[f.name] as KvRow[]) ?? []).some((r) => r.key.trim());
+    if (f.type === "stringList") return buildStringList((complexValues[f.name] as string[]) ?? []).length === 0;
+    return !(values[f.name] ?? "").trim();
+  });
+}
+
+/** Renders one `FormField[]` as the app's standard two-column grid — foreign-key pickers, repeat/kv/
+ * string-list editors, and plain inputs alike. Shared by `FormConsole` and `SignedJsonForm` so the two
+ * consoles never grow two different renderings of the same field vocabulary. */
+export function FormFieldsGrid({
+  fields,
+  values,
+  setValues,
+  complexValues,
+  setComplexValues,
+  entities,
+}: {
+  fields: FormField[];
+  values: Record<string, string>;
+  setValues: (updater: (c: Record<string, string>) => Record<string, string>) => void;
+  complexValues: ComplexValues;
+  setComplexValues: (updater: (c: ComplexValues) => ComplexValues) => void;
+  entities: ReturnType<typeof useEntityOptions>;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      {fields.map((f) =>
+        f.type === "repeat" ? (
+          <div key={f.name} style={{ gridColumn: "1 / -1" }}>
+            <RepeatableRows
+              label={f.label}
+              required={f.required}
+              hint={f.hint}
+              itemLabel={f.itemLabel}
+              subFields={f.subFields ?? []}
+              value={(complexValues[f.name] as RepeatRow[]) ?? []}
+              onChange={(rows) => setComplexValues((c) => ({ ...c, [f.name]: rows }))}
+            />
+          </div>
+        ) : f.type === "kv" ? (
+          <div key={f.name} style={{ gridColumn: "1 / -1" }}>
+            <KeyValueRows
+              label={f.label}
+              hint={f.hint}
+              value={(complexValues[f.name] as KvRow[]) ?? []}
+              onChange={(rows) => setComplexValues((c) => ({ ...c, [f.name]: rows }))}
+            />
+          </div>
+        ) : f.type === "stringList" ? (
+          <div key={f.name} style={{ gridColumn: "1 / -1" }}>
+            <StringListRows
+              label={f.label}
+              required={f.required}
+              hint={f.hint}
+              itemLabel={f.itemLabel}
+              placeholder={f.placeholder}
+              value={(complexValues[f.name] as string[]) ?? []}
+              onChange={(rows) => setComplexValues((c) => ({ ...c, [f.name]: rows }))}
+            />
+          </div>
+        ) : f.type === "batchSelect" ? (
+          <EntityPickerField
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+            options={entities.batches}
+            status={entities.batchesStatus}
+            kind="batch"
+          />
+        ) : f.type === "equipmentSelect" ? (
+          <EntityPickerField
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+            options={entities.equipment}
+            status={entities.equipmentStatus}
+            kind="equipment asset"
+          />
+        ) : f.type === "areaSelect" ? (
+          <EntityPickerField
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+            options={entities.areas}
+            status={entities.areasStatus}
+            kind="equipment area"
+          />
+        ) : f.type === "userSelect" ? (
+          <EntityPickerField
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+            options={entities.users}
+            status={entities.usersStatus}
+            kind="user"
+          />
+        ) : f.type === "fileBase64" ? (
+          <FileBase64Field
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+          />
+        ) : (
+          <Field key={f.name} label={f.label} required={f.required} hint={f.hint}>
+            {f.type === "select" ? (
+              <Select value={values[f.name] ?? ""} onChange={(e) => setValues((c) => ({ ...c, [f.name]: e.target.value }))}>
+ <option value=""></option>
+                {(f.options ?? []).map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            ) : f.type === "bool" ? (
+              <Select value={values[f.name] ?? ""} onChange={(e) => setValues((c) => ({ ...c, [f.name]: e.target.value }))}>
+ <option value=""></option>
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </Select>
+            ) : f.type === "textarea" || f.type === "json" ? (
+              <textarea
+                className="input"
+                rows={f.type === "json" ? 4 : 2}
+                value={values[f.name] ?? ""}
+                onChange={(e) => setValues((c) => ({ ...c, [f.name]: e.target.value }))}
+                placeholder={f.placeholder ?? (f.type === "json" ? "{ }" : undefined)}
+                spellCheck={false}
+              />
+            ) : (
+              <Input
+                type={f.type === "number" ? "number" : f.type === "date" ? "date" : f.type === "datetime" ? "datetime-local" : "text"}
+                value={values[f.name] ?? ""}
+                onChange={(e) => setValues((c) => ({ ...c, [f.name]: e.target.value }))}
+                placeholder={f.placeholder}
+              />
+            )}
+          </Field>
+        )
+      )}
+    </div>
+  );
+}
+
+/** Reads a chosen file client-side and reports its base64 content — for the rare command field the
+ * backend expects as a base64 string (e.g. evidence upload content) — so the operator picks a file
+ * instead of pasting a base64 blob into a text box. Nothing is uploaded here; the parent form still
+ * submits the base64 string as an ordinary field value through the normal Mutation Gateway call. */
+function FileBase64Field({
+  label,
+  required,
+  hint,
+  onChange,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  onChange: (base64: string) => void;
+}) {
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleFile(file: File | undefined) {
+    if (!file) {
+      setFileName(null);
+      onChange("");
+      return;
+    }
+    setError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      // A `readAsDataURL` result is "data:<mime>;base64,<content>" — the command field wants just
+      // <content>.
+      const base64 = result.includes(",") ? result.slice(result.indexOf(",") + 1) : result;
+      setFileName(file.name);
+      onChange(base64);
+    };
+    reader.onerror = () => setError("Could not read that file.");
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <Field label={label} required={required} hint={hint} error={error}>
+      <input
+        type="file"
+        className="input"
+        onChange={(e) => handleFile(e.target.files?.[0])}
+      />
+      {fileName && <p className="hint mt-1">Selected: {fileName}</p>}
+    </Field>
+  );
 }
 
 /**
@@ -78,21 +376,18 @@ export function FormConsole({
 }) {
   const [idx, setIdx] = useState(0);
   const op = ops[idx];
-  const [values, setValues] = useState<Record<string, string>>(() => seed(ops[0]));
+  const [values, setValues] = useState<Record<string, string>>(() => seedFieldValues(ops[0]?.fields ?? []));
+  const [complexValues, setComplexValues] = useState<ComplexValues>(() => seedComplexValues(ops[0]?.fields ?? []));
   const [jsonBody, setJsonBody] = useState(ops[0]?.template ?? "{\n  \n}");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(undefined);
-
-  function seed(o: FormOp): Record<string, string> {
-    const s: Record<string, string> = {};
-    for (const f of o.fields ?? []) if (f.default !== undefined) s[f.name] = f.default;
-    return s;
-  }
+  const entities = useEntityOptions();
 
   function selectOp(next: number) {
     setIdx(next);
-    setValues(seed(ops[next]));
+    setValues(seedFieldValues(ops[next]?.fields ?? []));
+    setComplexValues(seedComplexValues(ops[next]?.fields ?? []));
     setJsonBody(ops[next]?.template ?? "{\n  \n}");
     setError(null);
     setResult(undefined);
@@ -104,22 +399,12 @@ export function FormConsole({
     setError(null);
     setResult(undefined);
     try {
-      const params = pathParams(op.path);
       const filledPath = op.path.replace(/\{(\w+)\}/g, (_, name) => encodeURIComponent((values[name] ?? "").trim()));
       const url = `${root}/${filledPath}`;
       if (op.method === "GET") {
         setResult(await api.get<unknown>(url));
       } else {
-        let body: Record<string, unknown> = {};
-        if (op.fields) {
-          for (const f of op.fields) {
-            if (params.has(f.name)) continue; // used in the path, not the body
-            const c = coerce(f, values[f.name] ?? "");
-            if (c !== null) body[f.name] = c;
-          }
-        } else {
-          body = jsonBody.trim() ? JSON.parse(jsonBody) : {};
-        }
+        const body = op.fields ? buildFieldsBody(op.fields, values, complexValues) : jsonBody.trim() ? JSON.parse(jsonBody) : {};
         setResult(await api.post<MutationReceipt>(url, { idempotency_key: newIdempotencyKey(), ...body }));
       }
     } catch (err) {
@@ -130,8 +415,7 @@ export function FormConsole({
     }
   }
 
-  const missingRequired =
-    op.fields?.some((f) => f.required && !(values[f.name] ?? "").trim()) ?? false;
+  const missingRequired = op.fields ? missingRequiredFields(op.fields, values, complexValues) : false;
 
   return (
     <Card pad className="mb-4">
@@ -150,44 +434,14 @@ export function FormConsole({
         {op.about && <p className="fs-2 text-muted mb-3">{op.about}</p>}
 
         {op.fields ? (
-          <div className="grid grid-cols-2 gap-4">
-            {op.fields.map((f) => (
-              <Field key={f.name} label={f.label} required={f.required} hint={f.hint}>
-                {f.type === "select" ? (
-                  <Select value={values[f.name] ?? ""} onChange={(e) => setValues((c) => ({ ...c, [f.name]: e.target.value }))}>
-                    <option value="">—</option>
-                    {(f.options ?? []).map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </Select>
-                ) : f.type === "bool" ? (
-                  <Select value={values[f.name] ?? ""} onChange={(e) => setValues((c) => ({ ...c, [f.name]: e.target.value }))}>
-                    <option value="">—</option>
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </Select>
-                ) : f.type === "textarea" || f.type === "json" ? (
-                  <textarea
-                    className="input"
-                    rows={f.type === "json" ? 4 : 2}
-                    value={values[f.name] ?? ""}
-                    onChange={(e) => setValues((c) => ({ ...c, [f.name]: e.target.value }))}
-                    placeholder={f.placeholder ?? (f.type === "json" ? "{ }" : undefined)}
-                    spellCheck={false}
-                  />
-                ) : (
-                  <Input
-                    type={f.type === "number" ? "number" : f.type === "date" ? "date" : f.type === "datetime" ? "datetime-local" : "text"}
-                    value={values[f.name] ?? ""}
-                    onChange={(e) => setValues((c) => ({ ...c, [f.name]: e.target.value }))}
-                    placeholder={f.placeholder}
-                  />
-                )}
-              </Field>
-            ))}
-          </div>
+          <FormFieldsGrid
+            fields={op.fields}
+            values={values}
+            setValues={setValues}
+            complexValues={complexValues}
+            setComplexValues={setComplexValues}
+            entities={entities}
+          />
         ) : op.method === "GET" ? null : (
           <Field label="Payload (JSON)" hint="This operation has a nested payload — see the API contract.">
             <textarea

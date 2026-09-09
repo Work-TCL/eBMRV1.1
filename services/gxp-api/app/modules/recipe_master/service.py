@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.recipe_master.models import (
     RecipeEvidenceRequirement,
+    RecipeFamily,
     RecipeParameter,
     RecipeSection,
     RecipeStep,
@@ -26,6 +27,42 @@ async def get_version(session: AsyncSession, recipe_version_id: uuid.UUID) -> Re
     if version is None:
         raise NotFoundError("Recipe version not found")
     return version
+
+
+async def list_recipe_families(session: AsyncSession) -> list[dict]:
+    """Read-only listing for the Recipe Master page's top-level table -- one row per recipe family with
+    its latest version's number and lifecycle state, plus a total version count. Document 10 declares no
+    "list all recipes" operation in its own API list (docs/generated/06_API_CATALOGUE.yaml); same SG-081
+    read-side precedent as product_master's `GET /products/v1/business-ids` -- a plain read-only GET
+    listing does not conflict with any future write/CRUD contract, it only replaces the free-text
+    recipe_family_id entry with a real table. The caller still uses
+    `GET /recipes/v2/{recipe_family_id}/versions` to resolve the specific version to open.
+    """
+    families = (await session.execute(select(RecipeFamily).order_by(RecipeFamily.recipe_code))).scalars().all()
+    versions = (await session.execute(select(RecipeVersion).order_by(RecipeVersion.version_no))).scalars().all()
+    by_family: dict[uuid.UUID, list[RecipeVersion]] = defaultdict(list)
+    for v in versions:
+        by_family[v.recipe_family_id].append(v)
+    result: list[dict] = []
+    for f in families:
+        fam_versions = by_family.get(f.id, [])
+        latest = fam_versions[-1] if fam_versions else None
+        result.append(
+            {
+                "recipe_family_id": str(f.id),
+                "recipe_code": f.recipe_code,
+                "product_business_id": f.product_business_id,
+                "site_id": str(f.site_id),
+                "manufacturing_profile_code": f.manufacturing_profile_code,
+                "family_lifecycle_state": f.lifecycle_state,
+                "version_count": len(fam_versions),
+                "latest_recipe_version_id": str(latest.id) if latest else None,
+                "latest_version_no": latest.version_no if latest else None,
+                "latest_lifecycle_state": latest.lifecycle_state if latest else None,
+                "has_released": any(v.lifecycle_state == "released" for v in fam_versions),
+            }
+        )
+    return result
 
 
 async def list_versions_for_family(session: AsyncSession, recipe_family_id: uuid.UUID) -> list[RecipeVersion]:

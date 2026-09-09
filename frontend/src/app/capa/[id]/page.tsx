@@ -12,7 +12,8 @@ import {
   type Capa,
   type CapaAction,
 } from "@/lib/api";
-import { useApiResource, useMe } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Tabs } from "@/components/ui/Tabs";
@@ -326,6 +327,7 @@ function CompleteActionModal({
 }) {
   const { me } = useMe();
   const { busy, error, run } = useCommand(onDone);
+  const entities = useEntityOptions();
   const [description, setDescription] = useState("");
   const [verifiedBy, setVerifiedBy] = useState(me?.user_id ?? "");
 
@@ -356,9 +358,15 @@ function CompleteActionModal({
             required
           />
         </Field>
-        <Field label="Verified by (user ID)" required>
-          <Input value={verifiedBy} onChange={(e) => setVerifiedBy(e.target.value)} required />
-        </Field>
+        <EntityPickerField
+          label="Verified by"
+          required
+          value={verifiedBy}
+          onChange={setVerifiedBy}
+          options={entities.users}
+          status={entities.usersStatus}
+          kind="user"
+        />
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-3">
           <Button type="button" variant="secondary" onClick={onClose}>
@@ -386,6 +394,7 @@ function TransitionModal({
 }) {
   const { me } = useMe();
   const { busy, error, run } = useCommand(onDone);
+  const entities = useEntityOptions();
 
   const [corrective, setCorrective] = useState("");
   const [preventive, setPreventive] = useState("");
@@ -457,8 +466,7 @@ function TransitionModal({
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(transition) && (
           <Banner tone="warn" title="This transition requires an electronic signature">
-            No Document 106 policy row exists yet for <code>capa_record.close</code> (SG-138), so the
-            backend fails it closed.
+            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
           </Banner>
         )}
 
@@ -498,9 +506,15 @@ function TransitionModal({
             <Field label="Description" required>
               <textarea className="input" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} required />
             </Field>
-            <Field label="Owner (user ID)" required>
-              <Input value={actionOwner} onChange={(e) => setActionOwner(e.target.value)} required />
-            </Field>
+            <EntityPickerField
+              label="Owner"
+              required
+              value={actionOwner}
+              onChange={setActionOwner}
+              options={entities.users}
+              status={entities.usersStatus}
+              kind="user"
+            />
           </>
         )}
 

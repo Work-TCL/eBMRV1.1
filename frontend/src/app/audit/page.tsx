@@ -11,6 +11,7 @@ import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
+import { JsonPanel } from "@/components/ui/JsonPanel";
 
 // Matches app/modules/audit/service.py::event_to_dict — GET /audit/v1/search.
 interface AuditEvent {
@@ -207,16 +208,6 @@ function EventDetailModal({
     ["Previous hash", event.prev_event_hash ?? "— (first event on this record)"],
   ];
 
-  const preStyle: React.CSSProperties = {
-    background: "var(--surface-sunken)",
-    border: "1px solid var(--border-hairline)",
-    borderRadius: "var(--radius-2, 6px)",
-    padding: "var(--space-2, 8px)",
-    fontSize: "var(--fs-1)",
-    overflowX: "auto",
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-  };
 
   return (
     <Modal open onClose={onClose} title={`${event.aggregate_type} — ${event.action}`} large>
@@ -238,12 +229,24 @@ function EventDetailModal({
           <p className="font-semibold fs-2 mb-2">Changed fields: {event.changed_fields.join(", ")}</p>
           <div className="grid grid-cols-2 gap-4 mb-3">
             <div>
-              <p className="fs-1 text-muted mb-1">Old value</p>
-              <pre style={preStyle}>{JSON.stringify(event.old_value, null, 2)}</pre>
+              {event.old_value ? (
+                <JsonPanel title="Old value" value={event.old_value} />
+              ) : (
+                <>
+                  <p className="fact-k mb-2">Old value</p>
+ <p className="text-muted fs-2">(none, this is the initial record)</p>
+                </>
+              )}
             </div>
             <div>
-              <p className="fs-1 text-muted mb-1">New value</p>
-              <pre style={preStyle}>{JSON.stringify(event.new_value, null, 2)}</pre>
+              {event.new_value ? (
+                <JsonPanel title="New value" value={event.new_value} />
+              ) : (
+                <>
+                  <p className="fact-k mb-2">New value</p>
+                  <p className="text-muted fs-2">—</p>
+                </>
+              )}
             </div>
           </div>
         </>

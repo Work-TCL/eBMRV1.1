@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.lims_integration.commands import (
     CancelLimsSampleCommand,
@@ -26,6 +27,27 @@ from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/integrations/lims", tags=["lims_integration"])
+
+INSTANCE_SORTABLE = {"instance_code": LimsInstance.instance_code, "created_at": LimsInstance.created_at}
+
+
+def _instance_summary_dict(instance: LimsInstance) -> dict:
+    return {
+        "id": str(instance.id), "instance_code": instance.instance_code, "provider_type": instance.provider_type,
+        "status": instance.status,
+    }
+
+
+# Read-only list — LIMS instances are provisioned as configuration data with no create endpoint (see the
+# `LimsInstance` docstring), so this lets the frontend offer a "pick an instance" selector instead of
+# requiring the operator to already have the instance id in hand.
+@router.get("")
+async def list_instances(session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)) -> dict:
+    stmt = select(LimsInstance)
+    if params.q:
+        stmt = stmt.where(LimsInstance.instance_code.ilike(f"%{params.q}%"))
+    rows, envelope = await paginate(session, stmt, params, sortable=INSTANCE_SORTABLE, default_sort=LimsInstance.created_at)
+    return {**envelope, "items": [_instance_summary_dict(i) for (i,) in rows]}
 
 
 @router.post("/{instance_id}/samples", response_model=MutationReceipt)

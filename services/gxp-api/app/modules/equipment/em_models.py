@@ -90,7 +90,7 @@ class EmSampleOrReading(Base):
     program_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("equipment.em_program_versions.id"), nullable=False)
     location_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("equipment.em_locations.id"), nullable=False)
     monitoring_type: Mapped[str] = mapped_column(String(60), nullable=False)
-    batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"))
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"))
     aseptic_operation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     instrument_or_media_ref: Mapped[dict | None] = mapped_column(JSONB)
     media_reagent_ref: Mapped[dict | None] = mapped_column(JSONB)

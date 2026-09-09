@@ -6,9 +6,11 @@ prefix, for the whole WP-07 package -- not one router per document."""
 import uuid
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.erp import commands as erp_commands
 from app.modules.erp.models import ErpExternalMapping, ErpInstance, IntegrationBulkJob, IntegrationCommand, IntegrationReconciliationRun
@@ -43,6 +45,27 @@ async def get_instance(instance_id: uuid.UUID, session: AsyncSession = Depends(g
             "environment": instance.environment, "status": instance.status, "version": instance.version,
             "validated": instance.validated,
         }
+
+
+INSTANCE_SORTABLE = {"instance_name": ErpInstance.instance_name}
+
+
+# Read-only list — lets the frontend offer a "pick an instance" selector instead of requiring the
+# operator to already have the instance id in hand (it's otherwise only ever shown once, in the
+# register-instance response).
+@router.get("/instances")
+async def list_instances(session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)) -> dict:
+    stmt = select(ErpInstance)
+    if params.q:
+        stmt = stmt.where(ErpInstance.instance_name.ilike(f"%{params.q}%"))
+    rows, envelope = await paginate(session, stmt, params, sortable=INSTANCE_SORTABLE, default_sort=ErpInstance.instance_name)
+    return {
+        **envelope,
+        "items": [
+            {"id": str(i.id), "instance_name": i.instance_name, "vendor": i.vendor, "environment": i.environment, "status": i.status}
+            for (i,) in rows
+        ],
+    }
 
 
 @router.post("/instances/{instance_id}/validate", response_model=MutationReceipt)

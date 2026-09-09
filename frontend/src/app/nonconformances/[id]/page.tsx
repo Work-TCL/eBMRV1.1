@@ -307,7 +307,7 @@ function TransitionModal({
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(transition) && (
           <Banner tone="warn" title="This transition requires an electronic signature">
-            No Document 106 policy row exists yet for this action (SG-138), so the backend fails it closed.
+            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
           </Banner>
         )}
 

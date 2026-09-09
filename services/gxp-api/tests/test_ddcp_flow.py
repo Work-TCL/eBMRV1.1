@@ -24,6 +24,7 @@ from app.modules.equipment.models import EquipmentAsset
 from app.modules.equipment.sterilization_models import ProcessCycle, ProcessCycleProfileVersion, SterileFilterUse, SterilizationLoadItem
 from app.modules.material.models import Material, MaterialLot
 from app.modules.product.models import Product
+from app.modules.product_master.models import ProductVersion
 from app.modules.recipe.models import Recipe
 from app.modules.qms import change_commands
 from app.modules.qms.models import DeviationRecord
@@ -159,11 +160,30 @@ async def _create_material_lot(db, seeded, *, code: str, actor_id) -> MaterialLo
     return lot
 
 
+async def _create_released_product_version(
+    db, seeded, *, code: str, manufacturing_profile_code: str = "injectable_ddcp",
+) -> ProductVersion:
+    # SG-175: every DDCP profile now needs a real, RELEASED Product Master version (`product_version_id`,
+    # migration 0089) — a direct row, same as `_create_equipment_asset`/`_create_material_lot` above,
+    # not the full draft->submit->release command flow (unrelated to what these tests exercise). `code`
+    # prefixed onto product_business_id/product_code keeps it unique per caller within one test, since
+    # ProductVersion has its own UniqueConstraint(product_business_id, version_no).
+    pv = ProductVersion(
+        product_business_id=f"PM-{code}", version_no=1, product_code=f"PM-{code}", name=f"Test product {code}",
+        manufacturing_profile_code=manufacturing_profile_code, lifecycle_state="released", site_id=seeded["site_id"],
+    )
+    db.add(pv)
+    await db.flush()
+    return pv
+
+
 async def _create_and_release_profile(db, seeded, actor_id, *, profile_code: str) -> DdcpProfileVersion:
+    product_version = await _create_released_product_version(db, seeded, code=profile_code)
     receipt = await ddcp_commands.create_injectable_profile_version(
         db,
         ddcp_commands.CreateInjectableProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code=profile_code, subtype="PREFILLED_SYRINGE",
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=product_version.id,
+            profile_code=profile_code, subtype="PREFILLED_SYRINGE",
             constituent_architecture={"drug": "biologic"}, required_controls={"sterileProcess": {"aseptic": True}},
             constituent_requirements=[
                 {"constituent_type": "DRUG", "component_role": "bulk_drug", "required_state": "RELEASED"},
@@ -181,11 +201,12 @@ async def _create_and_release_profile(db, seeded, actor_id, *, profile_code: str
 
 async def test_create_profile_and_release_requires_constituent_requirements(seeded, db):
     actor_id = seeded["users"]["ddcp.engineer"].id
+    empty_product = await _create_released_product_version(db, seeded, code="PFS-EMPTY")
     empty = await ddcp_commands.create_injectable_profile_version(
         db,
         ddcp_commands.CreateInjectableProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code="PFS-EMPTY",
-            constituent_architecture={}, required_controls={},
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=empty_product.id,
+            profile_code="PFS-EMPTY", constituent_architecture={}, required_controls={},
         ),
         actor_id,
     )
@@ -462,11 +483,21 @@ async def test_functional_test_and_release_readiness_and_evidence_package(seeded
     assert package_receipt.resulting_version == 1
 
 
-async def test_create_profile_via_api_requires_permission(client, seeded):
+async def test_create_profile_via_api_requires_permission(client, seeded, db):
+    # Unlike the command-layer tests above, this test's DB writes and its client.post() calls run on
+    # two different sessions/connections (the app's own `get_session` dependency vs. this test's `db`
+    # fixture) -- an uncommitted row on `db` is invisible to the app's session, so this needs an
+    # explicit commit (`async with db.begin():`), matching test_batch_execution.py's own
+    # test_create_batch_rejects_draft_recipe for the same reason.
+    async with db.begin():
+        api_product = await _create_released_product_version(db, seeded, code="PFS-API")
     token = await login(client, "operator1")
     resp = await client.post(
         "/ddcp/v1/prefilled-syringe/profiles",
-        json={"idempotency_key": idem(), "site_id": str(seeded["site_id"]), "profile_code": "PFS-API-1", "constituent_architecture": {}, "required_controls": {}},
+        json={
+            "idempotency_key": idem(), "site_id": str(seeded["site_id"]), "product_version_id": str(api_product.id),
+            "profile_code": "PFS-API-1", "constituent_architecture": {}, "required_controls": {},
+        },
         headers=auth_headers(token),
     )
     assert resp.status_code == 403, resp.text
@@ -474,7 +505,10 @@ async def test_create_profile_via_api_requires_permission(client, seeded):
     token = await login(client, "ddcp.engineer")
     resp = await client.post(
         "/ddcp/v1/prefilled-syringe/profiles",
-        json={"idempotency_key": idem(), "site_id": str(seeded["site_id"]), "profile_code": "PFS-API-2", "constituent_architecture": {}, "required_controls": {}},
+        json={
+            "idempotency_key": idem(), "site_id": str(seeded["site_id"]), "product_version_id": str(api_product.id),
+            "profile_code": "PFS-API-2", "constituent_architecture": {}, "required_controls": {},
+        },
         headers=auth_headers(token),
     )
     assert resp.status_code == 200, resp.text
@@ -616,10 +650,12 @@ async def test_decide_handoff_profile_aware_checks_type_prep_and_attributes(seed
     actor_id = seeded["users"]["ddcp.operator"].id
     site_id = seeded["site_id"]
 
+    profile_aware_product = await _create_released_product_version(db, seeded, code="PFS-PROFILE-AWARE")
     profile_receipt = await ddcp_commands.create_injectable_profile_version(
         db,
         ddcp_commands.CreateInjectableProfileVersionCommand(
-            idempotency_key=idem(), site_id=site_id, profile_code="PFS-PROFILE-AWARE", subtype="PREFILLED_SYRINGE",
+            idempotency_key=idem(), site_id=site_id, product_version_id=profile_aware_product.id,
+            profile_code="PFS-PROFILE-AWARE", subtype="PREFILLED_SYRINGE",
             constituent_architecture={}, required_controls={},
             constituent_requirements=[
                 {"constituent_type": "DRUG", "component_role": "bulk_drug", "required_state": "RELEASED"},
@@ -932,11 +968,12 @@ async def test_verify_pfs_serialization_compliance(seeded, db):
     never a UDI format guess."""
 
     actor_id = seeded["users"]["ddcp.operator"].id
+    serial_product = await _create_released_product_version(db, seeded, code="PFS-SERIAL")
     profile_receipt = await ddcp_commands.create_injectable_profile_version(
         db,
         ddcp_commands.CreateInjectableProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code="PFS-SERIAL",
-            constituent_architecture={}, required_controls={"serialization": {"required": True}},
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=serial_product.id,
+            profile_code="PFS-SERIAL", constituent_architecture={}, required_controls={"serialization": {"required": True}},
         ),
         actor_id,
     )

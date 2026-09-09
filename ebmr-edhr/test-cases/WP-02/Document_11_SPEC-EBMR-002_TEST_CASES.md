@@ -243,7 +243,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: Compute readiness from predecessors, conditions, material/equipment/personnel requirements, holds and quality blockers. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** UI cannot force readiness. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (predecessor-only slice, material/equipment/personnel/hold/quality-blocker gating still deferred — SG-048)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-09  |  **Actual result:** `test_record_results_and_complete_step_advances_dependency_graph` (tests/test_batch_execution.py) — STEP-B moves pending -> ready once STEP-A completes; aggregate version incremented; StepCompleted/StepReady outbox rows written; audit events for both steps.  |  **Defect:** none
 
 ### TC-011-006-02 — Step readiness — Prohibited path is rejected
 
@@ -321,7 +321,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: Capture typed value, UOM, source, source timestamp, receive time, actor/device, quality status and applicable rule result. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Complete evidence. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (manual/typed capture only — source_type fixed 'manual'; device/edge sourcing, BAT-FR-011, stays SG-048 #011)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-09  |  **Actual result:** `test_record_results_and_complete_step_advances_dependency_graph` (tests/test_batch_execution.py) — `POST /batches/v1/{id}/steps/{id}/results` records a `gxp_step_result` row typed from the recipe's own RecipeParameter (data_type/uom), signed (Document 106 row 21), aggregate version incremented, StepResultRecorded outbox row, audit event.  |  **Defect:** none
 
 ### TC-011-009-02 — Parameter capture — Illegal state transition is rejected
 
@@ -461,7 +461,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: Before completion validate required parameters, evidence, calculations, QC requirements, materials and signatures. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Incomplete step cannot complete. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (required-parameter presence check only — evidence/calculations/QC/materials sub-checks stay SG-048)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-09  |  **Actual result:** `test_complete_step_blocked_without_required_parameter_result` (tests/test_batch_execution.py) — `POST .../complete` on a step with an unrecorded required RecipeParameter is rejected 422 `PARAMETER_REQUIRED`, `details.missing_parameter_codes` names it; step state/version unchanged.  |  **Defect:** none
 
 ### TC-011-015-02 — Step validation — Action without the required signature is blocked
 
@@ -475,7 +475,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Expected error code:** `SIGNATURE_REQUIRED`
 - **Depends on:** TC-011-015-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (this codebase's real error-code taxonomy names this class `MISSING_SIGNATURE`, not the template's placeholder `SIGNATURE_REQUIRED` — same code every other signed action in the repo returns, e.g. `app/mutation/errors.py::MissingSignatureError`)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-09  |  **Actual result:** `test_complete_step_requires_signature` (tests/test_batch_execution.py) — `POST .../complete` with no `challenge_id`/`reauth_password` is rejected 428 `MISSING_SIGNATURE`; step unchanged.  |  **Defect:** none
 
 ### TC-011-015-03 — Step validation — Signature bound to a superseded version is rejected
 
@@ -514,7 +514,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: When required, completion/verification consumes Document 04 signature bound to exact step/result version. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Signature exact. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-09  |  **Actual result:** `test_record_results_and_complete_step_advances_dependency_graph` (tests/test_batch_execution.py) — `POST .../complete` with a valid challenge/reauth returns `signature_id` on the receipt, bound to the step's own id/version/hash (Document 106 row 19, meaning `Performed`); the audit event carries `signature_id`.  |  **Defect:** none
 
 ### TC-011-016-02 — Step signature — Action without the required signature is blocked
 
@@ -528,7 +528,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Expected error code:** `SIGNATURE_REQUIRED`
 - **Depends on:** TC-011-016-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (real error code `MISSING_SIGNATURE`, see TC-011-015-02's same note)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-09  |  **Actual result:** `test_complete_step_requires_signature` (tests/test_batch_execution.py) — same evidence as TC-011-015-02, this requirement's own signature-absence assertion.  |  **Defect:** none
 
 ### TC-011-016-03 — Step signature — Signature bound to a superseded version is rejected
 
@@ -631,7 +631,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: Authorized command holds whole batch or scoped stage/step; reason/signature and source quality event captured. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** No execution past hold. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (step scope only — a narrow `gxp_batch_hold` slice, `StepHold`; the batch-wide hold already existed separately and is unaffected)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-09  |  **Actual result:** `test_hold_and_resume_step_blocks_and_restores_progress` (tests/test_batch_execution.py) — `POST .../steps/{id}/hold` signs (Document 106 row 14's shape), moves the step to `on_hold`, blocks results/complete without stopping the rest of the batch; `POST .../resume` (row 17's shape) restores `in_progress`.  |  **Defect:** none
 
 ### TC-011-020-02 — Batch hold — Action without the required signature is blocked
 
@@ -645,7 +645,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Expected error code:** `SIGNATURE_REQUIRED`
 - **Depends on:** TC-011-020-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (real error code `MISSING_SIGNATURE`, same taxonomy note as every other signed-action test in this book)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-09  |  **Actual result:** `test_hold_step_requires_signature` (tests/test_batch_execution.py) — `POST .../hold` with no `challenge_id`/`reauth_password` is rejected 428 `MISSING_SIGNATURE`; step unchanged.  |  **Defect:** none
 
 ### TC-011-020-03 — Batch hold — Signature bound to a superseded version is rejected
 
@@ -898,7 +898,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: Batch can become Production Complete only when all required applicable steps, yields/reconciliations and production blockers are resolved. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Completeness deterministic. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (steps-completeness sub-clause only — yield/reconciliation, Document 17, is not checked; SG-048 #026 partial)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-09  |  **Actual result:** `test_production_complete_happy_path_and_can_still_be_held` (tests/test_batch_execution.py) — once every `gxp_batch_step` is `complete`, `POST /batches/v1/{id}/production-complete` signs (Document 106 row 16) and moves the batch to `production_complete`; a late hold is still reachable afterward.  |  **Defect:** none
 
 ### TC-011-026-02 — Production completion — Prohibited path is rejected
 
@@ -912,7 +912,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Expected error code:** `STATE_TRANSITION_INVALID`
 - **Depends on:** TC-011-026-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (real error code `INVALID_TRANSITION`, the same generic transition-guard code every other batch/step transition in this codebase returns, not the template's placeholder)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-09  |  **Actual result:** `test_production_complete_rejected_from_a_state_it_is_not_allowed_from` (tests/test_batch_execution.py) — production-complete attempted from `planned` (never issued/started) is rejected 409 `INVALID_TRANSITION`.  |  **Defect:** none
 
 ### TC-011-026-03 — Production completion — Limit boundary behaviour
 

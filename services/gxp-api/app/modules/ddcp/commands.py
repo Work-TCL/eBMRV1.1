@@ -28,7 +28,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
-from app.modules.batch.models import Batch
+from app.modules.batch_execution.models import Batch
 from app.modules.ddcp.models import (
     ASSEMBLY_STEPS,
     CONSTITUENT_TYPES,
@@ -48,6 +48,7 @@ from app.modules.equipment import cleaning_commands, commands as equipment_comma
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.iam.models import User
 from app.modules.material.models import MaterialLot
+from app.modules.product_master.models import ProductVersion
 from app.modules.qms.change_models import ChangeAffectedObject, ChangeControl
 from app.modules.qms.models import DeviationRecord
 from app.modules.rules import commands as rules_commands
@@ -140,6 +141,42 @@ def _profile_hash(profile: DdcpProfileVersion) -> str:
     return sha256_hex({"id": str(profile.id), "version": profile.version, "state": profile.state})
 
 
+async def _assert_product_version_for_profile(
+    session: AsyncSession, *, product_version_id: uuid.UUID, site_id: uuid.UUID,
+    expected_manufacturing_profile_code: str | None,
+) -> ProductVersion:
+    """SG-175 (product_version_id half, project-owner-directed 2026-09-08): every DDCP profile is now
+    authored against a real, RELEASED Product Master version, closing the "no FK at all" gap found
+    while writing the client demo guide's Product-family-vs-Product-Master comparison. Reused by every
+    family's create-profile command (migration 0089 adds the column this checks).
+
+    `expected_manufacturing_profile_code` is only enforced for the two families where Product Master's
+    own 5-value `manufacturing_profile_code` vocabulary (Document 09, `SUPPORTED_MANUFACTURING_PROFILES`)
+    names the family unambiguously -- `injectable_ddcp` -> PFS, `inhalation_ddcp` -> Inhalation. Neither
+    Autoinjector nor Coated device has a corresponding value in that vocabulary at all, so callers for
+    those two families pass `expected_manufacturing_profile_code=None` and only the
+    existence/released/site checks apply; guessing a mapping for those two would be exactly the kind of
+    regulated-record-authority decision CLAUDE.md #4 reserves for a human -- left open as SG-175's
+    residual half rather than invented here.
+    """
+    product_version = await session.get(ProductVersion, product_version_id)
+    if product_version is None:
+        raise NotFoundError("Product version not found")
+    if product_version.lifecycle_state != "released":
+        raise ValidationFailedError(
+            "A DDCP profile can only be authored against a released product version",
+            current_state=product_version.lifecycle_state,
+        )
+    if product_version.site_id != site_id:
+        raise ValidationFailedError("Product version belongs to a different site")
+    if expected_manufacturing_profile_code is not None and product_version.manufacturing_profile_code != expected_manufacturing_profile_code:
+        raise ProfileSchemaInvalidError(
+            "Product version's manufacturing profile does not match this DDCP family",
+            expected=expected_manufacturing_profile_code, actual=product_version.manufacturing_profile_code,
+        )
+    return product_version
+
+
 # ---------------------------------------------------------------------------------------------------
 # DdcpProfileVersion — PFS-FR-001/002/028/029.
 # ---------------------------------------------------------------------------------------------------
@@ -148,6 +185,7 @@ def _profile_hash(profile: DdcpProfileVersion) -> str:
 class CreateInjectableProfileVersionCommand(CommandEnvelope):
     site_id: uuid.UUID
     profile_code: str
+    product_version_id: uuid.UUID  # SG-175 -- must be a RELEASED product with manufacturing_profile_code="injectable_ddcp"
     subtype: str | None = None
     dosage_form: str | None = None
     presentation: str | None = None
@@ -172,6 +210,10 @@ async def create_injectable_profile_version(
             raise ProfileSchemaInvalidError("Unrecognized constituent_type in constituent_requirements", allowed=list(CONSTITUENT_TYPES))
         if not req.get("component_role"):
             raise ProfileSchemaInvalidError("Every constituent_requirement needs a component_role")
+    await _assert_product_version_for_profile(
+        session, product_version_id=cmd.product_version_id, site_id=cmd.site_id,
+        expected_manufacturing_profile_code="injectable_ddcp",
+    )
 
     next_version = (
         await session.execute(
@@ -182,7 +224,8 @@ async def create_injectable_profile_version(
     ).scalar() or 0
 
     profile = DdcpProfileVersion(
-        site_id=cmd.site_id, profile_code=cmd.profile_code, subtype=cmd.subtype, version=next_version + 1,
+        site_id=cmd.site_id, profile_code=cmd.profile_code, product_version_id=cmd.product_version_id,
+        subtype=cmd.subtype, version=next_version + 1,
         state="DRAFT", dosage_form=cmd.dosage_form, presentation=cmd.presentation,
         constituent_architecture=cmd.constituent_architecture, required_controls=cmd.required_controls,
         release_checkpoint_set=cmd.release_checkpoint_set,
@@ -367,9 +410,17 @@ class DecideConstituentHandoffCommand(CommandEnvelope):
 async def decide_constituent_handoff(
     session: AsyncSession, cmd: DecideConstituentHandoffCommand, actor_user_id: uuid.UUID
 ) -> MutationReceipt:
-    """PFS-FR-003/004: "Require released lots" is enforced here, not merely captured -- a DRUG/BIOLOGIC
-    source must resolve to a `ebmr.batches` row in status `released`; any other constituent type must
-    resolve to a `materials.material_lots` row in status `released`. Both cases fail closed
+    """PFS-FR-003/004: "Require released lots" is enforced here, not merely captured. PFS-FR-003 reads
+    literally as "released bulk drug/biologic batch reference" -- but this platform has no capability
+    anywhere to create/release a batch record for externally-supplied bulk drug substance; every real
+    deployment (including this one, Document 18/19/20) receives it exactly like any other raw material:
+    Supplier -> Material Receipt -> Material Lot, QC-released the same way as PFS-FR-004's primary
+    components. SG-179 (2026-09-08, project-owner-directed, hit live while demoing): a DRUG/BIOLOGIC
+    source now resolves against *either* a `ebmr.gxp_batch` row in state `released` (if a caller ever
+    supplies `batch_id` -- kept for the literal PFS-FR-003 wording, though nothing in this codebase can
+    produce one yet) *or* a `materials.material_lots` row in status `released` (the path every real
+    handoff actually uses today, matching PFS-FR-004's own component check exactly). Any other
+    constituent type still only ever resolves to a released material lot. Both cases fail closed
     (BULK_NOT_RELEASED / PRIMARY_COMPONENT_NOT_RELEASED) if the reference is missing or not released.
 
     PFS-FR-005/016/028 (added this pass, optional `profile_version_id`): component preparation status
@@ -397,16 +448,49 @@ async def decide_constituent_handoff(
         raise InvalidTransitionError("Only a pending handoff can be decided", current_state=handoff.state)
 
     if cmd.decision == "ACCEPTED":
-        if handoff.from_constituent in ("DRUG", "BIOLOGIC"):
-            source_batch_id = handoff.source_batch_reference.get("batch_id")
-            source = await session.get(Batch, uuid.UUID(source_batch_id)) if source_batch_id else None
-            if source is None or source.status != "released":
+        is_bulk = handoff.from_constituent in ("DRUG", "BIOLOGIC")
+        # source_batch_reference is caller-supplied free-form JSON at handoff-creation time (record_
+        # constituent_handoff never validates its shape) -- a non-UUID id typed there previously reached
+        # uuid.UUID() unguarded and raised a bare ValueError, caught only by main.py's catch-all
+        # unhandled_exception_handler as an opaque SYSTEM_FAULT 500 -- this is a bad *input*, not a
+        # system fault, so it gets its own clear, actionable VALIDATION_FAILED instead.
+        source_batch_id = handoff.source_batch_reference.get("batch_id")
+        source_lot_id = handoff.source_batch_reference.get("lot_id")
+
+        if source_batch_id:
+            if not is_bulk:
+                raise ValidationFailedError(
+                    "batch_id is only a valid source reference for a DRUG/BIOLOGIC handoff; this "
+                    "constituent type requires lot_id", from_constituent=handoff.from_constituent
+                )
+            try:
+                source_uuid = uuid.UUID(source_batch_id)
+            except (ValueError, AttributeError, TypeError):
+                raise ValidationFailedError(
+                    "source_batch_reference.batch_id is not a valid UUID", batch_id=source_batch_id
+                )
+            source = await session.get(Batch, source_uuid)
+            if source is None or source.state != "released":
                 raise BulkNotReleasedError("Referenced bulk drug/biologic batch is not released", source_batch_id=source_batch_id)
-        else:
-            source_lot_id = handoff.source_batch_reference.get("lot_id")
-            source_lot = await session.get(MaterialLot, uuid.UUID(source_lot_id)) if source_lot_id else None
+        elif source_lot_id:
+            try:
+                source_lot_uuid = uuid.UUID(source_lot_id)
+            except (ValueError, AttributeError, TypeError):
+                raise ValidationFailedError(
+                    "source_batch_reference.lot_id is not a valid UUID", lot_id=source_lot_id
+                )
+            source_lot = await session.get(MaterialLot, source_lot_uuid)
             if source_lot is None or source_lot.status != "released":
-                raise PrimaryComponentNotReleasedError("Referenced primary component lot is not released", source_lot_id=source_lot_id)
+                error_cls = BulkNotReleasedError if is_bulk else PrimaryComponentNotReleasedError
+                raise error_cls(
+                    "Referenced bulk drug/biologic material lot is not released"
+                    if is_bulk else "Referenced primary component lot is not released",
+                    source_lot_id=source_lot_id,
+                )
+        else:
+            raise ValidationFailedError(
+                "source_batch_reference must include batch_id or lot_id", source_batch_reference=handoff.source_batch_reference
+            )
 
         if cmd.profile_version_id is not None:
             requirement = (
@@ -497,8 +581,8 @@ async def evaluate_injectable_batch_readiness(
     batch = await session.get(Batch, batch_id)
     if batch is None:
         raise NotFoundError("Batch not found")
-    if batch.status not in ("issued", "in_execution"):
-        blockers.append({"code": "LINE_NOT_READY", "message": f"Batch status is {batch.status}, expected issued/in_execution"})
+    if batch.state not in ("issued", "in_execution"):
+        blockers.append({"code": "LINE_NOT_READY", "message": f"Batch status is {batch.state}, expected issued/in_execution"})
 
     profile = await session.get(DdcpProfileVersion, profile_version_id)
     if profile is None:
@@ -1228,6 +1312,9 @@ async def get_pfs_batch_genealogy(session: AsyncSession, batch_id: uuid.UUID) ->
     handoffs = (
         await session.execute(select(ConstituentHandoff).where(ConstituentHandoff.batch_id == batch_id).order_by(ConstituentHandoff.version))
     ).scalars().all()
+    fill_ops = (
+        await session.execute(select(FillOperation).where(FillOperation.batch_id == batch_id).order_by(FillOperation.started_at))
+    ).scalars().all()
     counts = (
         await session.execute(select(ProductionCountLedger).where(ProductionCountLedger.batch_id == batch_id).order_by(ProductionCountLedger.occurred_at))
     ).scalars().all()
@@ -1246,9 +1333,27 @@ async def get_pfs_batch_genealogy(session: AsyncSession, batch_id: uuid.UUID) ->
         "incoming_constituents": [
             {
                 "id": str(h.id), "from_constituent": h.from_constituent, "to_constituent": h.to_constituent,
-                "source_batch_reference": h.source_batch_reference, "state": h.state,
+                "source_batch_reference": h.source_batch_reference, "state": h.state, "version": h.version,
             }
             for h in handoffs
+        ],
+        # Same session-refresh gap `incoming_constituents`/`device_assembly_chain` exist to close (see
+        # the frontend's own comment on `genealogyRecordSources`) -- a fill operation's id had no way to
+        # be recovered after a page refresh at all, since this document declares no dedicated "list fill
+        # operations" endpoint either. Reuses this already-declared genealogy read rather than adding a
+        # new one (SG-081 precedent, same as everywhere else this pass added a picker).
+        #
+        # `version` on every row here (not just id/label) closes a second, sharper edge of the same gap:
+        # a mutation that names this id also needs its *current* version for optimistic concurrency
+        # (`expected_version`) -- omitting it left the frontend with no honest value to seed but a
+        # hardcoded "1" default, a guaranteed STALE_VERSION for any record already past that.
+        "fill_operations": [
+            {
+                "id": str(f.id), "state": f.state, "fill_program_id": f.fill_program_id,
+                "target_fill": str(f.target_fill), "target_fill_uom": f.target_fill_uom,
+                "started_at": f.started_at.isoformat() if f.started_at else None, "version": f.version,
+            }
+            for f in fill_ops
         ],
         "production_counts": [
             {"id": str(c.id), "count_type": c.count_type, "source": c.source, "quantity": c.quantity, "device_reference": c.device_reference, "occurred_at": c.occurred_at.isoformat()}
@@ -1258,6 +1363,7 @@ async def get_pfs_batch_genealogy(session: AsyncSession, batch_id: uuid.UUID) ->
             {
                 "id": str(a.id), "unit_identifier": a.unit_identifier, "assembly_step": a.assembly_step,
                 "component_lot_reference": a.component_lot_reference, "result": a.result, "occurred_at": a.occurred_at.isoformat(),
+                "version": a.version,
             }
             for a in assembly
         ],

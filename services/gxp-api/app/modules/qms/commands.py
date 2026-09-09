@@ -17,7 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
-from app.modules.iam.models import User
+from app.modules.iam.models import Role, User
+from app.modules.policy.service import effective_role_names
 from app.modules.qms.models import (
     ALLOWED_TRANSITIONS,
     DISPOSITION_CODES,
@@ -37,6 +38,8 @@ from app.mutation.errors import (
     NotFoundError,
     PlannedDeviationExpiredError,
     QaClosureRequiredError,
+    RoleMissingError,
+    SodIndependenceRequiredError,
     StaleVersionError,
     ValidationFailedError,
 )
@@ -80,6 +83,29 @@ async def _resolve_signature(
     policy = await signature_service.resolve_signature_requirement(session, record_type="deviation_record", action=action)
     if not policy.signature_required:
         return None
+
+    # Document 106 rows 71/73 (SPEC-QMS-001, `close`/`disposition`) name a required signer role and an
+    # independence requirement that resolve_signature_requirement() itself does not read -- same bespoke
+    # enforcement as release_recipe_version()/release_product_version() and close_security_incident()
+    # (Document 106 row 140). Independence is checked against the record's own investigator_subject_id/
+    # owner_subject_id: Document 107 IND-005 names exactly those two for `close` ("Investigator, Owner ->
+    # Prohibited"); `disposition`'s broader "independent of every production performer on the record"
+    # wording has no narrower Document 107 rule, so the same two-field check applies there too.
+    if policy.required_role_id is not None:
+        required_role_name = await session.scalar(select(Role.name).where(Role.id == policy.required_role_id))
+        if required_role_name not in await effective_role_names(session, actor_user_id, deviation.site_id):
+            raise RoleMissingError(
+                f"Deviation '{action}' requires the signing role named by the signature policy",
+                action=f"qms_deviation.{action}", required_role=required_role_name,
+            )
+    if policy.requires_independent_signer and actor_user_id in (
+        deviation.investigator_subject_id, deviation.owner_subject_id,
+    ):
+        raise SodIndependenceRequiredError(
+            f"Deviation '{action}' must be independent of the investigator/owner (Document 106/107 IND-005)",
+            action=f"qms_deviation.{action}",
+        )
+
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"Deviation '{action}' requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)

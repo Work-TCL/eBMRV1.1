@@ -68,7 +68,7 @@ export default function FieldActionsPage() {
     <>
       <QmsListPage<FieldAction>
         title="Field actions"
-        subtitle="Document 36 — recalls, corrections and removals from scope definition through reconciliation and effectiveness."
+        subtitle="Recalls, corrections and removals from scope definition through reconciliation and effectiveness."
         path="/qms/v1/field-actions"
         columns={columns}
         states={FIELD_ACTION_STATES}

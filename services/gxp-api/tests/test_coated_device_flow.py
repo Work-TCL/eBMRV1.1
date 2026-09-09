@@ -18,6 +18,7 @@ from app.modules.ddcp.models import DdcpProcessOperation, DdcpProfileVersion, Dd
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.material.models import Material, MaterialLot
 from app.modules.product.models import Product
+from app.modules.product_master.models import ProductVersion
 from app.modules.qms import change_commands
 from app.modules.recipe.models import Recipe
 from app.modules.rules import commands as rules_commands
@@ -98,11 +99,30 @@ async def _create_material_lot(db, seeded, *, code: str, actor_id) -> MaterialLo
     return lot
 
 
+async def _create_released_product_version(
+    db, seeded, *, code: str, manufacturing_profile_code: str = "drug_eluting_device",
+) -> ProductVersion:
+    # SG-175: every DDCP profile now needs a real, RELEASED Product Master version
+    # (`product_version_id`, migration 0089). "drug_eluting_device" is Product Master's own
+    # manufacturing_profile_code value closest to this family (Document 09), but it's only an example
+    # subtype per catalog.ts, not an exhaustive one, so the command layer for this family checks
+    # existence/released/site only, never a match against it (SG-175's residual half).
+    pv = ProductVersion(
+        product_business_id=f"PM-{code}", version_no=1, product_code=f"PM-{code}", name=f"Test product {code}",
+        manufacturing_profile_code=manufacturing_profile_code, lifecycle_state="released", site_id=seeded["site_id"],
+    )
+    db.add(pv)
+    await db.flush()
+    return pv
+
+
 async def _create_and_release_profile(db, seeded, actor_id, *, profile_code: str) -> DdcpProfileVersion:
+    product_version = await _create_released_product_version(db, seeded, code=profile_code)
     receipt = await coated_device_commands.create_coated_device_profile_version(
         db,
         coated_device_commands.CreateCoatedDeviceProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code=profile_code,
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=product_version.id,
+            profile_code=profile_code,
             constituent_requirements=[
                 {"constituent_type": "DEVICE", "component_role": "substrate", "required_state": "RELEASED"},
                 {"constituent_type": "DRUG", "component_role": "coating_solution", "required_state": "RELEASED"},
@@ -359,10 +379,12 @@ async def test_environment_gate_blocks_readiness_when_not_ready(seeded, db):
     allowed' -- the same restraint extends to the environment gate)."""
 
     actor_id = seeded["users"]["ddcp.operator"].id
+    env_product = await _create_released_product_version(db, seeded, code="COAT-ENV-1")
     profile_receipt = await coated_device_commands.create_coated_device_profile_version(
         db,
         coated_device_commands.CreateCoatedDeviceProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code="COAT-ENV-1", environment_profile_id="ENV-COATING-STANDARD",
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=env_product.id,
+            profile_code="COAT-ENV-1", environment_profile_id="ENV-COATING-STANDARD",
             constituent_requirements=[
                 {"constituent_type": "DEVICE", "component_role": "substrate", "required_state": "RELEASED"},
                 {"constituent_type": "DRUG", "component_role": "coating_solution", "required_state": "RELEASED"},
@@ -435,11 +457,14 @@ async def test_sterilization_interaction_captured_on_profile(seeded, db):
     at creation time; no generic sterilization assumption is made when it's left unset (Document 57 §7)."""
 
     actor_id = seeded["users"]["ddcp.engineer"].id
+    steril_product = await _create_released_product_version(db, seeded, code="COAT-STERIL-1")
+    nosteril_product = await _create_released_product_version(db, seeded, code="COAT-NOSTERIL-1")
 
     with_sterilization = await coated_device_commands.create_coated_device_profile_version(
         db,
         coated_device_commands.CreateCoatedDeviceProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code="COAT-STERIL-1", sterilization_route_id="EO-CYCLE-A",
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=steril_product.id,
+            profile_code="COAT-STERIL-1", sterilization_route_id="EO-CYCLE-A",
             constituent_requirements=[{"constituent_type": "DEVICE", "component_role": "substrate", "required_state": "RELEASED"}],
         ),
         actor_id,
@@ -450,7 +475,8 @@ async def test_sterilization_interaction_captured_on_profile(seeded, db):
     without_sterilization = await coated_device_commands.create_coated_device_profile_version(
         db,
         coated_device_commands.CreateCoatedDeviceProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code="COAT-NOSTERIL-1",
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=nosteril_product.id,
+            profile_code="COAT-NOSTERIL-1",
             constituent_requirements=[{"constituent_type": "DEVICE", "component_role": "substrate", "required_state": "RELEASED"}],
         ),
         actor_id,

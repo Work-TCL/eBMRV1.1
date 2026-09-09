@@ -21,9 +21,9 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.batch.models import Batch
+from app.modules.batch_execution.models import Batch
 from app.modules.ddcp import commands as ddcp_commands
-from app.modules.ddcp.commands import _receipt_from_existing, _write_receipt
+from app.modules.ddcp.commands import _assert_product_version_for_profile, _receipt_from_existing, _write_receipt
 from app.modules.ddcp.models import (
     COATING_USAGE_TYPES,
     RELEASE_CHECKPOINT_CODES,
@@ -67,6 +67,7 @@ from app.mutation.schemas import CommandEnvelope, MutationReceipt
 class CreateCoatedDeviceProfileVersionCommand(CommandEnvelope):
     site_id: uuid.UUID
     profile_code: str
+    product_version_id: uuid.UUID  # SG-175 -- must be a RELEASED product version at this site
     coating_route_id: str | None = None
     sterilization_route_id: str | None = None
     environment_profile_id: str | None = None
@@ -87,6 +88,12 @@ async def create_coated_device_profile_version(
     for req in cmd.constituent_requirements:
         if not req.get("component_role"):
             raise ProfileSchemaInvalidError("Every constituent_requirement needs a component_role")
+    # No manufacturing_profile_code names "coated device" specifically -- `drug_eluting_device` is only
+    # an example subtype (SG-175 residual half) -- existence/released/site checked, family-match not.
+    await _assert_product_version_for_profile(
+        session, product_version_id=cmd.product_version_id, site_id=cmd.site_id,
+        expected_manufacturing_profile_code=None,
+    )
 
     next_version = (
         await session.execute(
@@ -97,7 +104,8 @@ async def create_coated_device_profile_version(
     ).scalar() or 0
 
     profile = DdcpProfileVersion(
-        site_id=cmd.site_id, profile_code=cmd.profile_code, subtype=None, version=next_version + 1, state="DRAFT",
+        site_id=cmd.site_id, profile_code=cmd.profile_code, product_version_id=cmd.product_version_id,
+        subtype=None, version=next_version + 1, state="DRAFT",
         constituent_architecture={
             "coatingRouteId": cmd.coating_route_id, "sterilizationRouteId": cmd.sterilization_route_id,
             "environmentProfileId": cmd.environment_profile_id, **cmd.constituent_architecture,

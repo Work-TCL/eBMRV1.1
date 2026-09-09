@@ -135,6 +135,15 @@ class DdcpProfileVersion(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
     profile_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    # 3rd documented deviation from Document 112's approved DDL, added migration 0089 (SG-175): a
+    # DDCP profile previously had no FK to Product Master at all -- family selection on `/ddcp` and
+    # Product Master's own `manufacturing_profile_code` were two unwired halves of the same
+    # combination-product concept (found while writing the client demo guide's comparison of the two).
+    # Nullable so pre-migration rows are grandfathered; every create path added after 0089 requires it
+    # and validates it (see commands.py `_assert_product_version_for_profile`).
+    product_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ebmr.gxp_product_version.id")
+    )
     subtype: Mapped[str | None] = mapped_column(String(80))
     version: Mapped[int] = mapped_column(nullable=False, default=1)
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="DRAFT")
@@ -188,7 +197,7 @@ class ConstituentHandoff(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
-    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"), nullable=False)
+    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
     from_constituent: Mapped[str] = mapped_column(String(40), nullable=False)
     to_constituent: Mapped[str] = mapped_column(String(80), nullable=False)
     source_batch_reference: Mapped[dict] = mapped_column(JSONB, nullable=False)
@@ -219,7 +228,7 @@ class FillOperation(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
-    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"), nullable=False)
+    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
     line_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("equipment.equipment_areas.id"), nullable=False)
     filler_equipment_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("equipment.equipment_assets.id"), nullable=False
@@ -265,7 +274,7 @@ class ProductionCountLedger(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
-    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"), nullable=False)
+    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
     count_type: Mapped[str] = mapped_column(String(60), nullable=False)
     source: Mapped[str] = mapped_column(String(40), nullable=False)
     quantity: Mapped[int] = mapped_column(nullable=False)
@@ -294,7 +303,7 @@ class DeviceAssemblyRecord(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
-    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"), nullable=False)
+    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
     unit_identifier: Mapped[str | None] = mapped_column(String(120))
     assembly_step: Mapped[str] = mapped_column(String(80), nullable=False)
     component_lot_reference: Mapped[dict] = mapped_column(JSONB, nullable=False)
@@ -322,7 +331,7 @@ class DeviceFunctionalTestLink(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
-    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"), nullable=False)
+    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
     test_type: Mapped[str] = mapped_column(String(80), nullable=False)
     qc_record_reference: Mapped[dict] = mapped_column(JSONB, nullable=False)
     sample_plan_reference: Mapped[dict | None] = mapped_column(JSONB)
@@ -342,7 +351,7 @@ class DdcpReleaseCheckpoint(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
-    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"), nullable=False)
+    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
     checkpoint_code: Mapped[str] = mapped_column(String(80), nullable=False)
     required_evidence: Mapped[dict] = mapped_column(JSONB, nullable=False)
     blocker_state: Mapped[dict] = mapped_column(JSONB, nullable=False)
@@ -363,7 +372,7 @@ class BatchEvidenceManifest(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
-    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"), nullable=False)
+    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
     manifest_version: Mapped[int] = mapped_column(nullable=False)
     evidence_set: Mapped[dict] = mapped_column(JSONB, nullable=False)
     digest: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -404,7 +413,7 @@ class DdcpProcessOperation(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
-    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"), nullable=False)
+    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
     operation_type: Mapped[str] = mapped_column(String(40), nullable=False)
     line_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("equipment.equipment_areas.id"))
     equipment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("equipment.equipment_assets.id"))
@@ -437,7 +446,7 @@ class DdcpUnitBinding(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
-    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"), nullable=False)
+    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
     binding_type: Mapped[str] = mapped_column(String(60), nullable=False)
     primary_unit_reference: Mapped[dict] = mapped_column(JSONB, nullable=False)
     bound_constituent_reference: Mapped[dict] = mapped_column(JSONB, nullable=False)
@@ -461,7 +470,7 @@ class ReusableDevicePairing(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
-    batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"))
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"))
     reusable_device_reference: Mapped[dict] = mapped_column(JSONB, nullable=False)
     cartridge_lot_reference: Mapped[dict] = mapped_column(JSONB, nullable=False)
     compatibility_status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING_REVIEW")
@@ -487,7 +496,7 @@ class DrugCoatingUsageLedger(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
-    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.batches.id"), nullable=False)
+    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
     usage_type: Mapped[str] = mapped_column(String(30), nullable=False)
     quantity: Mapped[object] = mapped_column(Numeric(18, 6), nullable=False)
     uom: Mapped[str] = mapped_column(String(20), nullable=False)

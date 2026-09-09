@@ -116,7 +116,7 @@ export default function GenealogyPage() {
     <div>
       <PageHead
         title="Genealogy"
-        subtitle="Document 13 — forward and backward traceability across batches, material lots, device units and packages."
+        subtitle="Forward and backward traceability across batches, material lots, device units and packages."
       />
 
       <form onSubmit={run} className="flex items-end gap-4 mb-4 flex-wrap">

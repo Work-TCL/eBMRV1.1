@@ -69,7 +69,7 @@ export default function ComplaintsPage() {
     <>
       <QmsListPage<Complaint>
         title="Complaints"
-        subtitle="Document 35 — customer complaints from intake through triage, investigation and regulatory reportability."
+        subtitle="Customer complaints from intake through triage, investigation and regulatory reportability."
         path="/qms/v1/complaints"
         columns={columns}
         states={COMPLAINT_STATES}

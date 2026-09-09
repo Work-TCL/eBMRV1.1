@@ -23,6 +23,11 @@ export function newIdempotencyKey(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+/** Dispatched on `window` the moment any API call comes back 401 (expired/invalid/revoked token) —
+ * `AuthGuard` listens for this to send the user back to /login, the one place in this module tree that
+ * holds a router. See its usage in `request()` below. */
+export const SESSION_EXPIRED_EVENT = "gxp:session-expired";
+
 export class ApiError extends Error {
   code: string;
   details: Record<string, unknown>;
@@ -63,6 +68,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     } catch {
       // non-JSON error body
     }
+    // A 401 here always means the bearer token is missing/expired/revoked (get_current_actor's only
+    // failure mode — see app/core/security.py) rather than a business rejection, so it's handled once,
+    // centrally, instead of leaving every page to notice its own API calls started failing and show a
+    // stale panel with error banners. This module has no router (it's called from outside any component
+    // tree), so it clears the token and raises a DOM event; AuthGuard — which does hold a router, the
+    // same way Sidebar's own "Sign out" button does — is what actually navigates to /login.
+    if (res.status === 401 && typeof window !== "undefined" && window.location.pathname !== "/login") {
+      setToken(null);
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+    }
     throw new ApiError(
       res.status,
       body.code ?? "UNKNOWN_ERROR",
@@ -78,6 +93,8 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   del: <T>(path: string, body?: unknown) =>
@@ -105,9 +122,17 @@ export interface ListQuery {
 /** For populating a <select> with "all" rows — fine while row counts are small (Phase 1). 100 is the
  * backend's own hard cap (app/core/pagination.py page_size Query(..., le=100)) — once any resource can
  * realistically exceed that, this dropdown should become a searchable combobox hitting the paginated
- * endpoint directly instead of trying to raise the cap. */
-export async function listAll<T>(path: string): Promise<T[]> {
-  const result = await pagedFetcher<T>(path)({ page: 1, page_size: 100, q: "", sort_by: null, sort_dir: "asc" });
+ * endpoint directly instead of trying to raise the cap.
+ *
+ * `extraQuery` values are always set verbatim, including `""` — unlike `pagedFetcher`'s `extraParams`,
+ * which treats a blank value as "not filtering". That distinction matters for endpoints like DDCP's
+ * `GET /profiles`, where an explicit `state=` (empty) overrides a non-empty server-side default and an
+ * omitted `state` falls back to it — so a caller that means "no filter" must be able to send the empty
+ * string rather than have it silently dropped. */
+export async function listAll<T>(path: string, extraQuery?: Record<string, string>): Promise<T[]> {
+  const search = new URLSearchParams({ page: "1", page_size: "100", sort_dir: "asc" });
+  for (const [k, v] of Object.entries(extraQuery ?? {})) search.set(k, v);
+  const result = await api.get<Paged<T>>(`${path}?${search.toString()}`);
   return result.items;
 }
 
@@ -126,6 +151,48 @@ export function pagedFetcher<T>(path: string, extraParams?: () => Record<string,
       if (value) search.set(key, value);
     }
     return api.get<Paged<T>>(`${path}?${search.toString()}`);
+  };
+}
+
+/** Adapts a plain (non-paginated) list endpoint to DataTable's page/sort/search contract, for the
+ * handful of listing endpoints (batches, product/recipe families) that don't carry the server-side
+ * `Paged<T>` envelope yet (Phase 1, small row counts — same ceiling `listAll` documents above).
+ * `fetchAll` is called on every page/sort/search/reloadToken change, same as `pagedFetcher` calling
+ * the network each time — so a caller wanting to avoid re-fetching on every keystroke should have
+ * `fetchAll` read from an already-loaded source instead of hitting the API directly. */
+export function clientPagedFetcher<T>(
+  fetchAll: () => Promise<T[]>,
+  opts: {
+    searchText: (row: T) => string;
+    sortValue?: (row: T, sortBy: string) => string | number | null;
+  }
+) {
+  return async (query: ListQuery): Promise<Paged<T>> => {
+    let rows = await fetchAll();
+    if (query.q) {
+      const q = query.q.toLowerCase();
+      rows = rows.filter((row) => opts.searchText(row).toLowerCase().includes(q));
+    }
+    if (query.sort_by) {
+      const sortBy = query.sort_by;
+      const getValue = opts.sortValue ?? ((row: T) => (row as Record<string, unknown>)[sortBy] as string | number | null);
+      const dir = query.sort_dir === "asc" ? 1 : -1;
+      rows = [...rows].sort((a, b) => {
+        const av = getValue(a, sortBy);
+        const bv = getValue(b, sortBy);
+        if (av == null && bv == null) return 0;
+        if (av == null) return -1;
+        if (bv == null) return 1;
+        if (av < bv) return -dir;
+        if (av > bv) return dir;
+        return 0;
+      });
+    }
+    const total = rows.length;
+    const total_pages = Math.max(1, Math.ceil(total / query.page_size));
+    const page = Math.min(Math.max(1, query.page), total_pages);
+    const start = (page - 1) * query.page_size;
+    return { items: rows.slice(start, start + query.page_size), total, page, page_size: query.page_size, total_pages };
   };
 }
 
@@ -205,6 +272,39 @@ export interface BatchSummary {
   version: number;
 }
 
+interface GxpBatchListRow {
+  batch_id: string;
+  batch_number: string;
+  state: string;
+  product_version_id: string;
+  product_code: string | null;
+  product_name: string | null;
+  target_qty: string;
+  target_uom: string;
+  version: number;
+}
+
+/** Real batch picker data — SG-149/SG-173 cutover (2026-09-08, project-owner-directed): every batch now
+ * lives in `ebmr.gxp_batch` (`GET /batches/v1`), not the retired legacy `ebmr.batches` table this
+ * function used to read via `listAll<BatchSummary>("/batches")`. Reshaped into `BatchSummary`'s existing
+ * field names so every existing picker (dispensing/packaging/inventory/`useEntityOptions`) needed no JSX
+ * changes, only this one fetch swapped in. `/batches/v1` is scoped by site (unlike the old endpoint), so
+ * this takes the caller's current site id rather than being a bare path constant. */
+export async function listBatchesForSite(siteId: string): Promise<BatchSummary[]> {
+  const result = await api.get<{ batches: GxpBatchListRow[] }>(`/batches/v1?site_id=${siteId}`);
+  return result.batches.map((b) => ({
+    id: b.batch_id,
+    batch_number: b.batch_number,
+    status: b.state,
+    product_id: b.product_version_id,
+    product_code: b.product_code ?? "",
+    product_name: b.product_name ?? "",
+    target_quantity: b.target_qty,
+    uom: b.target_uom,
+    version: b.version,
+  }));
+}
+
 
 export interface BatchStepDetail {
   batch_step_id: string;
@@ -241,15 +341,35 @@ export interface MaterialLot {
   material_code: string;
   material_name: string;
   internal_lot: string;
+  supplier_id: string | null;
   supplier_lot: string | null;
   manufacturer_lot: string | null;
   received_quantity: string;
   available_quantity: string;
   uom: string;
   status: string;
+  received_at: string | null;
+  released_at: string | null;
   expiry_date: string | null;
   retest_date: string | null;
   version: number;
+}
+
+export interface MaterialContainer {
+  id: string;
+  container_code: string;
+  current_quantity: string;
+  uom: string;
+  container_status: string;
+  quality_status_override: string | null;
+}
+
+export interface WarehouseLocation {
+  id: string;
+  warehouse_code: string;
+  location_code: string;
+  zone_type: string;
+  status: string;
 }
 
 export interface MaterialIssueRecord {
@@ -345,14 +465,23 @@ export function canAuthorRules(me: Me | null): boolean {
   return Object.values(me.roles_by_site).some((roles) => roles.some((r) => RULES_AUTHOR_ROLES.includes(r)));
 }
 
-// product.author / product.release / product.suspend (Document 09) — Admin only this pass, same as rules.
-const PRODUCT_AUTHOR_ROLES = ["Admin"];
-// product.view — everyone with any operational role, same breadth as rules.evaluate.
-const PRODUCT_VIEW_ROLES = ["Admin", "Operator", "Supervisor", "QA Reviewer", "QA Releaser", "QC Reviewer"];
+// product.author (Document 09) — Process Engineer authors master data, Admin is break-glass.
+// product.release is a SEPARATE role (QA Releaser / Admin) so author ≠ releaser, and the
+// product_version/release signature policy adds person-level independence (Decision 2, 2026-09-08).
+// Matches scripts/seed.py ROLE_PERMISSIONS.
+const PRODUCT_AUTHOR_ROLES = ["Admin", "Process Engineer"];
+const PRODUCT_RELEASE_ROLES = ["Admin", "QA Releaser"];
+// product.view — everyone with any operational role, plus the Process Engineer.
+const PRODUCT_VIEW_ROLES = ["Admin", "Process Engineer", "Operator", "Supervisor", "QA Reviewer", "QA Releaser", "QC Reviewer"];
 
 export function canAuthorProduct(me: Me | null): boolean {
   if (!me) return false;
   return Object.values(me.roles_by_site).some((roles) => roles.some((r) => PRODUCT_AUTHOR_ROLES.includes(r)));
+}
+
+export function canReleaseProduct(me: Me | null): boolean {
+  if (!me) return false;
+  return Object.values(me.roles_by_site).some((roles) => roles.some((r) => PRODUCT_RELEASE_ROLES.includes(r)));
 }
 
 export function canViewProduct(me: Me | null): boolean {
@@ -360,14 +489,22 @@ export function canViewProduct(me: Me | null): boolean {
   return Object.values(me.roles_by_site).some((roles) => roles.some((r) => PRODUCT_VIEW_ROLES.includes(r)));
 }
 
-// recipe.author / recipe.release (Document 10) — Admin only this pass, same as product/rules.
-const RECIPE_AUTHOR_ROLES = ["Admin"];
-// recipe.view — everyone with any operational role, same breadth as product.view.
-const RECIPE_VIEW_ROLES = ["Admin", "Operator", "Supervisor", "QA Reviewer", "QA Releaser", "QC Reviewer"];
+// recipe.author (Document 10) — Process Engineer authors, Admin is break-glass. recipe.release is a
+// SEPARATE role (QA Releaser / Admin) so author ≠ releaser — matches scripts/seed.py ROLE_PERMISSIONS
+// and the recipe_version/release signature policy (QA Releaser, independent of author).
+const RECIPE_AUTHOR_ROLES = ["Admin", "Process Engineer"];
+const RECIPE_RELEASE_ROLES = ["Admin", "QA Releaser"];
+// recipe.view — everyone with any operational role, plus the Process Engineer.
+const RECIPE_VIEW_ROLES = ["Admin", "Process Engineer", "Operator", "Supervisor", "QA Reviewer", "QA Releaser", "QC Reviewer"];
 
 export function canAuthorRecipe(me: Me | null): boolean {
   if (!me) return false;
   return Object.values(me.roles_by_site).some((roles) => roles.some((r) => RECIPE_AUTHOR_ROLES.includes(r)));
+}
+
+export function canReleaseRecipe(me: Me | null): boolean {
+  if (!me) return false;
+  return Object.values(me.roles_by_site).some((roles) => roles.some((r) => RECIPE_RELEASE_ROLES.includes(r)));
 }
 
 export function canViewRecipe(me: Me | null): boolean {
@@ -397,6 +534,14 @@ const ALL_OPERATIONAL_ROLES = [
 // Mirrors the grants in services/gxp-api/scripts/seed.py: QMS_VIEW_CODES goes to all six operational
 // roles; the write codes split by who investigates versus who approves and closes (SOD-006/SOD-007 --
 // an investigator must not approve their own conclusion).
+
+// Document 18 (supplier_quality): create_supplier/create_supplier_qualification carry no
+// evaluate_policy() check in the backend at all -- any authenticated user may call them; only
+// supplier_qualification.approve is actually RBAC+signature-gated (canApproveSupplier below). The
+// create button used to reuse canApproveSupplier, which hid it from every non-Admin/QA-Releaser role
+// even though the backend would have accepted the call -- this brings the UI gate back in line with
+// the real backend boundary instead of a narrower one nobody decided on.
+export const canCreateSupplier = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
 
 export const canViewQms = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
 
@@ -666,6 +811,17 @@ export interface EquipmentAsset {
   dedicated: boolean | null;
   firmware_version: string | null;
   version: number;
+}
+
+export interface EquipmentArea {
+  id: string;
+  site_id: string;
+  area_code: string;
+  area_type: string | null;
+  classification: string | null;
+  criticality: string | null;
+  cleanliness_status: string | null;
+  status: string;
 }
 
 // --- Packaging (Document 16) and supplier quality (Document 18) -----------------------------------

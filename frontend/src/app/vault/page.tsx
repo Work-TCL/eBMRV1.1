@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { JsonPanel } from "@/components/ui/JsonPanel";
 
 // Matches app/modules/vault/router.py::_object_dict.
 interface VaultObject {
@@ -183,16 +184,6 @@ function ObjectDetailModal({
     }
   }
 
-  const preStyle: React.CSSProperties = {
-    background: "var(--surface-sunken)",
-    border: "1px solid var(--border-hairline)",
-    borderRadius: "var(--radius-2, 6px)",
-    padding: "var(--space-2, 8px)",
-    fontSize: "var(--fs-1)",
-    overflowX: "auto",
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-  };
 
   return (
     <Modal open onClose={onClose} title={`${object.object_type} / ${object.business_id} — v${object.internal_version}`} large>
@@ -230,17 +221,14 @@ function ObjectDetailModal({
         )}
       </div>
 
-      <div className="flex items-center gap-3 mb-3">
-        <p className="fs-1 text-muted" style={{ margin: 0 }}>
-          Canonical payload
-        </p>
-        {object.supersedes_object_id && (
+      {object.supersedes_object_id && (
+        <div className="mb-2">
           <Button size="sm" variant="ghost" onClick={() => setCompareOpen(true)}>
             <Icon name="arrow-left" /> Compare with previous version
           </Button>
-        )}
-      </div>
-      <pre style={preStyle}>{JSON.stringify(object.canonical_payload, null, 2)}</pre>
+        </div>
+      )}
+      <JsonPanel title="Canonical payload" value={object.canonical_payload} />
 
       {compareOpen && object.supersedes_object_id && (
         <CompareModal
@@ -320,7 +308,7 @@ function RequestCorrectionModal({
         </Field>
         <p className="hint mb-3">
           This only records the request. Completing a correction requires a signature policy this deployment
-          hasn&apos;t defined yet (Document 106) — it will correctly fail closed until one exists.
+          hasn&apos;t defined yet — it will correctly fail closed until one exists.
         </p>
         <div className="flex justify-between gap-3 mt-2">
           <Button type="button" variant="secondary" onClick={onClose}>
@@ -371,17 +359,6 @@ function CompareModal({
       )
     : [];
 
-  const preStyle: React.CSSProperties = {
-    background: "var(--surface-sunken)",
-    border: "1px solid var(--border-hairline)",
-    borderRadius: "var(--radius-sm)",
-    padding: "var(--space-2)",
-    fontSize: "var(--fs-1)",
-    overflowX: "auto",
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-  };
-
   return (
     <Modal
       open
@@ -403,14 +380,8 @@ function CompareModal({
             )}
           </p>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="fs-1 text-muted mb-1">Previous — v{previous.internal_version}</p>
-              <pre style={preStyle}>{JSON.stringify(previous.canonical_payload, null, 2)}</pre>
-            </div>
-            <div>
-              <p className="fs-1 text-muted mb-1">Current — v{current.internal_version}</p>
-              <pre style={preStyle}>{JSON.stringify(current.canonical_payload, null, 2)}</pre>
-            </div>
+ <JsonPanel title={`Previous v${previous.internal_version}`} value={previous.canonical_payload} />
+ <JsonPanel title={`Current v${current.internal_version}`} value={current.canonical_payload} />
           </div>
         </>
       )}

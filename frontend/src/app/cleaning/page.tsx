@@ -25,7 +25,7 @@ const canVerify = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer", "
 
 const config: OpsRecordConfig<CleaningExecution> = {
   title: "Cleaning executions",
-  subtitle: "Document 39 — equipment cleaning records: steps, agents, completion and independent verification.",
+  subtitle: "Equipment cleaning records: steps, agents, completion and independent verification.",
   idLabel: "Cleaning execution ID",
   apiRoot: "/cleaning/v1/executions",
   create: {
@@ -34,16 +34,16 @@ const config: OpsRecordConfig<CleaningExecution> = {
     path: "/cleaning/v1/executions",
     fields: [
       { name: "procedure_version_id", label: "Cleaning procedure version ID", required: true },
-      { name: "equipment_id", label: "Equipment ID", hint: "Or leave blank and set an area." },
-      { name: "area_id", label: "Area ID" },
-      { name: "batch_context", label: "Batch context", type: "json", hint: "Optional." },
+      { name: "equipment_id", label: "Equipment", type: "equipmentSelect", hint: "Or leave blank and set an area." },
+      { name: "area_id", label: "Area", type: "areaSelect" },
+      { name: "batch_context", label: "Batch context", type: "kv", hint: "Optional — what batch/product this cleaning relates to." },
     ],
     buildBody: (v, siteId) => ({
       site_id: siteId,
       procedure_version_id: v.procedure_version_id,
       equipment_id: v.equipment_id,
       area_id: v.area_id,
-      batch_context: v.batch_context,
+      batch_context: Object.keys((v.batch_context as object) ?? {}).length ? v.batch_context : null,
     }),
   },
   stateOf: (r) => r.state,
@@ -77,15 +77,16 @@ const config: OpsRecordConfig<CleaningExecution> = {
       can: canOperate,
       summary: "Records one executed cleaning step with the agents used.",
       fields: [
-        { name: "step", label: "Step", type: "json", required: true, placeholder: '{ "step_code": "RINSE", "result": "done" }' },
-        { name: "agents_used", label: "Agents used", type: "json" },
-        { name: "disassembly_verified", label: "Disassembly verified", placeholder: "true / false" },
+        { name: "step_code", label: "Step code", required: true, placeholder: "e.g. RINSE, SCRUB, DRY" },
+        { name: "step_result", label: "Step result", placeholder: "e.g. done" },
+        { name: "agents_used", label: "Agents used", type: "kv", hint: 'Cleaning agents applied, e.g. "agent" → "IPA 70%".' },
+        { name: "disassembly_verified", label: "Disassembly verified", type: "bool" },
       ],
       buildBody: (r, v) => ({
         execution_id: r.id,
         expected_version: r.version,
-        step: v.step,
-        agents_used: v.agents_used,
+        step: { step_code: v.step_code, result: v.step_result || undefined },
+        agents_used: Object.keys((v.agents_used as object) ?? {}).length ? v.agents_used : null,
         disassembly_verified: v.disassembly_verified === null ? null : v.disassembly_verified === "true",
       }),
     },
@@ -98,14 +99,14 @@ const config: OpsRecordConfig<CleaningExecution> = {
       can: canOperate,
       summary: "Attests the cleaning is complete and the previous batch identity has been removed.",
       fields: [
-        { name: "previous_batch_identity_removed", label: "Previous batch identity removed", required: true, placeholder: "true / false" },
-        { name: "inspection_result", label: "Inspection result", type: "json" },
+        { name: "previous_batch_identity_removed", label: "Previous batch identity removed", required: true, type: "bool" },
+        { name: "inspection_result", label: "Inspection result", type: "kv" },
       ],
       buildBody: (r, v) => ({
         execution_id: r.id,
         expected_version: r.version,
         previous_batch_identity_removed: v.previous_batch_identity_removed === "true",
-        inspection_result: v.inspection_result,
+        inspection_result: Object.keys((v.inspection_result as object) ?? {}).length ? v.inspection_result : null,
       }),
     },
     {
@@ -116,7 +117,12 @@ const config: OpsRecordConfig<CleaningExecution> = {
       variant: "success",
       can: canVerify,
       summary: "Independent verification of the cleaning result (SoD — the verifier is not the performer).",
-      fields: [{ name: "result", label: "Result", required: true, placeholder: "pass / fail" }],
+      fields: [
+        {
+          name: "result", label: "Result", required: true, type: "select",
+          options: [{ value: "pass", label: "Pass" }, { value: "fail", label: "Fail" }],
+        },
+      ],
       buildBody: (r, v) => ({ execution_id: r.id, expected_version: r.version, result: v.result }),
     },
   ],

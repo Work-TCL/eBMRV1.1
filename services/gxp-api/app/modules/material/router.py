@@ -4,12 +4,15 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.batch.models import Batch
+from app.modules.batch_execution.models import Batch
+from app.modules.iam.models import User
 from app.modules.policy.service import evaluate_policy
+from app.modules.supplier_quality.models import Supplier
 from app.modules.material.commands import (
     ApproveInventoryAdjustmentRequestCommand,
     CancelDispensingCommand,
@@ -24,6 +27,7 @@ from app.modules.material.commands import (
     CreateMaterialCommand,
     CreateMaterialReceiptCommand,
     CreateSamplingOrderCommand,
+    CreateWarehouseLocationCommand,
     DeleteMaterialCommand,
     DispositionMaterialLotCommand,
     EvaluateMaterialReconciliationCommand,
@@ -58,6 +62,7 @@ from app.modules.material.commands import (
     create_material,
     create_material_receipt,
     create_sampling_order,
+    create_warehouse_location,
     delete_material,
     destruction_record_hash,
     disposition_material_lot,
@@ -102,6 +107,7 @@ from app.modules.material.models import (
     MaterialLot,
     MaterialReceipt,
     SamplingOrder,
+    WarehouseLocation,
 )
 from app.modules.signature.service import create_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
@@ -170,6 +176,7 @@ LOT_SORTABLE = {
     "status": MaterialLot.status,
     "expiry_date": MaterialLot.expiry_date,
     "received_at": MaterialLot.received_at,
+    "released_at": MaterialLot.released_at,
     "material_code": Material.code,
 }
 
@@ -259,12 +266,15 @@ def _lot_dict(lot: MaterialLot, material_code: str, material_name: str) -> dict:
         "material_code": material_code,
         "material_name": material_name,
         "internal_lot": lot.internal_lot,
+        "supplier_id": str(lot.supplier_id) if lot.supplier_id else None,
         "supplier_lot": lot.supplier_lot,
         "manufacturer_lot": lot.manufacturer_lot,
         "received_quantity": str(lot.received_quantity),
         "available_quantity": str(lot.available_quantity),
         "uom": lot.uom,
         "status": lot.status,
+        "received_at": lot.received_at.isoformat() if lot.received_at else None,
+        "released_at": lot.released_at.isoformat() if lot.released_at else None,
         "expiry_date": lot.expiry_date.isoformat() if lot.expiry_date else None,
         "retest_date": lot.retest_date.isoformat() if lot.retest_date else None,
         "version": lot.version,
@@ -311,6 +321,37 @@ async def get_material_lot(lot_id: uuid.UUID, session: AsyncSession = Depends(ge
         raise NotFoundError("Material lot not found")
     lot, code, name = row
     return _lot_dict(lot, code, name)
+
+
+def _container_dict(c: MaterialContainer) -> dict:
+    return {
+        "id": str(c.id),
+        "container_code": c.container_code,
+        "current_quantity": str(c.current_quantity),
+        "uom": c.uom,
+        "container_status": c.container_status,
+        "quality_status_override": c.quality_status_override,
+    }
+
+
+# 2026-09-07: read-only container listing. No Document 20 API-list entry declares this operation (same
+# class of omission as SG-081's warehouse_location), but unlike that case no prior resolution rejected it
+# -- this is additive read-model data (container_code/quantity/status only, no mutation, no regulated
+# decision), added so the Inventory forms (Transfer/Cycle count/Adjustment) can offer a real dropdown
+# instead of requiring an operator to hand-type a container UUID copied out of the database.
+@lots_router.get("/{lot_id}/containers")
+async def list_lot_containers(lot_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+    lot = await session.get(MaterialLot, lot_id)
+    if lot is None:
+        raise NotFoundError("Material lot not found")
+    rows = (
+        await session.execute(
+            select(MaterialContainer)
+            .where(MaterialContainer.material_lot_id == lot_id)
+            .order_by(MaterialContainer.container_code)
+        )
+    ).scalars().all()
+    return {"items": [_container_dict(c) for c in rows]}
 
 
 class LotSignatureChallengeRequest(BaseModel):
@@ -382,35 +423,118 @@ async def post_create_receipt(
         return await create_material_receipt(session, cmd, actor.user_id)
 
 
-def _receipt_dict(receipt_row: MaterialReceipt) -> dict:
+def _receipt_dict(
+    receipt_row: MaterialReceipt,
+    material_code: str,
+    material_name: str,
+    supplier_code: str | None,
+    supplier_name: str | None,
+    manufacturer_code: str | None,
+    manufacturer_name: str | None,
+) -> dict:
     return {
         "id": str(receipt_row.id),
         "site_id": str(receipt_row.site_id),
         "receipt_number": receipt_row.receipt_number,
         "po_reference": receipt_row.po_reference,
         "material_id": str(receipt_row.material_id),
+        "material_code": material_code,
+        "material_name": material_name,
         "supplier_id": str(receipt_row.supplier_id) if receipt_row.supplier_id else None,
+        "supplier_code": supplier_code,
+        "supplier_name": supplier_name,
         "manufacturer_id": str(receipt_row.manufacturer_id) if receipt_row.manufacturer_id else None,
+        "manufacturer_code": manufacturer_code,
+        "manufacturer_name": manufacturer_name,
         "supplier_lot": receipt_row.supplier_lot,
         "manufacturer_lot": receipt_row.manufacturer_lot,
+        "carrier_reference": receipt_row.carrier_reference,
         "received_gross_quantity": str(receipt_row.received_gross_quantity),
         "received_net_quantity": str(receipt_row.received_net_quantity) if receipt_row.received_net_quantity else None,
         "accepted_quantity": str(receipt_row.accepted_quantity) if receipt_row.accepted_quantity else None,
         "uom": receipt_row.uom,
+        "manufacture_date": receipt_row.manufacture_date.isoformat() if receipt_row.manufacture_date else None,
+        "expiry_date": receipt_row.expiry_date.isoformat() if receipt_row.expiry_date else None,
+        "retest_date": receipt_row.retest_date.isoformat() if receipt_row.retest_date else None,
         "shipment_condition_status": receipt_row.shipment_condition_status,
+        "coa_document_hash": receipt_row.coa_document_hash,
         "state": receipt_row.state,
         "discrepancy_type": receipt_row.discrepancy_type,
         "discrepancy_reason": receipt_row.discrepancy_reason,
+        "received_at": receipt_row.received_at.isoformat() if receipt_row.received_at else None,
         "version": receipt_row.version,
+    }
+
+
+RECEIPT_SORTABLE = {
+    "receipt_number": MaterialReceipt.receipt_number,
+    "state": MaterialReceipt.state,
+    "received_at": MaterialReceipt.received_at,
+    "material_code": Material.code,
+}
+
+# supplier_id and manufacturer_id are two independent, optional FKs into the same Supplier table (a
+# receipt's supplier and its manufacturer can be different parties, or the same, or either unset) --
+# two aliases so both resolve to a name/code in one query instead of the frontend showing a bare UUID.
+_ReceiptSupplier = aliased(Supplier)
+_ReceiptManufacturer = aliased(Supplier)
+
+
+def _receipt_select():
+    return (
+        select(
+            MaterialReceipt, Material.code, Material.name,
+            _ReceiptSupplier.supplier_code, _ReceiptSupplier.legal_name,
+            _ReceiptManufacturer.supplier_code, _ReceiptManufacturer.legal_name,
+        )
+        .join(Material, Material.id == MaterialReceipt.material_id)
+        .outerjoin(_ReceiptSupplier, _ReceiptSupplier.id == MaterialReceipt.supplier_id)
+        .outerjoin(_ReceiptManufacturer, _ReceiptManufacturer.id == MaterialReceipt.manufacturer_id)
+    )
+
+
+# A read the frontend needs (a browsable receipts list — WP-06-style ops screens with no list endpoint
+# are the exception, not the rule; every other module's register/lots/etc. already has one) — not one
+# of Document 19 §5's 9 declared *mutating* operations, so it carries no signature/authority implication;
+# same GET-alongside-the-mutating-set precedent as `list_material_lots` below and `get_migration_legacy_trace`
+# in the validation module.
+@v1_router.get("/receipts")
+async def list_material_receipts(
+    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)
+) -> dict:
+    stmt = _receipt_select()
+    if params.q:
+        needle = f"%{params.q}%"
+        stmt = stmt.where(
+            or_(
+                MaterialReceipt.receipt_number.ilike(needle),
+                Material.code.ilike(needle),
+                Material.name.ilike(needle),
+            )
+        )
+    rows, envelope = await paginate(
+        session, stmt, params, sortable=RECEIPT_SORTABLE, default_sort=MaterialReceipt.received_at
+    )
+    return {
+        **envelope,
+        "items": [
+            _receipt_dict(r, code, name, s_code, s_name, m_code, m_name)
+            for r, code, name, s_code, s_name, m_code, m_name in rows
+        ],
     }
 
 
 @v1_router.get("/receipts/{receipt_id}")
 async def get_receipt(receipt_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
-    receipt_row = await session.get(MaterialReceipt, receipt_id)
-    if receipt_row is None:
+    row = (
+        await session.execute(_receipt_select().where(MaterialReceipt.id == receipt_id))
+    ).first()
+    if row is None:
         raise NotFoundError("Material receipt not found")
-    return _receipt_dict(receipt_row)
+    receipt_row, material_code, material_name, supplier_code, supplier_name, manufacturer_code, manufacturer_name = row
+    return _receipt_dict(
+        receipt_row, material_code, material_name, supplier_code, supplier_name, manufacturer_code, manufacturer_name
+    )
 
 
 @v1_router.post("/receipts/{receipt_id}/examine", response_model=MutationReceipt)
@@ -528,10 +652,56 @@ async def get_lot_release_readiness(lot_id: uuid.UUID, session: AsyncSession = D
 
 
 # ---------------------------------------------------------------------------
-# Document 20 (SPEC-MAT-002B) §7 — exactly the 9 declared operations, no invented endpoint.
-# `warehouse_location` itself has no CRUD operation anywhere in Document 20's own API list (SG-081) --
-# seed-only data, same treatment as iam.Site/iam.Organization.
+# Document 20 (SPEC-MAT-002B) §7 declares 9 operations; `warehouse_location` itself has no CRUD entry
+# among them (SG-081) -- seed-only data at this module's original build time, same treatment as
+# iam.Site/iam.Organization.
+#
+# 2026-09-07: SG-081 PARTIALLY RESOLVED for the read side -- a read-only GET listing carries no contract
+# risk (nothing to conflict with; a future Document 113 addendum's create/update contract can only ever
+# add operations, never invalidate a plain listing), and the Inventory Transfer/Cycle-count/Adjustment
+# forms otherwise cannot offer a real dropdown for From/To location -- see 18_SPEC_GAPS.md SG-081.
+#
+# 2026-09-07 (later same day), project-owner-directed: SG-081's *write* side resolved too --
+# `POST .../warehouse-locations` below adds create capability, gated by its own new permission code
+# (`warehouse_location.create`, Admin/Supervisor only -- scripts/seed.py) rather than left open. This
+# still doesn't attempt update/delete/rename (no UI or command exists for those), and still doesn't
+# guess at whatever a future formal Document 113 addendum's exact contract would be -- it's this
+# project's own considered create contract, not an assumed one, applied because locations were
+# genuinely uncreatable through the app otherwise.
 # ---------------------------------------------------------------------------
+
+
+def _warehouse_location_dict(loc: WarehouseLocation) -> dict:
+    return {
+        "id": str(loc.id),
+        "warehouse_code": loc.warehouse_code,
+        "location_code": loc.location_code,
+        "zone_type": loc.zone_type,
+        "status": loc.status,
+    }
+
+
+@inventory_v1_router.get("/warehouse-locations")
+async def list_warehouse_locations(site_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+    rows = (
+        await session.execute(
+            select(WarehouseLocation)
+            .where(WarehouseLocation.site_id == site_id, WarehouseLocation.status == "active")
+            .order_by(WarehouseLocation.warehouse_code, WarehouseLocation.location_code)
+        )
+    ).scalars().all()
+    return {"items": [_warehouse_location_dict(loc) for loc in rows]}
+
+
+@inventory_v1_router.post("/warehouse-locations", response_model=MutationReceipt)
+async def post_create_warehouse_location(
+    cmd: CreateWarehouseLocationCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="warehouse_location.create", site_id=cmd.site_id)
+        return await create_warehouse_location(session, cmd, actor.user_id)
 
 
 @inventory_v1_router.get("/availability")
@@ -663,6 +833,10 @@ async def post_create_cycle_count(
         return await create_cycle_count(session, cmd, actor.user_id, lot.site_id)
 
 
+_LedgerFromLocation = aliased(WarehouseLocation)
+_LedgerToLocation = aliased(WarehouseLocation)
+
+
 @inventory_v1_router.get("/lots/{lot_id}/ledger")
 async def get_lot_ledger(
     lot_id: uuid.UUID,
@@ -670,7 +844,19 @@ async def get_lot_ledger(
     params: PageParams = Depends(page_params),
 ) -> dict:
     async with session.begin():
-        stmt = select(InventoryTransaction).where(InventoryTransaction.material_lot_id == lot_id)
+        # container_id/from_location_id/to_location_id are all nullable (a RESERVE txn has no
+        # from/to location; a lot-level cycle-count/adjustment can have no container -- §6.4.2) and
+        # each references a different row than the transaction itself, so every join here is a LEFT
+        # JOIN: showing the container's own code/the locations' own codes instead of raw UUIDs
+        # (same class of fix as _receipt_select()'s Supplier/Manufacturer name resolution above),
+        # without ever excluding a transaction that legitimately has no container or no from-location.
+        stmt = (
+            select(InventoryTransaction, MaterialContainer.container_code, _LedgerFromLocation.location_code, _LedgerToLocation.location_code)
+            .where(InventoryTransaction.material_lot_id == lot_id)
+            .outerjoin(MaterialContainer, MaterialContainer.id == InventoryTransaction.container_id)
+            .outerjoin(_LedgerFromLocation, _LedgerFromLocation.id == InventoryTransaction.from_location_id)
+            .outerjoin(_LedgerToLocation, _LedgerToLocation.id == InventoryTransaction.to_location_id)
+        )
         rows, envelope = await paginate(
             session, stmt, params,
             sortable={"occurred_at": InventoryTransaction.occurred_at},
@@ -682,14 +868,17 @@ async def get_lot_ledger(
                 {
                     "id": str(t.id),
                     "container_id": str(t.container_id) if t.container_id else None,
+                    "container_code": container_code,
                     "transaction_type": t.transaction_type,
                     "quantity": str(t.quantity),
                     "uom": t.uom,
                     "from_location_id": str(t.from_location_id) if t.from_location_id else None,
+                    "from_location_code": from_code,
                     "to_location_id": str(t.to_location_id) if t.to_location_id else None,
+                    "to_location_code": to_code,
                     "occurred_at": t.occurred_at.isoformat(),
                 }
-                for (t,) in rows
+                for t, container_code, from_code, to_code in rows
             ],
         }
 
@@ -999,6 +1188,66 @@ async def post_approve_adjustment_request(
         if request is None:
             raise NotFoundError("Inventory adjustment request not found")
         return await approve_inventory_adjustment_request(session, request_id, cmd, actor.user_id, request.site_id)
+
+
+ADJUSTMENT_SORTABLE = {"created_at": InventoryAdjustmentRequest.created_at, "status": InventoryAdjustmentRequest.status}
+
+
+def _adjustment_dict(
+    r: InventoryAdjustmentRequest, internal_lot: str, material_code: str, location_code: str, requested_by: str
+) -> dict:
+    return {
+        "id": str(r.id),
+        "material_lot_id": str(r.material_lot_id),
+        "internal_lot": internal_lot,
+        "material_code": material_code,
+        "container_id": str(r.container_id) if r.container_id else None,
+        "location_id": str(r.location_id),
+        "location_code": location_code,
+        "expected_quantity": str(r.expected_quantity),
+        "observed_quantity": str(r.observed_quantity),
+        "variance": str(r.variance),
+        "reason": r.reason,
+        "status": r.status,
+        "requested_by": requested_by,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "version": r.version,
+    }
+
+
+# A read the frontend needs (a browsable pending-adjustments queue for QA Releaser to approve from) --
+# not one of Document 22 §6's declared *mutating* operations, so it carries no signature/authority
+# implication; same GET-alongside-the-mutating-set precedent as list_material_receipts/list_material_lots
+# above. Without this, the only way to discover a request_id to approve was the database.
+@inventory_v1_router.get("/adjustments")
+async def list_adjustment_requests(
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    status: str | None = None,
+) -> dict:
+    stmt = (
+        select(
+            InventoryAdjustmentRequest, MaterialLot.internal_lot, Material.code,
+            WarehouseLocation.location_code, User.username,
+        )
+        .join(MaterialLot, MaterialLot.id == InventoryAdjustmentRequest.material_lot_id)
+        .join(Material, Material.id == MaterialLot.material_id)
+        .join(WarehouseLocation, WarehouseLocation.id == InventoryAdjustmentRequest.location_id)
+        .join(User, User.id == InventoryAdjustmentRequest.requested_by_user_id)
+    )
+    if status:
+        stmt = stmt.where(InventoryAdjustmentRequest.status == status)
+    if params.q:
+        needle = f"%{params.q}%"
+        stmt = stmt.where(or_(MaterialLot.internal_lot.ilike(needle), Material.code.ilike(needle)))
+
+    rows, envelope = await paginate(
+        session, stmt, params, sortable=ADJUSTMENT_SORTABLE, default_sort=InventoryAdjustmentRequest.created_at
+    )
+    return {
+        **envelope,
+        "items": [_adjustment_dict(r, lot, code, loc, user) for r, lot, code, loc, user in rows],
+    }
 
 
 @v1_router.post("/destructions", response_model=MutationReceipt)

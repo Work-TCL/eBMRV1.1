@@ -26,6 +26,7 @@ from app.modules.equipment.models import EquipmentAsset
 from app.modules.equipment.sterilization_models import ProcessCycle, ProcessCycleProfileVersion, SterilizationLoadItem
 from app.modules.material.models import Material, MaterialLot
 from app.modules.product.models import Product
+from app.modules.product_master.models import ProductVersion
 from app.modules.qms import change_commands
 from app.modules.recipe.models import Recipe
 from app.modules.rules import commands as rules_commands
@@ -100,11 +101,29 @@ async def _create_material_lot(db, seeded, *, code: str, actor_id) -> MaterialLo
     return lot
 
 
+async def _create_released_product_version(
+    db, seeded, *, code: str, manufacturing_profile_code: str = "inhalation_ddcp",
+) -> ProductVersion:
+    # SG-175: every DDCP profile now needs a real, RELEASED Product Master version
+    # (`product_version_id`, migration 0089) -- "inhalation_ddcp" is Product Master's own
+    # manufacturing_profile_code value for this family (Document 09), the one the command layer
+    # actually checks a match against for this family (unlike Autoinjector/Coated device).
+    pv = ProductVersion(
+        product_business_id=f"PM-{code}", version_no=1, product_code=f"PM-{code}", name=f"Test product {code}",
+        manufacturing_profile_code=manufacturing_profile_code, lifecycle_state="released", site_id=seeded["site_id"],
+    )
+    db.add(pv)
+    await db.flush()
+    return pv
+
+
 async def _create_and_release_profile(db, seeded, actor_id, *, profile_code: str, subtype: str = "MDI", fill_route: str | None = "pressure_fill") -> DdcpProfileVersion:
+    product_version = await _create_released_product_version(db, seeded, code=profile_code)
     receipt = await inhalation_commands.create_inhalation_profile_version(
         db,
         inhalation_commands.CreateInhalationProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code=profile_code, subtype=subtype, fill_route=fill_route,
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=product_version.id,
+            profile_code=profile_code, subtype=subtype, fill_route=fill_route,
             constituent_requirements=[
                 {"constituent_type": "DRUG", "component_role": "formulation", "required_state": "RELEASED"},
                 {"constituent_type": "DEVICE", "component_role": "valve", "required_state": "RELEASED"},
@@ -333,11 +352,13 @@ async def test_propellant_and_powder_blend_constituents_captured(seeded, db):
     new constituent_type needed, matching Document 56's own §4 which names no distinct type for either)."""
 
     actor_id = seeded["users"]["ddcp.operator"].id
+    mdi_product = await _create_released_product_version(db, seeded, code="INH-MDI-PROPELLANT")
 
     mdi_receipt = await inhalation_commands.create_inhalation_profile_version(
         db,
         inhalation_commands.CreateInhalationProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code="INH-MDI-PROPELLANT", subtype="MDI", fill_route="pressure_fill",
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=mdi_product.id,
+            profile_code="INH-MDI-PROPELLANT", subtype="MDI", fill_route="pressure_fill",
             constituent_requirements=[
                 {"constituent_type": "DRUG", "component_role": "formulation", "required_state": "RELEASED"},
                 {"constituent_type": "DRUG", "component_role": "propellant", "required_state": "RELEASED"},
@@ -385,10 +406,12 @@ async def test_component_prep_verified_via_shared_sterilization_check(seeded, db
     role, via Document 42's real sterilization tracking, not a guessed/unverified capture."""
 
     actor_id = seeded["users"]["ddcp.operator"].id
+    compprep_product = await _create_released_product_version(db, seeded, code="INH-COMPPREP")
     profile_receipt = await inhalation_commands.create_inhalation_profile_version(
         db,
         inhalation_commands.CreateInhalationProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code="INH-COMPPREP", subtype="MDI", fill_route="pressure_fill",
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=compprep_product.id,
+            profile_code="INH-COMPPREP", subtype="MDI", fill_route="pressure_fill",
             constituent_requirements=[
                 {"constituent_type": "DRUG", "component_role": "formulation", "required_state": "RELEASED"},
                 {"constituent_type": "DEVICE", "component_role": "valve", "required_state": "STERILIZED"},
@@ -478,10 +501,12 @@ async def test_environment_gate_blocks_readiness_when_not_ready(seeded, db):
     environment_profile_id and the snapshot reports not-ready."""
 
     actor_id = seeded["users"]["ddcp.operator"].id
+    env_product = await _create_released_product_version(db, seeded, code="INH-ENV-1")
     profile_receipt = await inhalation_commands.create_inhalation_profile_version(
         db,
         inhalation_commands.CreateInhalationProfileVersionCommand(
-            idempotency_key=idem(), site_id=seeded["site_id"], profile_code="INH-ENV-1", subtype="DPI", fill_route="powder_dose_fill",
+            idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=env_product.id,
+            profile_code="INH-ENV-1", subtype="DPI", fill_route="powder_dose_fill",
             environment_profile_id="ENV-DPI-STANDARD",
             constituent_requirements=[{"constituent_type": "DRUG", "component_role": "formulation", "required_state": "RELEASED"}],
         ),

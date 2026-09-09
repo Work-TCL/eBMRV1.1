@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
@@ -21,9 +22,18 @@ from app.modules.recipe_master.commands import (
     validate_draft_command,
 )
 from app.mutation.errors import ValidationFailedError
+from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import MutationReceipt
+from app.modules.signature.service import create_challenge
 
 router = APIRouter(prefix="/recipes/v2", tags=["recipe_master"])
+
+
+class RecipeSignatureChallengeRequest(BaseModel):
+    action: str  # "release" -- the only signed recipe_version action today
+
+
+_CHALLENGE_MEANINGS = {"release": "Released"}
 
 
 def _version_dict(version) -> dict:
@@ -159,6 +169,33 @@ async def post_submit_draft(
         return await submit_draft(session, cmd, actor.user_id)
 
 
+@router.post("/drafts/{recipe_version_id}/signature-challenges")
+async def post_release_signature_challenge(
+    recipe_version_id: uuid.UUID,
+    body: RecipeSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Issue the Part 11 challenge for `POST .../release`. record_version + record_hash match
+    release_recipe_version()'s own consume_challenge call exactly (SIG-FR-012/013/014)."""
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="recipe.release", site_id=None)
+        version = await recipe_master_service.get_version(session, recipe_version_id)
+        meaning = _CHALLENGE_MEANINGS.get(body.action)
+        if meaning is None:
+            raise ValidationFailedError("Unknown or unsigned action", action=body.action)
+        challenge = await create_challenge(
+            session,
+            user_id=actor.user_id,
+            record_type="recipe_version",
+            record_id=version.id,
+            record_version=version.version,
+            record_hash=sha256_hex({"id": str(version.id), "version": version.version}),
+            meaning=meaning,
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
+
+
 @router.post("/drafts/{recipe_version_id}/release", response_model=MutationReceipt)
 async def post_release_draft(
     recipe_version_id: uuid.UUID,
@@ -171,6 +208,17 @@ async def post_release_draft(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="recipe.release", site_id=None)
         return await release_recipe_version(session, cmd, actor.user_id)
+
+
+@router.get("/families")
+async def get_families(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Top-level Recipe Master listing (recipe_master/service.py::list_recipe_families). Registered ahead
+    of `/{recipe_family_id}/versions` so "families" is never parsed as a recipe_family_id UUID."""
+    await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=None)
+    return await recipe_master_service.list_recipe_families(session)
 
 
 @router.get("/{recipe_family_id}/versions")

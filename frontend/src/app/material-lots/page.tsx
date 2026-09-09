@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   ApiError,
+  formatDateTime,
   listAll,
   newIdempotencyKey,
   type ListQuery,
@@ -12,7 +13,6 @@ import {
   type MutationReceipt,
   type Paged,
 } from "@/lib/api";
-import { useEffect } from "react";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -74,6 +74,8 @@ export default function MaterialLotsPage() {
         </span>
       ),
     },
+    { key: "received_at", header: "Received", sortable: true, render: (l) => formatDateTime(l.received_at) },
+    { key: "released_at", header: "Released", sortable: true, render: (l) => formatDateTime(l.released_at) },
     { key: "expiry_date", header: "Expiry", sortable: true, render: (l) => l.expiry_date ?? "—" },
     { key: "status", header: "Status", sortable: true, render: (l) => <MaterialLotStatePill status={l.status} /> },
     {
@@ -162,6 +164,8 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
   const [internalLot, setInternalLot] = useState("");
   const [supplierLot, setSupplierLot] = useState("");
   const [quantity, setQuantity] = useState("");
+  const [uom, setUom] = useState("");
+  const [uomTouched, setUomTouched] = useState(false);
   const [expiryDate, setExpiryDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -169,9 +173,22 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
   useEffect(() => {
     listAll<Material>("/materials").then((ms) => {
       setMaterials(ms);
-      if (ms.length) setMaterialId(ms[0].id);
+      if (ms.length) {
+        setMaterialId(ms[0].id);
+        setUom(ms[0].uom);
+      }
     });
   }, []);
+
+  // Switching material re-seeds the unit with that material's standard unit — but only while the
+  // operator hasn't overridden it, so picking "Liter" for this receipt survives a later material change.
+  function selectMaterial(id: string) {
+    setMaterialId(id);
+    if (!uomTouched) {
+      const material = materials.find((m) => m.id === id);
+      if (material) setUom(material.uom);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -187,7 +204,7 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
         internal_lot: internalLot,
         supplier_lot: supplierLot || null,
         received_quantity: quantity,
-        uom: material.uom,
+        uom: uom.trim() || material.uom,
         expiry_date: expiryDate || null,
       });
       onDone();
@@ -202,7 +219,7 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
     <Modal open onClose={onClose} title="Receive material lot">
       <form onSubmit={onSubmit}>
         <Field label="Material" required>
-          <Select value={materialId} onChange={(e) => setMaterialId(e.target.value)} required>
+          <Select value={materialId} onChange={(e) => selectMaterial(e.target.value)} required>
             {materials.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name} ({m.code})
@@ -220,10 +237,20 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
           <Field label="Received quantity" required>
             <Input value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
           </Field>
-          <Field label="Expiry date" hint="Optional.">
-            <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+          <Field label="Unit of measure" required hint="Defaults to the material's standard unit — change it if this lot was received in a different unit, e.g. L instead of mL.">
+            <Input
+              value={uom}
+              onChange={(e) => {
+                setUomTouched(true);
+                setUom(e.target.value);
+              }}
+              required
+            />
           </Field>
         </div>
+        <Field label="Expiry date" hint="Optional.">
+          <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+        </Field>
         {error && <p className="error-text mb-3">{error}</p>}
         <p className="hint mb-3">Received lots enter Quarantine automatically and cannot be issued until QC dispositions them.</p>
         <div className="flex justify-between gap-3 mt-2">
@@ -288,7 +315,8 @@ function DispositionModal({
   return (
     <Modal open onClose={onClose} title={`QC disposition — lot ${lot.internal_lot}`}>
       <Banner tone="info" title={`${lot.material_name} (${lot.material_code})`}>
-        {lot.received_quantity} {lot.uom} received{lot.expiry_date ? `, expires ${lot.expiry_date}` : ""}.
+        {lot.received_quantity} {lot.uom} received {lot.received_at ? formatDateTime(lot.received_at) : ""}
+        {lot.expiry_date ? `, expires ${lot.expiry_date}` : ""}.
       </Banner>
 
       <Field label="Decision" required>

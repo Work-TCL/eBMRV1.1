@@ -49,7 +49,7 @@ export default function SupplierCasesPage() {
     <>
       <QmsListPage<SupplierCase>
         title="Supplier cases"
-        subtitle="Document 33 — supplier quality cases and the SCARs issued against them."
+        subtitle="Supplier quality cases and the SCARs issued against them."
         path="/qms/v1/supplier-cases"
         columns={columns}
         states={CASE_STATES}

@@ -8,10 +8,16 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
+import { JsonPanel } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
+
+// em_models.py ALERT_ACTION_STATUSES
+const ALERT_ACTION_STATUSES = ["normal", "alert", "action_excursion"];
 
 // GET /em/v1/results/{sample_id}
 interface EmSample {
@@ -59,7 +65,7 @@ export default function EmPage() {
     <div>
       <PageHead
         title="Environmental monitoring"
-        subtitle="Document 41 — EM samples and readings: collection, result, excursion review and area readiness."
+        subtitle="EM samples and readings: collection, result, excursion review and area readiness."
       />
 
       <div className="grid grid-cols-2 gap-4 mb-4">
@@ -73,10 +79,10 @@ export default function EmPage() {
             e.preventDefault();
             load();
           }}
-          className="flex items-end gap-3"
+          className="flex flex-wrap items-end gap-3"
         >
           <Field label="EM sample / reading ID">
-            <Input value={sampleId} onChange={(e) => setSampleId(e.target.value)} style={{ minWidth: 320 }} />
+            <Input value={sampleId} onChange={(e) => setSampleId(e.target.value)} style={{ minWidth: 200, maxWidth: 320, width: "100%" }} />
           </Field>
           <Button type="submit" variant="secondary" disabled={loading || !sampleId.trim()}>
             <Icon name="search" /> {loading ? "Loading…" : "Open"}
@@ -98,8 +104,8 @@ export default function EmPage() {
               <Fact label="Alert / action status">
                 {sample.alert_action_status ? (
                   <StatePill
-                    state={sample.alert_action_status === "within_limits" ? "accepted" : "failed"}
-                    icon={sample.alert_action_status === "within_limits" ? "check-circle" : "alert-triangle"}
+                    state={sample.alert_action_status === "normal" ? "accepted" : "failed"}
+                    icon={sample.alert_action_status === "normal" ? "check-circle" : "alert-triangle"}
                   >
                     {sample.alert_action_status}
                   </StatePill>
@@ -108,11 +114,11 @@ export default function EmPage() {
                 )}
               </Fact>
               <Fact label="Requires deviation">{sample.requires_deviation ? "Yes" : "No"}</Fact>
-              <Fact label="Result">{sample.result ? JSON.stringify(sample.result) : "—"}</Fact>
               <Fact label="Record version">{sample.version}</Fact>
               <IdFact label="Program version" value={sample.program_version_id} />
               <IdFact label="Location" value={sample.location_id} />
             </FactGrid>
+            <JsonPanel title="Result" value={sample.result} />
           </Card>
 
           {canReview(me) && (
@@ -211,8 +217,8 @@ function CreateTaskCard({ siteId, onCreated }: { siteId: string | null; onCreate
 function RecordResultCard({ onDone }: { onDone: () => void }) {
   const [sampleId, setSampleId] = useState("");
   const [expectedVersion, setExpectedVersion] = useState("");
-  const [resultJson, setResultJson] = useState('{ "count": 0 }');
-  const [alertActionStatus, setAlertActionStatus] = useState("within_limits");
+  const [result, setResult] = useState<KvRow[]>([{ key: "count", value: "0" }]);
+  const [alertActionStatus, setAlertActionStatus] = useState("normal");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -227,14 +233,13 @@ function RecordResultCard({ onDone }: { onDone: () => void }) {
         idempotency_key: newIdempotencyKey(),
         sample_id: sampleId.trim(),
         expected_version: expectedVersion ? Number(expectedVersion) : null,
-        result: JSON.parse(resultJson),
+        result: buildKvObject(result),
         alert_action_status: alertActionStatus.trim(),
       });
       setDone(true);
       onDone();
     } catch (err) {
-      if (err instanceof SyntaxError) setError(`Invalid JSON: ${err.message}`);
-      else setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Record failed");
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Record failed");
     } finally {
       setBusy(false);
     }
@@ -250,11 +255,20 @@ function RecordResultCard({ onDone }: { onDone: () => void }) {
         <Field label="Expected version" hint="From the sample record.">
           <Input type="number" value={expectedVersion} onChange={(e) => setExpectedVersion(e.target.value)} />
         </Field>
-        <Field label="Result (JSON)" required>
-          <textarea className="input" rows={3} value={resultJson} onChange={(e) => setResultJson(e.target.value)} spellCheck={false} />
-        </Field>
+        <KeyValueRows
+          label="Result"
+          hint='The reading, e.g. "count" → 12, "unit" → cfu.'
+          value={result}
+          onChange={setResult}
+        />
         <Field label="Alert / action status" required>
-          <Input value={alertActionStatus} onChange={(e) => setAlertActionStatus(e.target.value)} required />
+          <Select value={alertActionStatus} onChange={(e) => setAlertActionStatus(e.target.value)}>
+            {ALERT_ACTION_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
         </Field>
         {error && <p className="error-text mt-2">{error}</p>}
         {done && <p className="fs-2 mt-2">Result recorded.</p>}
