@@ -2,7 +2,7 @@
 
 _Generated 2026-09-10 — do not hand-edit._
 
-**Overall:** 96/103 modules started · 0 released · 763/2965 requirements verified · 2504/9150 test cases executed
+**Overall:** 97/103 modules started · 0 released · 763/2965 requirements verified · 2504/9150 test cases executed
 
 ## Work packages
 
@@ -125,7 +125,7 @@ _Generated 2026-09-10 — do not hand-edit._
 | 97 | SPEC-ENG-001 | WP-00 | H | 36 | 0 | 65 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 | 98 | SPEC-ENG-002 | WP-00 | H | 36 | 0 | 74 | 0 | 0 | 0 | NOT_STARTED | — |
 | 99 | SPEC-ENG-003 | WP-00 | H | 30 | 0 | 69 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
-| 100 | SPEC-ENG-004 | WP-00 | H | 32 | 0 | 56 | 0 | 0 | 0 | NOT_STARTED | — |
+| 100 | SPEC-ENG-004 | WP-00 | H | 32 | 0 | 56 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 | 101 | SPEC-ENG-005 | WP-00 | H | 36 | 10 | 87 | 18 | 1 | 11 | IN_DEVELOPMENT | Claude Code |
 | 102 | SPEC-ENG-006 | WP-00 | H | 36 | 0 | 76 | 0 | 0 | 0 | NOT_STARTED | — |
 | 103 | SPEC-ENG-007 | WP-00 | H | 36 | 0 | 83 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
