@@ -1237,6 +1237,17 @@ SIGNATURE_POLICY_FLOOR = [
     # required_role_id/requires_independent_signer -- same bespoke pattern as close_deviation().
     # Stage 2 (rows 80-88): CAPA close, NCR disposition/verify/close, Change approve/verify/close.
     ("capa_record", "close", "Approved", "QA Releaser", True, True, True),  # Doc 106 section 9 row 80
+    # NCR -- verify is "Qualified independent verifier" ("MUST NOT be the performer") -> required_role
+    # None, independence enforced in code against `owner_subject_id` (NonconformanceRecord's only stored
+    # identity; no separate disposition-performer column -- same honest limitation as qa_review_package/complete).
+    ("nonconformance_record", "disposition", "Released", "QA Releaser", True, True, True),   # section 9 row 84
+    ("nonconformance_record", "verify", "Verified", None, True, True, False),                # section 9 row 85
+    ("nonconformance_record", "close", "Approved", "QA Releaser", True, True, True),         # section 9 row 83
+    # Change control -- approve is "Module approver role (QA Manager / Head of Quality)" -> QA Releaser
+    # (precedent: supplier_qualification/approve row 43); verify is "Qualified independent verifier".
+    ("change_control", "approve", "Approved", "QA Releaser", True, True, True),              # section 9 row 86
+    ("change_control", "verify", "Verified", None, True, True, False),                       # section 9 row 88
+    ("change_control", "close", "Approved", "QA Releaser", True, True, True),                # section 9 row 87
 ]
 
 # Document 20 (SPEC-MAT-002B) INV-FR-001/002: warehouse_location has no CRUD operation anywhere in

@@ -29,9 +29,33 @@ async def _make_admin(db, seeded, username):
 async def _setup(db, seeded, tag, *, signed=False):
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.chg{tag}")
-        for action in ("approve", "verify", "close"):
-            db.add(SignaturePolicy(record_type="change_control", action=action, meaning="Approved", signature_required=signed))
+        # SG-138 (2026-09-10): Document 106 section 9 rows 86/87/88 -- approve `Approved` by a
+        # "QA Releaser" independent of the author, verify `Verified` by a qualified independent verifier
+        # (no role), close `Approved` by a "QA Releaser" independent of the investigator/owner.
+        for action, meaning, role in (
+            ("approve", "Approved", "QA Releaser"),
+            ("verify", "Verified", None),
+            ("close", "Approved", "QA Releaser"),
+        ):
+            db.add(SignaturePolicy(
+                record_type="change_control", action=action, meaning=meaning, signature_required=signed,
+                required_role_id=(seeded["roles"][role].id if (signed and role) else None),
+                requires_independent_signer=signed,
+            ))
     return owner
+
+
+async def _indep_qa_releaser(db, seeded, username):
+    """A QA Releaser who is not the change control's owner (Document 106 section 9 independence)."""
+    async with db.begin():
+        user = User(
+            username=username, email=f"{username}@example.com", full_name="Indep QA Releaser",
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+    return user
 
 
 def _create_body(site_id, owner_id, **overrides):
@@ -329,19 +353,48 @@ async def test_cancellation(client, seeded, db):
 
 async def test_approve_requires_signature_when_policy_requires_it(client, seeded, db):
     owner = await _setup(db, seeded, "11", signed=True)
+    await _indep_qa_releaser(db, seeded, "qa.chg11")
     token = await login(client, "admin.chg11")
+    signer_token = await login(client, "qa.chg11")
     change_id = await _create(client, token, seeded["site_id"], owner.id)
     resp = await client.post(
         f"/qms/v1/changes/{change_id}/impact", json=_impact_body(change_id, 1), headers=auth_headers(token),
     )
     assert resp.status_code == 200, resp.text
+    # Independent QA Releaser, correct role, no challenge -> still MISSING_SIGNATURE.
     resp = await client.post(
         f"/qms/v1/changes/{change_id}/approve",
         json={"idempotency_key": idem(), "change_id": change_id, "expected_version": 2},
-        headers=auth_headers(token),
+        headers=auth_headers(signer_token),
     )
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
+
+
+async def test_approve_by_the_change_owner_is_refused_as_not_independent(client, seeded, db):
+    """Document 106 section 9 row 86: `change_control/approve` must be independent of the author. The
+    change owner holding QA Releaser still cannot sign their own approval."""
+    await _setup(db, seeded, "11b", signed=True)
+    qa_owner = await _indep_qa_releaser(db, seeded, "qa.chg11b")
+    token = await login(client, "admin.chg11b")
+    qa_token = await login(client, "qa.chg11b")
+    change_id = await _create(client, token, seeded["site_id"], qa_owner.id)
+    await client.post(f"/qms/v1/changes/{change_id}/impact", json=_impact_body(change_id, 1), headers=auth_headers(token))
+    challenge = (
+        await client.post(
+            f"/qms/v1/changes/{change_id}/signature-challenges", json={"action": "approve"}, headers=auth_headers(qa_token),
+        )
+    ).json()
+    resp = await client.post(
+        f"/qms/v1/changes/{change_id}/approve",
+        json={
+            "idempotency_key": idem(), "change_id": change_id, "expected_version": 2, "approval_notes": "self-approve",
+            "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "SOD_INDEPENDENCE_REQUIRED"
 
 
 async def test_close_fails_closed_when_signature_policy_unresolved(client, seeded, db):
@@ -460,7 +513,9 @@ async def test_signature_challenge_404_for_missing_change(client, seeded, db):
 
 async def test_signature_challenge_round_trip_signs_approve(client, seeded, db):
     owner = await _setup(db, seeded, "22", signed=True)
+    await _indep_qa_releaser(db, seeded, "qa.chg22")
     token = await login(client, "admin.chg22")
+    signer_token = await login(client, "qa.chg22")
     change_id = await _create(client, token, seeded["site_id"], owner.id)
     resp = await client.post(
         f"/qms/v1/changes/{change_id}/impact", json=_impact_body(change_id, 1), headers=auth_headers(token),
@@ -468,7 +523,7 @@ async def test_signature_challenge_round_trip_signs_approve(client, seeded, db):
     assert resp.status_code == 200, resp.text  # version 1 -> 2
 
     resp = await client.post(
-        f"/qms/v1/changes/{change_id}/signature-challenges", json={"action": "approve"}, headers=auth_headers(token),
+        f"/qms/v1/changes/{change_id}/signature-challenges", json={"action": "approve"}, headers=auth_headers(signer_token),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -480,7 +535,7 @@ async def test_signature_challenge_round_trip_signs_approve(client, seeded, db):
             "idempotency_key": idem(), "change_id": change_id, "expected_version": 2, "approval_notes": "approved for implementation",
             "challenge_id": body["challenge_id"], "reauth_password": DEMO_PASSWORD,
         },
-        headers=auth_headers(token),
+        headers=auth_headers(signer_token),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["signature_id"] is not None

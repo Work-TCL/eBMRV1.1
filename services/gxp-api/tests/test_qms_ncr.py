@@ -27,9 +27,33 @@ async def _make_admin(db, seeded, username):
 async def _setup(db, seeded, tag, *, signed=False):
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.ncr{tag}")
-        for action in ("disposition", "verify", "close"):
-            db.add(SignaturePolicy(record_type="nonconformance_record", action=action, meaning="Approved", signature_required=signed))
+        # SG-138 (2026-09-10): Document 106 section 9 rows 83/84/85 -- disposition `Released` by a
+        # "QA Releaser", verify `Verified` by a qualified independent verifier (no role), close `Approved`
+        # by a "QA Releaser"; all independent of the NCR owner/creator.
+        for action, meaning, role in (
+            ("disposition", "Released", "QA Releaser"),
+            ("verify", "Verified", None),
+            ("close", "Approved", "QA Releaser"),
+        ):
+            db.add(SignaturePolicy(
+                record_type="nonconformance_record", action=action, meaning=meaning, signature_required=signed,
+                required_role_id=(seeded["roles"][role].id if (signed and role) else None),
+                requires_independent_signer=signed,
+            ))
     return owner
+
+
+async def _indep_qa_releaser(db, seeded, username):
+    """A QA Releaser who is neither the NCR owner nor its creator (Document 106 section 9 independence)."""
+    async with db.begin():
+        user = User(
+            username=username, email=f"{username}@example.com", full_name="Indep QA Releaser",
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+    return user
 
 
 def _create_body(site_id, owner_id, **overrides):
@@ -226,9 +250,12 @@ async def test_disposition_rejects_unrecognized_type(client, seeded, db):
 
 async def test_disposition_requires_signature_when_policy_requires_it(client, seeded, db):
     owner = await _setup(db, seeded, "6", signed=True)
+    await _indep_qa_releaser(db, seeded, "qa.ncr6")
     token = await login(client, "admin.ncr6")
+    signer_token = await login(client, "qa.ncr6")
     ncr_id = await _create(client, token, seeded["site_id"], owner.id)
     next_version = await _segregate_and_evaluate(client, token, ncr_id)
+    # Independent QA Releaser, correct role, no challenge -> still MISSING_SIGNATURE.
     resp = await client.post(
         f"/qms/v1/nonconformances/{ncr_id}/disposition",
         json={
@@ -236,10 +263,40 @@ async def test_disposition_requires_signature_when_policy_requires_it(client, se
             "disposition_type": "SCRAP", "affected_scope": [{"record_type": "material_lot", "record_id": str(uuid.uuid4())}],
             "justification": "unrecoverable contamination",
         },
-        headers=auth_headers(token),
+        headers=auth_headers(signer_token),
     )
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
+
+
+async def test_disposition_by_the_ncr_owner_is_refused_as_not_independent(client, seeded, db):
+    """Document 106 section 9 row 84: `nonconformance_record/disposition` must be independent of every
+    production performer on the record. The owner holding QA Releaser still cannot sign it."""
+    await _setup(db, seeded, "6b", signed=True)
+    qa_owner = await _indep_qa_releaser(db, seeded, "qa.ncr6b")
+    token = await login(client, "admin.ncr6b")
+    qa_token = await login(client, "qa.ncr6b")
+    # admin drives the lifecycle; the NCR's owner_subject_id is the QA Releaser who then tries to sign.
+    ncr_id = await _create(client, token, seeded["site_id"], qa_owner.id)
+    next_version = await _segregate_and_evaluate(client, token, ncr_id)
+    challenge = (
+        await client.post(
+            f"/qms/v1/nonconformances/{ncr_id}/signature-challenges", json={"action": "disposition"},
+            headers=auth_headers(qa_token),
+        )
+    ).json()
+    resp = await client.post(
+        f"/qms/v1/nonconformances/{ncr_id}/disposition",
+        json={
+            "idempotency_key": idem(), "ncr_id": ncr_id, "expected_version": next_version,
+            "disposition_type": "SCRAP", "affected_scope": [{"record_type": "material_lot", "record_id": str(uuid.uuid4())}],
+            "justification": "self-disposition attempt",
+            "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "SOD_INDEPENDENCE_REQUIRED"
 
 
 async def test_close_fails_closed_when_signature_policy_unresolved(client, seeded, db):
@@ -384,16 +441,19 @@ async def test_signature_challenge_404_for_missing_ncr(client, seeded, db):
 
 async def test_signature_challenge_round_trip_signs_disposition(client, seeded, db):
     owner = await _setup(db, seeded, "14", signed=True)
+    await _indep_qa_releaser(db, seeded, "qa.ncr14")
     token = await login(client, "admin.ncr14")
+    signer_token = await login(client, "qa.ncr14")
     ncr_id = await _create(client, token, seeded["site_id"], owner.id)
     next_version = await _segregate_and_evaluate(client, token, ncr_id)
 
     resp = await client.post(
-        f"/qms/v1/nonconformances/{ncr_id}/signature-challenges", json={"action": "disposition"}, headers=auth_headers(token),
+        f"/qms/v1/nonconformances/{ncr_id}/signature-challenges", json={"action": "disposition"},
+        headers=auth_headers(signer_token),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["meaning"] == "Approved"
+    assert body["meaning"] == "Released"  # Document 106 section 9 row 84
 
     resp = await client.post(
         f"/qms/v1/nonconformances/{ncr_id}/disposition",
@@ -403,7 +463,7 @@ async def test_signature_challenge_round_trip_signs_disposition(client, seeded, 
             "justification": "return to supplier per receiving inspection failure",
             "challenge_id": body["challenge_id"], "reauth_password": DEMO_PASSWORD,
         },
-        headers=auth_headers(token),
+        headers=auth_headers(signer_token),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["signature_id"] is not None

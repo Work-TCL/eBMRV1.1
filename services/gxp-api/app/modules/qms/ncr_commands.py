@@ -22,6 +22,7 @@ from app.modules.qms.ncr_models import (
     NcrDisposition,
     NonconformanceRecord,
 )
+from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     DispositionNotAllowedError,
@@ -73,6 +74,15 @@ async def _resolve_signature(
     policy = await signature_service.resolve_signature_requirement(session, record_type="nonconformance_record", action=action)
     if not policy.signature_required:
         return None
+    # Document 106 section 9 rows 83/84/85: close/disposition are signed by a "QA Releaser" independent
+    # of the NCR's investigator/owner (Document 107 SOD-006 shape); verify is by a qualified independent
+    # verifier who "MUST NOT be the performer" (no dedicated role). NonconformanceRecord's only stored
+    # identity is `owner_subject_id`; there is no separate disposition-performer column, so verify reuses
+    # it as a best-effort independence check (same honest limitation recorded for qa_review_package/complete).
+    await enforce_signer_policy(
+        session, policy=policy, actor_user_id=actor_user_id, site_id=ncr.site_id,
+        action_label=f"ncr.{action}", disqualified_subject_ids=(ncr.owner_subject_id,),
+    )
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"Nonconformance '{action}' requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)
