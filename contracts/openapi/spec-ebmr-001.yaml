@@ -374,6 +374,54 @@ paths:
         '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
 
+  /recipes/v2/families:
+    get:
+      operationId: getRecipeFamilies
+      tags: [recipe_master]
+      summary: Top-level Recipe Master family listing
+      description: >
+        SG-081 read-side picker/list endpoint — added to the router after this contract's first version;
+        contracted here to close the CTRC-FR-001 gap. Response schema, not a closed payload.
+      x-requirement-ids: [RCP-FR-001, CTR-FR-012]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { type: array, items: { type: object, description: "One row." } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /recipes/v2/drafts/{recipe_version_id}/signature-challenges:
+    parameters:
+      - { name: recipe_version_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRecipeReleaseSignatureChallenge
+      tags: [recipe_master]
+      summary: Create the Part 11 signature challenge for this record's signed action(s)
+      description: >
+        Binds the challenge to the record id + current version + hash; a version change between
+        challenge and submission is rejected as "record changed" (SIG-FR-012/013/014). `action`
+        selects the Document 106 signature meaning.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecipeReleaseSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not a signed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -719,3 +767,22 @@ components:
         effective_to: { type: [string, "null"], format: date-time }
         challenge_id: { type: [string, "null"], format: uuid }
         reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    RecipeReleaseSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Body of the signature-challenge endpoint.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [release] }
+
+    SignatureChallengeResponse:
+      type: object
+      description: The challenge receipt returned by a signature-challenge endpoint (response schema, not closed).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }

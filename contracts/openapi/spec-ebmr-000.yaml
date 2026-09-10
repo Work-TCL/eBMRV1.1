@@ -365,6 +365,73 @@ paths:
         '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
 
+  /products/v1/business-ids:
+    get:
+      operationId: getProductBusinessIds
+      tags: [product_master]
+      summary: Product business-id / latest-version picker data
+      description: >
+        SG-081 read-side picker/list endpoint — added to the router after this contract's first version;
+        contracted here to close the CTRC-FR-001 gap. Response schema, not a closed payload.
+      x-requirement-ids: [PRD-FR-001, CTR-FR-012]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { type: array, items: { type: object, description: "One row." } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /products/v1/sterile-profiles:
+    get:
+      operationId: getSterileProfiles
+      tags: [product_master]
+      summary: Released sterile-process-profile picker data (PRD-FR-010)
+      description: >
+        SG-081 read-side picker/list endpoint — added to the router after this contract's first version;
+        contracted here to close the CTRC-FR-001 gap. Response schema, not a closed payload.
+      x-requirement-ids: [PRD-FR-010, CTR-FR-013]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: site_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { type: array, items: { type: object, description: "One row." } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /products/v1/{product_version_id}/signature-challenges:
+    parameters:
+      - { name: product_version_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postProductVersionSignatureChallenge
+      tags: [product_master]
+      summary: Create the Part 11 signature challenge for this record's signed action(s)
+      description: >
+        Binds the challenge to the record id + current version + hash; a version change between
+        challenge and submission is rejected as "record changed" (SIG-FR-012/013/014). `action`
+        selects the Document 106 signature meaning.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductVersionSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not a signed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -625,3 +692,22 @@ components:
         reason: { type: string, minLength: 1 }
         challenge_id: { type: [string, "null"], format: uuid }
         reauth_password: { type: [string, "null"], format: password, writeOnly: true }
+
+    ProductVersionSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Body of the signature-challenge endpoint.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [release] }
+
+    SignatureChallengeResponse:
+      type: object
+      description: The challenge receipt returned by a signature-challenge endpoint (response schema, not closed).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }

@@ -266,6 +266,26 @@ paths:
         '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
 
   /materials/v1/receipts:
+    get:
+      operationId: listMaterialReceipts
+      tags: [material]
+      summary: Paginated material-receipt list
+      description: >
+        SG-081 read-side picker/list endpoint — added to the router after this contract's first version;
+        contracted here to close the CTRC-FR-001 gap. Response schema, not a closed payload.
+      x-requirement-ids: [RCV-FR-001, CTR-FR-012]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer } }
+        - { name: page_size, in: query, required: false, schema: { type: integer } }
+        - { name: sort, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { type: array, items: { type: object, description: "One row." } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
     post:
       operationId: postCreateMaterialReceipt
       tags: [material]
