@@ -27,9 +27,28 @@ async def _make_admin(db, seeded, username):
 async def _setup(db, seeded, tag, *, signed=False):
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.scar{tag}")
-        for action in ("review", "close"):
-            db.add(SignaturePolicy(record_type="scar_record", action=action, meaning="Approved", signature_required=signed))
+        # SG-138 (2026-09-10): Document 106 section 9 rows 95/96 -- review `Reviewed` by a "QA Reviewer"
+        # independent of the performer; close `Approved` by a "QA Releaser" independent of the owner.
+        for action, meaning, role in (("review", "Reviewed", "QA Reviewer"), ("close", "Approved", "QA Releaser")):
+            db.add(SignaturePolicy(
+                record_type="scar_record", action=action, meaning=meaning, signature_required=signed,
+                required_role_id=(seeded["roles"][role].id if signed else None),
+                requires_independent_signer=signed,
+            ))
     return owner
+
+
+async def _indep_user(db, seeded, username, role_name):
+    """A signer holding `role_name` who is not the SCAR's internal owner (Document 106 section 9)."""
+    async with db.begin():
+        user = User(
+            username=username, email=f"{username}@example.com", full_name=role_name,
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"][role_name].id))
+    return user
 
 
 async def _create_supplier(client, token, code):
@@ -243,17 +262,20 @@ async def test_idempotent_replay_returns_same_receipt(client, seeded, db):
 
 async def test_close_requires_signature_when_policy_requires_it(client, seeded, db):
     owner = await _setup(db, seeded, "8", signed=True)
+    await _indep_user(db, seeded, "qa.scar8", "QA Reviewer")
     token = await login(client, "admin.scar8")
+    reviewer_token = await login(client, "qa.scar8")
     supplier_id = await _create_supplier(client, token, "SUP-SCAR-8")
     case_id = await _create_case(client, token, seeded["site_id"], supplier_id, owner.id)
     scar_id = await _issue_scar(client, token, case_id)
     await _respond(client, token, scar_id, 1)
+    # Independent QA Reviewer, correct role, no challenge -> still MISSING_SIGNATURE.
     resp = await client.post(
         f"/qms/v1/scars/{scar_id}/review",
         json={"idempotency_key": idem(), "scar_id": scar_id, "expected_version": 2, "decision": "accepted", "rationale": "ok"},
-        headers=auth_headers(token),
+        headers=auth_headers(reviewer_token),
     )
-    assert resp.status_code == 428, resp.text  # signed review also requires signature
+    assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
 
 
@@ -403,7 +425,9 @@ async def test_signature_challenge_404_for_missing_scar(client, seeded, db):
 
 async def test_signature_challenge_round_trip_signs_review(client, seeded, db):
     owner = await _setup(db, seeded, "22", signed=True)
+    await _indep_user(db, seeded, "qa.scar22", "QA Reviewer")
     token = await login(client, "admin.scar22")
+    reviewer_token = await login(client, "qa.scar22")
     supplier_id = await _create_supplier(client, token, "SUP-SCAR-22")
     case_id = await _create_case(client, token, seeded["site_id"], supplier_id, owner.id)
     scar_id = await _issue_scar(client, token, case_id)
@@ -411,11 +435,11 @@ async def test_signature_challenge_round_trip_signs_review(client, seeded, db):
     assert resp.status_code == 200, resp.text  # 1 -> 2
 
     resp = await client.post(
-        f"/qms/v1/scars/{scar_id}/signature-challenges", json={"action": "review"}, headers=auth_headers(token),
+        f"/qms/v1/scars/{scar_id}/signature-challenges", json={"action": "review"}, headers=auth_headers(reviewer_token),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["meaning"] == "Approved"
+    assert body["meaning"] == "Reviewed"  # Document 106 section 9 row 96
 
     resp = await client.post(
         f"/qms/v1/scars/{scar_id}/review",
@@ -424,7 +448,7 @@ async def test_signature_challenge_round_trip_signs_review(client, seeded, db):
             "rationale": "Root cause and CAPA are adequate.",
             "challenge_id": body["challenge_id"], "reauth_password": DEMO_PASSWORD,
         },
-        headers=auth_headers(token),
+        headers=auth_headers(reviewer_token),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["signature_id"] is not None

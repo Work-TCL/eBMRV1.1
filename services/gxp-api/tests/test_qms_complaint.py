@@ -46,10 +46,34 @@ async def _setup(db, seeded, tag, *, signed=False, reportability_signed=None):
     reportability_signed = signed if reportability_signed is None else reportability_signed
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.cmp{tag}")
-        db.add(SignaturePolicy(record_type="complaint_record", action="close", meaning="Approved", signature_required=signed))
-        db.add(SignaturePolicy(record_type="complaint_record", action="reportability", meaning="Approved", signature_required=reportability_signed))
+        # SG-138 (2026-09-10): Document 106 section 9 rows 101/102 -- close `Approved` by a "QA Releaser"
+        # (independent of the owner -- but ComplaintRecord stores no owner identity, so only the role is
+        # enforced); reportability `Approved` by a "Regulatory Affairs authorized submitter" -> the
+        # "Postmarket Regulatory Affairs" role, human-only (no person-independence rule).
+        db.add(SignaturePolicy(
+            record_type="complaint_record", action="close", meaning="Approved", signature_required=signed,
+            required_role_id=(seeded["roles"]["QA Releaser"].id if signed else None),
+            requires_independent_signer=signed,
+        ))
+        db.add(SignaturePolicy(
+            record_type="complaint_record", action="reportability", meaning="Approved",
+            signature_required=reportability_signed,
+            required_role_id=(seeded["roles"]["Postmarket Regulatory Affairs"].id if reportability_signed else None),
+        ))
         product_id = await _make_product(db, seeded)
     return owner, product_id
+
+
+async def _indep_user(db, seeded, username, role_name):
+    async with db.begin():
+        user = User(
+            username=username, email=f"{username}@example.com", full_name=role_name,
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"][role_name].id))
+    return user
 
 
 def _create_body(site_id, product_id, **overrides):
@@ -322,26 +346,30 @@ async def test_idempotent_replay_returns_same_receipt(client, seeded, db):
 
 async def test_reportability_requires_signature_when_policy_requires_it(client, seeded, db):
     owner, product_id = await _setup(db, seeded, "12", signed=False, reportability_signed=True)
+    await _indep_user(db, seeded, "ra.cmp12", "Postmarket Regulatory Affairs")
     token = await login(client, "admin.cmp12")
+    ra_token = await login(client, "ra.cmp12")
     complaint_id = await _create_complaint(client, token, seeded["site_id"], product_id)
     await _triage(client, token, complaint_id, 1)
     await _investigation_decision(client, token, complaint_id, 2, investigation_required=False, no_investigation_reason="No defect confirmed.")
 
-    resp = await _reportability(client, token, complaint_id, 3)
+    resp = await _reportability(client, ra_token, complaint_id, 3)
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
 
 
 async def test_close_requires_signature_when_policy_requires_it(client, seeded, db):
     owner, product_id = await _setup(db, seeded, "13", signed=True, reportability_signed=False)
+    await _indep_user(db, seeded, "qa.cmp13", "QA Releaser")
     token = await login(client, "admin.cmp13")
+    releaser_token = await login(client, "qa.cmp13")
     complaint_id = await _create_complaint(client, token, seeded["site_id"], product_id)
     await _triage(client, token, complaint_id, 1)
     await _investigation_decision(client, token, complaint_id, 2, investigation_required=False, no_investigation_reason="No defect confirmed.")
     await _reportability(client, token, complaint_id, 3)
     await _respond(client, token, complaint_id, 4)
 
-    resp = await _close(client, token, complaint_id, 5)
+    resp = await _close(client, releaser_token, complaint_id, 5)
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
 
@@ -393,7 +421,9 @@ async def test_signature_challenge_404_for_missing_complaint(client, seeded, db)
 
 async def test_signature_challenge_round_trip_signs_reportability(client, seeded, db):
     owner, product_id = await _setup(db, seeded, "22", signed=True)
+    await _indep_user(db, seeded, "ra.cmp22", "Postmarket Regulatory Affairs")
     token = await login(client, "admin.cmp22")
+    ra_token = await login(client, "ra.cmp22")
     complaint_id = await _create_complaint(client, token, seeded["site_id"], product_id)
     await _triage(client, token, complaint_id, 1)
     await _investigation_decision(
@@ -401,14 +431,15 @@ async def test_signature_challenge_round_trip_signs_reportability(client, seeded
     )
 
     resp = await client.post(
-        f"/qms/v1/complaints/{complaint_id}/signature-challenges", json={"action": "reportability"}, headers=auth_headers(token),
+        f"/qms/v1/complaints/{complaint_id}/signature-challenges", json={"action": "reportability"},
+        headers=auth_headers(ra_token),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["meaning"] == "Approved"
 
     resp = await _reportability(
-        client, token, complaint_id, 3, challenge_id=body["challenge_id"], reauth_password=DEMO_PASSWORD,
+        client, ra_token, complaint_id, 3, challenge_id=body["challenge_id"], reauth_password=DEMO_PASSWORD,
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["signature_id"] is not None

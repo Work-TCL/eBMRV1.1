@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import verify_password
 from app.modules.iam.models import User
 from app.modules.qms.internal_audit_models import AuditFinding, InternalAudit
+from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     AuditClosureBlockedError,
@@ -74,6 +75,18 @@ async def _resolve_signature(
     policy = await signature_service.resolve_signature_requirement(session, record_type=record_type, action=action)
     if not policy.signature_required:
         return None
+    # Document 106 section 9 rows 98/99/100: internal_audit/close is `Approved` by a "QA Releaser"
+    # independent of the investigator/owner (the audit's `lead_auditor_id`); internal_audit/start is
+    # `Performed` with no fixed role and no independence rule; audit_finding/verify is `Verified` by a
+    # qualified independent verifier who "MUST NOT be the performer" (the finding's `owner_subject_id`).
+    await enforce_signer_policy(
+        session, policy=policy, actor_user_id=actor_user_id, site_id=record.site_id,
+        action_label=f"{record_type}.{action}",
+        disqualified_subject_ids=(
+            getattr(record, "lead_auditor_id", None),
+            getattr(record, "owner_subject_id", None),
+        ),
+    )
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"{record_type} '{action}' requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)

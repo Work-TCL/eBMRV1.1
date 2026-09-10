@@ -802,6 +802,10 @@ ROLE_PERMISSIONS = {
     ],
     "Postmarket Regulatory Affairs": [
         "safety_case.view", "safety_signal.view", "safety_signal.escalate", "postmarket_dataset.freeze",
+        # SG-138 (2026-09-10, project-owner-directed): Document 106 section 9 rows 102/105's "Regulatory
+        # Affairs authorized submitter" signer class for the WP-05 QMS reportability assessments maps to
+        # this same role; grant the two QMS reportability actions so an actual holder can perform them.
+        "complaint.reportability", "field_action.reportability",
         # Document 106 rows 123/125/126/127/128's "Regulatory Affairs authorized submitter" signer class
         # (Document 59) -- this role is the operationalization of that signer class into an actual role.
         "reportability_track.create", "reportability_track.calculate_deadline", "reportability_track.view",
@@ -1248,6 +1252,22 @@ SIGNATURE_POLICY_FLOOR = [
     ("change_control", "approve", "Approved", "QA Releaser", True, True, True),              # section 9 row 86
     ("change_control", "verify", "Verified", None, True, True, False),                       # section 9 row 88
     ("change_control", "close", "Approved", "QA Releaser", True, True, True),                # section 9 row 87
+    # Stage 3 (rows 95-105): SCAR, internal audit, audit finding, complaint, field action.
+    # "Regulatory Affairs authorized submitter" (rows 102/105) -> the "Postmarket Regulatory Affairs"
+    # role, which is also granted complaint.reportability / field_action.reportability below (project-
+    # owner-directed 2026-09-10: "map to the Doc 106 class and grant the missing RBAC permission").
+    # complaint_record / field_action carry no owner identity column, so their close/approve independence
+    # checks have no data source -- role is enforced, the gap is documented (qa_review_package precedent).
+    ("scar_record", "review", "Reviewed", "QA Reviewer", True, True, False),                # section 9 row 96
+    ("scar_record", "close", "Approved", "QA Releaser", True, True, True),                   # section 9 row 95
+    ("internal_audit", "start", "Performed", None, False, True, False),                     # section 9 row 99
+    ("internal_audit", "close", "Approved", "QA Releaser", True, True, True),               # section 9 row 98
+    ("audit_finding", "verify", "Verified", None, True, True, False),                       # section 9 row 100
+    ("complaint_record", "reportability", "Approved", "Postmarket Regulatory Affairs", False, True, True),  # section 9 row 102
+    ("complaint_record", "close", "Approved", "QA Releaser", True, True, True),             # section 9 row 101
+    ("field_action", "reportability", "Approved", "Postmarket Regulatory Affairs", False, True, True),     # section 9 row 105
+    ("field_action", "approve", "Approved", "QA Releaser", True, True, True),               # section 9 row 103
+    ("field_action", "close", "Approved", "QA Releaser", True, True, True),                 # section 9 row 104
 ]
 
 # Document 20 (SPEC-MAT-002B) INV-FR-001/002: warehouse_location has no CRUD operation anywhere in

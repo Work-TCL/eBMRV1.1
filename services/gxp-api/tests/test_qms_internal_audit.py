@@ -34,10 +34,32 @@ async def _setup(db, seeded, tag, *, signed=False, close_signed=None, verify_sig
     verify_signed = signed if verify_signed is None else verify_signed
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.audit{tag}")
+        # SG-138 (2026-09-10): Document 106 section 9 rows 98/99/100 -- start `Performed` (no role, no
+        # independence), close `Approved` by a "QA Releaser" independent of the lead auditor, verify
+        # `Verified` by a qualified independent verifier (no role) who is not the finding owner.
         db.add(SignaturePolicy(record_type="internal_audit", action="start", meaning="Performed", signature_required=signed))
-        db.add(SignaturePolicy(record_type="internal_audit", action="close", meaning="Approved", signature_required=close_signed))
-        db.add(SignaturePolicy(record_type="audit_finding", action="verify", meaning="Verified", signature_required=verify_signed))
+        db.add(SignaturePolicy(
+            record_type="internal_audit", action="close", meaning="Approved", signature_required=close_signed,
+            required_role_id=(seeded["roles"]["QA Releaser"].id if close_signed else None),
+            requires_independent_signer=bool(close_signed),
+        ))
+        db.add(SignaturePolicy(
+            record_type="audit_finding", action="verify", meaning="Verified", signature_required=verify_signed,
+            requires_independent_signer=bool(verify_signed),
+        ))
     return owner
+
+
+async def _indep_user(db, seeded, username, role_name):
+    async with db.begin():
+        user = User(
+            username=username, email=f"{username}@example.com", full_name=role_name,
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"][role_name].id))
+    return user
 
 
 def _create_body(site_id, lead_auditor_id, **overrides):
@@ -280,7 +302,9 @@ async def test_start_requires_signature_when_policy_requires_it(client, seeded, 
 async def test_close_requires_signature_when_policy_requires_it(client, seeded, db):
     # start/verify unsigned, close signed -- isolates close()'s own Document 106 row 98 requirement.
     owner = await _setup(db, seeded, "13", signed=False, close_signed=True)
+    await _indep_user(db, seeded, "qa.audit13", "QA Releaser")
     token = await login(client, "admin.audit13")
+    releaser_token = await login(client, "qa.audit13")
     audit_id = await _create_audit(client, token, seeded["site_id"], owner.id)
     await _start_audit(client, token, audit_id, 1)
     resp = await _add_finding(client, token, audit_id, 2, owner.id)
@@ -288,7 +312,8 @@ async def test_close_requires_signature_when_policy_requires_it(client, seeded, 
     await _respond(client, token, finding_id, 1)
     await _verify(client, token, finding_id, 2)
 
-    resp = await _close(client, token, audit_id, 3)
+    # Independent QA Releaser, correct role, no challenge -> still MISSING_SIGNATURE.
+    resp = await _close(client, releaser_token, audit_id, 3)
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
 
@@ -296,14 +321,17 @@ async def test_close_requires_signature_when_policy_requires_it(client, seeded, 
 async def test_verify_requires_signature_when_policy_requires_it(client, seeded, db):
     # start/close unsigned, verify signed -- isolates verify()'s own Document 106 row 100 requirement.
     owner = await _setup(db, seeded, "14", signed=False, verify_signed=True)
+    await _indep_user(db, seeded, "qa.audit14", "QA Releaser")
     token = await login(client, "admin.audit14")
+    verifier_token = await login(client, "qa.audit14")
     audit_id = await _create_audit(client, token, seeded["site_id"], owner.id)
     await _start_audit(client, token, audit_id, 1)
     resp = await _add_finding(client, token, audit_id, 2, owner.id)
     finding_id = resp.json()["aggregate_id"]
     await _respond(client, token, finding_id, 1)
 
-    resp = await _verify(client, token, finding_id, 2)
+    # Independent verifier (not the finding owner), no challenge -> still MISSING_SIGNATURE.
+    resp = await _verify(client, verifier_token, finding_id, 2)
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
 
@@ -384,7 +412,9 @@ async def test_finding_signature_challenge_round_trip_signs_verify(client, seede
     # start/close unsigned so _start_audit() below can succeed without a challenge; verify_signed=True
     # is the actual behaviour under test.
     owner = await _setup(db, seeded, "24", signed=False, verify_signed=True)
+    await _indep_user(db, seeded, "qa.audit24", "QA Releaser")
     token = await login(client, "admin.audit24")
+    verifier_token = await login(client, "qa.audit24")
     audit_id = await _create_audit(client, token, seeded["site_id"], owner.id)
     resp = await _start_audit(client, token, audit_id, 1)
     assert resp.status_code == 200, resp.text  # 1 -> 2
@@ -395,14 +425,15 @@ async def test_finding_signature_challenge_round_trip_signs_verify(client, seede
     assert resp.status_code == 200, resp.text  # finding 1 -> 2
 
     resp = await client.post(
-        f"/qms/v1/findings/{finding_id}/signature-challenges", json={"action": "verify"}, headers=auth_headers(token),
+        f"/qms/v1/findings/{finding_id}/signature-challenges", json={"action": "verify"},
+        headers=auth_headers(verifier_token),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["meaning"] == "Verified"
 
     resp = await _verify(
-        client, token, finding_id, 2, challenge_id=body["challenge_id"], reauth_password=DEMO_PASSWORD,
+        client, verifier_token, finding_id, 2, challenge_id=body["challenge_id"], reauth_password=DEMO_PASSWORD,
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["signature_id"] is not None
