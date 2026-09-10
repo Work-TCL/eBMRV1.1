@@ -28,8 +28,28 @@ async def _make_admin(db, seeded, username):
 async def _setup(db, seeded, tag, *, signed=False):
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.capa{tag}")
-        db.add(SignaturePolicy(record_type="capa_record", action="close", meaning="Approved", signature_required=signed))
+        # SG-138 (2026-09-10): when the close signature is required, it carries Document 106 section 9
+        # row 80's real values -- signed by a "QA Releaser" independent of the CAPA owner.
+        db.add(SignaturePolicy(
+            record_type="capa_record", action="close", meaning="Approved", signature_required=signed,
+            required_role_id=seeded["roles"]["QA Releaser"].id if signed else None,
+            requires_independent_signer=signed,
+        ))
     return owner
+
+
+async def _indep_qa_releaser(db, seeded, username):
+    """A QA Releaser who is not the CAPA owner -- the independent signer Document 106 section 9 row 80
+    requires for `capa_record/close`."""
+    async with db.begin():
+        user = User(
+            username=username, email=f"{username}@example.com", full_name="Indep QA Releaser",
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+    return user
 
 
 def _create_body(site_id, owner_id, **overrides):
@@ -183,13 +203,16 @@ async def test_full_lifecycle_to_closed(client, seeded, db):
 
 async def test_close_requires_signature_when_policy_requires_it(client, seeded, db):
     owner = await _setup(db, seeded, "4", signed=True)
+    await _indep_qa_releaser(db, seeded, "qa.capa4")
     token = await login(client, "admin.capa4")
+    signer_token = await login(client, "qa.capa4")
     capa_id = await _create(client, token, seeded["site_id"], owner.id)
     next_version = await _advance_to_effectiveness_review(client, db, token, capa_id, owner.id)
+    # Independent QA Releaser, correct role, but no challenge -> still MISSING_SIGNATURE.
     resp = await client.post(
         f"/qms/v1/capas/{capa_id}/close",
         json={"idempotency_key": idem(), "capa_id": capa_id, "expected_version": next_version, "conclusion": "done"},
-        headers=auth_headers(token),
+        headers=auth_headers(signer_token),
     )
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
@@ -581,12 +604,14 @@ async def test_signature_challenge_404_for_missing_capa(client, seeded, db):
 
 async def test_signature_challenge_round_trip_signs_close(client, seeded, db):
     owner = await _setup(db, seeded, "26", signed=True)
+    await _indep_qa_releaser(db, seeded, "qa.capa26")
     token = await login(client, "admin.capa26")
+    signer_token = await login(client, "qa.capa26")
     capa_id = await _create(client, token, seeded["site_id"], owner.id)
     next_version = await _advance_to_effectiveness_review(client, db, token, capa_id, owner.id)
 
     resp = await client.post(
-        f"/qms/v1/capas/{capa_id}/signature-challenges", json={"action": "close"}, headers=auth_headers(token),
+        f"/qms/v1/capas/{capa_id}/signature-challenges", json={"action": "close"}, headers=auth_headers(signer_token),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -599,7 +624,33 @@ async def test_signature_challenge_round_trip_signs_close(client, seeded, db):
             "conclusion": "Effectiveness confirmed; CAPA closed.",
             "challenge_id": body["challenge_id"], "reauth_password": DEMO_PASSWORD,
         },
-        headers=auth_headers(token),
+        headers=auth_headers(signer_token),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["signature_id"] is not None
+
+
+async def test_close_by_the_capa_owner_is_refused_as_not_independent(client, seeded, db):
+    """Document 106 section 9 row 80: `capa_record/close` MUST be independent of the investigator/owner
+    (Document 107 SOD-006 shape). The CAPA owner holding QA Releaser still cannot sign their own close."""
+    await _setup(db, seeded, "27", signed=True)
+    qa_owner = await _indep_qa_releaser(db, seeded, "qa.capa27")
+    token = await login(client, "admin.capa27")
+    qa_token = await login(client, "qa.capa27")
+    capa_id = await _create(client, token, seeded["site_id"], qa_owner.id)
+    next_version = await _advance_to_effectiveness_review(client, db, token, capa_id, qa_owner.id)
+    challenge = (
+        await client.post(
+            f"/qms/v1/capas/{capa_id}/signature-challenges", json={"action": "close"}, headers=auth_headers(qa_token),
+        )
+    ).json()
+    resp = await client.post(
+        f"/qms/v1/capas/{capa_id}/close",
+        json={
+            "idempotency_key": idem(), "capa_id": capa_id, "expected_version": next_version, "conclusion": "self-close",
+            "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "SOD_INDEPENDENCE_REQUIRED"

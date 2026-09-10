@@ -19,13 +19,61 @@ every one of the 26 pairs this gap describes until Head of Quality + Regulatory 
 """
 
 import uuid
+from collections.abc import Iterable
 
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.iam.models import Role
+from app.modules.policy.service import effective_role_names
+from app.modules.signature.models import SignaturePolicy
 from app.modules.signature.service import create_challenge, resolve_signature_requirement
-from app.mutation.errors import ValidationFailedError
+from app.mutation.errors import RoleMissingError, SodIndependenceRequiredError, ValidationFailedError
 from app.mutation.hashing import sha256_hex
+
+
+async def enforce_signer_policy(
+    session: AsyncSession,
+    *,
+    policy: SignaturePolicy,
+    actor_user_id: uuid.UUID,
+    site_id: uuid.UUID | None,
+    action_label: str,
+    disqualified_subject_ids: Iterable[uuid.UUID | None] = (),
+) -> None:
+    """SG-138 policy-data half, 2026-09-10 (project-owner-directed, "follow the ebmr-edhr docs").
+
+    `resolve_signature_requirement()` itself does not read `required_role_id` /
+    `requires_independent_signer` -- the same limitation `release_recipe_version()` /
+    `release_product_version()` / `close_deviation()` each enforce by hand. This helper is the shared
+    version of that bespoke block for the WP-05 QMS modules whose Document 106 section 9 rows name a
+    required signer role and/or an independence rule:
+
+    * required role -- the signer must hold the role the policy names, at the record's site;
+    * independence -- for a `requires_independent_signer` policy, the signer must not be any of the
+      record's own disqualifying subjects (investigator / owner / author, per Document 106 section 9's
+      Independence column and the matching Document 107 IND rule). The caller passes the concrete
+      identity column(s) its record carries; where a record has no stored identity for a given
+      "MUST NOT be the performer" clause, the caller passes nothing for that clause and documents the
+      gap (same honest limitation already recorded for `qa_review_package/complete`).
+    """
+    if policy.required_role_id is not None:
+        required_role_name = await session.scalar(select(Role.name).where(Role.id == policy.required_role_id))
+        if required_role_name not in await effective_role_names(session, actor_user_id, site_id):
+            raise RoleMissingError(
+                f"{action_label} requires the signing role named by the signature policy",
+                action=action_label,
+                required_role=required_role_name,
+            )
+    if policy.requires_independent_signer:
+        disqualified = {s for s in disqualified_subject_ids if s is not None}
+        if actor_user_id in disqualified:
+            raise SodIndependenceRequiredError(
+                f"{action_label} must be independent of the record's investigator/owner/author "
+                "(Document 106 section 9 / Document 107)",
+                action=action_label,
+            )
 
 
 class SignatureChallengeRequest(BaseModel):

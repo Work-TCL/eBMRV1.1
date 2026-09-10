@@ -1221,6 +1221,22 @@ SIGNATURE_POLICY_FLOOR = [
     ("release_scope", "release", "Released", "QA Releaser", True, True, True),
     ("release_scope", "hold", "Released", "QA Releaser", True, True, True),
     ("release_scope", "reject", "Released", "QA Releaser", True, True, True),
+    # ---------------------------------------------------------------------------------------------------
+    # SG-138 policy-data half -- WP-05 QMS, from Document 106 section 9 rows 80-107, applied 2026-09-10
+    # (project-owner construction-baseline decision: "follow the ebmr-edhr docs"). Abstract signer classes
+    # map to concrete platform roles by the mapping already in force for ~40 rows above:
+    #   "QA Approver / Batch Release" and "QA Approver for the record class"  -> "QA Releaser"
+    #   "QA Reviewer"                                                         -> "QA Reviewer"
+    #   "Qualified independent verifier" ("MUST NOT be the performer")        -> None (perf!=verifier in code)
+    #   "Production Supervisor or qualified issuer"                           -> None (RBAC gates it)
+    #   "Regulatory Affairs authorized submitter"                            -> "Postmarket Regulatory Affairs" (+RBAC grant)
+    #   "Module approver role (QA Manager / Head of Quality per record class)" -> "QA Releaser" (precedent: supplier_qualification/approve row 43)
+    # requires_independent_signer=True rows are enforced in each module's own `_resolve_signature()` via
+    # the shared `qms/signature_support.py::enforce_signer_policy()` helper against the record's own
+    # investigator/owner/author identity column(s), since resolve_signature_requirement() does not read
+    # required_role_id/requires_independent_signer -- same bespoke pattern as close_deviation().
+    # Stage 2 (rows 80-88): CAPA close, NCR disposition/verify/close, Change approve/verify/close.
+    ("capa_record", "close", "Approved", "QA Releaser", True, True, True),  # Doc 106 section 9 row 80
 ]
 
 # Document 20 (SPEC-MAT-002B) INV-FR-001/002: warehouse_location has no CRUD operation anywhere in
