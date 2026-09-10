@@ -84,6 +84,19 @@ def test_bus_publish_allows_the_publisher_itself_and_the_gateway_helper() -> Non
     assert not any(f.endswith("eventbus/outbox.py") for f in flagged_files)
 
 
+def test_float_for_decimal_flags_mismatched_column() -> None:
+    findings = _findings_for("float_for_decimal")
+    hits = [f for f in findings if f["rule"] == "no-float-for-decimal-column"]
+    assert len(hits) == 1, hits
+    assert "quantity" in hits[0]["message"]
+
+
+def test_float_for_decimal_allows_correct_decimal_and_unrelated_float() -> None:
+    findings = _findings_for("float_for_decimal")
+    hits = [f for f in findings if f["rule"] == "no-float-for-decimal-column"]
+    assert all("weight" not in h["message"] and "confidence_score" not in h["message"] for h in hits)
+
+
 def test_real_codebase_is_clean() -> None:
     """The actual app/modules/ tree must pass all four checks today -- this is the blocking CI gate,
     not a ratchet, so there is no allowance for known-bad baseline entries here."""

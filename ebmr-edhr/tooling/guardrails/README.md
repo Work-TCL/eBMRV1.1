@@ -1,8 +1,8 @@
 # tooling/guardrails
 
-Runnable lint for four rows of [`docs/generated/34_ARCHITECTURE_GUARDRAIL_MATRIX.md`](../../docs/generated/34_ARCHITECTURE_GUARDRAIL_MATRIX.md),
+Runnable lint for five rows of [`docs/generated/34_ARCHITECTURE_GUARDRAIL_MATRIX.md`](../../docs/generated/34_ARCHITECTURE_GUARDRAIL_MATRIX.md),
 matching the four CLAUDE.md §9 hard prohibitions named explicitly in the Phase 2 backbone ratchet
-(`PHASE_2_BACKBONE.md` §4 item 6):
+(`PHASE_2_BACKBONE.md` §4 item 6) plus the optional item 5 (float-in-regulated-code lint rule):
 
 | check | guardrail_id | CLAUDE.md §9 line |
 |---|---|---|
@@ -10,6 +10,7 @@ matching the four CLAUDE.md §9 hard prohibitions named explicitly in the Phase 
 | `no-set-value-equivalent` | AG-06 | "No `frappe.db.set_value()` (or equivalent) on regulated data." |
 | `no-generic-crud-endpoint` | AG-06 | "No generic CRUD or `PATCH /regulated-record/{id}` style endpoint." |
 | `no-bus-publish-without-outbox` | AG-09 | "No publishing to the bus without a committed outbox row." |
+| `no-float-for-decimal-column` | AG-04 | "No binary float for a regulated quantity." |
 
 ## Run it
 
@@ -49,6 +50,12 @@ walked first to find where the real line is:
   with no typed Command parameter at all.
 - `no-bus-publish-without-outbox` allows exactly three files to call `publish_outbox_event` directly (the
   publisher's own two files plus its caller in `app/main.py`); every other call site is a finding.
+- `no-float-for-decimal-column` does **not** flag `float` fields in general — engineering timing/duration
+  floats (`retry_after_seconds`, `timeout_seconds`, etc.) are pervasive and legitimate throughout
+  `app/modules/erp/reliability.py` and similar files. It flags only the one unambiguous, zero-false-
+  positive shape: an ORM column whose database type is `Numeric`/`DECIMAL` but whose `Mapped[...]`
+  annotation says `float` instead of `Decimal` — a self-contradictory declaration that found one real bug
+  (`qms.NcrDisposition.quantity`, fixed alongside this check).
 
 ## Tests
 

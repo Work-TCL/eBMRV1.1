@@ -35,6 +35,7 @@ in this codebase) -- so CLOSED is a genuine terminal state here.
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -123,7 +124,7 @@ class NcrDisposition(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     ncr_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.nonconformance_record.id"), nullable=False)
     affected_scope: Mapped[list] = mapped_column(JSONB, nullable=False)
-    quantity: Mapped[float | None] = mapped_column(Numeric(18, 6))
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     serials: Mapped[list | None] = mapped_column(JSONB)
     disposition_type: Mapped[str] = mapped_column(String(20), nullable=False)
     justification: Mapped[str] = mapped_column(Text, nullable=False)

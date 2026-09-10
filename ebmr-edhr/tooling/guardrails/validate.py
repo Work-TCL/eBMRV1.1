@@ -42,6 +42,19 @@ CLAUDE.md Sec 9 hard prohibition:
       must go through `write_outbox_event` (`app/mutation/gateway.py`), which writes the outbox row in
       the same PostgreSQL transaction as the domain state and audit event (MUT-FR-015/018).
 
+  no-float-for-decimal-column
+      ADR-0007 / Doc 110 CALC-FR-001 / CLAUDE.md Sec 9 "No binary float for a regulated quantity." Full
+      generality (any `float` field anywhere) can't be told apart statically from the pervasive, legitimate
+      use of `float` for engineering timing/duration values (`retry_after_seconds`, `timeout_seconds` and
+      similar, all through `app/modules/erp/reliability.py` and friends) -- so this check is deliberately
+      narrower and has zero false-positive risk: it flags only an ORM column whose *database* type is
+      explicitly `Numeric`/`DECIMAL` (the author's own declared intent: exact decimal storage) but whose
+      Python-side `Mapped[...]` annotation says `float` instead of `Decimal`. That exact, internally
+      self-contradictory shape found one real bug in app/ (`qms.NcrDisposition.quantity`, fixed in the
+      same commit this check was added) -- SQLAlchemy hands the application a lossy binary float on every
+      read despite the column being stored as an exact decimal, silently defeating DATA-FR-019 downstream
+      of the DB layer.
+
 Exit code 0 when clean, 1 otherwise. Findings are evidence: this script reports what it sees.
 
 SCOPE NOTE (disclosed, not a silent limitation): these are static, syntax-level AST checks, not a full
@@ -389,11 +402,74 @@ def check_no_bus_publish_without_outbox(
                     )
 
 
+# ---- check E: no-float-for-decimal-column --------------------------------------------------------------
+
+
+def _annotation_mentions_float(ann: ast.expr | None) -> bool:
+    if ann is None:
+        return False
+    return any(isinstance(n, ast.Name) and n.id == "float" for n in ast.walk(ann))
+
+
+_DECIMAL_COLUMN_TYPES = {"Numeric", "DECIMAL", "Decimal"}
+
+
+def _mapped_column_uses_decimal_type(value: ast.expr | None) -> bool:
+    if value is None or not isinstance(value, ast.Call):
+        return False
+    chain = _call_chain(value.func)
+    if not chain or chain[-1] != "mapped_column":
+        return False
+    for arg in list(value.args) + [kw.value for kw in value.keywords]:
+        if isinstance(arg, ast.Call):
+            arg_chain = _call_chain(arg.func)
+            if arg_chain and arg_chain[-1] in _DECIMAL_COLUMN_TYPES:
+                return True
+    return False
+
+
+def check_no_float_for_decimal_column(
+    findings: Findings, files: list[Path], modules_root: Path, app_root: Path
+) -> None:
+    """AG-04/Doc 110 CALC-FR-001, ADR-0007: 'a lint rule forbidding float/double precision/real on any
+    regulated quantity column'. Full-generality (any float column anywhere) can't be told apart
+    statically from an ordinary engineering timing/duration float (`retry_after_seconds`, `timeout_seconds`
+    and similar float fields are pervasive and legitimate throughout app/modules/*/{reliability,provider,
+    read_routing,appsec}.py -- not regulated quantities). This check is deliberately narrower and has no
+    false-positive risk: it flags the one shape that is unambiguously wrong regardless of field name --
+    an ORM column whose *database* type is explicitly `Numeric`/`DECIMAL` (the author's own declared
+    intent: exact decimal storage) but whose *Python*-side `Mapped[...]` annotation says `float` instead
+    of `Decimal`. That mismatch found one real instance in app/ (qms.ncr_disposition.quantity, fixed in
+    this same commit) -- SQLAlchemy hands the application a lossy binary float on every read despite the
+    column being stored as an exact decimal, silently defeating DATA-FR-019 downstream of the DB layer."""
+    for f in files:
+        if f.name != "models.py" and not f.name.endswith("_models.py"):
+            continue
+        tree = _parse(f)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.AnnAssign)
+                and _annotation_mentions_float(node.annotation)
+                and _mapped_column_uses_decimal_type(node.value)
+            ):
+                target = node.target.id if isinstance(node.target, ast.Name) else "?"
+                findings.add(
+                    "no-float-for-decimal-column",
+                    _relpath(f, app_root),
+                    node.lineno,
+                    f"'{target}' is Mapped[float] but its column type is Numeric/DECIMAL -- use "
+                    "Mapped[Decimal] (DATA-FR-019: no binary float for a regulated quantity).",
+                )
+
+
 CHECKS = {
     "no-cross-module-write": check_no_cross_module_write,
     "no-set-value-equivalent": check_no_set_value_equivalent,
     "no-generic-crud-endpoint": check_no_generic_crud_endpoint,
     "no-bus-publish-without-outbox": check_no_bus_publish_without_outbox,
+    "no-float-for-decimal-column": check_no_float_for_decimal_column,
 }
 
 

@@ -7,6 +7,7 @@ Documents 26/27 (see ncr_models.py's module docstring and docs/generated/18_SPEC
 
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -276,7 +277,7 @@ class DispositionNcrCommand(CommandEnvelope):
     disposition_type: str
     affected_scope: list[dict]
     justification: str
-    quantity: float | None = None
+    quantity: Decimal | None = None
     serials: list[str] | None = None
     rework_route: dict | None = None
     follow_up_test_requirements: dict | None = None
