@@ -647,14 +647,46 @@ Execution is staged; each stage commits only when its own tests are green.
 **Still fail-closed after Stage 1** (verified in `ebmr_new_gxp`): `vault_object/release`,
 `record_correction/complete`, `rule/release`, `product_version/reinstate`.
 
-### Stages 2–5 — pending
+### Stages 2–5 — DONE (all committed 2026-09-10)
 
-| Stage | Scope |
-|---|---|
-| 2 | SG-138 batch A: `capa/close`, `ncr/disposition+verify+close`, `change/approve+verify+close` (Doc 106 §9 rows 80–88) — seed + generalise each module's `_resolve_signature()` to enforce `required_role_id` + `requires_independent_signer` (the `deviation_record` pattern) + test updates |
-| 3 | SG-138 batch B: `complaint`, `scar`, `field_action`, `internal_audit`, `audit_finding` (rows 95–105) + RBAC grants `complaint.reportability` / `field_action.reportability` → `Postmarket Regulatory Affairs` |
-| 4 | SG-138 batch C: `controlled_document_version/release`, `risk_record/review`, `quality_metric_definition/release`, `quality_metric_snapshot/management_review` (rows 89, 97, 106, 107) + RBAC grant `quality_metric.management_review` → `QA Reviewer` |
-| 5 | SG-035 `vault_object/release` (Doc 106 §9 row 2) + `rule/release` (row 6) — bespoke `required_role_id` + independence enforcement in `create_vault_release()` / `release_rule()` |
+Shared mechanism: **`signature_service.enforce_signer_policy()`** (added to
+`app/modules/signature/service.py`; re-exported from `app/modules/qms/signature_support.py` so the
+12 QMS command modules' imports are unchanged) — the role + independence check that
+`resolve_signature_requirement()` does not do, generalising the bespoke block already in
+`close_deviation()` / `release_recipe_version()`. Where a record has no stored owner/performer identity
+for the independence clause (`complaint_record`, `field_action`, `scar_record`,
+`quality_metric_snapshot`, the generic `vault_object` release, `rule` release), **only the required
+role is enforced and the independence gap is documented** — the same honest limitation already recorded
+for `qa_review_package/complete`.
+
+| Stage | Commit | Pairs applied (Doc 106 §9 row) | Live DB |
+|---|---|---|---|
+| **2a** | `6992774` | `capa_record/close` (80) | `sync_signature_policies.py` → 85 rows |
+| **2b/2c** | `40e77a7` | `nonconformance_record/{disposition,verify,close}` (84/85/83), `change_control/{approve,verify,close}` (86/88/87) | → 91 rows |
+| **3** | `8ef320b` | `scar_record/{review,close}` (96/95), `internal_audit/{start,close}` (99/98), `audit_finding/verify` (100), `complaint_record/{reportability,close}` (102/101), `field_action/{reportability,approve,close}` (105/103/104) | → 101 rows |
+| **4** | `61f1dbb` | `controlled_document_version/release` (89), `risk_record/review` (97), `quality_metric_definition/release` (106), `quality_metric_snapshot/management_review` (107) | → 105 rows |
+| **5** | `bf01d16` | **SG-035** `vault_object/release` (2), `rule/release` (6) | → 107 rows |
+
+RBAC grants added (project-owner-directed "map to the Doc 106 class and grant the missing permission"):
+`Postmarket Regulatory Affairs` role given `complaint.reportability` + `field_action.reportability`;
+`QA Reviewer` given `quality_metric.management_review`; `QA Releaser` given `rules.release` (was
+Admin-only). All mirrored in `scripts/seed.py` + `tests/conftest.py`; `sync_permissions.py` applied
+them to `ebmr_new_gxp`.
+
+New signature-challenge endpoints (routers that had none): `POST /rules/v1/{id}/signature-challenges`,
+`POST /vault/v1/masters/{type}/{id}/signature-challenges`.
+
+**SG-138 result: all 21 Document 106 §9 pairs it left open are applied.** Only the 3
+`training_assignment` "per policy lookup" pairs remain (deferred below).
+**SG-035 result: `product_version/{release,suspend}`, `recipe_version/release`, `vault_object/release`,
+`rule/release` all resolved.** Only `record_correction/complete` and `product_version/reinstate` remain
+(deferred below).
+
+Per-stage tests (independent runs, each with an untouched-module control): 2a 45✓ · 2b/2c 61✓ · 3 91✓
+(after a conftest `QA Reviewer` grant alignment + a `ScarRecord` identity-column fix) · 4 61✓ · 5 45✓
++ 1 pre-existing order-dependent isolation failure
+(`test_vault.py::test_concurrent_release_same_business_id_raises_clean_conflict`, `assert 2 == 1` —
+proven pre-existing on a clean tree in STEP 2; no signature path; passes in full-suite ordering).
 
 ### Deferred — documented, NOT applied (project-owner-directed 2026-09-10)
 

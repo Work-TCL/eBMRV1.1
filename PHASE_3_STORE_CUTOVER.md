@@ -295,3 +295,42 @@ explicitly deferred and out of M1, not blockers.
 **Recommendation:** hand the four gaps to Quality as one consolidated decision package (the seed
 mechanism, `scripts/sync_signature_policies.py`, is ready to execute the moment the rows are approved).
 Do **not** start Phase 4 in this pass.
+
+---
+
+## Update — 2026-09-10 (later): Quality/PO decisions ratified and applied
+
+The project owner ratified the hand-off (`PHASE_3_QUALITY_HANDOFF.md`) as a **construction-baseline
+decision** ("follow the ebmr-edhr docs; ask where they have no answer"), and engineering applied it in
+5 committed stages (`14d7e05`, `6992774`, `40e77a7`, `8ef320b`, `61f1dbb`, `bf01d16`). The §6 verdict
+above is superseded for three of the four gaps:
+
+| Gap | New status |
+|---|---|
+| **SG-145** | **RESOLVED** — Doc 110 §2 "(PROPOSED)" treated as an editorial artefact inside APPROVED v1.0 (option B). No code change; customer Part 11 record against §2 still captured at PQ. |
+| **SG-138** | **21 of 24 open pairs APPLIED** from Document 106 §9 rows 80–107 (CAPA/NCR/change/complaint/scar/field-action/internal-audit/audit-finding/document/risk/quality-metrics). Shared enforcement via `signature_service.enforce_signer_policy()`. Only the 3 `training_assignment` "per policy lookup" pairs remain — deferred (Document 106 defers the value). |
+| **SG-035** | **`product_version/{release,suspend}`, `recipe_version/release`, `vault_object/release`, `rule/release` all RESOLVED** (rows 9/2/6 applied this pass). Only `record_correction/complete` (Doc 106 row 1 needs a 2-signature ceremony the platform lacks) and `product_version/reinstate` (no Doc 106 row) remain — deferred. |
+| **SG-167** | **Unchanged — deferred.** Document 105 is outside Document 106 §2's "Documents 03–60" scope; zero SPEC-AI-001 rows. No non-AI impact. Needs a Document 106 extension (Quality + Security Owner). |
+
+**Live DB `ebmr_new_gxp`:** `signature.signature_policies` 83 → **107 rows**; `sync_permissions.py`
+added 4 role grants.
+
+**Verification:** each stage ran its own test set + an untouched-module control (2a 45✓, 2b/2c 61✓,
+3 91✓, 4 61✓, 5 45✓ + the 1 pre-existing order-dependent isolation failure noted below); a
+consolidated regression across all touched modules ran after Stage 5.
+
+**Remaining engineering-closable Phase 3 items: none.** What is left is:
+- **Deferred by project-owner decision** (Document 106 does not supply the value): SG-138
+  `training_assignment` ×3, SG-035 `record_correction/complete` + `product_version/reinstate`, SG-167 ×5.
+- The pre-existing order-dependent test
+  `test_vault.py::test_concurrent_release_same_business_id_raises_clean_conflict` (TEST-FR-017/030) —
+  fails `assert 2 == 1` in small subsets, passes in full-suite ordering; no signature path; proven
+  pre-existing on a clean tree in STEP 2.
+- Non-M1 / Phase 5 items unchanged (17 WP-06/07/08 contracts baselined, DDCP 3d, scaffold drop 3e,
+  frontend retarget, `ruff --fix` PR, test-DB rebuild).
+
+**Phase 3 verdict (revised):** the engineering scope is complete **and** every Quality/PO decision is
+now either **applied** (SG-145, SG-035 for 5 pairs, SG-138 for 21 pairs) or **explicitly documented as
+deferred with the reason** (SG-167, SG-138 ×3, SG-035 ×2). Per the original STEP 8 criterion — "do not
+close Phase 3 until all required Quality decisions are either approved and applied or explicitly
+documented as deferred" — **Phase 3 can now be marked complete.** Phase 4 not started.

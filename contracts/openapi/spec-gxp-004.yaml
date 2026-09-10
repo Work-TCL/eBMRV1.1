@@ -93,6 +93,42 @@ paths:
         '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
         '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
 
+  /vault/v1/masters/{object_type}/{business_id}/signature-challenges:
+    parameters:
+      - name: object_type
+        in: path
+        required: true
+        schema: { type: string, maxLength: 100 }
+      - name: business_id
+        in: path
+        required: true
+        schema: { type: string, maxLength: 160 }
+    post:
+      operationId: postVaultReleaseSignatureChallenge
+      tags: [vault]
+      summary: Create the Part 11 signature challenge for the generic vault master release (Document 106 §9 row 2)
+      description: >
+        SG-035 (2026-09-10). The vault object does not exist yet, so the challenge is bound to
+        `sha256_hex(canonical_payload)` at version 1 (signed-CREATE style) — the same hash
+        `create_vault_release()` re-computes at consume time. `action` selects the Document 106
+        signature meaning (`Released`).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012, VLT-FR-001]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VaultReleaseSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422':
+          description: VALIDATION_FAILED — `action` is not a signed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
   /vault/v1/objects/{object_id}:
     parameters:
       - name: object_id
@@ -257,6 +293,28 @@ components:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
 
   schemas:
+    VaultReleaseSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Body of the vault master-release signature-challenge endpoint (SG-035).
+      x-requirement-ids: [SIG-FR-005]
+      required: [action, canonical_payload]
+      properties:
+        action: { type: string, enum: [release], default: release }
+        canonical_payload:
+          type: object
+          description: The same canonical payload the subsequent release will submit; the challenge binds to its SHA-256.
+
+    SignatureChallengeResponse:
+      type: object
+      description: The challenge receipt returned by a signature-challenge endpoint (response schema, not closed).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
     VaultObject:
       type: object
       description: >
