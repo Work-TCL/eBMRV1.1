@@ -21,7 +21,9 @@ os.environ.setdefault(
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+from app.core.config import settings
 
 from app.core.db import SessionLocal
 from app.core.security import hash_password
@@ -305,13 +307,27 @@ APP_TABLES = [
     "iam.organizations",
 ]
 
+# Truncated via the migration role, not the runtime app role: `signature.signatures`/`audit.audit_events`
+# are deliberately append-only for the app role (AG-08, migration 0002 revokes UPDATE/DELETE on both, and
+# this project correctly does not grant them TRUNCATE either -- see migration 0094). Postgres's `TRUNCATE
+# ... CASCADE` semantics force the issue for the *whole* combined statement, not just those two tables:
+# `signature.signatures` carries an FK to `iam.users`, so truncating `iam.users` (needed for cleanup, and
+# granted to the app role by migration 0094) would itself need to cascade into `signatures` and fail the
+# same way. Rather than hand-picking which subset of the 252-table cleanup list happens to chain into an
+# append-only table via some FK path (fragile and silently stale the next time a schema changes), the
+# whole cleanup truncate runs as the migration role, which owns every table. This is pure test-harness
+# reset plumbing, not part of what any test exercises -- the actual command handlers under test still run
+# through `SessionLocal`/the app role exactly as in production; only this between-test reset is
+# privileged, the same pattern test_audit_review.py/test_vault.py/test_batch_flow.py already use for
+# other test-only operations that must bypass the app role's restricted grants.
+_migration_engine = create_async_engine(settings.migration_database_url)
+
 
 @pytest.fixture(autouse=True)
 async def clean_database():
     """Full truncate between tests. Simple and correct beats clever for a small test suite."""
-    async with SessionLocal() as session:
-        async with session.begin():
-            await session.execute(text(f"TRUNCATE {', '.join(APP_TABLES)} CASCADE"))
+    async with _migration_engine.begin() as conn:
+        await conn.execute(text(f"TRUNCATE {', '.join(APP_TABLES)} CASCADE"))
     yield
 
 

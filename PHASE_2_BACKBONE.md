@@ -89,25 +89,86 @@ The ruff floor found 3 real issues the gate ignores for now (each `noqa`-free so
 
 ## 4. Ratchet plan (open Phase 2 work)
 
-1. **First cleanup PR** — `ruff check app scripts --fix` (clears ~78 `F401`/`I001`), then remove
-   `F401,F841` from the CI floor's ignore list. Reviewed by `@gxp-core-lead` (regulated tree).
-2. Fix the 3 bugs in §3; remove `F811,F821` from the ignore list.
+1. ✅ **DONE 2026-09-10** — **First cleanup PR** — `ruff check app scripts --select F401,I001 --fix`
+   (85 files, pure import removal + sort) + hand-fixed the 14 `F841` findings the autofixer can't reach,
+   then removed `F401,F841` from the CI floor's ignore list (`F811,F821` were already clean — the 3 bugs
+   in §3 above were fixed before this pass). Floor is now the unqualified `ruff check app scripts
+   --select F`. Verified: representative slice (test_batch_execution, test_qms_capa, test_rules,
+   test_vault, test_contract_conformance, test_eventbus_outbox_consumer) 131/131 passed, 0 behavioural
+   change.
+2. Fix the 3 bugs in §3; remove `F811,F821` from the ignore list. *(Already done — see item 1: F811/F821
+   were clean going into this pass, so the ignore list needed only the F401/F841 removal.)*
 3. Ratchet the full ruff ruleset from report-only → blocking (E/W/I/UP/SIM/RUF), file group by file group.
 4. Ratchet `mypy` toward `--strict` (ADR-0007 target): enable `disallow_untyped_defs`,
    `disallow_any_generics`, … as the baseline clears.
-5. Add the **`float`-in-regulated-code lint rule** (ADR-0007 consequence; Doc 110 CALC-FR-001).
-6. Codify **`tooling/guardrails/`** — the `34_ARCHITECTURE_GUARDRAIL_MATRIX.md` checks (no cross-module
-   repo import, no `frappe.db.set_value` equivalent, no generic CRUD endpoint, no bus publish without an
-   outbox row) as runnable lint.
+5. ✅ **DONE 2026-09-10** — Added the **`float`-in-regulated-code lint rule** (ADR-0007 consequence; Doc
+   110 CALC-FR-001) as a 5th check in `ebmr-edhr/tooling/guardrails/validate.py`
+   (`no-float-for-decimal-column`), wired into the same CI steps as items 3/6. Deliberately narrower than
+   "any float field" (engineering timing/duration floats are pervasive and legitimate throughout
+   `app/modules/erp/reliability.py` and similar) — flags only an ORM column whose database type is
+   `Numeric`/`DECIMAL` but whose `Mapped[...]` annotation says `float`, which has zero false-positive
+   risk and found one real bug: `qms.NcrDisposition.quantity` (+ its `DispositionNcrCommand.quantity`
+   Pydantic counterpart) was `float` end-to-end despite the column being `Numeric(18, 6)` — fixed to
+   `Decimal` in both places, matching the `Decimal`-field convention already used everywhere else in the
+   codebase (CTR-FR-015 decimal-as-string transport). Verified clean against `app/` (5/5 checks pass, 0
+   findings) and against `tests/test_qms_ncr.py` (17/17 passed — see §6 completion report).
+6. ✅ **DONE 2026-09-10** — Codified **`ebmr-edhr/tooling/guardrails/`** — 4 of the
+   `34_ARCHITECTURE_GUARDRAIL_MATRIX.md` checks (no cross-module repository write, no
+   `frappe.db.set_value`-equivalent, no generic CRUD endpoint, no bus publish without a committed outbox
+   row) as runnable stdlib-`ast` lint, wired into the CI `guardrails` job as a **blocking** gate (clean on
+   the real codebase today, not a ratchet) plus 9 pytest negative-fixture tests in the `lint` job. See
+   `ebmr-edhr/tooling/guardrails/README.md`.
 7. **SAST** tool selection (CodeQL or semgrep) + wire into `supply-chain`.
-8. Commit `sbom/sbom-frontend.cdx.json`; record the DEP-FR-018 Security/Architecture sign-off for the
-   crypto/auth deps (jose / cryptography / bcrypt / ecdsa / rsa).
+8. ✅ **DONE 2026-09-10** — Committed `sbom/sbom-frontend.cdx.json` (29 resolved production components,
+   0 UNKNOWN/PROHIBITED licences; logged a critical `next`/`sharp` `npm audit` finding as an open item
+   rather than silently patching — see `40_SBOM_LICENSE_DEPENDENCY_REGISTER.md` Open Items). The
+   DEP-FR-018 Security/Architecture sign-off for the crypto/auth deps (jose / cryptography / bcrypt /
+   ecdsa / rsa) remains open — that is a human approval step, not something this pass could execute.
 9. Container `Dockerfile` + IaC → then container/OS-package SBOM (DEP-FR-020) and IaC scan.
 10. The **merge-to-main** and **release-candidate** pipeline stages (build-once, artefact sign, release
     manifest) — needed before a first tagged release.
 11. **SPEC-ENG-002/004/006** codified checks: architecture-rules-for-agents lint, migration-standard
     CI check (expand→contract window, rollback presence), testing-strategy risk-tier coverage check.
 12. Apply the GitHub branch-protection ruleset (repo-admin action, spec in the branching standard).
+13. ✅ **DONE 2026-09-10** — **Rebuilt `ebmr_new_gxp_test` cleanly**: `alembic downgrade base` then
+    `alembic upgrade head` (93/93 migrations, both directions, zero errors) to prove the chain replays
+    clean from empty rather than trusting a DB that had migrations 0084/0089/0090 hand-applied during
+    Phases 1/3. One real bug found and fixed on the way: migration 0053's `downgrade()` used
+    non-idempotent `op.drop_constraint()`/`op.drop_column()` on the same FK/columns migration 0083 (a
+    repair migration for the same objects) already drops idempotently and runs first in downgrade order
+    — fixed to match 0083's `DROP ... IF EXISTS` idiom. A second, much larger bug found and fixed by
+    following through with `alembic check` on the rebuilt DB: `app/all_models.py` (the Alembic
+    autogenerate model registry every other module is listed in) never imported the model files for
+    `ai_governance`, `machine_integration`, `postmarket` or `validation` — 73 real, correctly-migrated
+    tables were invisible to `alembic check`/`autogenerate` the entire time. Fixed by adding the 7 missing
+    import lines. `alembic check`'s "removed table" count drops from 74 (73 real + the expected
+    `alembic_version` false positive) to 1 (just that false positive) after the fix. **Not fixed, logged
+    as SG-184**: ~144 `BIGINT`-vs-`Integer` `version`-column type mismatches and ~169 index /  13
+    check-constraint gaps between the migrations and the (now fully visible) models, spread across most
+    of the schema — real, but a genuinely undecided reconciliation question (which type is correct),
+    not something to guess at inside this pass. `alembic check` is not clean today; SG-184 has the full
+    accounting and closure criteria. A third bug found and fixed by then running the actual test suite
+    against the rebuilt DB: migrations 0002/0004 (the two earliest privilege-lockdown migrations) never
+    granted the runtime app role `TRUNCATE` on 24 tables `tests/conftest.py`'s autouse cleanup fixture
+    needs (every later per-table grant does include it) — the live `ebmr_new_gxp_test` never hit this
+    because someone had hand-granted it directly, outside any migration, exactly the "hidden state"
+    class of defect this rebuild exists to surface. Migration 0094 grants `TRUNCATE` on 22 of the 24
+    (ordinary mutable tables) — deliberately **not** on `audit.audit_events`/`signature.signatures`,
+    which migration 0002 already made append-only for AG-08 and must stay that way for the app role in
+    both test and production. That correctly-scoped grant then ran straight into Postgres's own `TRUNCATE
+    ... CASCADE` semantics: `signature.signatures` carries an FK to `iam.users`, so truncating `iam.users`
+    (needed for cleanup) cascades into `signatures` regardless of which tables the fixture names
+    explicitly, and fails the same way for the whole combined statement. Rather than hand-picking which
+    subset of a 252-table list happens to chain into an append-only table via some FK path, the actual
+    fix is in `tests/conftest.py`: the cleanup truncate now runs as the migration role (which owns every
+    table) instead of the app role — pure test-harness reset plumbing, not something any test exercises,
+    same pattern 3 other test files already use for privileged test-only operations. Migration 0094
+    itself stays (privilege-consistency hygiene matching the per-table convention every later migration
+    uses; harmless and independently correct even though the test fixture no longer strictly needs it).
+    Full accounting in `36_DATABASE_MIGRATION_CATALOGUE.md`. Verified: the item-1
+    representative slice + every test file for the 4 newly-visible modules (ai_governance,
+    machine_integration, postmarket, validation ×7 files) + test_qms_ncr.py (the NCR float→Decimal fix,
+    §4 item 5) — see §6 completion report for the pass/fail count.
 
 ---
 

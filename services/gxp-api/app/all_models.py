@@ -1,6 +1,7 @@
 """Import every module's models so Base.metadata is complete for Alembic autogenerate."""
 
 from app.core.db import Base
+from app.modules.ai_governance import models as ai_governance_models  # noqa: F401
 from app.modules.audit import models as audit_models  # noqa: F401
 from app.modules.batch import models as batch_models  # noqa: F401
 from app.modules.batch_execution import models as batch_execution_models  # noqa: F401
@@ -21,9 +22,13 @@ from app.modules.evidence import models as evidence_models  # noqa: F401
 from app.modules.genealogy import models as genealogy_models  # noqa: F401
 from app.modules.iam import models as iam_models  # noqa: F401
 from app.modules.lims_integration import models as lims_integration_models  # noqa: F401
+from app.modules.machine_integration import models as machine_integration_models  # noqa: F401
 from app.modules.material import models as material_models  # noqa: F401
 from app.modules.mutation import models as mutation_models  # noqa: F401
 from app.modules.packaging import models as packaging_models  # noqa: F401
+from app.modules.postmarket import models as postmarket_models  # noqa: F401
+from app.modules.postmarket import obligation_models as postmarket_obligation_models  # noqa: F401
+from app.modules.postmarket import reportability_models as postmarket_reportability_models  # noqa: F401
 from app.modules.product import models as product_models  # noqa: F401
 from app.modules.product_master import models as product_master_models  # noqa: F401
 from app.modules.qa_review import models as qa_review_models  # noqa: F401
@@ -56,6 +61,8 @@ from app.modules.security import supplychain_models as security_supplychain_mode
 from app.modules.signature import models as signature_models  # noqa: F401
 from app.modules.sre import models as sre_models  # noqa: F401
 from app.modules.supplier_quality import models as supplier_quality_models  # noqa: F401
+from app.modules.validation import models as validation_models  # noqa: F401
+from app.modules.validation import models_wp14 as validation_models_wp14  # noqa: F401
 from app.modules.vault import models as vault_models  # noqa: F401
 from app.modules.yield_reconciliation import models as yield_reconciliation_models  # noqa: F401
 

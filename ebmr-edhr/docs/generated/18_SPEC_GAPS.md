@@ -7,8 +7,8 @@
 
 ---
 
-**Total gaps:** 71 | **Blocking:** 9 | **Non-blocking:** 62  
-**Regulated decisions (class R):** 6 | **Design decisions (class D):** 24 | **Editorial/engineering (class E):** 27
+**Total gaps:** 72 | **Blocking:** 9 | **Non-blocking:** 63  
+**Regulated decisions (class R):** 6 | **Design decisions (class D):** 24 | **Editorial/engineering (class E):** 28
 
 Class R gaps are **not** resolved by this package on its own authority. Each has a proposed resolution document containing analysis, options and a recommended baseline, and each carries an approval block that a named human must sign before the value becomes controlled truth. Until then the value is `PROPOSED` and Claude Code must treat it as configuration with an open gap reference.
 
@@ -10928,6 +10928,33 @@ resolution_document: "Document 106 (signature policy) -- extension still require
 status: OPEN
 ```
 
+**CONFIRMED 2026-09-10, PHASE_2_BACKBONE.md Sec 4 item 4:** this policy-data gap was previously masked by
+accumulated, non-migration state in `ebmr_new_gxp_test` (the same "hidden state" class SG-184 documents
+for a different table set). Rebuilding the database cleanly (`alembic downgrade base` then `alembic
+upgrade head`) and running the full `test_validation_wp12_part3/4.py` + `test_validation_wp14_part1/2/3.py`
+suites against it for the first time produced 35 real `SignaturePolicyUnresolvedError` failures — exactly
+this gap's documented "current behaviour", now confirmed executable rather than only inferred. The 19
+distinct (record_type, action) pairs hit: `data_integrity_test_profile/approve`,
+`dr_qualification_execution/approve`, `function_risk_assessment/approve`, `infrastructure_fingerprint/approve`,
+`interface_validation_profile/approve`, `iq_execution/complete`, `migration_run/approve`, `oq_execution/approve`,
+`part11_scope_assessment/approve`, `performance_qualification_scenario/create`, `periodic_validation_review/create`,
+`pq_scenario/approve`, `security_qualification_suite/approve`, `validation_exception/{create,disposition,triage}`,
+`validation_master_plan/release`, `validation_summary_report/approve`, `validation_test_definition/approve` —
+a subset of the 26 this gap already names, not a new list; test files not run this session presumably cover
+the remainder. **Not fixed here** (per this gap's own Option A/B/C analysis — still correct, still not this
+task's call to make) and does not block PHASE_2_BACKBONE.md's Phase 2 work, which touches none of these
+modules' regulated behaviour. Full failure log kept as evidence, not deleted or rerun over
+(CLAUDE.md §5/§7b).
+
+One further, narrower anomaly found in the same run, distinct defect class (RBAC over-grant, not a
+missing signature policy — recorded here only because it surfaced in the same test pass, not because it
+is the same gap): `test_pq_unauthorized_role_rejected_via_http` expects the `Operator` role to lack
+`validation.pq.manage` and get HTTP 403 creating a PQ scenario; `scripts/seed.py`'s `ROLE_PERMISSIONS`
+literally grants `Operator` role `validation.pq.manage` (alongside `validation.pq.execute`), so the
+request succeeds (200) instead. Not fixed here — whether `Operator` should hold `pq.manage` at all is an
+authorization-design question (possibly a copy-paste over-grant, possibly intentional and the test is
+stale) that deserves a one-line confirmation from whoever owns the WP-12 RBAC matrix, not a guess.
+
 ### SG-173 — Two independent, both-live authoritative stores for Product, Recipe and Batch (AG-05 violation)
 
 Discovered while cross-referencing WP-02's 39 catalogue events (Document 09-12) against `event_type=`
@@ -12099,5 +12126,118 @@ closure_criteria:
 blocking: false  # does not block the M1 core build; blocks EVT-FR/TMP-FR verification and the SG-013 event half
 owner: Platform Architect + SRE Lead
 resolution_document: "— (open; WP-11 build task per ADR-0011)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-184
+title: "app/all_models.py never imported 4 modules' ORM models (ai_governance, machine_integration, postmarket, validation) — FIXED; alembic check now surfaces the real remaining drift (~144 BIGINT-vs-Integer version-column mismatches, ~169 index and ~13 check-constraint gaps between migrations and models)"
+class: E  # bug fix (done) + a narrower remaining migration/model-alignment gap; no regulated behaviour to decide
+description: >
+  Found 2026-09-10 executing PHASE_2_BACKBONE.md Sec 4 item 4 (`alembic downgrade base` then
+  `alembic upgrade head` against `ebmr_new_gxp_test`, to prove the full migration chain replays clean
+  from empty, then `alembic check` to confirm the result matches the app's own models). The migration
+  chain itself replays clean both directions (93/93 migrations, zero errors — one real bug found and
+  fixed along the way: migration 0053's `downgrade()` used non-idempotent drops on the same FK/columns
+  migration 0083, a repair migration, already removes idempotently and runs first in downgrade order;
+  fixed to match 0083's `DROP ... IF EXISTS` idiom).
+
+  `alembic check` against the freshly rebuilt database then reported ~74 "removed table" findings (whole
+  tables in the ORM models with no counterpart the check could see), spanning exactly four modules'
+  schemas: `ai_governance` (12), `machine_integration` (9), `postmarket` (12), `validation` (46) --
+  initially read as "these tables have no migration". **That was the wrong diagnosis.** The real cause:
+  `services/gxp-api/app/all_models.py` -- "Import every module's models so Base.metadata is complete for
+  Alembic autogenerate", the file every other one of this project's ~35 modules is registered in -- was
+  simply missing the import line for these 4 modules' model files (`app/modules/ai_governance/models.py`,
+  `app/modules/machine_integration/models.py`, `app/modules/postmarket/{models,obligation_models,
+  reportability_models}.py`, `app/modules/validation/{models,models_wp14}.py`). Their migrations
+  (0044/0056/0057/0058/0061/0079/0080 and others) do exist and did create the real tables correctly; the
+  ORM metadata Alembic diffs against just never included these classes, so `alembic check` -- and every
+  future `alembic revision --autogenerate` -- was blind to this ~30% slice of the schema. **Fixed in this
+  same commit**: added the 7 missing import lines to `app/all_models.py`, alphabetically placed. Re-ran
+  `alembic check` after the fix: the "removed table" count drops from 74 to 1 (the sole remainder,
+  `alembic_version`, is Alembic's own bookkeeping table and correctly has no ORM model -- not a real
+  gap), confirming this was the entire root cause of the missing-table class of finding.
+
+  The **remaining, still-open** drift, now visible for the first time across the *whole* schema (previously
+  under-counted since 4 modules weren't compared at all): ~144 column type mismatches -- `BIGINT` in the
+  migrations vs. `Integer` in the ORM models, overwhelmingly on the `version` optimistic-concurrency
+  column, spread across the large majority of regulated tables, not specific to any one module; ~169
+  "removed index" findings (an index the migrations created that has no matching `Index(...)`/
+  `index=True` declaration in the ORM model -- plausibly mostly benign, since a physical index still
+  works and is used by the query planner whether or not the ORM layer mirrors it, but not verified
+  individually here); ~13 check-constraint mismatches. None of these three were investigated or touched
+  in this pass -- they are real, but a different, narrower, and more genuinely undecided class of gap
+  than the missing-table one (which is now closed).
+source_documents:
+  - Document 100 (SPEC-ENG-004) MIG-FR-001..032
+  - Document 79-96 (SPEC-VAL-001..018)
+  - Document 55-57 (SPEC-PM-001..003)
+  - Document 47 (SPEC-EDGE-005)
+  - Document 105 (SPEC-AI-001)
+source_requirement_ids:
+  - MIG-FR-001
+  - MIG-FR-004
+  - MIG-FR-007
+  - PG-FR-008
+affected_modules:
+  - SPEC-EDGE-005
+  - SPEC-PM-001
+  - SPEC-PM-002
+  - SPEC-PM-003
+  - SPEC-VAL-001
+  - SPEC-VAL-002
+  - SPEC-VAL-003
+  - SPEC-VAL-004
+  - SPEC-VAL-005
+  - SPEC-VAL-006
+  - SPEC-VAL-008
+  - SPEC-VAL-010
+  - SPEC-VAL-011
+  - SPEC-VAL-012
+  - SPEC-VAL-013
+  - SPEC-VAL-014
+  - SPEC-VAL-015
+  - SPEC-VAL-016
+  - SPEC-VAL-018
+  - SPEC-AI-001
+affected_functions:
+  - services/gxp-api/app/all_models.py  # fixed in this commit
+  - services/gxp-api/migrations/versions/b7d3e9a4c1f6_0053_erp_wp07_completion_extensions.py  # fixed in this commit (downgrade idempotency)
+why_material: >
+  While `app/all_models.py` was incomplete, `alembic check` (the CI `test` job's blocking "Schema-drift
+  guard" step) was structurally incapable of detecting drift in ~30% of the platform's regulated schema
+  -- a schema/model mismatch in ai_governance/machine_integration/postmarket/validation could not have
+  been caught by CI at all, regardless of how careful any future migration PR was. Fixed now. The
+  remaining BIGINT-vs-Integer/index/check-constraint gaps are smaller but still mean `alembic check`
+  cannot be trusted as a clean pass/fail signal today -- it will report ~326 findings on a correctly
+  rebuilt database for reasons unrelated to whatever a given PR actually changed.
+risk_if_guessed: >
+  Deciding whether `version` columns should really be BIGINT or Integer platform-wide (a 144-site change)
+  is itself a migration/data-loss-behaviour decision CLAUDE.md Sec 4 says not to guess at solo, and
+  touching it without reviewing each affected table risks a real behavioural change (BIGINT vs Integer
+  affects overflow behaviour, storage, and any code that assumes one or the other) for no CLAUDE.md- or
+  spec-driven reason found in this pass.
+options:
+  - (A) A dedicated pass reviews the ~144 type mismatches table by table, confirms the migrations'
+    BIGINT (the two-release-old, presumably deliberate original choice) or the models' Integer (possibly
+    a later, unreviewed drift) is correct, and either fixes the models to match or writes a migration to
+    correct the columns -- recommended, not attempted here.
+  - (B) Spot-check whether the ~169 "removed index" findings are genuinely all benign (migration-managed,
+    unmirrored-in-ORM indexes) or hide any real gap, then decide whether to mirror them into the ORM
+    layer's `Index()` declarations for future-autogenerate hygiene, or accept the gap as permanent/normal.
+  - (C) Leave `alembic check` as a report-only/ratcheted step (mirrors the existing SG-013/SG-174
+    `continue-on-error` pattern already used for the contract/event gates) until (A)/(B) land, rather than
+    letting it block CI on findings a PR's author cannot fix by touching their own module -- not applied
+    here, left for the project owner since the CI workflow file's `alembic check` step is currently
+    unconditionally blocking.
+closure_criteria:
+  - "`alembic check` clean (zero findings, or only the disclosed `alembic_version` non-finding) against
+    `ebmr_new_gxp_test` immediately after a full `alembic downgrade base` then `alembic upgrade head`."
+blocking: false  # the missing-table half (the acute risk: CI blind to 4 modules' schemas) is fixed in
+                  # this same commit; the remaining type/index/constraint gap is real but narrower and
+                  # does not block Phase 2 backbone work
+owner: Data Architect
+resolution_document: "— (open; type/index/constraint reconciliation pass per option A/B, project-owner choice)"
 status: OPEN
 ```
