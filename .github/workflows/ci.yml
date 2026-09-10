@@ -62,6 +62,13 @@ jobs:
             ebmr-edhr/status/BUILD_STATUS.md ebmr-edhr/status/build-status.json \
             || { echo "::error::status is stale — run tooling/status/rollup.py and commit."; exit 1; }
 
+      - name: Architecture guardrail lint (Doc 34 — BLOCKING)
+        run: python3 ebmr-edhr/tooling/guardrails/validate.py
+        # Codifies 4 of the 34_ARCHITECTURE_GUARDRAIL_MATRIX.md rows as static AST checks: no cross-
+        # module repository write, no frappe.db.set_value-equivalent, no generic CRUD endpoint, no bus
+        # publish without a committed outbox row. Clean on the real codebase today — this is a hard gate,
+        # not a ratchet (see ebmr-edhr/tooling/guardrails/README.md). Stdlib-only, no uv sync needed.
+
   # ---- lint / typecheck ---------------------------------------------------------------------------------
   lint:
     runs-on: ubuntu-latest
@@ -85,6 +92,9 @@ jobs:
 
       - name: mypy (report-only, ratcheting toward --strict per ADR-0007)
         run: uv run mypy || true
+
+      - name: Architecture guardrail lint — negative-fixture tests
+        run: uv run python -m pytest ../../ebmr-edhr/tooling/guardrails/tests -q
 
   frontend-lint:
     runs-on: ubuntu-latest
