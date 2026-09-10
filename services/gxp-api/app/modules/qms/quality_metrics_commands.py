@@ -17,6 +17,7 @@ from app.modules.qms.quality_metrics_models import (
     QualityMetricDefinition,
     QualityMetricSnapshot,
 )
+from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     EffectivenessCriterionRequiredError,
@@ -67,6 +68,15 @@ async def _resolve_signature(
     policy = await signature_service.resolve_signature_requirement(session, record_type=record_type, action=action)
     if not policy.signature_required:
         return None
+    # Document 106 section 9 rows 106/107: quality_metric_definition/release is `Released` by a
+    # "QA Releaser" independent of the definition's `owner_subject_id`; quality_metric_snapshot/
+    # management_review is `Reviewed` by a "QA Reviewer" -- the snapshot stores no performer identity of
+    # its own (the review action sets `reviewer_subject_id`), so only the role is enforced there.
+    await enforce_signer_policy(
+        session, policy=policy, actor_user_id=actor_user_id, site_id=record.site_id,
+        action_label=f"{record_type}.{action}",
+        disqualified_subject_ids=(getattr(record, "owner_subject_id", None),),
+    )
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"{record_type} '{action}' requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)

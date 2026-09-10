@@ -43,9 +43,27 @@ async def _make_released_methodology(db, tag: str) -> uuid.UUID:
 async def _setup(db, seeded, tag, *, signed=False):
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.risk{tag}")
-        db.add(SignaturePolicy(record_type="risk_record", action="review", meaning="Reviewed", signature_required=signed))
+        # SG-138 (2026-09-10): Document 106 section 9 row 97 -- review `Reviewed` by a "QA Reviewer"
+        # independent of the performer (checked against the risk record's `owner_subject_id`).
+        db.add(SignaturePolicy(
+            record_type="risk_record", action="review", meaning="Reviewed", signature_required=signed,
+            required_role_id=(seeded["roles"]["QA Reviewer"].id if signed else None),
+            requires_independent_signer=signed,
+        ))
         methodology_id = await _make_released_methodology(db, tag)
     return owner, methodology_id
+
+
+async def _indep_qa_reviewer(db, seeded, username):
+    async with db.begin():
+        user = User(
+            username=username, email=f"{username}@example.com", full_name="Indep QA Reviewer",
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Reviewer"].id))
+    return user
 
 
 def _create_body(site_id, owner_id, methodology_id=None, **overrides):
@@ -304,14 +322,17 @@ async def test_idempotent_replay_returns_same_receipt(client, seeded, db):
 
 async def test_review_requires_signature_when_policy_requires_it(client, seeded, db):
     owner, methodology_id = await _setup(db, seeded, "10", signed=True)
+    await _indep_qa_reviewer(db, seeded, "qa.risk10")
     token = await login(client, "admin.risk10")
+    reviewer_token = await login(client, "qa.risk10")
     risk_id = await _create_risk(client, token, seeded["site_id"], owner.id)
     await _add_initial_assessment(client, token, risk_id, 1, methodology_id=methodology_id)
     await _add_controls(client, token, risk_id, 2)
     await _add_residual_assessment(client, token, risk_id, 3)
     await _accept(client, token, risk_id, 4)
 
-    resp = await _review(client, token, risk_id, 5)
+    # Independent QA Reviewer, correct role, no challenge -> still MISSING_SIGNATURE.
+    resp = await _review(client, reviewer_token, risk_id, 5)
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
 
@@ -391,7 +412,9 @@ async def test_signature_challenge_404_for_missing_risk(client, seeded, db):
 
 async def test_signature_challenge_round_trip_signs_review(client, seeded, db):
     owner, methodology_id = await _setup(db, seeded, "22", signed=True)
+    await _indep_qa_reviewer(db, seeded, "qa.risk22")
     token = await login(client, "admin.risk22")
+    reviewer_token = await login(client, "qa.risk22")
     risk_id = await _create_risk(client, token, seeded["site_id"], owner.id)
     assert (await _add_initial_assessment(client, token, risk_id, 1, methodology_id=methodology_id)).status_code == 200
     assert (await _add_controls(client, token, risk_id, 2)).status_code == 200
@@ -399,14 +422,14 @@ async def test_signature_challenge_round_trip_signs_review(client, seeded, db):
     assert (await _accept(client, token, risk_id, 4)).status_code == 200
 
     resp = await client.post(
-        f"/qms/v1/risks/{risk_id}/signature-challenges", json={"action": "review"}, headers=auth_headers(token),
+        f"/qms/v1/risks/{risk_id}/signature-challenges", json={"action": "review"}, headers=auth_headers(reviewer_token),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["meaning"] == "Reviewed"
 
     resp = await _review(
-        client, token, risk_id, 5, outcome="still_current",
+        client, reviewer_token, risk_id, 5, outcome="still_current",
         challenge_id=body["challenge_id"], reauth_password=DEMO_PASSWORD,
     )
     assert resp.status_code == 200, resp.text

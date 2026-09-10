@@ -34,9 +34,34 @@ async def _setup(db, seeded, tag, *, signed=False, release_signed=None, review_s
     review_signed = signed if review_signed is None else review_signed
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.met{tag}")
-        db.add(SignaturePolicy(record_type="quality_metric_definition", action="release", meaning="Released", signature_required=release_signed))
-        db.add(SignaturePolicy(record_type="quality_metric_snapshot", action="management_review", meaning="Reviewed", signature_required=review_signed))
+        # SG-138 (2026-09-10): Document 106 section 9 rows 106/107 -- definition/release `Released` by a
+        # "QA Releaser" independent of the definition owner; snapshot/management_review `Reviewed` by a
+        # "QA Reviewer" (the snapshot has no owner identity, so role-only).
+        db.add(SignaturePolicy(
+            record_type="quality_metric_definition", action="release", meaning="Released",
+            signature_required=release_signed,
+            required_role_id=(seeded["roles"]["QA Releaser"].id if release_signed else None),
+            requires_independent_signer=bool(release_signed),
+        ))
+        db.add(SignaturePolicy(
+            record_type="quality_metric_snapshot", action="management_review", meaning="Reviewed",
+            signature_required=review_signed,
+            required_role_id=(seeded["roles"]["QA Reviewer"].id if review_signed else None),
+            requires_independent_signer=bool(review_signed),
+        ))
     return owner
+
+
+async def _indep_user(db, seeded, username, role_name):
+    async with db.begin():
+        user = User(
+            username=username, email=f"{username}@example.com", full_name=role_name,
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"][role_name].id))
+    return user
 
 
 def _create_body(site_id, owner_id, **overrides):
@@ -323,23 +348,27 @@ async def test_idempotent_replay_returns_same_receipt(client, seeded, db):
 
 async def test_release_requires_signature_when_policy_requires_it(client, seeded, db):
     owner = await _setup(db, seeded, "14", signed=False, release_signed=True)
+    await _indep_user(db, seeded, "qa.met14", "QA Releaser")
     token = await login(client, "admin.met14")
+    releaser_token = await login(client, "qa.met14")
     definition_id = await _create_definition(client, token, seeded["site_id"], owner.id)
 
-    resp = await _release(client, token, definition_id, 1)
+    resp = await _release(client, releaser_token, definition_id, 1)
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
 
 
 async def test_management_review_requires_signature_when_policy_requires_it(client, seeded, db):
     owner = await _setup(db, seeded, "15", signed=False, review_signed=True)
+    await _indep_user(db, seeded, "qa.met15", "QA Reviewer")
     token = await login(client, "admin.met15")
+    reviewer_token = await login(client, "qa.met15")
     definition_id = await _create_definition(client, token, seeded["site_id"], owner.id)
     await _release(client, token, definition_id, 1)
     resp = await _calculate(client, token, seeded["site_id"], definition_id)
     snapshot_id = resp.json()["aggregate_id"]
 
-    resp = await _freeze_package(client, token, seeded["site_id"], [snapshot_id])
+    resp = await _freeze_package(client, reviewer_token, seeded["site_id"], [snapshot_id])
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
 
@@ -405,18 +434,21 @@ async def test_definition_signature_challenge_404_for_missing_definition(client,
 
 async def test_definition_signature_challenge_round_trip_signs_release(client, seeded, db):
     owner = await _setup(db, seeded, "22", signed=True)
+    await _indep_user(db, seeded, "qa.met22", "QA Releaser")
     token = await login(client, "admin.met22")
+    releaser_token = await login(client, "qa.met22")
     definition_id = await _create_definition(client, token, seeded["site_id"], owner.id)
 
     resp = await client.post(
-        f"/quality-metrics/v1/definitions/{definition_id}/signature-challenges", json={"action": "release"}, headers=auth_headers(token),
+        f"/quality-metrics/v1/definitions/{definition_id}/signature-challenges", json={"action": "release"},
+        headers=auth_headers(releaser_token),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["meaning"] == "Released"
 
     resp = await _release(
-        client, token, definition_id, 1, challenge_id=body["challenge_id"], reauth_password=DEMO_PASSWORD,
+        client, releaser_token, definition_id, 1, challenge_id=body["challenge_id"], reauth_password=DEMO_PASSWORD,
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["signature_id"] is not None
@@ -447,7 +479,9 @@ async def test_snapshot_signature_challenge_round_trip_signs_management_review(c
     # release_signed=False: release must succeed unsigned so the test can reach a COMPLETE snapshot;
     # review_signed=True is the actual behaviour under test.
     owner = await _setup(db, seeded, "25", release_signed=False, review_signed=True)
+    await _indep_user(db, seeded, "qa.met25", "QA Reviewer")
     token = await login(client, "admin.met25")
+    reviewer_token = await login(client, "qa.met25")
     definition_id = await _create_definition(client, token, seeded["site_id"], owner.id)
     assert (await _release(client, token, definition_id, 1)).status_code == 200
     resp = await _calculate(client, token, seeded["site_id"], definition_id)
@@ -456,14 +490,14 @@ async def test_snapshot_signature_challenge_round_trip_signs_management_review(c
 
     resp = await client.post(
         "/quality-metrics/v1/management-review-packages/signature-challenges",
-        json={"action": "management_review", "snapshot_ids": [snapshot_id]}, headers=auth_headers(token),
+        json={"action": "management_review", "snapshot_ids": [snapshot_id]}, headers=auth_headers(reviewer_token),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["meaning"] == "Reviewed"
 
     resp = await _freeze_package(
-        client, token, seeded["site_id"], [snapshot_id],
+        client, reviewer_token, seeded["site_id"], [snapshot_id],
         challenge_id=body["challenge_id"], reauth_password=DEMO_PASSWORD,
     )
     assert resp.status_code == 200, resp.text

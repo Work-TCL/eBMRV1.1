@@ -23,6 +23,7 @@ from app.modules.qms.document_models import (
     ControlledDocument,
     ControlledDocumentVersion,
 )
+from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service
 from app.modules.vault import service as vault_service
 from app.mutation.errors import (
@@ -240,6 +241,14 @@ async def release_draft(session: AsyncSession, cmd: ReleaseDocumentDraftCommand,
     policy = await signature_service.resolve_signature_requirement(session, record_type="controlled_document_version", action="release")
     signature_id = None
     if policy.signature_required:
+        # Document 106 section 9 row 89: `controlled_document_version/release` is `Released` by a
+        # "QA Releaser" independent of every production performer -- checked against the parent
+        # ControlledDocument's `owner_subject_id` (the version row itself carries no owner identity).
+        await enforce_signer_policy(
+            session, policy=policy, actor_user_id=actor_user_id, site_id=document.site_id,
+            action_label="controlled_document_version.release",
+            disqualified_subject_ids=(document.owner_subject_id,),
+        )
         if cmd.challenge_id is None or not cmd.reauth_password:
             raise DocumentSignatureRequiredError("Releasing a document version requires a signature", required_meaning=policy.meaning)
         actor = await session.get(User, actor_user_id)
