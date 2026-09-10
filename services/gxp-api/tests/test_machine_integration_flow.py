@@ -14,7 +14,7 @@ from decimal import Decimal
 from app.modules.machine_integration.models import MachineCommandProfile, MachineSource, SignalMapping
 from app.modules.rules.models import UnitOfMeasure, UomConversion
 from tests.conftest import auth_headers, idem, login
-from tests.test_batch_flow import _create_and_issue_batch, _create_product_recipe
+from tests.test_inventory_flow import _create_batch  # SG-173/ADR-0013: machine_integration.batch_contexts.batch_id now FKs ebmr.gxp_batch (migration 0090)
 from tests.test_edge_flow import _enroll_gateway, _make_admin
 
 
@@ -162,9 +162,8 @@ async def test_ambiguous_batch_context_blocks_step_result(client, seeded, db):
     resp = await _release_mapping(client, releaser_token, mapping_id)
     assert resp.status_code == 200, resp.text
 
-    product_id, recipe_id = await _create_product_recipe(client, op_token, seeded["site_id"])
-    batch_id_1 = await _create_and_issue_batch(client, op_token, seeded["site_id"], product_id, recipe_id, "MI-B1")
-    batch_id_2 = await _create_and_issue_batch(client, op_token, seeded["site_id"], product_id, recipe_id, "MI-B2")
+    batch_id_1 = await _create_batch(client, op_token, seeded["site_id"], "MI-B1")
+    batch_id_2 = await _create_batch(client, op_token, seeded["site_id"], "MI-B2")
 
     for batch_id in (batch_id_1, batch_id_2):
         resp = await client.post(
@@ -359,8 +358,7 @@ async def test_single_open_context_binds_candidate_and_reclose_rejected(client, 
     resp = await _release_mapping(client, releaser_token, mapping_id)
     assert resp.status_code == 200, resp.text
 
-    product_id, recipe_id = await _create_product_recipe(client, op_token, seeded["site_id"])
-    batch_id = await _create_and_issue_batch(client, op_token, seeded["site_id"], product_id, recipe_id, "MI-CTX2-B1")
+    batch_id = await _create_batch(client, op_token, seeded["site_id"], "MI-CTX2-B1")
     open_resp = await client.post(
         "/machine-integration/v1/batch-contexts",
         json={"idempotency_key": idem(), "source_id": str(source_id), "batch_id": batch_id},
@@ -714,8 +712,7 @@ async def test_open_batch_context_pins_mapping_version_for_life_of_context(clien
     resp = await _release_mapping(client, releaser_token, v1_id, expected_version=1)
     assert resp.status_code == 200, resp.text
 
-    product_id, recipe_id = await _create_product_recipe(client, op_token, seeded["site_id"])
-    batch_id = await _create_and_issue_batch(client, op_token, seeded["site_id"], product_id, recipe_id, "MI-PIN-B1")
+    batch_id = await _create_batch(client, op_token, seeded["site_id"], "MI-PIN-B1")
     open_resp = await client.post(
         "/machine-integration/v1/batch-contexts",
         json={"idempotency_key": idem(), "source_id": str(source_id), "batch_id": batch_id},

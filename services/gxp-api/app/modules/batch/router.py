@@ -26,6 +26,7 @@ from app.modules.batch.commands import (
     submit_for_review,
 )
 from app.modules.batch.models import Batch, BatchStep
+from app.modules.batch_execution.models import Batch as GxpBatch
 from app.modules.material.commands import IssueMaterialToBatchCommand, issue_material_to_batch
 from app.modules.material.models import Material, MaterialIssue, MaterialLot
 from app.modules.product.models import Product
@@ -292,7 +293,11 @@ async def post_issue_material(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        batch = await session.get(Batch, batch_id)
+        # SG-173 / ADR-0013: material issue is a WP-04 (M1) flow — resolve the batch from the
+        # authoritative store (`ebmr.gxp_batch`), the same one `issue_material_to_batch` and every
+        # `materials.*` FK (migration 0090) now use. The scaffold `ebmr.batches` lookup that used to be
+        # here could never agree with the command's own check.
+        batch = await session.get(GxpBatch, batch_id)
         if batch is None:
             raise NotFoundError("Batch not found")
         return await issue_material_to_batch(session, cmd, actor.user_id, batch.site_id)

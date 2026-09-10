@@ -10,7 +10,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.modules.batch.models import Batch
+from app.modules.batch_execution.models import Batch
 from app.modules.ddcp import commands as ddcp_commands
 from app.modules.ddcp import inhalation_commands
 from app.modules.ddcp.models import (
@@ -25,10 +25,9 @@ from app.modules.ddcp.models import (
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.equipment.sterilization_models import ProcessCycle, ProcessCycleProfileVersion, SterilizationLoadItem
 from app.modules.material.models import Material, MaterialLot
-from app.modules.product.models import Product
 from app.modules.product_master.models import ProductVersion
 from app.modules.qms import change_commands
-from app.modules.recipe.models import Recipe
+from app.modules.recipe_master.models import RecipeFamily, RecipeVersion
 from app.modules.rules import commands as rules_commands
 from app.modules.signature.models import SignaturePolicy
 from app.mutation.errors import (
@@ -72,16 +71,32 @@ async def _release_rule(db, actor_id, *, rule_id, expression_ast, input_contract
 
 
 async def _create_batch(db, seeded, *, batch_number: str) -> Batch:
+    # SG-173 / ADR-0013: the DDCP command layer reads batches from `ebmr.gxp_batch`
+    # (app.modules.batch_execution), not the retired scaffold `ebmr.batches`. Build a minimal released
+    # Product Master / Recipe Master pair and the gxp_batch row directly (the commands only read
+    # batch.id / batch.site_id / batch.state).
     site_id = seeded["site_id"]
-    product = Product(site_id=site_id, code=f"PROD-{batch_number}", name="Test Inhalation Product", status="active", version=1)
-    db.add(product)
+    pv = ProductVersion(
+        product_business_id=f"PB-{batch_number}", version_no=1, product_code=f"PROD-{batch_number}",
+        name="Test Inhalation Product", manufacturing_profile_code="pharma", lifecycle_state="released", site_id=site_id,
+    )
+    db.add(pv)
     await db.flush()
-    recipe = Recipe(product_id=product.id, version=1, status="active")
-    db.add(recipe)
+    rf = RecipeFamily(
+        product_business_id=pv.product_business_id, recipe_code=f"RCP-{batch_number}", site_id=site_id,
+        manufacturing_profile_code="pharma",
+    )
+    db.add(rf)
+    await db.flush()
+    rv = RecipeVersion(
+        recipe_family_id=rf.id, version_no=1, product_version_id=pv.id, site_id=site_id,
+        lifecycle_state="released",
+    )
+    db.add(rv)
     await db.flush()
     batch = Batch(
-        site_id=site_id, product_id=product.id, recipe_id=recipe.id, recipe_version=1, batch_number=batch_number,
-        status="in_execution", target_quantity=Decimal("1000"), uom="EA", version=1,
+        site_id=site_id, batch_number=batch_number, product_version_id=pv.id, recipe_version_id=rv.id,
+        target_qty=Decimal("1000"), target_uom="EA", state="in_execution", version=1,
     )
     db.add(batch)
     await db.flush()
@@ -165,7 +180,7 @@ async def test_inhalation_readiness_and_start_fill_run_route_mismatch(seeded, db
     assert readiness["ready"] is False
 
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-FORMULATION-INH-1")
-    bulk_batch.status = "released"
+    bulk_batch.state = "released"
     device_lot = await _create_material_lot(db, seeded, code="VALVE-1", actor_id=actor_id)
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, bulk_batch, device_lot)
@@ -204,7 +219,7 @@ async def test_blend_hold_time_exceeded_blocks_fill_start(seeded, db):
     profile = await _create_and_release_profile(db, seeded, actor_id, profile_code="INH-HOLD", fill_route="pressure_fill")
     batch = await _create_batch(db, seeded, batch_number="BATCH-INH-HOLD-1")
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-FORMULATION-INH-2")
-    bulk_batch.status = "released"
+    bulk_batch.state = "released"
     device_lot = await _create_material_lot(db, seeded, code="VALVE-2", actor_id=actor_id)
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, bulk_batch, device_lot)
@@ -250,7 +265,7 @@ async def test_closure_result_dose_tests_and_complete_run(seeded, db):
     profile = await _create_and_release_profile(db, seeded, actor_id, profile_code="INH-CLOSE", fill_route="pressure_fill")
     batch = await _create_batch(db, seeded, batch_number="BATCH-INH-CLOSE-1")
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-FORMULATION-INH-3")
-    bulk_batch.status = "released"
+    bulk_batch.state = "released"
     device_lot = await _create_material_lot(db, seeded, code="VALVE-3", actor_id=actor_id)
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, bulk_batch, device_lot)
@@ -296,7 +311,7 @@ async def test_release_readiness_evidence_package_and_lot_trace(seeded, db):
     actor_id = seeded["users"]["ddcp.operator"].id
     batch = await _create_batch(db, seeded, batch_number="BATCH-INH-RELEASE-1")
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-FORMULATION-INH-4")
-    bulk_batch.status = "released"
+    bulk_batch.state = "released"
     device_lot = await _create_material_lot(db, seeded, code="VALVE-4", actor_id=actor_id)
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, bulk_batch, device_lot)
@@ -372,7 +387,7 @@ async def test_propellant_and_powder_blend_constituents_captured(seeded, db):
     )
     mdi_batch = await _create_batch(db, seeded, batch_number="BATCH-INH-PROPELLANT-1")
     propellant_batch = await _create_batch(db, seeded, batch_number="BULK-PROPELLANT-1")
-    propellant_batch.status = "released"
+    propellant_batch.state = "released"
     await db.flush()
     propellant_receipt = await ddcp_commands.record_constituent_handoff(
         db, ddcp_commands.RecordConstituentHandoffCommand(idempotency_key=idem(), batch_id=mdi_batch.id, from_constituent="DRUG", to_constituent="propellant", source_batch_reference={"batch_id": str(propellant_batch.id)}), actor_id,
@@ -386,7 +401,7 @@ async def test_propellant_and_powder_blend_constituents_captured(seeded, db):
 
     dpi_batch = await _create_batch(db, seeded, batch_number="BATCH-INH-BLEND-1")
     blend_batch = await _create_batch(db, seeded, batch_number="BULK-POWDER-BLEND-1")
-    blend_batch.status = "released"
+    blend_batch.state = "released"
     await db.flush()
     blend_receipt = await ddcp_commands.record_constituent_handoff(
         db, ddcp_commands.RecordConstituentHandoffCommand(idempotency_key=idem(), batch_id=dpi_batch.id, from_constituent="DRUG", to_constituent="powder_blend", source_batch_reference={"batch_id": str(blend_batch.id)}), actor_id,
@@ -518,7 +533,7 @@ async def test_environment_gate_blocks_readiness_when_not_ready(seeded, db):
     )
     batch = await _create_batch(db, seeded, batch_number="BATCH-INH-ENV-1")
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-FORMULATION-ENV-1")
-    bulk_batch.status = "released"
+    bulk_batch.state = "released"
     await db.flush()
     receipt = await ddcp_commands.record_constituent_handoff(
         db, ddcp_commands.RecordConstituentHandoffCommand(idempotency_key=idem(), batch_id=batch.id, from_constituent="DRUG", to_constituent="formulation", source_batch_reference={"batch_id": str(bulk_batch.id)}), actor_id,
@@ -588,7 +603,7 @@ async def test_release_readiness_blocks_on_pending_handoff_and_failed_test(seede
     actor_id = seeded["users"]["ddcp.operator"].id
     batch = await _create_batch(db, seeded, batch_number="BATCH-INH-BLOCK-1")
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-FORMULATION-BLOCK-1")
-    bulk_batch.status = "released"
+    bulk_batch.state = "released"
     await db.flush()
 
     drug_receipt = await ddcp_commands.record_constituent_handoff(
