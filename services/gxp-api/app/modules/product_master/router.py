@@ -130,7 +130,7 @@ async def post_submit_draft(
 
 
 class VersionSignatureChallengeRequest(BaseModel):
-    action: str  # "release" -- "suspend"/"reinstate" remain SIGNATURE_POLICY_UNRESOLVED (SG-035, open)
+    action: str  # "release" / "suspend" -- "reinstate" remains SIGNATURE_POLICY_UNRESOLVED (SG-035, deferred)
 
 
 # Matches release_product_version()'s own record_hash formula exactly (commands.py) -- consume_challenge
@@ -139,7 +139,7 @@ def _version_record_hash(version: ProductVersion) -> str:
     return sha256_hex({"id": str(version.id), "version": version.version})
 
 
-_VERSION_CHALLENGE_MEANINGS = {"release": "Released"}
+_VERSION_CHALLENGE_MEANINGS = {"release": "Released", "suspend": "Performed"}
 
 
 @router.post("/{product_version_id}/signature-challenges")
@@ -149,10 +149,11 @@ async def post_version_signature_challenge(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    """SG-035 (partial, 2026-09-07, project-owner-directed): only `release` has a real Document 106 floor
-    row so far -- self-signed by Admin (`scripts/seed.py` SIGNATURE_POLICY_FLOOR). `suspend`/`reinstate`
-    stay unresolved on purpose (SG-035's remaining scope); this endpoint refuses to issue a challenge for
-    either rather than guessing they'd want the same treatment."""
+    """SG-035: `release` (independent QA Releaser) and `suspend` (Document 106 section 9 row 9:
+    `Performed`, "Authorized holder (Production / QA)", no independence, reason required) both have a real
+    Document 106 floor row in `scripts/seed.py` SIGNATURE_POLICY_FLOOR. `reinstate` has no Document 106
+    row and stays unresolved (SG-035, deferred 2026-09-10); this endpoint refuses to issue a challenge
+    for it rather than guessing it would want the same treatment."""
     async with session.begin():
         version = await session.get(ProductVersion, product_version_id)
         if version is None:

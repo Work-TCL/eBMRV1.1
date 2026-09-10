@@ -1889,6 +1889,29 @@ demoing: every attempt to release a Product Master version (including as Admin) 
   floor row's `UniqueConstraint(record_type, action)`) were updated to go through the real ceremony
   instead.
 
+**`product_version/suspend` RESOLVED 2026-09-10, project-owner-directed ("follow the ebmr-edhr docs; if
+you have no answer then ask me").** Document 106 **section 9 row 9** (`POST /products/v1/{id}/suspend`)
+does state a value: meaning `Performed`, signer class "Authorized holder (Production / QA)", Independence
+"None", Reason "yes". No mapping ambiguity — the signer class is a Production/QA role pair, so
+`required_role_name=None` (RBAC `product.suspend` gates it; identical treatment to Document 106 row 108
+`equipment_asset/hold`), no independence check, reason already carried by the required
+`SuspendProductVersionCommand.reason` field. Floor row
+`("product_version", "suspend", "Performed", None, False, True, True)` added to `scripts/seed.py`
+`SIGNATURE_POLICY_FLOOR` and to `tests/conftest.py`'s global list; `product_master/router.py`'s
+`signature-challenges` endpoint now accepts `action="suspend"` (`meaning="Performed"`);
+`test_product_master.py` updated — unsigned suspend now asserts `MISSING_SIGNATURE`/428, a real
+challenge+password suspend succeeds and `lifecycle_state` becomes `suspended`, and `reinstate` on the
+same version still asserts `SIGNATURE_POLICY_UNRESOLVED`/409. No command-layer change needed
+(`_transition_with_signature` already runs the ceremony when `signature_required`).
+
+**Still OPEN after 2026-09-10 (explicitly deferred, project-owner-directed):**
+`vault_object/release` (Document 106 row 2) and `rule/release` (Document 106 row 6) — Document 106
+states the values but applying them needs bespoke `required_role_id` + independence enforcement in
+`create_vault_release()` / `release_rule()` (the generic vault endpoint has no site or prior record for
+the independence check); `record_correction/complete` (Document 106 row 1) — Document 106 requires
+**2 signatures** (corrector + independent approver) and the platform has no 2-signature ceremony;
+`product_version/reinstate` — **no Document 106 row exists**. All four remain fail-closed.
+
 ```yaml
 spec_gap_id: SG-035
 title: "Document 106's signature-policy floor does not cover vault_object/release, record_correction/complete, rule/release, or product_version/{release,suspend,reinstate}"
@@ -1950,7 +1973,7 @@ options:
 blocking: false
 owner: Head of Quality + Product Owner
 resolution_document: "2026-09-07: product_version/release resolved (self-signed by Admin, project-owner-directed) -- POST /products/v1/{id}/signature-challenges added, scripts/sync_signature_policies.py added for re-runnable floor sync, frontend wired to the shared SignatureCeremony component. 2026-09-08: recipe_version/release ALSO resolved (project-owner-directed, asked directly among independent-QA-Releaser / self-signed / RBAC-only / leave-unresolved -- chose independent QA Releaser): floor row ('recipe_version','release','Released','QA Releaser',independent=True,signature_required=True); required_role_id + requires_independent_signer are enforced in release_recipe_version() (against the recipe version's own `Created` audit event for the author), matching the bespoke IND-001/CON-FR-014 pattern since resolve_signature_requirement() does not read those columns; new POST /recipes/v2/drafts/{id}/signature-challenges endpoint; frontend Release button wired to SignatureCeremony. 2026-09-08 (later, Decision 2): product_version/release UPGRADED from self-signed-by-Admin to the same independent-QA-Releaser model -- floor row changed to ('product_version','release','Released','QA Releaser',independent=True,signature_required=True); release_product_version() now runs the same required_role_id + requires_independent_signer enforcement as release_recipe_version() (against the product version's own `Created` audit event); product.author moved to a new Process Engineer + Admin grant, product.release to QA Releaser + Admin; new Document 107 rows IND-021 (ProductVersion/release/AUTHOR PROHIBITED) and SOD-021 (Process Engineer / QA Releaser standing pair, REPORT_ONLY -- customer Quality org raises to PROHIBITED at PQ) plus a new re-runnable scripts/sync_sod_rules.py. vault_object/release, record_correction/complete, rule/release, and product_version/{suspend,reinstate} remain open, pending Document 106"
-status: PARTIALLY RESOLVED (product_version/release AND recipe_version/release both signed by an independent QA Releaser, with author!=releaser enforced; vault_object/release, record_correction/complete, rule/release, and product_version/{suspend,reinstate} remain OPEN)
+status: PARTIALLY RESOLVED (product_version/release + recipe_version/release signed by an independent QA Releaser with author!=releaser enforced; product_version/suspend resolved 2026-09-10 from Document 106 section 9 row 9 -- Performed / Authorized holder / no independence / reason required. Still OPEN: vault_object/release (row 2) + rule/release (row 6) -- values stated but need bespoke role/independence enforcement, deferred; record_correction/complete (row 1) -- needs a 2-signature ceremony the platform lacks, deferred; product_version/reinstate -- no Document 106 row, deferred)
 ```
 
 ### SG-036 — The 11 combined Document 06 + Document 08 Frappe UI surfaces cannot be built yet
@@ -8530,7 +8553,8 @@ results raise a typed `DivisionUndefinedError` (CALC-FR-010). A new `rules.gxp_u
 (`UOM_UNKNOWN`/`UOM_CONVERSION_UNAVAILABLE`, CALC-FR-006).
 
 Scoped narrower than the ideal end state, tracked as follow-on gaps rather than silently assumed
-complete: §2's own approval status is ambiguous inside an APPROVED document (SG-145); the UOM master has
+complete: §2's own approval status (SG-145 — RESOLVED 2026-09-10, option B: editorial artefact inside an
+APPROVED document, customer Part 11 record captured at PQ); the UOM master has
 no author/release command surface yet (rows are written directly, same interim pattern
 `gxp_rule_definition` never needed); no consumer in this codebase exercises CC-7/CC-8/CC-9/CC-10 or the
 `unit_policy.convert_to` conversion path, so those are implemented and unit-tested but not yet proven
@@ -8676,6 +8700,19 @@ not stalling the whole SG-143 closure on a documentation-status ambiguity. A for
 record against §2 specifically (distinct from the document-level approval already on file) is required
 before validated release of any code path this table governs.
 
+**RESOLVED 2026-09-10, project-owner-directed ("follow the ebmr-edhr docs; if you have no answer then
+ask me").** Option (B): the "(PROPOSED)" heading on §2 is treated as an editorial artefact inside
+Document 110 **v1.0 APPROVED** — the document's §1, §3–§10 and its named-approver block (Head of Quality
++ Product Owner) approve it as a whole, and §2 is the only numeric policy the baseline contains, so a
+"proposed" sub-heading inside an approved controlled document is a documentation defect, not an
+un-approved policy. `precision.py`'s `CLASS_POLICY` (the verbatim ten-row table) is therefore the
+**approved** calculation-class baseline; SG-143's resolution note no longer carries a "(PROPOSED)"
+caveat. No functional code change — `precision.py`'s docstring records the resolution. The formal
+customer QMS Part 11 signature against Document 110 §2 is still captured at PQ (Document 110 §7); that is
+a records action. Any change to a value in §2 remains a controlled Document 110 revision and a
+revalidation trigger (Document 110 §7 / Document 96). `sync_signature_policies.py` is not involved (this
+is a precision policy, not a signature policy).
+
 ```yaml
 spec_gap_id: SG-145
 title: "Document 110 §2's calculation-class table is marked (PROPOSED) inside an APPROVED v1.0 document"
@@ -8716,10 +8753,10 @@ options:
   - (C) Leave §2 unresolved and gate validated release of every CC-1..CC-10-governed code path on manual
     QA sign-off per deployment until a formal approval record exists (expensive, but honest about the
     open item).
-blocking: false  # construction baseline proceeds per the task decision above; blocks VALIDATED release only
+blocking: false  # construction baseline proceeds; formal customer Part 11 record captured at PQ
 owner: Head of Quality + Product Owner (Document 110's named approvers)
-resolution_document: "Document 110 §2 Part 11 approval record (not yet captured)"
-status: OPEN
+resolution_document: "app/modules/rules/precision.py docstring + this entry (option B: editorial artefact in an APPROVED document); customer Part 11 record against Document 110 §2 captured at PQ per Document 110 §7"
+status: RESOLVED
 ```
 
 ### SG-146 — Free-text UOM columns are unchanged; no controlled expand→migrate→contract programme exists yet

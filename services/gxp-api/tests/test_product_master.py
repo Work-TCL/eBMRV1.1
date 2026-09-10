@@ -191,17 +191,53 @@ async def test_release_requires_signature_and_succeeds_with_a_valid_challenge(cl
     detail = (await client.get(f"/products/v1/{product_version_id}", headers=auth_headers(admin_token))).json()
     assert detail["lifecycle_state"] == "released"
 
-    # suspend/reinstate remain unresolved -- SG-035's remaining scope, deliberately not extended here.
+    # suspend -- SG-035 partial 2026-09-10 (project-owner-directed, "follow the ebmr-edhr docs"):
+    # Document 106 section 9 row 9 resolves it to `Performed` / "Authorized holder (Production / QA)" /
+    # no independence / reason required. The signature is enforced, not just nominally resolved.
+    unsigned_suspend = await client.post(
+        f"/products/v1/{product_version_id}/suspend",
+        json={
+            "idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 3,
+            "reason": "market hold",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert unsigned_suspend.status_code == 428, unsigned_suspend.text
+    assert unsigned_suspend.json()["code"] == "MISSING_SIGNATURE"
+
+    suspend_challenge = (
+        await client.post(
+            f"/products/v1/{product_version_id}/signature-challenges",
+            json={"action": "suspend"},
+            headers=auth_headers(admin_token),
+        )
+    ).json()
+    assert suspend_challenge["meaning"] == "Performed"
+
     suspend_resp = await client.post(
         f"/products/v1/{product_version_id}/suspend",
         json={
             "idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 3,
-            "reason": "test",
+            "reason": "market hold",
+            "challenge_id": suspend_challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
         },
         headers=auth_headers(admin_token),
     )
-    assert suspend_resp.status_code == 409
-    assert suspend_resp.json()["code"] == "SIGNATURE_POLICY_UNRESOLVED"
+    assert suspend_resp.status_code == 200, suspend_resp.text
+    detail = (await client.get(f"/products/v1/{product_version_id}", headers=auth_headers(admin_token))).json()
+    assert detail["lifecycle_state"] == "suspended"
+
+    # reinstate has no Document 106 row -- SG-035 remaining scope, deferred 2026-09-10: still fails closed.
+    reinstate_resp = await client.post(
+        f"/products/v1/{product_version_id}/reinstate",
+        json={
+            "idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 4,
+            "reason": "hold lifted",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert reinstate_resp.status_code == 409
+    assert reinstate_resp.json()["code"] == "SIGNATURE_POLICY_UNRESOLVED"
 
 
 async def test_product_authored_by_process_engineer_is_released_by_an_independent_qa_releaser(client, seeded, db):

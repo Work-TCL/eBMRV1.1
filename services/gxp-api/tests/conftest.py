@@ -821,6 +821,23 @@ async def seeded(db: AsyncSession) -> dict:
                 policy_source="PLATFORM_FLOOR",
             )
         )
+        # Document 106 section 9 row 9 (SPEC-EBMR-000) -- SG-035 partial, 2026-09-10, project-owner-
+        # directed ("follow the ebmr-edhr docs"): product_version/suspend is `Performed` by an
+        # "Authorized holder (Production / QA)" (role pair -> required_role_id=None; RBAC product.suspend
+        # gates it), Independence "None", Reason "yes". Same row scripts/seed.py's SIGNATURE_POLICY_FLOOR
+        # adds. product_version/reinstate has no Document 106 row and stays unresolved (SG-035, deferred).
+        db.add(
+            SignaturePolicy(
+                record_type="product_version",
+                action="suspend",
+                meaning="Performed",
+                required_role_id=None,
+                requires_independent_signer=False,
+                signature_required=True,
+                reason_required=True,
+                policy_source="PLATFORM_FLOOR",
+            )
+        )
         # Document 106 row 108 (SPEC-EQP-001) -- same row scripts/seed.py upserts.
         db.add(
             SignaturePolicy(

@@ -2,9 +2,14 @@
 
 Pure and table-driven: no I/O, no session, no `evaluate()` recursion of its own. `CLASS_POLICY` is
 `§2`'s calculation-class table transcribed verbatim (storage precision, rounding mode, rounding stage,
-comparison rule) -- do not tune any value here to make a test pass (§9). §2 is headed "(PROPOSED)"
-inside an otherwise APPROVED document; this module implements it as the construction baseline per the
-task decision recorded in SG-145, not as a silent assumption that it is fully approved.
+comparison rule) -- do not tune any value here to make a test pass (§9). §2 was originally headed
+"(PROPOSED)" inside an otherwise APPROVED document; SG-145 is RESOLVED 2026-09-10 (project-owner-
+directed, "follow the ebmr-edhr docs"): the "(PROPOSED)" heading is treated as an editorial artefact
+inside Document 110 v1.0 APPROVED (whose §1/§3-§10 and approval block are approved as a whole), so §2 is
+the approved calculation-class baseline as implemented here. A formal customer QMS Part 11 signature
+against Document 110 §2 is still captured at PQ (Document 110 §7); that is a records action, not a code
+change. Any change to a value in this table remains a controlled Document 110 revision + revalidation
+trigger (Document 110 §7, Document 96).
 
 N2 (rounding only at declared stages, never silently mid-chain) is honoured by construction: this module
 never rounds an intermediate arithmetic result. It is invoked from exactly two places --

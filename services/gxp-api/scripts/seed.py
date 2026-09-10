@@ -1160,9 +1160,17 @@ SIGNATURE_POLICY_FLOOR = [
     # to match. `requires_independent_signer=True` is enforced in release_product_version() against the
     # product version's own `Created` audit event (the author) -- the same bespoke pattern as
     # release_recipe_version() / IND-011 / the new IND-021, since resolve_signature_requirement() still
-    # does not read these two columns. `product_version` suspend/reinstate remain unresolved (SG-035
-    # still open for those two) -- deliberately not extended here.
+    # does not read these two columns.
     ("product_version", "release", "Released", "QA Releaser", True, True, False),
+    # product_version/suspend -- SG-035 partial, 2026-09-10, project-owner-directed ("follow the
+    # ebmr-edhr docs"): Document 106 section 9 row 9 (`POST /products/v1/{id}/suspend`) states meaning
+    # `Performed`, signer class "Authorized holder (Production / QA)" -- a role pair, so
+    # `required_role_name=None` (RBAC `product.suspend` gates it; same treatment as Document 106 row 108
+    # equipment_asset/hold) -- Independence "None", Reason "yes" (already satisfied by the required
+    # `SuspendProductVersionCommand.reason` field). No bespoke enforcement needed: no role check, no
+    # independence check. `product_version/reinstate` has no Document 106 row and stays unresolved
+    # (SG-035, deferred 2026-09-10) -- deliberately not extended here.
+    ("product_version", "suspend", "Performed", None, False, True, True),
     # recipe_version/release -- SG-035 further-partial 2026-09-08, project-owner-directed (asked directly:
     # QA-Releaser-independent-of-author vs. self-signed vs. RBAC-only vs. leave-unresolved -- chose the
     # first). Recipe Master has an author/release role split (Process Engineer authors, `recipe.release`

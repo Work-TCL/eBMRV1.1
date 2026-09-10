@@ -622,3 +622,45 @@ These hold for every item above and are not negotiable at the engineering level:
 
 Engineering will execute the ratified decisions **only** after they are recorded in writing,
 following §5.3, and will report the PASS/FAIL evidence per CLAUDE.md §6.
+
+---
+
+## 8. Application log — decisions recorded and applied
+
+**Decision of record — 2026-09-10, project owner:** *"ebmr-edhr … follow this docs and based on this
+docs if you have not answer then ask me."* Plus the three answers captured via the decision prompt:
+(1) do the full implementation now for the ~21 pairs Document 106 §9 specifies; (2) for the 3
+class/RBAC-mismatch pairs, map to the Document 106 class and grant the missing RBAC permission;
+(3) mark SG-145 approved (editorial), and defer `training_assignment` ×3, `record_correction/complete`,
+`product_version/reinstate`, and SG-167 ×5. This is a project-owner **construction-baseline** decision;
+the customer's formal QMS Part 11 signatures are still captured at PQ.
+
+Execution is staged; each stage commits only when its own tests are green.
+
+### Stage 1 — DONE (commit pending in this session)
+
+| Item | Applied | Evidence |
+|---|---|---|
+| **SG-145** | Doc 110 §2 "(PROPOSED)" treated as an editorial artefact inside Document 110 v1.0 APPROVED. `18_SPEC_GAPS.md` SG-145 → `RESOLVED`; `app/modules/rules/precision.py` docstring updated. No functional code change. Customer Part 11 record against §2 still captured at PQ (Doc 110 §7). | `test_rules.py` green (part of the 57-pass run) |
+| **SG-035 `product_version/suspend`** | Seeded verbatim from **Document 106 §9 row 9**: `("product_version","suspend","Performed",None,False,True,True)` — `Performed`, signer class "Authorized holder (Production / QA)" → role pair → `required_role_name=None` (RBAC `product.suspend` gates it), no independence, reason required. Added to `scripts/seed.py` `SIGNATURE_POLICY_FLOOR` + `tests/conftest.py`; `product_master/router.py` `signature-challenges` now accepts `action="suspend"`. No command change (`_transition_with_signature` already runs the ceremony). `sync_signature_policies.py` run against `ebmr_new_gxp`: **1 created, 84 total**. | `test_product_master.py` updated + green: unsigned suspend → `MISSING_SIGNATURE`/428; challenge+password suspend → 200, `lifecycle_state="suspended"`; `reinstate` still → `SIGNATURE_POLICY_UNRESOLVED`/409. Full run `test_product_master.py test_rules.py test_recipe_master.py test_release.py` = **57 passed / 0 failed** (6:39). |
+
+**Still fail-closed after Stage 1** (verified in `ebmr_new_gxp`): `vault_object/release`,
+`record_correction/complete`, `rule/release`, `product_version/reinstate`.
+
+### Stages 2–5 — pending
+
+| Stage | Scope |
+|---|---|
+| 2 | SG-138 batch A: `capa/close`, `ncr/disposition+verify+close`, `change/approve+verify+close` (Doc 106 §9 rows 80–88) — seed + generalise each module's `_resolve_signature()` to enforce `required_role_id` + `requires_independent_signer` (the `deviation_record` pattern) + test updates |
+| 3 | SG-138 batch B: `complaint`, `scar`, `field_action`, `internal_audit`, `audit_finding` (rows 95–105) + RBAC grants `complaint.reportability` / `field_action.reportability` → `Postmarket Regulatory Affairs` |
+| 4 | SG-138 batch C: `controlled_document_version/release`, `risk_record/review`, `quality_metric_definition/release`, `quality_metric_snapshot/management_review` (rows 89, 97, 106, 107) + RBAC grant `quality_metric.management_review` → `QA Reviewer` |
+| 5 | SG-035 `vault_object/release` (Doc 106 §9 row 2) + `rule/release` (row 6) — bespoke `required_role_id` + independence enforcement in `create_vault_release()` / `release_rule()` |
+
+### Deferred — documented, NOT applied (project-owner-directed 2026-09-10)
+
+| Item | Reason | Register status |
+|---|---|---|
+| SG-035 `record_correction/complete` | Document 106 §9 row 1 requires **2 signatures** (corrector + independent approver); the platform has no 2-signature ceremony. | SG-035 OPEN for this pair |
+| SG-035 `product_version/reinstate` | **No Document 106 row exists.** | SG-035 OPEN for this pair |
+| SG-138 `training_assignment` create / complete / assess | Document 106 §9 rows 91–93 state **"per policy lookup"** — the document defers the value. | SG-138 OPEN for these 3 pairs |
+| SG-167 — all 5 AI-governance pairs | Document 105 is outside Document 106 §2's "Documents 03–60" scope — **zero SPEC-AI-001 rows**. No non-AI impact. | SG-167 OPEN |
