@@ -14,8 +14,8 @@ from app.modules.qms.complaint_models import (
     CONSTITUENT_CLASSIFICATIONS,
     SOURCE_CHANNELS,
     ComplaintCommunication,
-    ComplaintReportabilityAssessment,
     ComplaintRecord,
+    ComplaintReportabilityAssessment,
 )
 from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service

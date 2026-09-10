@@ -16,8 +16,8 @@ from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     AuditClosureBlockedError,
-    AuditScopeIncompleteError,
     AuditorSodConflictError,
+    AuditScopeIncompleteError,
     FindingResponseRequiredError,
     FindingVerificationRequiredError,
     InvalidTransitionError,

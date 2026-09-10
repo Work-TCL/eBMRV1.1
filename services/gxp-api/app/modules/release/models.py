@@ -25,9 +25,8 @@ action in this codebase. RELEASE_STATES below is the honestly-reachable subset.
 
 import uuid
 from datetime import datetime
-from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String
+from sqlalchemy import ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func

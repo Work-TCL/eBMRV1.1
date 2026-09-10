@@ -24,12 +24,12 @@ from app.modules.material.models import (
     DestructionRecord,
     DispensedContainer,
     DispensingOrder,
+    InventoryReservation,
     Material,
     MaterialContainer,
     MaterialIssue,
     MaterialLot,
     MaterialReceipt,
-    InventoryReservation,
 )
 from app.modules.rules import service as rules_service
 from app.mutation.errors import UomUnknownError

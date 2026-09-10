@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.recipe_master.models import (
+    STEP_TYPES,
     RecipeEvidenceRequirement,
     RecipeFamily,
     RecipeParameter,
@@ -16,7 +17,6 @@ from app.modules.recipe_master.models import (
     RecipeStep,
     RecipeStepDependency,
     RecipeVersion,
-    STEP_TYPES,
 )
 from app.modules.rules import service as rules_service
 from app.mutation.errors import NotFoundError

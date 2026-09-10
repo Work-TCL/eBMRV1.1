@@ -15,7 +15,7 @@ migration since 0002.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, SmallInteger, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func

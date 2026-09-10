@@ -11,8 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
-from app.modules.equipment import cleaning_commands, commands as equipment_commands, em_commands
-from app.modules.equipment import sterilization_commands
+from app.modules.equipment import cleaning_commands, em_commands, sterilization_commands
+from app.modules.equipment import commands as equipment_commands
 from app.modules.equipment.aseptic_models import (
     EVENT_SEVERITIES,
     INTERVENTION_TYPES,
@@ -29,8 +29,8 @@ from app.mutation.errors import (
     InvalidTransitionError,
     MissingSignatureError,
     NotFoundError,
-    SterileComponentIneligibleError,
     StaleVersionError,
+    SterileComponentIneligibleError,
     ValidationFailedError,
 )
 from app.mutation.gateway import check_idempotency, record_command_receipt, write_audit_event, write_outbox_event

@@ -213,7 +213,7 @@ def rewrite_markdown() -> list[dict]:
 def append_library_rows(cases: list[dict]) -> None:
     with open(LIBRARY_CSV, newline="") as f:
         reader = csv.reader(f)
-        fieldnames = next(reader)
+        next(reader)  # skip header
 
     rows = []
     for case in cases:

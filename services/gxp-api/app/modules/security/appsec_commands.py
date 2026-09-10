@@ -15,8 +15,8 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.security.appsec_models import (
-    OutboundDestination,
     WEBHOOK_AUTH_MECHANISMS,
+    OutboundDestination,
     WebhookProfile,
 )
 from app.mutation.errors import ValidationFailedError

@@ -11,9 +11,8 @@ Document 106's own policy, not a guess.
 
 import uuid
 from datetime import datetime
-from decimal import Decimal
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func

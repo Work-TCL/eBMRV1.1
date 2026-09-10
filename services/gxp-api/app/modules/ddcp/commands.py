@@ -44,7 +44,8 @@ from app.modules.ddcp.models import (
     FillOperation,
     ProductionCountLedger,
 )
-from app.modules.equipment import cleaning_commands, commands as equipment_commands, em_commands, sterilization_commands
+from app.modules.equipment import cleaning_commands, em_commands, sterilization_commands
+from app.modules.equipment import commands as equipment_commands
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.iam.models import User
 from app.modules.material.models import MaterialLot
@@ -787,7 +788,7 @@ async def record_fill_ipc_result(
     if fill_op.state not in ("EXECUTION", "HOLD"):
         raise InvalidTransitionError("Fill IPC can only be recorded while a fill operation is executing", current_state=fill_op.state)
 
-    rule = await rules_service.get_effective_released_rule(session, cmd.acceptance_rule_id)
+    await rules_service.get_effective_released_rule(session, cmd.acceptance_rule_id)
     inputs = {"value": cmd.actual_value, "target": str(fill_op.target_fill)}
     eval_receipt = await rules_commands.evaluate_rule(
         session,

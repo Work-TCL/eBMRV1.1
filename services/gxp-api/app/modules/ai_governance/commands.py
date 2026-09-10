@@ -34,6 +34,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.ai_governance.models import (
+    DATA_CLASSIFICATIONS,
+    DISPOSITIONS,
+    USE_CASE_CLASSES,
     AIAdvisoryLog,
     AIDisposition,
     AIEvaluationReport,
@@ -46,9 +49,6 @@ from app.modules.ai_governance.models import (
     AIToolDecision,
     AIToolRegistry,
     AIUseCase,
-    DATA_CLASSIFICATIONS,
-    DISPOSITIONS,
-    USE_CASE_CLASSES,
 )
 from app.modules.policy.service import evaluate_policy
 from app.modules.signature import service as signature_service
@@ -58,7 +58,6 @@ from app.mutation.errors import (
     AIModelNotApprovedError,
     AIOutputInvalidError,
     AIPromptInjectionBlockedError,
-    AIRegulatedDecisionBoundaryError,
     AIToolNotAllowlistedError,
     AIUseCaseNotActiveError,
     NotFoundError,

@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import SessionLocal
+from app.core.security import verify_password
 from app.modules.erp import reliability
 from app.modules.erp.adapters.dynamics365 import Dynamics365Adapter
 from app.modules.erp.adapters.erpnext import ERPNextAdapter
@@ -44,7 +45,6 @@ from app.modules.erp.models import (
 from app.modules.erp.provider import AdapterConfig, CanonicalOutboundCommand, ERPProvider
 from app.modules.iam.models import User
 from app.modules.signature import service as signature_service
-from app.core.security import verify_password
 from app.mutation.errors import (
     ErpCapabilityUnsupportedError,
     ErpExternalConflictError,
@@ -872,7 +872,6 @@ async def dispatch_erp_command(session: AsyncSession, command_id: uuid.UUID, act
             payload=command.payload, idempotency_key=command.idempotency_key,
         )
         adapter = build_adapter(instance)
-        vendor = instance.vendor
 
     # Step 2 -- real outbound HTTP call, deliberately outside any open transaction (rule 01).
     response = await adapter.dispatch(canonical)

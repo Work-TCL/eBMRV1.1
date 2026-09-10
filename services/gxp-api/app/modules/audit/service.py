@@ -8,7 +8,7 @@ module already writes correctly into the shared, hash-chained, append-only ledge
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.models import AuditEvent

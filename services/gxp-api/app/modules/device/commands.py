@@ -6,7 +6,6 @@ profiles) is deferred -- SG-049/SG-050.
 """
 
 import uuid
-from datetime import datetime, timezone
 
 from pydantic import BaseModel
 from sqlalchemy import select

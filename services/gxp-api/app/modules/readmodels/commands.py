@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.models import AuditEvent
-from app.modules.readmodels.models import ProjectionDocumentMetadata, ReadModelCheckpoint
+from app.modules.readmodels.models import ReadModelCheckpoint
 from app.modules.readmodels.search import index_authoritative_projection
 from app.mutation.errors import InvalidTransitionError, StaleVersionError, ValidationFailedError
 from app.mutation.gateway import check_idempotency, record_command_receipt, write_audit_event, write_outbox_event

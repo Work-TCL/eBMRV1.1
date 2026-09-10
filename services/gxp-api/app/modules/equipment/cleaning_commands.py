@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import verify_password
 from app.modules.equipment import commands as equipment_commands
 from app.modules.equipment.cleaning_models import (
-    LINE_CLEARANCE_STATES,
     CleaningExecution,
     CleaningProcedureVersion,
     EquipmentArea,

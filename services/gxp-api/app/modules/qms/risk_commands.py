@@ -16,8 +16,8 @@ from app.modules.qms.risk_models import (
     RiskAssessmentVersion,
     RiskRecord,
 )
-from app.modules.rules.models import RuleDefinition
 from app.modules.qms.signature_support import enforce_signer_policy
+from app.modules.rules.models import RuleDefinition
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     InvalidTransitionError,

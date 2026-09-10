@@ -8,6 +8,7 @@ import asyncio
 import uuid
 from decimal import Decimal
 
+from sqlalchemy import select
 
 from app.core.db import SessionLocal
 from app.core.security import verify_password  # noqa: F401 (sanity import)
@@ -15,16 +16,12 @@ from app.modules.batch.commands import (
     CompleteStepCommand,
     CreateBatchCommand,
     IssueBatchCommand,
-    ReleaseBatchCommand,
-    ReviewBatchCommand,
     StartStepCommand,
     SubmitForReviewCommand,
     batch_record_hash,
     complete_step,
     create_batch,
     issue_batch,
-    release_batch,
-    review_batch,
     start_step,
     submit_for_review,
 )
@@ -45,7 +42,6 @@ from app.modules.material.models import MaterialLot
 from app.modules.product.commands import CreateProductCommand, create_product
 from app.modules.recipe.commands import CreateRecipeCommand, RecipeStepInput, create_recipe
 from app.modules.signature import service as signature_service
-from sqlalchemy import select
 
 PASSWORD = "ChangeMe123!"
 
@@ -77,8 +73,8 @@ async def main() -> None:
         site = (await session.execute(select(Site))).scalars().first()
         site_id = site.id
         operator_id = await get_user_id(session, "operator1")
-        reviewer_id = await get_user_id(session, "qa.reviewer")
-        releaser_id = await get_user_id(session, "qa.releaser")
+        await get_user_id(session, "qa.reviewer")
+        await get_user_id(session, "qa.releaser")
         qc_id = await get_user_id(session, "qc.reviewer")
         await session.commit()  # close the autobegin transaction from the reads above
 
@@ -178,7 +174,7 @@ async def main() -> None:
         ibu_lot_id = await receive_lot(ibu_api_id, "LOT-2026-0102", "180.000000")
         mcc_lot_id = await receive_lot(mcc_id, "LOT-2026-0088", "500.000000")
         # A second, still-in-quarantine lot the QC Reviewer can act on live.
-        pending_lot_id = await receive_lot(ibu_api_id, "LOT-2026-0115", "90.000000")
+        await receive_lot(ibu_api_id, "LOT-2026-0115", "90.000000")
 
         async def disposition(lot_id, decision, actor_id):
             async with session.begin():

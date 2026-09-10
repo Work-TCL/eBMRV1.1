@@ -43,7 +43,7 @@ from app.modules.erp.commands import (
     propose_mapping,
     suspend_mapping,
 )
-from app.modules.erp.models import ErpExternalMapping, ErpInstance, ErpSyncCheckpoint, MAPPING_ENTITY_TYPES
+from app.modules.erp.models import MAPPING_ENTITY_TYPES, ErpExternalMapping, ErpInstance, ErpSyncCheckpoint
 from app.mutation.errors import ErpMappingConflictError, NotFoundError, ValidationFailedError
 
 

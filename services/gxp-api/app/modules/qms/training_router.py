@@ -7,6 +7,11 @@ from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy
 from app.modules.qms import training_service
+from app.modules.qms.signature_support import (
+    SignatureChallengeRequest,
+    create_qms_signature_challenge,
+    create_qms_signature_challenge_for_new_record,
+)
 from app.modules.qms.training_commands import (
     AssessTrainingAssignmentCommand,
     CompleteTrainingAssignmentCommand,
@@ -20,11 +25,6 @@ from app.modules.qms.training_commands import (
     create_qualification,
     create_requirement,
     create_waiver,
-)
-from app.modules.qms.signature_support import (
-    SignatureChallengeRequest,
-    create_qms_signature_challenge,
-    create_qms_signature_challenge_for_new_record,
 )
 from app.modules.qms.training_models import TrainingAssignment
 from app.mutation.errors import NotFoundError, ValidationFailedError

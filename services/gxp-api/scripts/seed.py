@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 import app.all_models  # noqa: F401 -- registers every module's models before any relationship/FK
+
 # string reference (e.g. AsepticProfileVersion.product_id -> "ebmr.products") is resolved; seed.py
 # only imports the specific model classes it needs directly, which left tables like `ebmr.products`
 # unregistered and raised NoReferencedTableError on the very first flush. Same fix app/main.py gets
@@ -20,20 +21,20 @@ import app.all_models  # noqa: F401 -- registers every module's models before an
 # empty ebmr_new_gxp demo database.
 from app.core.db import SessionLocal
 from app.core.security import hash_password
-from app.modules.iam.models import Organization, Permission, Role, RolePermission, Site, SodRule, User, UserSiteRole
-from app.modules.material.models import WarehouseLocation
-from app.modules.equipment.cleaning_models import CleaningProcedureVersion, EquipmentArea
-from app.modules.equipment.em_models import EmLocation, EmProgramVersion
-from app.modules.equipment.sterilization_models import ProcessCycleProfileVersion
-from app.modules.equipment.aseptic_models import AsepticProfileVersion
-from app.modules.edge.models import EdgeEnrollmentToken
-from app.modules.erp.models import ErpInstance
-from app.modules.rules.models import RuleDefinition
-from app.modules.signature.models import SignaturePolicy
 from app.modules.dataops.models import DataOwnershipRegistry
 from app.modules.dataops.registry import OWNERSHIP_SEED as DATA_OWNERSHIP_SEED
 from app.modules.disaster_recovery.models import RecoveryObjectiveProfile
 from app.modules.disaster_recovery.registry import DOCUMENT_109_TIER_SEED
+from app.modules.edge.models import EdgeEnrollmentToken
+from app.modules.equipment.aseptic_models import AsepticProfileVersion
+from app.modules.equipment.cleaning_models import CleaningProcedureVersion, EquipmentArea
+from app.modules.equipment.em_models import EmLocation, EmProgramVersion
+from app.modules.equipment.sterilization_models import ProcessCycleProfileVersion
+from app.modules.erp.models import ErpInstance
+from app.modules.iam.models import Organization, Permission, Role, RolePermission, Site, SodRule, User, UserSiteRole
+from app.modules.material.models import WarehouseLocation
+from app.modules.rules.models import RuleDefinition
+from app.modules.signature.models import SignaturePolicy
 from app.modules.sre.models import CapacityForecast, SloDefinition
 from app.modules.sre.registry import DOCUMENT_109_CAPACITY_SEED, DOCUMENT_109_SLO_SEED
 from app.mutation.hashing import sha256_hex

@@ -13,7 +13,6 @@ the profile's `tamper_action` field selects which of the three fires, since all 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

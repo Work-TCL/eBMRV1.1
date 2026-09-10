@@ -16,7 +16,6 @@ only this function's body -- callers, the outbox table and the atomicity guarant
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select

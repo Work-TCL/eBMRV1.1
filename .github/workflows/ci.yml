@@ -72,12 +72,11 @@ jobs:
       - run: uv sync --frozen --group dev
 
       - name: ruff — pyflakes floor (BLOCKING)
-        run: uv run ruff check app scripts --select F --ignore F401,F841
-        # F-codes are real bugs. This gate blocks every NEW pyflakes finding — including redefinitions
-        # (F811) and undefined names (F821), which are now clean (the 3 pre-existing hits, incl. the
+        run: uv run ruff check app scripts --select F
+        # F-codes are real bugs. This gate blocks every NEW pyflakes finding, including unused imports
+        # (F401), unused variables (F841), redefinitions (F811) and undefined names (F821) — all clean
+        # as of the first ratchet PR (PHASE_2_BACKBONE.md; the 3 pre-existing F811/F821 bugs, incl. the
         # duplicate FilterIntegrityFailedError in app/mutation/errors.py, were fixed 2026-09-10).
-        # F401 (unused import) + F841 (unused var) remain the last pre-existing noise, cleared in the
-        # first ratchet PR (PHASE_2_BACKBONE.md).
 
       - name: ruff — full ruleset (report-only, ratcheting)
         run: uv run ruff check . --output-format github || true

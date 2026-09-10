@@ -6,7 +6,6 @@ import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordBearer
 from jose import JWTError, jwt
-from sqlalchemy import select
 
 from app.core.config import settings
 

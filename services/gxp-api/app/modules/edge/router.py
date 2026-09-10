@@ -12,6 +12,7 @@ for those three, replacing `evaluate_policy` rather than skipping authorization 
 import uuid
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +40,6 @@ from app.modules.signature.service import create_challenge
 from app.mutation.errors import EnrollmentTokenInvalidError, NotFoundError, ValidationFailedError
 from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import MutationReceipt
-from pydantic import BaseModel
 
 router = APIRouter(prefix="/edge/v1", tags=["edge"])
 

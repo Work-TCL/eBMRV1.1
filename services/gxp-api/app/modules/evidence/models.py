@@ -23,7 +23,7 @@ record (a batch, a QC result, a process cycle). All sizes are `BigInteger`; no f
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func

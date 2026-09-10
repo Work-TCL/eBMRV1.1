@@ -19,7 +19,7 @@ unsigned" precedent as every prior unsigned module. No `tenant_id` (ADR-0006); `
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
