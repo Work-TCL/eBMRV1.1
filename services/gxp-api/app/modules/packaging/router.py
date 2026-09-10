@@ -24,7 +24,6 @@ from app.modules.packaging.commands import (
     reconcile_packaging,
     complete_line_clearance,
 )
-from app.modules.policy.service import evaluate_policy
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 

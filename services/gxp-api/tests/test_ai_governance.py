@@ -15,7 +15,7 @@ from sqlalchemy import select, text
 
 from app.core.db import SessionLocal
 from app.modules.ai_governance import commands as ai
-from app.modules.ai_governance.models import AIAdvisoryLog, AIDisposition, AIUseCase
+from app.modules.ai_governance.models import AIAdvisoryLog, AIDisposition, AIToolRegistry, AIUseCase
 from app.modules.iam.models import UserSiteRole
 from app.mutation.errors import (
     AIDataClassificationDeniedError,
@@ -264,6 +264,10 @@ async def test_authorize_tool_call_read_tool_fails_closed_on_signature(db, seede
     async with SessionLocal() as s:
         async with s.begin():
             use_case_id, actor = await _register_use_case(s, seeded)
+            # A real, active, READ-class tool with no regulated scope: it clears the allowlist and the
+            # AI-FR-003 structural check, so the call reaches the SG-167/168 signature lookup — which is
+            # what this test is about.
+            s.add(AIToolRegistry(tool_name="gxp_read_lookup", risk_class="READ", allowed_scopes=[], active=True))
         async with s.begin():
             with pytest.raises(SignaturePolicyUnresolvedError):
                 await ai.authorize_ai_tool_call(

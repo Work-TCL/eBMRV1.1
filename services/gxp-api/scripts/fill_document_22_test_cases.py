@@ -321,8 +321,11 @@ def rewrite_markdown() -> list[dict]:
         raise SystemExit(f"Result mapping for ids not found in the file: {extra}")
 
     out_lines = []
+    current_id: str | None = None
     for line in text.splitlines():
         if STATUS_LINE_RE.match(line):
+            if current_id is None:
+                raise SystemExit("Encountered a status line before any case header")
             case_id = current_id
             status, actual_result, defect = RESULTS[case_id]
             out_lines.append(

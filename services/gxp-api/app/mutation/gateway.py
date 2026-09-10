@@ -115,6 +115,11 @@ async def write_outbox_event(
         schema_version=schema_version,
     )
     session.add(event)
+    # Flush so the caller sees the generated `id` (the `default=uuid.uuid4` column default is applied at
+    # flush, not at construction). Every caller is already inside the command's single transaction, so
+    # this only moves the flush a step earlier — the row still commits with the rest. Without it a
+    # same-transaction read of `event.id` (e.g. the outbox consumer/schema-version tests) gets None.
+    await session.flush()
     return event
 
 
