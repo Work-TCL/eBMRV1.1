@@ -1,0 +1,23 @@
+# DEP-FR-025/026 (Document 104): automated dependency-update proposals. Automation may open PRs but
+# cannot auto-merge — the normal PR gate (CI + CODEOWNERS review) applies to every bump, and
+# security-critical libraries (crypto/auth/parser/native) need explicit Security/Architecture approval
+# (DEP-FR-018). Lockfile diffs are reviewed for unexpected new packages/licences/native binaries
+# (DEP-FR-027).
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/services/gxp-api"
+    schedule: { interval: "weekly" }
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "needs-sca-review"]
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule: { interval: "weekly" }
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "needs-sca-review"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    labels: ["ci"]

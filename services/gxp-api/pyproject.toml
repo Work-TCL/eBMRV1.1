@@ -29,9 +29,50 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    # WP-00 / Document 97 (SPEC-ENG-001) coding-standard enforcement, ADR-0007 (Python tooling
+    # supersedes ADR-010's eslint/tsc). Dev/CI only; not shipped in any runtime artifact.
+    "ruff>=0.14",
+    "mypy>=1.18",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
+
+# --- Document 97 (SPEC-ENG-001) coding-standard enforcement -------------------------------------------
+# Rows in docs/generated/33_CODING_STANDARD_COMPLIANCE_MATRIX.md name `ci:lint` / `ci:typecheck` as the
+# enforcement jobs; those map to `ruff check` and `mypy` here, run by .github/workflows/ci.yml.
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["migrations/versions", ".venv"]
+
+[tool.ruff.lint]
+# Pragmatic first baseline. F (pyflakes — real bugs) is the blocking floor in CI; the rest are
+# reported and ratcheted down over subsequent PRs rather than blocking from day one on a large
+# pre-existing codebase (see PHASE_2_BACKBONE.md).
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "B008",    # function call in argument default — this IS the FastAPI `Depends()` / `Query()` idiom
+    "RUF012",  # mutable class default — SQLAlchemy `Mapped[...]` / Pydantic model attribute pattern
+    "SIM117",  # nested `with` — `async with session.begin()` blocks are deliberately not merged here
+    "E501",    # line length handled by the formatter, not a hard gate
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["F811", "F401", "E402"]        # fixture shadowing / re-export / deferred import in conftest
+"scripts/**" = ["E402"]
+"app/all_models.py" = ["F401"]               # deliberate model-registry re-export for Alembic autogen
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app"]
+exclude = "(migrations/|tests/|scripts/)"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+# --strict is the ADR-0007 target. Enabling the remaining strict flags
+# (disallow_untyped_defs, disallow_any_generics, ...) is a tracked ratchet — see
+# PHASE_2_BACKBONE.md; CI runs mypy non-blocking until the baseline is clean.

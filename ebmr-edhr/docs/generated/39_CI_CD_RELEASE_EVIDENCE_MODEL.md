@@ -50,3 +50,32 @@ deployment
 | Deployment gate | fingerprint mismatch with the authorized release | deployment record |
 
 **Rule:** production cannot deploy an unvalidated or fingerprint-mismatched regulated configuration. Never fabricate a test run, scan result or validation record.
+
+---
+
+## Implementation status — Phase 2 (2026-09-09)
+
+The pre-ADR-0007 workflow (`ebmr-edhr/.github/workflows/ci.yml`, npm-only, wrong directory to ever run)
+is superseded by **`/.github/workflows/ci.yml`** at the repository root, wired to the built stack
+(Python/FastAPI GxP Core + Next.js UI).
+
+| Model gate | CI job / step | Blocking? | Notes |
+|---|---|---|---|
+| Specs read-only | `guardrails` → *Specs are read-only* | **yes** | diff-based; fails on any `specs/` change |
+| Contract lint + compatibility | `guardrails` → *Contract conformance gate* | **yes (blocking, 2026-09-10)** | `tooling/contracts/validate.py --baseline contracts/openapi/.conformance-baseline`, run with the app importable so CTRC-FR-001 coverage is not skipped. M1 (WP-01..04) + WP-12 fully contracted; 17 non-M1 residuals (WP-06/07/08) are an agreed baseline — a NEW uncontracted operation fails, a baselined one doesn't, a stale baseline line fails |
+| Single event producer / closed payloads | `guardrails` → *Event contract gate* | **yes** | `tooling/events/validate.py` — currently reports 2 known violations (**SG-174** name collisions) |
+| Traceability / status in sync | `guardrails` → *Status rollup is in sync* | **yes** | `rollup.py` then `git diff --exit-code BUILD_STATUS.md` |
+| lint / typecheck | `lint` (`ruff --select F` **blocking**; full ruff + `mypy` report-only) · `frontend-lint` (`eslint` + `tsc --noEmit`) | partial | ratchet plan in `PHASE_2_BACKBONE.md` — F-codes block now, the rest blocks after the baseline is cleared |
+| unit / integration tests | `test` — Postgres 14 service, `alembic upgrade head`, `alembic check` drift guard, `pytest` + JUnit artefact | **yes** | drift guard added after the Phase 1 stale-test-DB finding |
+| SCA / licence | `supply-chain` → *Licence gate* (**blocking**: no PROHIBITED, no UNKNOWN) + `pip-audit` (report-only until a triage owner is named) | partial | |
+| SBOM generation | `supply-chain` → *SBOM Python / frontend* (CycloneDX) → uploaded artefact; Python SBOM also committed at `sbom/sbom-gxp-api.cdx.json` | **yes** | |
+| Secret scan | `supply-chain` → `gitleaks` | **yes** | repo-level push protection also on |
+| SAST | — | **not yet** | tool selection (CodeQL / semgrep) is an open Phase 2 item |
+| IaC / container scan | — | **not yet** | no Dockerfile / IaC in the tree yet |
+| Architecture guardrails (`34_`) | — | **not yet** | `tooling/guardrails/` does not exist; the checks are described in `34_` but not codified |
+| Build once / artefact signing / release manifest | — | **not yet** | belongs to the release-candidate stage; no tagged release yet |
+
+**Not yet implemented (tracked in `PHASE_2_BACKBONE.md`):** SAST tool, architecture-guardrail codification,
+container/IaC scan, artefact build+sign+manifest, the merge-to-main and release-candidate stages, and the
+GitHub branch-protection ruleset itself (a repo-admin action — spec'd in
+`docs/engineering/REPOSITORY_BRANCHING_STANDARD.md`).
