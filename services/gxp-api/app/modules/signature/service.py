@@ -1,13 +1,64 @@
 import secrets
 import uuid
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.modules.iam.models import Role
+from app.modules.policy.service import effective_role_names
 from app.modules.signature.models import Signature, SignatureChallenge, SignaturePolicy
-from app.mutation.errors import SignatureChallengeInvalidError, SignaturePolicyUnresolvedError
+from app.mutation.errors import (
+    RoleMissingError,
+    SignatureChallengeInvalidError,
+    SignaturePolicyUnresolvedError,
+    SodIndependenceRequiredError,
+)
+
+
+async def enforce_signer_policy(
+    session: AsyncSession,
+    *,
+    policy: SignaturePolicy,
+    actor_user_id: uuid.UUID,
+    site_id: uuid.UUID | None,
+    action_label: str,
+    disqualified_subject_ids: Iterable[uuid.UUID | None] = (),
+) -> None:
+    """SG-138 / SG-035 policy-data half, 2026-09-10 (project-owner-directed, "follow the ebmr-edhr docs").
+
+    `resolve_signature_requirement()` itself does not read `required_role_id` /
+    `requires_independent_signer` -- the same limitation `release_recipe_version()` /
+    `release_product_version()` / `close_deviation()` each enforce by hand. This is the shared version of
+    that bespoke block for the Document 106 section 9 rows that name a required signer role and/or an
+    independence rule:
+
+    * required role -- the signer must hold the role the policy names, at the record's site
+      (`site_id=None` means "at any site");
+    * independence -- for a `requires_independent_signer` policy, the signer must not be any of the
+      record's own disqualifying subjects (investigator / owner / author). The caller passes the concrete
+      identity column(s) its record carries; where a record has no stored identity for the "MUST NOT be
+      the performer" clause, the caller passes nothing and documents the gap (same honest limitation
+      recorded for qa_review_package/complete).
+    """
+    if policy.required_role_id is not None:
+        required_role_name = await session.scalar(select(Role.name).where(Role.id == policy.required_role_id))
+        if required_role_name not in await effective_role_names(session, actor_user_id, site_id):
+            raise RoleMissingError(
+                f"{action_label} requires the signing role named by the signature policy",
+                action=action_label,
+                required_role=required_role_name,
+            )
+    if policy.requires_independent_signer:
+        disqualified = {s for s in disqualified_subject_ids if s is not None}
+        if actor_user_id in disqualified:
+            raise SodIndependenceRequiredError(
+                f"{action_label} must be independent of the record's investigator/owner/author "
+                "(Document 106 section 9 / Document 107)",
+                action=action_label,
+            )
 
 
 async def resolve_signature_requirement(

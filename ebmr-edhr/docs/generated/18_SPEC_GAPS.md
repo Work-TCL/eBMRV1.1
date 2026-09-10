@@ -1904,13 +1904,27 @@ challenge+password suspend succeeds and `lifecycle_state` becomes `suspended`, a
 same version still asserts `SIGNATURE_POLICY_UNRESOLVED`/409. No command-layer change needed
 (`_transition_with_signature` already runs the ceremony when `signature_required`).
 
-**Still OPEN after 2026-09-10 (explicitly deferred, project-owner-directed):**
-`vault_object/release` (Document 106 row 2) and `rule/release` (Document 106 row 6) — Document 106
-states the values but applying them needs bespoke `required_role_id` + independence enforcement in
-`create_vault_release()` / `release_rule()` (the generic vault endpoint has no site or prior record for
-the independence check); `record_correction/complete` (Document 106 row 1) — Document 106 requires
-**2 signatures** (corrector + independent approver) and the platform has no 2-signature ceremony;
-`product_version/reinstate` — **no Document 106 row exists**. All four remain fail-closed.
+**`vault_object/release` + `rule/release` RESOLVED 2026-09-10 (Stage 5, project-owner-directed).**
+Document 106 **section 9 rows 2 and 6** both state `Released` by a "QA Approver / Batch Release" ->
+"QA Releaser", "MUST be independent of every production performer on the record", Reason: yes. Floor
+rows `("vault_object","release","Released","QA Releaser",True,True,True)` and
+`("rule","release","Released","QA Releaser",True,True,True)` added to `scripts/seed.py`; the required
+role is enforced in `create_vault_release()` / `release_rule()` via the shared
+`signature_service.enforce_signer_policy()` helper (moved this pass from `qms/signature_support.py` to
+`app/modules/signature/service.py` and re-exported). Neither endpoint stores a production-performer
+identity, so the independence clause has no data source there and only the required role is enforced --
+documented, same honest limitation as `qa_review_package/complete`. New challenge endpoints
+`POST /rules/v1/{id}/signature-challenges` and `POST /vault/v1/masters/{type}/{id}/signature-challenges`
+(the latter binds to `sha256_hex(canonical_payload)` at version 1, signed-CREATE style, since the vault
+object does not exist yet). `rules.release` RBAC permission also granted to `QA Releaser` (was
+Admin-only). Verified: `test_rules.py` + `test_vault.py` reworked -- an Admin (no QA Releaser role) is
+refused `ROLE_MISSING`, a QA Releaser without a challenge gets `MISSING_SIGNATURE`, a QA Releaser with a
+valid challenge releases successfully.
+
+**Still OPEN (explicitly deferred, project-owner-directed 2026-09-10):**
+`record_correction/complete` (Document 106 section 9 row 1) — Document 106 requires **2 signatures**
+(corrector + independent approver) and the platform has no 2-signature ceremony; `product_version/
+reinstate` — **no Document 106 row exists**. Both remain fail-closed.
 
 ```yaml
 spec_gap_id: SG-035
@@ -1973,7 +1987,7 @@ options:
 blocking: false
 owner: Head of Quality + Product Owner
 resolution_document: "2026-09-07: product_version/release resolved (self-signed by Admin, project-owner-directed) -- POST /products/v1/{id}/signature-challenges added, scripts/sync_signature_policies.py added for re-runnable floor sync, frontend wired to the shared SignatureCeremony component. 2026-09-08: recipe_version/release ALSO resolved (project-owner-directed, asked directly among independent-QA-Releaser / self-signed / RBAC-only / leave-unresolved -- chose independent QA Releaser): floor row ('recipe_version','release','Released','QA Releaser',independent=True,signature_required=True); required_role_id + requires_independent_signer are enforced in release_recipe_version() (against the recipe version's own `Created` audit event for the author), matching the bespoke IND-001/CON-FR-014 pattern since resolve_signature_requirement() does not read those columns; new POST /recipes/v2/drafts/{id}/signature-challenges endpoint; frontend Release button wired to SignatureCeremony. 2026-09-08 (later, Decision 2): product_version/release UPGRADED from self-signed-by-Admin to the same independent-QA-Releaser model -- floor row changed to ('product_version','release','Released','QA Releaser',independent=True,signature_required=True); release_product_version() now runs the same required_role_id + requires_independent_signer enforcement as release_recipe_version() (against the product version's own `Created` audit event); product.author moved to a new Process Engineer + Admin grant, product.release to QA Releaser + Admin; new Document 107 rows IND-021 (ProductVersion/release/AUTHOR PROHIBITED) and SOD-021 (Process Engineer / QA Releaser standing pair, REPORT_ONLY -- customer Quality org raises to PROHIBITED at PQ) plus a new re-runnable scripts/sync_sod_rules.py. vault_object/release, record_correction/complete, rule/release, and product_version/{suspend,reinstate} remain open, pending Document 106"
-status: PARTIALLY RESOLVED (product_version/release + recipe_version/release signed by an independent QA Releaser with author!=releaser enforced; product_version/suspend resolved 2026-09-10 from Document 106 section 9 row 9 -- Performed / Authorized holder / no independence / reason required. Still OPEN: vault_object/release (row 2) + rule/release (row 6) -- values stated but need bespoke role/independence enforcement, deferred; record_correction/complete (row 1) -- needs a 2-signature ceremony the platform lacks, deferred; product_version/reinstate -- no Document 106 row, deferred)
+status: PARTIALLY RESOLVED (product_version/release + recipe_version/release signed by an independent QA Releaser with author!=releaser enforced; product_version/suspend + vault_object/release + rule/release resolved 2026-09-10 from Document 106 section 9 rows 9/2/6 -- required role enforced via signature_service.enforce_signer_policy(), independence-of-performer clause documented as having no data source at these generic endpoints. Still OPEN: record_correction/complete (row 1) -- needs a 2-signature ceremony the platform lacks, deferred; product_version/reinstate -- no Document 106 row, deferred)
 ```
 
 ### SG-036 — The 11 combined Document 06 + Document 08 Frappe UI surfaces cannot be built yet

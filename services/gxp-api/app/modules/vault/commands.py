@@ -69,6 +69,15 @@ async def create_vault_release(
     )
     signature_id = None
     if policy.signature_required:
+        # SG-035 (2026-09-10, project-owner-directed): Document 106 section 9 row 2 -- the generic vault
+        # master release is `Released` by a "QA Approver / Batch Release" -> "QA Releaser", "independent
+        # of every production performer on the record". This endpoint has no site and no prior mutable
+        # record, so the required role is enforced (at any site) and the independence clause has no data
+        # source here -- same honest limitation recorded for qa_review_package/complete.
+        await signature_service.enforce_signer_policy(
+            session, policy=policy, actor_user_id=actor_user_id, site_id=None,
+            action_label="vault_object.release",
+        )
         if cmd.challenge_id is None or not cmd.reauth_password:
             raise MissingSignatureError("This release requires a signature", required_meaning=policy.meaning)
         actor = await session.get(User, actor_user_id)

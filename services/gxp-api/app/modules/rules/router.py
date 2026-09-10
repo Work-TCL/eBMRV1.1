@@ -30,7 +30,10 @@ from app.modules.rules.uom_commands import (
     release_uom,
     release_uom_conversion,
 )
-from app.mutation.errors import ValidationFailedError
+from app.modules.rules.models import RuleDefinition
+from app.modules.signature.service import create_challenge, resolve_signature_requirement
+from app.mutation.errors import NotFoundError, ValidationFailedError
+from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/rules/v1", tags=["rules"])
@@ -107,6 +110,39 @@ async def post_release_rule(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="rules.release", site_id=None)
         return await release_rule(session, cmd, actor.user_id)
+
+
+class RuleReleaseChallengeRequest(BaseModel):
+    action: str = "release"
+
+
+@router.post("/{rule_object_id}/signature-challenges")
+async def post_rule_release_signature_challenge(
+    rule_object_id: uuid.UUID,
+    body: RuleReleaseChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """SG-035 (2026-09-10): obtain a challenge for `rule/release` (Document 106 section 9 row 6). Bound
+    to the same canonical (rule_id, semantic_version, expression_ast) hash at version 1 that
+    `release_rule()` re-computes at consume time."""
+    if body.action != "release":
+        raise ValidationFailedError("Unknown or unsigned action", action=body.action)
+    async with session.begin():
+        rule = await session.get(RuleDefinition, rule_object_id)
+        if rule is None:
+            raise NotFoundError("Rule not found")
+        policy = await resolve_signature_requirement(session, record_type="rule", action="release")
+        canonical = {
+            "rule_id": rule.rule_id,
+            "semantic_version": rule.semantic_version,
+            "expression_ast": rule.expression_ast,
+        }
+        challenge = await create_challenge(
+            session, user_id=actor.user_id, record_type="rule", record_id=rule.rule_object_id,
+            record_version=1, record_hash=sha256_hex(canonical), meaning=policy.meaning,
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
 
 
 @router.get("")

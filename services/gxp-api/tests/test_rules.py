@@ -111,10 +111,27 @@ async def test_draft_validate_simulate_writes_nothing(client, seeded, db):
     assert resp.json()["result"] is False
 
 
-async def test_release_fails_closed_pending_signature_policy(client, seeded, db):
+async def test_release_requires_an_independent_qa_releaser_signature(client, seeded, db):
+    """SG-035 (2026-09-10, project-owner-directed, "follow the ebmr-edhr docs"): Document 106 section 9
+    row 6 -- `rule/release` is `Released` by a "QA Approver / Batch Release" -> "QA Releaser". The
+    required role is enforced; RuleDefinition stores no author identity, so the "independent of every
+    production performer" clause has no data source here (documented)."""
     async with db.begin():
         await _make_admin(db, seeded, "admin.rules3")
+        signer = User(
+            username="qa.rules3", email="qa.rules3@example.com", full_name="QA Releaser",
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(signer)
+        await db.flush()
+        db.add(UserSiteRole(user_id=signer.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+        db.add(SignaturePolicy(
+            record_type="rule", action="release", meaning="Released",
+            required_role_id=seeded["roles"]["QA Releaser"].id, requires_independent_signer=True,
+            signature_required=True, reason_required=True,
+        ))
     admin_token = await login(client, "admin.rules3")
+    signer_token = await login(client, "qa.rules3")
 
     resp = await client.post("/rules/v1/drafts", json=_draft_body("ASSAY-REL"), headers=auth_headers(admin_token))
     rule_object_id = resp.json()["aggregate_id"]
@@ -124,13 +141,42 @@ async def test_release_fails_closed_pending_signature_policy(client, seeded, db)
         headers=auth_headers(admin_token),
     )
 
+    # Admin holds no "QA Releaser" role -> the signature-policy role check rejects it.
     resp = await client.post(
         f"/rules/v1/{rule_object_id}/release",
         json={"idempotency_key": idem(), "rule_object_id": rule_object_id},
         headers=auth_headers(admin_token),
     )
-    assert resp.status_code == 409
-    assert resp.json()["code"] == "SIGNATURE_POLICY_UNRESOLVED"
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+    # QA Releaser, no challenge -> MISSING_SIGNATURE.
+    resp = await client.post(
+        f"/rules/v1/{rule_object_id}/release",
+        json={"idempotency_key": idem(), "rule_object_id": rule_object_id},
+        headers=auth_headers(signer_token),
+    )
+    assert resp.status_code == 428, resp.text
+    assert resp.json()["code"] == "MISSING_SIGNATURE"
+
+    # QA Releaser + a valid challenge -> released.
+    challenge = (
+        await client.post(
+            f"/rules/v1/{rule_object_id}/signature-challenges", json={"action": "release"},
+            headers=auth_headers(signer_token),
+        )
+    ).json()
+    assert challenge["meaning"] == "Released"
+    resp = await client.post(
+        f"/rules/v1/{rule_object_id}/release",
+        json={
+            "idempotency_key": idem(), "rule_object_id": rule_object_id,
+            "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(signer_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is not None
 
 
 async def test_validate_rejects_undeclared_variable(client, seeded, db):
