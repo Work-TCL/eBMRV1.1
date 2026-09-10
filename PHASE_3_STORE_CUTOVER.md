@@ -212,3 +212,86 @@ in the full-suite run (b598imzs7) with all changes present. It is an order-depen
 - **ruff `--fix` cleanup PR** — clears ~78 `F401`/`I001`.
 - **Frontend** — retarget `/batches/new`, `/products`, `/recipes` off the scaffold endpoints (Phase 5,
   tied to this cutover).
+
+---
+
+## Phase 3 completion status — 2026-09-10
+
+The Phase 0–3 work is committed (6 commits on `wp12-14-rbac-signature-fixes`, no history rewrite, no
+push). This section is the CLAUDE.md §6 close-out for Phase 3.
+
+### Correction to an earlier note in this session
+
+An earlier draft of the §6 verdict listed **SG-143** ("rules evaluator ignores the precision/rounding/
+UOM policy it freezes into the Vault") as an open Phase 3 engineering blocker. That is wrong. **SG-143
+is RESOLVED** — `status: RESOLVED` in `18_SPEC_GAPS.md`, resolved 2026-08-27 in an earlier session:
+`app/modules/rules/precision.py` implements Document 110 §1/§2's ten calculation classes table-driven,
+`precision_policy.calculation_class` is required and validated at draft time (`PRECISION_POLICY_UNRESOLVED`,
+409), `evaluate_rule()`/`simulate_rule()` round at the class's declared precision and retain the raw
+pre-rounding value + applied policy version, `DivisionUndefinedError` covers CALC-FR-010, and a released
+`rules.gxp_uom`/`gxp_uom_conversion` master is validated by the evaluator (migration `f3a8c1e5b7d2`).
+The `blocking: true` line inside SG-143's YAML block is stale relative to its own `status: RESOLVED`.
+The residual **SG-145** (Document 110 §2 is headed "(PROPOSED)" inside an APPROVED v1.0 document) is
+`blocking: false` in its own entry — it blocks **VALIDATED release** (a human stage), not `CODE_COMPLETE`.
+
+### Verification performed this pass (real results, 2026-09-10)
+
+| Check | Result |
+|---|---|
+| Targeted slice — `test_batch_execution`, `test_eventbus_outbox_consumer`, `test_ai_governance`, `test_rules`, `test_contract_conformance`, `test_ddcp_flow`, `test_material_flow`, `test_machine_integration_flow` | **171 passed / 0 failed** (18m00s) |
+| `ruff check app scripts --select F --ignore F401,F841` (F-floor, now also blocking F811/F821) | **clean, exit 0** |
+| `tooling/contracts/validate.py --baseline contracts/openapi/.conformance-baseline` | 17 CTRC-FR-001 → **0**, exit 0 |
+| Full backend suite (b598imzs7, earlier this session, all Phase 0–3 changes present) | 1123 passed / 36 failed — **all 36 = SG-172** (validation-platform signature policies never authored; open Quality gap, by design) |
+
+Zero failures attributable to any Phase 0–3 change (store cutover, `gateway.py` flush, 47 contract
+additions, `errors.py`/`packaging` fixes, `ai_governance` seed).
+
+### Phase 3 disposition — exact status of every item
+
+**Engineering Complete (committed + verified):**
+
+| Item | Evidence |
+|---|---|
+| SG-173 / ADR-0013 store cutover — `gxp_batch` is the single authoritative Batch store | commit `4dc9250`; DDCP 59/59, material 81/81, machine_integration 22/22; `post_issue_material` bug fixed |
+| SG-013 — full M1 contract surface (WP-01/02/03/04) + 24 validation-platform ops contracted; CI contract gate flipped `continue-on-error` → **blocking** with a 17-line non-M1 baseline | commit `dc13c51`; `test_contract_conformance` 48/48; validator exit 0 |
+| 3 genuine backend defects — `write_outbox_event` flush, duplicate `FilterIntegrityFailedError`, `ai_governance` seed | commit `c298fd0`; slice 171/0; F-floor tightened to F811/F821 |
+| SG-143 — rules evaluator applies Document 110 precision/rounding/UOM | resolved 2026-08-27 (prior session); `test_rules` green in the slice |
+| `FilterIntegrityFailedError` 409-vs-422 question | **dissolved** — both copies were dead code (referenced by nothing); removed the shadowing 422 copy, kept 409. No error-registry decision needed. |
+| WP-00 backbone (Phase 2, carried in the same commit set) — root CI, ruff/mypy, CycloneDX SBOM, CODEOWNERS | commits `18b4c26`, `ea9d22e` |
+
+**Quality / Product-Owner decision pending (engineering cannot close — CLAUDE.md §4, SIG-FR-004, AG-15):**
+
+| Gap | What is pending | Engineering state |
+|---|---|---|
+| **SG-035** (5 pairs: `vault_object/release`, `record_correction/complete`, `rule/release`, `product_version/suspend`, `product_version/reinstate`) | Document 106 extension with approved signer class / independence / meaning | Code complete; all 5 **fail closed** with `SIGNATURE_POLICY_UNRESOLVED` (409); proven by `test_vault.py::test_generic_release_fails_closed_pending_signature_policy`, `::test_correction_request_then_complete_fails_closed`, `test_rules.py::test_release_fails_closed_pending_signature_policy`, `test_product_master.py::test_release_requires_signature_and_succeeds_with_a_valid_challenge` — all PASS in this pass's slice. **No rows seeded. No values guessed.** |
+| **SG-138** (24 remaining QMS `(record_type, action)` pairs) | Document 106 rows for WP-05 QMS transitions | Engineering half closed (14 signature-challenge endpoints + ordering fix); 2 of 26 pairs resolved by prior project-owner direction; 24 open. Not M1. |
+| **SG-167** (SPEC-AI-001 signed functions) | Document 106 rows for the 5 signed AI-governance functions | Engineering half closed (endpoints + `content_challenge_hash` fix); policy-data half open. Not M1. |
+| **SG-145** (Document 110 §2 "(PROPOSED)" heading) | A Part 11 approval record against §2 specifically, or a v1.1 erratum striking the heading | `precision.py` implements §2 verbatim as the construction baseline. `blocking: false` — blocks VALIDATED release only, not `CODE_COMPLETE`. |
+
+**Explicitly deferred / out of M1 (per ADR-0012, and per this task's stated scope):**
+
+| Item | Reason |
+|---|---|
+| SG-013 — the 17 WP-06/07/08 contracts (`spec-eqp-*` ×13, `spec-ddcp-001` ×3, `spec-erp-006` + `spec-qc-002` ×1) | Non-M1. Baselined in `.conformance-baseline`; CI gate stays green while the backlog can only shrink. Not pulled into scope (no dependency requires it). |
+| **3d** — DDCP post-completion flow off `batch.review`/`batch.release` onto `qa_review`/`release/v1` | Needs a Document 54/15 answer; DDCP is out of M1 per ADR-0012. |
+| **3e** — drop the scaffold `batch`/`product`/`recipe` modules + tables | Needs a bake period + the frontend cutover (Phase 5). `test_batch_flow.py` / `test_tenancy.py` still exercise the scaffold by design. |
+| Frontend retarget of `/batches/new`, `/products`, `/recipes` | Phase 5. |
+| `ruff --fix` cleanup (~511 auto-fixes, F401/I001 dominant) | Phase 2 ratchet — a separate reviewed PR per `PHASE_2_BACKBONE.md §4.1` (`@gxp-core-lead` review of the regulated tree). Not bundled here. |
+| Test DB `ebmr_new_gxp_test` clean `alembic downgrade base && upgrade head` rebuild | 3 migrations (0084/0089/0090) were hand-applied in Phases 1/3; the CI `alembic check` guard added in Phase 2 now blocks this drift class going forward. |
+
+### §6 verdict
+
+**Phase 3's engineering scope is COMPLETE.** Every engineering deliverable — store cutover, the M1 +
+validation contract surface with a blocking gate, the three genuine defects, and (from an earlier
+session) the SG-143 precision work — is implemented, committed, and verified against real test runs
+with zero regressions.
+
+**Phase 3 cannot be marked *officially closed* (validation sense) yet**, because closure depends on
+four Quality / Product-Owner decisions that engineering is forbidden to make: **SG-035** (5 pairs),
+**SG-138** (24 pairs), **SG-167**, and **SG-145**. All four are in a correct fail-closed or
+construction-baseline state; none is a code defect. The 17 non-M1 contracts and items 3d/3e are
+explicitly deferred and out of M1, not blockers.
+
+**Recommendation:** hand the four gaps to Quality as one consolidated decision package (the seed
+mechanism, `scripts/sync_signature_policies.py`, is ready to execute the moment the rows are approved).
+Do **not** start Phase 4 in this pass.
