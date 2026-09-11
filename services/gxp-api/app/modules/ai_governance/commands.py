@@ -791,6 +791,18 @@ async def evaluate_ai_release_gate(
         command_type="EvaluateAIReleaseGate", aggregate_type="ai_release_gate",
     )
     if decision == "BLOCK":
+        # Real defect surfaced 2026-09-11 while resolving SG-167 (this raise was unreachable before --
+        # resolve_signature_requirement() always raised SignaturePolicyUnresolvedError first, so a real
+        # BLOCK evaluation could never previously reach this line). Raising here, inside the caller's
+        # still-open `session.begin()` (router.py's post_release_gates), rolls the whole transaction
+        # back -- the gate row just written above, its audit event, outbox event, receipt, and the
+        # signature that was just consumed all vanish, exactly the "audit is immutable" guarantee AG-08
+        # exists to protect. A critical-failure BLOCK is itself the record most worth keeping (AI-FR-024:
+        # "cannot be forced to PASS around it" means the *decision* must stand, not that evidence of it
+        # is allowed to disappear). Explicitly commit what has already been written before raising, so
+        # the caller still receives the error (the HTTP response and behaviour AI-FR-024's test expects
+        # are unchanged) but the gate/audit/outbox/signature are durable regardless.
+        await session.commit()
         raise AIEvaluationCriticalFailureError(reason, evaluation_report_id=str(report.id))
     return receipt
 

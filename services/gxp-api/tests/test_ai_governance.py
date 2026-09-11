@@ -20,6 +20,7 @@ from app.modules.iam.models import UserSiteRole
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     AIDataClassificationDeniedError,
+    AIEvaluationCriticalFailureError,
     AIModelNotApprovedError,
     AIOutputInvalidError,
     AIPromptInjectionBlockedError,
@@ -610,16 +611,26 @@ async def test_evaluation_critical_failure_and_release_gate_block(db, seeded):
                 record_version=1, record_hash=ai.content_challenge_hash(challenge_cmd), meaning="Released",
             )
             await s.flush()
-            gate_receipt = await ai.evaluate_ai_release_gate(
-                s, ai.EvaluateAIReleaseGateCommand(
-                    idempotency_key=idem(), challenge_id=challenge.id, reauth_password=DEMO_PASSWORD, **kwargs,
-                ), actor,
-            )
+            # A real defect surfaced by resolving SG-167 (fixed the same pass, see commands.py's
+            # comment on the `decision == "BLOCK"` branch): this raise used to unwind the whole
+            # transaction, silently discarding the gate row, its audit/outbox event and the signature
+            # that was just consumed. It now commits what was already written before raising, so the
+            # caller still gets AIEvaluationCriticalFailureError but nothing vanishes -- checked below in
+            # a fresh session.
+            with pytest.raises(AIEvaluationCriticalFailureError):
+                await ai.evaluate_ai_release_gate(
+                    s, ai.EvaluateAIReleaseGateCommand(
+                        idempotency_key=idem(), challenge_id=challenge.id, reauth_password=DEMO_PASSWORD, **kwargs,
+                    ), actor,
+                )
     async with SessionLocal() as s:
         from app.modules.ai_governance.models import AIReleaseGate
-        gate = await s.get(AIReleaseGate, gate_receipt.aggregate_id)
-        assert gate.decision == "BLOCK"
-        assert gate.signature_id is not None
+        gates = (await s.execute(
+            select(AIReleaseGate).where(AIReleaseGate.evaluation_report_id == report.id)
+        )).scalars().all()
+        assert len(gates) == 1
+        assert gates[0].decision == "BLOCK"
+        assert gates[0].signature_id is not None
 
 
 async def test_evaluation_suite_passing_scores_not_flagged(db, seeded):
