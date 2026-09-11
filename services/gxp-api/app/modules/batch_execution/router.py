@@ -15,6 +15,7 @@ from app.modules.batch_execution.commands import (
     HoldStepCommand,
     IssueBatchCommand,
     ProductionCompleteBatchCommand,
+    LinkStepEvidenceCommand,
     RecordStepResultsCommand,
     ResumeStepCommand,
     StartStepCommand,
@@ -27,6 +28,7 @@ from app.modules.batch_execution.commands import (
     hold_step,
     issue_batch,
     production_complete_batch,
+    link_step_evidence,
     record_step_results,
     resume_batch,
     resume_step,
@@ -331,6 +333,21 @@ async def post_record_step_results(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
         return await record_step_results(session, cmd, actor.user_id)
+
+
+@router.post("/{batch_id}/steps/{step_id}/evidence-links", response_model=MutationReceipt)
+async def post_link_step_evidence(
+    batch_id: uuid.UUID,
+    step_id: uuid.UUID,
+    cmd: LinkStepEvidenceCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.batch_id != batch_id or cmd.step_id != step_id:
+        raise ValidationFailedError("batch_id/step_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        return await link_step_evidence(session, cmd, actor.user_id)
 
 
 @router.post("/{batch_id}/steps/{step_id}/complete", response_model=MutationReceipt)

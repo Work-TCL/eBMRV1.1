@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.batch_execution import service as batch_execution_service
-from app.modules.batch_execution.models import ALLOWED_TRANSITIONS, Batch, BatchStep, StepHold, StepResult
+from app.modules.batch_execution.models import ALLOWED_TRANSITIONS, Batch, BatchStep, StepEvidenceLink, StepHold, StepResult
 from app.modules.iam.models import User
 from app.modules.policy.service import effective_role_names, evaluate_policy
 from app.modules.product_master.models import ProductVersion
@@ -708,6 +708,107 @@ async def record_step_results(
     return MutationReceipt(
         command_id=receipt.id, aggregate_id=step.id, resulting_version=step.version, audit_event_id=audit_event.id,
         signature_id=signature_id, correlation_id=correlation_id,
+    )
+
+
+class EvidenceLinkInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: uuid.UUID
+    evidence_version: int = 1
+    evidence_sha256: str
+    media_type: str | None = None
+    requirement_code: str | None = None
+
+
+class LinkStepEvidenceCommand(CommandEnvelope):
+    batch_id: uuid.UUID
+    step_id: uuid.UUID
+    expected_version: int
+    links: list[EvidenceLinkInput]
+
+
+async def link_step_evidence(
+    session: AsyncSession, cmd: LinkStepEvidenceCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    """SG-047 (`gxp_step_evidence_link` half). Unsigned by design -- Document 106 has no policy row for
+    an "evidence link" action on `batch_step` (attaching evidence is a capture, not a release/disposition
+    decision the way `complete`/`results` are); RBAC + audit is the same authorization level
+    `evidence.upload` already uses elsewhere in this codebase."""
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    batch = await batch_execution_service.get_batch(session, cmd.batch_id)
+    step = await _load_step_for_update(session, cmd.batch_id, cmd.step_id, cmd.expected_version)
+    if step.state != "in_progress":
+        raise InvalidTransitionError(
+            "Evidence can only be linked against a step that is in progress", current_state=step.state
+        )
+    if not cmd.links:
+        raise ValidationFailedError("At least one evidence link is required")
+
+    linked: list[StepEvidenceLink] = []
+    for item in cmd.links:
+        link = StepEvidenceLink(
+            step_id=step.id,
+            evidence_id=item.evidence_id,
+            evidence_version=item.evidence_version,
+            evidence_sha256=item.evidence_sha256,
+            media_type=item.media_type,
+            requirement_code=item.requirement_code,
+            linked_by=actor_user_id,
+        )
+        session.add(link)
+        linked.append(link)
+
+    # Same reasoning as record_step_results: bump the aggregate version even though `state` itself
+    # doesn't change, so a concurrent write conflicts cleanly (MUT-FR-009).
+    step.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=batch.site_id,
+        aggregate_type="batch_step",
+        aggregate_id=step.id,
+        aggregate_version=step.version,
+        action="Changed",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        new_value={"evidence_linked": [str(link.evidence_id) for link in linked]},
+    )
+    await write_outbox_event(
+        session,
+        event_type="StepEvidenceLinked",
+        aggregate_type="batch_step",
+        aggregate_id=step.id,
+        aggregate_version=step.version,
+        payload={
+            "id": str(step.id),
+            "batch_id": str(batch.id),
+            "recipe_step_code": step.recipe_step_code,
+            "evidence_ids": [str(link.evidence_id) for link in linked],
+        },
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=batch.site_id,
+        command_type="LinkStepEvidence",
+        aggregate_type="batch_step",
+        aggregate_id=step.id,
+        expected_version=cmd.expected_version,
+        resulting_version=step.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=step.id, resulting_version=step.version, audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
     )
 
 

@@ -2494,8 +2494,24 @@ options:
   - (B) Guess a generic key-value policy blob now (rejected — the risk above).
 blocking: false
 owner: Data Architect + Recipe module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "2026-09-11, project-owner-directed (Phase 4 / wp16-phase4-wp02-recipe-batch-sync,
+  asked directly which option to take for both this gap and its SG-057 dependency; chose to pull SG-057
+  into scope too rather than stub/defer the material half). Both entities built taking option (A), with
+  every field either reusing an already-approved existing shape (never inventing new regulated content)
+  or captured-unenforced per the same precedent gxp_recipe_step.required_role_code/equipment_class_id
+  already use: recipe_material_requirement's target_value/min_value/max_value/uom/uom_id mirror
+  gxp_recipe_parameter's own tolerance columns exactly (migration 4c2d52d2b8a2);
+  alternative_material_spec_version_id/substitution_allowed/consume_mode are captured, unenforced.
+  recipe_equipment_requirement's equipment_class is captured (no class-master entity exists, same as
+  EquipmentAsset.equipment_class_id); require_current_calibration/require_current_qualification are
+  declared for a future BAT-FR-012/013 batch_execution wiring (SG-048 #012/#013, still deferred), not
+  enforced by this migration; require_current_cleaning is captured with no status field to check against
+  yet. material_spec_version_id resolves against the new SG-057 entity (migration d2d738c7f191). Both
+  tables wired into recipe_master's create_draft/update_draft _replace_graph() (app/modules/recipe_master/
+  commands.py) and exposed on GET /recipes/v2/versions/{id}. Verified: tests/test_recipe_master.py
+  (21/21 passed, 4 new), tests/test_material_specification.py (7/7 passed, new file)."
+status: PARTIALLY RESOLVED (schema + recipe-draft authoring built; BAT-FR-012/013 runtime enforcement at
+  batch step start deliberately not attempted — separate build, now unblocked)
 ```
 
 ### SG-046 — 16 Document 10 requirements depend on modules/infrastructure that don't exist yet
@@ -2630,8 +2646,19 @@ options:
 blocking: false
 owner: Data Architect + Batch Execution module owner
 resolution_document: "2026-09-09, project-owner-directed (asked directly after a live demo batch got permanently stuck: every step past the recipe's root step stayed 'pending' forever because nothing could ever complete a step -- chose 'build step completion now' over 'leave it documented'). gxp_step_result built (migration db47f27cf18b_0092/services/gxp-api/app/modules/batch_execution/models.py::StepResult): the polymorphic-value question SG-047 flagged is resolved by reusing gxp_recipe_parameter's own already-DDL-ready data_type/uom/Numeric(24,8) precision as the discriminator, not by inventing a new Document 110 policy. New commands record_step_results/complete_step (commands.py) + POST /batches/v1/{id}/steps/{id}/results, /complete, /signature-challenges (router.py); both signed per Document 106 rows 19/21 (new SIGNATURE_POLICY_FLOOR rows batch_step/results, batch_step/complete -- scripts/seed.py, scripts/sync_signature_policies.py, tests/conftest.py); BAT-FR-006's readiness computation gained a runtime half (service.py::recompute_readiness) so a 'pending' successor becomes 'ready' once every declared predecessor is 'complete'. gxp_step_evidence_link and gxp_batch_hold are NOT built -- evidence-manifest alignment with Document 06 and a hold record's signature-policy binding are separate judgment calls this change does not make; SG-047 stays open for those two only. Verified: tests/test_batch_execution.py (21/21 passed, including 3 new tests) plus test_batch_flow.py/test_release.py/test_qa_review.py as an untouched-module control (34/34 passed). FURTHER PARTIAL RESOLUTION, same day, project-owner-directed (asked which of six remaining demo gaps to build; chose step-level hold + Production Complete + deferred material/equipment linkage): a narrow, step-scoped slice of gxp_batch_hold is now built -- StepHold (migration a6d525b2d585_0093), one row per hold episode (released_at IS NULL = active), both hold and resume signed reusing Document 106 row 14/17's shapes (new SIGNATURE_POLICY_FLOOR rows batch_step/hold, batch_step/resume) via new commands hold_step/resume_step + POST .../steps/{id}/hold, /resume. This resolves BAT-FR-020's step scope only -- gxp_batch_hold's full generality (arbitrary scope, quality-event linkage) and gxp_step_evidence_link both remain open. Verified: tests/test_batch_execution.py now 25/25 (2 more new tests) plus the same 34/34 control."
-status: PARTIALLY RESOLVED (gxp_step_result + a step-scoped slice of gxp_batch_hold only; gxp_step_evidence_link and gxp_batch_hold's full generality remain open)
+status: PARTIALLY RESOLVED (gxp_step_result + a step-scoped slice of gxp_batch_hold + gxp_step_evidence_link now built; only gxp_batch_hold's full generality — arbitrary scope, quality-event linkage — remains open)
 ```
+
+**FURTHER PARTIAL RESOLUTION, 2026-09-11, project-owner-directed** (Phase 4 / wp16-phase4-wp02-recipe-
+batch-sync): `gxp_step_evidence_link` built (migration 2e0dcac852aa), reusing `vault.gxp_vault_evidence`'s
+exact shape (evidence_id/evidence_version/evidence_sha256/media_type) per this gap's own requirement that
+it "agree with Document 06's Vault evidence manifest shape, not a guessed one" — not a new manifest schema,
+the same one already approved for VLT-FR-005. Append-only (SELECT/INSERT only, same as gxp_step_result).
+New unsigned command `link_step_evidence` (app/modules/batch_execution/commands.py) + `POST /batches/v1/
+{id}/steps/{id}/evidence-links` (router.py) — unsigned by design, since Document 106 has no policy row for
+an evidence-link action on `batch_step` (a capture, not a release/disposition decision the way `complete`/
+`results` are). `gxp_batch_hold`'s full generality remains the only open piece of this gap. Verified:
+tests/test_batch_execution.py 30/30 passed (3 new tests for evidence-links).
 
 ### SG-048 — 24 Document 11 requirements depend on modules/infrastructure that don't exist yet
 
@@ -3337,8 +3364,27 @@ options:
     would need to be a deliberate spec change, not an implementation guess).
 blocking: false
 owner: Data Architect + Materials/Supplier-Quality module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "2026-09-11, project-owner-directed (Phase 4 / wp16-phase4-wp02-recipe-batch-sync,
+  asked directly; chose to pull this gap into scope as a dependency of SG-045 rather than stub the FK),
+  taking option (A): MaterialSpecification/MaterialSpecificationVersion built
+  (app/modules/material_specification/, migration d2d738c7f191) mirroring product_master.ProductVersion's
+  master+immutable-version split exactly (business_id + version_no identity, draft/released lifecycle,
+  effective dating, release through the generic Vault surface, version_hash) -- the same architectural
+  pattern already approved for Product/Recipe, not a new one. acceptance_criteria is captured JSONB, not
+  a typed parameter-range schema (no acceptance-range execution engine exists yet -- QC method master,
+  still fully open, separate item). Full create_draft/release command surface + router
+  (POST /material-specifications/v1/drafts, GET .../{id}, GET .../{business_id}/versions, POST .../
+  {id}/release, POST .../{id}/signature-challenges). Release correctly fails closed with
+  SIGNATURE_POLICY_UNRESOLVED -- see new gap SG-185. recipe_material_requirement (SG-045) is the first
+  real consumer, FK'ing material_spec_version_id against this entity.
+  NOT built this pass: the three Document 18 entities this gap actually names
+  (approved_supplier_material/purchase_requisition/purchase_order_ref) and the
+  GET .../eligible-suppliers read -- those still need their own build once a real consumer needs them;
+  only the blocking entity itself was in scope. Verified: tests/test_material_specification.py 7/7
+  passed (new file)."
+status: PARTIALLY RESOLVED (MaterialSpecification/MaterialSpecificationVersion entity built and consumed
+  by recipe_material_requirement; approved_supplier_material/purchase_requisition/purchase_order_ref/
+  eligible-suppliers -- the entities this gap was originally about -- remain unbuilt)
 ```
 
 ### SG-058 — 5 Document 18 requirements have no entity, and one (RFQ) has no API operation, anywhere in Document 18 itself
@@ -11998,8 +12044,31 @@ options:
     the same time) — largest scope, needs a project-owner decision on authoritative ownership.
 blocking: false
 owner: Batch Execution + DDCP module owners, project-owner decision on options A/B/C
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "2026-09-11, project-owner-directed (Phase 4 / wp16-phase4-wp02-recipe-batch-sync,
+  asked directly; chose option B — DDCP execution drives the generic chain). Building the write-side sync
+  surfaced a defect in option B's own framing this gap didn't originally account for: `_require_step_
+  signature()` resolves `(batch_step, complete)`/`(batch_step, results)` from a single, platform-wide
+  Document 106 policy row — not per-step via `RecipeStep.signature_policy_id` (that field is captured but
+  never actually read by the enforcement path) — and both rows are seeded `signature_required=True`
+  unconditionally (scripts/seed.py). So a write that auto-completes the generic step from DDCP would
+  always need a signature DDCP's own action doesn't collect; there is no "unsigned step" case in the
+  current policy to safely auto-complete into. Rather than bypass that signature (asked directly; declined)
+  or treat DDCP's own signature as interchangeable with a distinct Document 106 requirement (asked
+  directly; declined), the write-side auto-completion path was NOT built — it would be permanently inert
+  under the current policy, dead code pretending to do something it can't safely do.
+  What IS built: `gxp_ddcp_step_mapping` (migration 1d2ce758fc70) — the declarative DDCP-action↔
+  stable_step_code mapping this option needs, scoped per recipe_version_id, RBAC-gated create (`ddcp_
+  profile.author`) — plus `GET /ddcp/v1/prefilled-syringe/batches/{id}/step-sync-status`, which joins a
+  batch's declared mappings against `gxp_batch_step.state` so an operator sees the two "independent
+  progress trackers" are related. This is the part of the gap that is actually load-bearing: the
+  confusion SG-180 was found from was a *visibility* problem (a demo operator with no way to see the
+  connection), and this fixes exactly that without ever bypassing a signature. If Document 106 policy for
+  batch_step actions is ever revised to allow an unsigned case, the mapping mechanism is ready to extend
+  into a real write-side sync at that point. Verified: tests/test_ddcp_step_mapping.py 6/6 passed (new
+  file)."
+status: PARTIALLY RESOLVED (declarative mapping + read-only sync-visibility built, taking option B's
+  direction; the write-side auto-completion option B originally implied is deliberately NOT built — see
+  resolution note for why it would be permanently inert under current Document 106 policy)
 ```
 
 ### SG-181 — `qa_review_package`/`complete` and `release_scope`/`release`+`hold`+`reject` had no Document 106 signature policy row and no signature-challenges endpoint — same defect class as SG-138, different work package
@@ -12381,3 +12450,56 @@ clean (only the disclosed `alembic_version` non-finding) immediately after a ful
 base` / `alembic upgrade head` round-trip; `ruff check app scripts --select F` and
 `tooling/guardrails/validate.py` both clean; `app.all_models` imports with 297 tables. Full pass/fail
 test-suite evidence in the completion report for this task.
+
+
+### SG-185 — `material_specification_version`/`release` has no Document 106 signature policy row
+
+Added 2026-09-11, Phase 4 / wp16-phase4-wp02-recipe-batch-sync (SG-057's resolution). Document 106 was
+authored before this pass's new `MaterialSpecificationVersion` entity existed, so it has no row for
+`(material_specification_version, release)` — the same class of gap `vault_object/release` and
+`record_correction/complete` had before their own SG-035 resolutions, and `qa_review_package/complete`
+had before SG-181.
+
+```yaml
+spec_gap_id: SG-185
+title: "material_specification_version/release has no Document 106 signature policy row"
+class: R
+description: >
+  scripts/seed.py's SIGNATURE_POLICY_FLOOR and Document 106 §9 have no row for
+  (material_specification_version, release) because this record type did not exist before Phase 4's
+  wp16-phase4-wp02-recipe-batch-sync branch (SG-057's resolution) introduced it.
+  resolve_signature_requirement() therefore raises SignaturePolicyUnresolvedError, and
+  POST /material-specifications/v1/drafts/{id}/release correctly returns 409
+  SIGNATURE_POLICY_UNRESOLVED for every actor, including Admin.
+source_documents:
+  - Document 106 (signature policy baseline)
+  - docs/generated/18_SPEC_GAPS.md SG-057 (the entity this policy would govern)
+source_requirement_ids:
+  - SIG-FR-004
+  - SIGP-FR-004
+affected_modules:
+  - SPEC-MAT-001
+affected_functions:
+  - app/modules/material_specification/commands.py::release_material_spec_version
+why_material: >
+  Whether releasing a material specification requires a signature, which meaning, which signer role and
+  whether independence is required are exactly the class of regulated-process decisions this pass has no
+  authority to invent — the same reasoning SG-035/SG-138/SG-167/SG-181 all applied to their own
+  previously-unmapped record_type/action pairs.
+risk_if_guessed: >
+  A guessed signer class or independence requirement could pass validation review while not matching the
+  Quality organization's actual intended control for material specification release — a specification
+  underlies supplier approval and purchasing eligibility (SG-057's own why_material), so a wrong policy
+  here has the same downstream risk class as a wrong product/recipe release policy.
+options:
+  - (A) Author from the closest existing Document 106 §8/§9 family analogue, matching how SG-035/SG-138/
+    SG-167's PHASE_3_DEFERRED_DECISIONS.md items were resolved — recommended, fastest path once a
+    project-owner decision names the analogue (product_version/release and recipe_version/release are the
+    nearest existing precedents: author != releaser, independent QA Releaser).
+  - (B) Leave fail-closed indefinitely (current state) — correct and safe, but blocks any real material
+    specification from ever being released.
+blocking: false
+owner: Quality/Regulatory org (signature policy authority) + Materials module owner
+resolution_document: "— (open)"
+status: OPEN
+```

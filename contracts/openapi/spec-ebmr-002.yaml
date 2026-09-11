@@ -458,6 +458,43 @@ paths:
           description: VALIDATION_FAILED — path/body ids mismatch, or a value fails its declared type/precision.
           content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
 
+  /batches/v1/{batch_id}/steps/{step_id}/evidence-links:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: step_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postLinkStepEvidence
+      tags: [batch_execution]
+      summary: Link evidence to a step (BAT-FR-006 / SG-047)
+      description: >
+        Requires `batch_execution.execute`. Persists one `gxp_step_evidence_link` row per `links[]` entry,
+        reusing `vault.gxp_vault_evidence`'s exact shape (evidence_id/evidence_version/evidence_sha256/
+        media_type) per SG-047's own requirement that this table agree with Document 06's Vault evidence
+        manifest shape. Unsigned by design — Document 106 has no policy row for an evidence-link action on
+        `batch_step` (a capture, not a release/disposition decision).
+      x-requirement-ids: [BAT-FR-006, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LinkStepEvidenceCommand' }
+      responses:
+        '200':
+          description: Linked. `aggregate_id` is the `step_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `step_id` does not exist or does not belong to `batch_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: A stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — path/body ids mismatch, the step is not in progress, or `links` is empty.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
   /batches/v1/{batch_id}/steps/{step_id}/complete:
     parameters:
       - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -808,6 +845,35 @@ components:
           items: { $ref: '#/components/schemas/StepResultInput' }
         challenge_id: { type: [string, "null"], format: uuid }
         reauth_password: { type: [string, "null"], description: Present only when a signature is required; never logged. }
+
+    EvidenceLinkInput:
+      type: object
+      additionalProperties: false
+      description: One evidence link recorded by postLinkStepEvidence (SG-047). Same shape as vault.VaultEvidence (VLT-FR-005).
+      x-requirement-ids: [BAT-FR-006, VLT-FR-005]
+      required: [evidence_id, evidence_sha256]
+      properties:
+        evidence_id: { type: string, format: uuid }
+        evidence_version: { type: integer, minimum: 1, default: 1 }
+        evidence_sha256: { type: string, minLength: 64, maxLength: 64 }
+        media_type: { type: [string, "null"] }
+        requirement_code: { type: [string, "null"], description: "Links to the recipe's own gxp_recipe_evidence_requirement.evidence_type, when declared." }
+
+    LinkStepEvidenceCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [BAT-FR-006, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, batch_id, step_id, expected_version, links]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        step_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        links:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/EvidenceLinkInput' }
 
     CompleteStepCommand:
       type: object

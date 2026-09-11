@@ -106,6 +106,36 @@ def _parameter_dict(p) -> dict:
     }
 
 
+def _material_requirement_dict(m) -> dict:
+    return {
+        "id": str(m.id),
+        "step_id": str(m.step_id),
+        "material_spec_version_id": str(m.material_spec_version_id),
+        "target_value": str(m.target_value) if m.target_value is not None else None,
+        "min_value": str(m.min_value) if m.min_value is not None else None,
+        "max_value": str(m.max_value) if m.max_value is not None else None,
+        "uom": m.uom,
+        "alternative_material_spec_version_id": (
+            str(m.alternative_material_spec_version_id) if m.alternative_material_spec_version_id else None
+        ),
+        "substitution_allowed": m.substitution_allowed,
+        "consume_mode": m.consume_mode,
+        "genealogy_required": m.genealogy_required,
+    }
+
+
+def _equipment_requirement_dict(e) -> dict:
+    return {
+        "id": str(e.id),
+        "step_id": str(e.step_id),
+        "equipment_class": e.equipment_class,
+        "exact_equipment_optional": e.exact_equipment_optional,
+        "require_current_calibration": e.require_current_calibration,
+        "require_current_qualification": e.require_current_qualification,
+        "require_current_cleaning": e.require_current_cleaning,
+    }
+
+
 @router.post("/drafts", response_model=MutationReceipt)
 async def post_create_draft(
     cmd: CreateRecipeDraftCommand,
@@ -246,6 +276,8 @@ async def get_version_detail(
     body["steps"] = [_step_dict(s) for s in graph["steps"]]
     body["dependencies"] = [_dependency_dict(d) for d in graph["dependencies"]]
     body["parameters"] = [_parameter_dict(p) for p in graph["parameters"]]
+    body["material_requirements"] = [_material_requirement_dict(m) for m in graph["material_requirements"]]
+    body["equipment_requirements"] = [_equipment_requirement_dict(e) for e in graph["equipment_requirements"]]
     return body
 
 

@@ -14,13 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import verify_password
 from app.modules.audit.models import AuditEvent
 from app.modules.iam.models import Role, User
+from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import effective_role_names
 from app.modules.product_master.models import ProductVersion
 from app.modules.recipe_master import service as recipe_master_service
 from app.modules.recipe_master.models import (
     ALLOWED_TRANSITIONS,
+    RecipeEquipmentRequirement,
     RecipeEvidenceRequirement,
     RecipeFamily,
+    RecipeMaterialRequirement,
     RecipeParameter,
     RecipeSection,
     RecipeStep,
@@ -114,6 +117,26 @@ class EvidenceRequirementInput(BaseModel):
     retention_class: str | None = None
 
 
+class MaterialRequirementInput(BaseModel):
+    material_spec_version_id: uuid.UUID
+    target_value: Decimal | None = None
+    min_value: Decimal | None = None
+    max_value: Decimal | None = None
+    uom: str | None = None
+    alternative_material_spec_version_id: uuid.UUID | None = None
+    substitution_allowed: bool = False
+    consume_mode: str | None = None
+    genealogy_required: bool = True
+
+
+class EquipmentRequirementInput(BaseModel):
+    equipment_class: str
+    exact_equipment_optional: bool = True
+    require_current_calibration: bool = False
+    require_current_qualification: bool = False
+    require_current_cleaning: bool = False
+
+
 class StepInput(BaseModel):
     stable_step_code: str
     section_code: str
@@ -127,6 +150,8 @@ class StepInput(BaseModel):
     is_critical: bool = False
     parameters: list[ParameterInput] = []
     evidence_requirements: list[EvidenceRequirementInput] = []
+    material_requirements: list[MaterialRequirementInput] = []
+    equipment_requirements: list[EquipmentRequirementInput] = []
 
 
 class SectionInput(BaseModel):
@@ -180,6 +205,10 @@ async def _replace_graph(
             await session.delete(param)
         for ev in (await session.execute(select(RecipeEvidenceRequirement).where(RecipeEvidenceRequirement.step_id.in_(old_step_ids)))).scalars().all():
             await session.delete(ev)
+        for mr in (await session.execute(select(RecipeMaterialRequirement).where(RecipeMaterialRequirement.step_id.in_(old_step_ids)))).scalars().all():
+            await session.delete(mr)
+        for er in (await session.execute(select(RecipeEquipmentRequirement).where(RecipeEquipmentRequirement.step_id.in_(old_step_ids)))).scalars().all():
+            await session.delete(er)
     for step in old_steps:
         await session.delete(step)
     old_sections = (await session.execute(select(RecipeSection).where(RecipeSection.recipe_version_id == recipe_version_id))).scalars().all()
@@ -249,6 +278,45 @@ async def _replace_graph(
                     required_count=e.required_count,
                     allowed_mime_types=e.allowed_mime_types,
                     retention_class=e.retention_class,
+                )
+            )
+        for m in st.material_requirements:
+            if (await session.get(MaterialSpecificationVersion, m.material_spec_version_id)) is None:
+                raise ValidationFailedError(
+                    "material_requirement references an unknown material_spec_version_id",
+                    material_spec_version_id=str(m.material_spec_version_id),
+                )
+            if m.alternative_material_spec_version_id is not None and (
+                await session.get(MaterialSpecificationVersion, m.alternative_material_spec_version_id)
+            ) is None:
+                raise ValidationFailedError(
+                    "material_requirement references an unknown alternative_material_spec_version_id",
+                    alternative_material_spec_version_id=str(m.alternative_material_spec_version_id),
+                )
+            session.add(
+                RecipeMaterialRequirement(
+                    step_id=row.id,
+                    material_spec_version_id=m.material_spec_version_id,
+                    target_value=m.target_value,
+                    min_value=m.min_value,
+                    max_value=m.max_value,
+                    uom=m.uom,
+                    uom_id=await _resolve_uom_id(session, m.uom),
+                    alternative_material_spec_version_id=m.alternative_material_spec_version_id,
+                    substitution_allowed=m.substitution_allowed,
+                    consume_mode=m.consume_mode,
+                    genealogy_required=m.genealogy_required,
+                )
+            )
+        for eq in st.equipment_requirements:
+            session.add(
+                RecipeEquipmentRequirement(
+                    step_id=row.id,
+                    equipment_class=eq.equipment_class,
+                    exact_equipment_optional=eq.exact_equipment_optional,
+                    require_current_calibration=eq.require_current_calibration,
+                    require_current_qualification=eq.require_current_qualification,
+                    require_current_cleaning=eq.require_current_cleaning,
                 )
             )
 

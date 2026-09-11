@@ -52,6 +52,7 @@ from app.modules.material.router import reconciliation_v1_router as material_rec
 from app.modules.material.router import router as material_router
 from app.modules.material.router import sampling_orders_router as material_sampling_orders_router
 from app.modules.material.router import v1_router as material_v1_router
+from app.modules.material_specification.router import router as material_specification_router
 from app.modules.packaging.router import router as packaging_router
 from app.modules.postmarket.obligation_router import router as postmarket_obligation_router
 from app.modules.postmarket.reportability_router import router as postmarket_reportability_router
@@ -253,6 +254,7 @@ app.include_router(audit_router)
 app.include_router(vault_router)
 app.include_router(rules_router)
 app.include_router(product_master_router)
+app.include_router(material_specification_router)
 app.include_router(recipe_master_router)
 app.include_router(device_router)
 app.include_router(genealogy_router)

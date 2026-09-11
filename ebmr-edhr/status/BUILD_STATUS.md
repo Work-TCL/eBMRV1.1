@@ -2,7 +2,7 @@
 
 _Generated 2026-09-11 — do not hand-edit._
 
-**Overall:** 97/103 modules started · 0 released · 763/2965 requirements verified · 2512/9150 test cases executed
+**Overall:** 97/103 modules started · 0 released · 763/2965 requirements verified · 2514/9150 test cases executed
 
 ## Work packages
 
@@ -35,7 +35,7 @@ _Generated 2026-09-11 — do not hand-edit._
 | 07 | SPEC-IAM-001 | WP-01 | H | 32 | 3 | 118 | 6 | 0 | 110 | IN_DEVELOPMENT | Claude Code |
 | 08 | SPEC-GXP-006 | WP-01 | H | 32 | 10 | 134 | 43 | 0 | 83 | IN_DEVELOPMENT | Claude Code |
 | 09 | SPEC-EBMR-000 | WP-02 | H | 32 | 0 | 121 | 26 | 0 | 92 | IN_DEVELOPMENT | Claude Code |
-| 10 | SPEC-EBMR-001 | WP-02 | H | 36 | 4 | 115 | 29 | 0 | 83 | IN_DEVELOPMENT | Claude Code |
+| 10 | SPEC-EBMR-001 | WP-02 | H | 36 | 4 | 115 | 31 | 0 | 81 | IN_DEVELOPMENT | Claude Code |
 | 11 | SPEC-EBMR-002 | WP-02 | H | 36 | 1 | 96 | 32 | 0 | 99 | IN_DEVELOPMENT | Claude Code |
 | 12 | SPEC-EBMR-003 | WP-02 | H | 30 | 6 | 71 | 19 | 0 | 90 | IN_DEVELOPMENT | Claude Code |
 | 13 | SPEC-EBMR-004 | WP-03 | H | 30 | 4 | 61 | 24 | 0 | 64 | IN_DEVELOPMENT | Claude Code |

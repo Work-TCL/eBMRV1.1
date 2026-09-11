@@ -332,3 +332,39 @@ async def get_change_linkage(
     del actor
     async with session.begin():
         return await ddcp_commands.get_ddcp_change_linkage(session, object_type, object_id)
+
+
+@router.post("/step-mappings", response_model=MutationReceipt)
+async def post_create_step_mapping(
+    cmd: ddcp_commands.CreateDdcpStepMappingCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="ddcp_profile.author", site_id=None)
+        return await ddcp_commands.create_step_mapping(session, cmd, actor.user_id)
+
+
+@router.get("/step-mappings")
+async def get_step_mappings(
+    recipe_version_id: uuid.UUID, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    # Authenticated, not yet RBAC-scoped -- see get_batch_genealogy() above.
+    del actor
+    async with session.begin():
+        return await ddcp_commands.get_step_mappings(session, recipe_version_id)
+
+
+@router.get("/batches/{batch_id}/step-sync-status")
+async def get_batch_step_sync_status(
+    batch_id: uuid.UUID, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """SG-180 -- the read that fixes the actual "two apparently unrelated progress trackers" confusion:
+    per DDCP action mapped for this batch's recipe, shows the corresponding generic step's current state
+    side by side."""
+    # Authenticated, not yet RBAC-scoped -- see get_batch_genealogy() above.
+    del actor
+    async with session.begin():
+        return await ddcp_commands.get_batch_ddcp_sync_status(session, batch_id)

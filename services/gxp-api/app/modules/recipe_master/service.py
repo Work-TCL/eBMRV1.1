@@ -10,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.recipe_master.models import (
     STEP_TYPES,
+    RecipeEquipmentRequirement,
     RecipeEvidenceRequirement,
     RecipeFamily,
+    RecipeMaterialRequirement,
     RecipeParameter,
     RecipeSection,
     RecipeStep,
@@ -107,7 +109,28 @@ async def get_graph(session: AsyncSession, recipe_version_id: uuid.UUID) -> dict
             .scalars()
             .all()
         )
-    return {"sections": sections, "steps": steps, "dependencies": dependencies, "parameters": parameters, "evidence": evidence}
+    material_requirements = []
+    equipment_requirements = []
+    if step_ids:
+        material_requirements = (
+            (await session.execute(select(RecipeMaterialRequirement).where(RecipeMaterialRequirement.step_id.in_(step_ids))))
+            .scalars()
+            .all()
+        )
+        equipment_requirements = (
+            (await session.execute(select(RecipeEquipmentRequirement).where(RecipeEquipmentRequirement.step_id.in_(step_ids))))
+            .scalars()
+            .all()
+        )
+    return {
+        "sections": sections,
+        "steps": steps,
+        "dependencies": dependencies,
+        "parameters": parameters,
+        "evidence": evidence,
+        "material_requirements": material_requirements,
+        "equipment_requirements": equipment_requirements,
+    }
 
 
 def detect_cycles(steps: list[RecipeStep], dependencies: list[RecipeStepDependency]) -> list[str]:
