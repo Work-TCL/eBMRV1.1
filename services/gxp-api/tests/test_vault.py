@@ -1,8 +1,9 @@
 """Document 06 (SPEC-GXP-004) — vault release/integrity/correction. Covers what's achievable against the
 now-real integration into release_batch/disposition_material_lot: a release creates a correctly-hashed,
-version-incrementing snapshot; tampering is detectable; the generic release/correction-completion
-endpoints correctly fail closed (no Document 106 policy row exists for either yet — same honest pattern
-as Document 05's export); permission/authorization boundaries are real.
+version-incrementing snapshot; tampering is detectable; permission/authorization boundaries are real.
+The generic vault release (Document 106 section 9 row 2) and correction completion (row 1, a genuine
+2-signature ordered chain -- SG-035 pair 4, RESOLVED 2026-09-11, PHASE_3_DEFERRED_DECISIONS.md item D)
+both go through a real signature ceremony now.
 """
 
 import uuid
@@ -30,6 +31,21 @@ async def _make_admin(db, seeded, username="admin.vault"):
     db.add(user)
     await db.flush()
     db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"]["Admin"].id))
+    return user
+
+
+async def _make_user_with_qa_releaser(db, seeded, username):
+    """SG-035 pair 4 (record_correction/complete): position 2's "independent approver" is `QA Releaser`,
+    which also needs RBAC `vault.correct` to reach the endpoint at all -- QA Releaser already holds it
+    (ROLE_PERMISSIONS), so a plain single-role user works here (unlike Product Master's `product.suspend`,
+    which forced a dual-role test pattern)."""
+    user = User(
+        username=username, email=f"{username}@example.com", full_name=username,
+        password_hash=hash_password(DEMO_PASSWORD), status="active",
+    )
+    db.add(user)
+    await db.flush()
+    db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
     return user
 
 
@@ -216,10 +232,34 @@ async def test_generic_release_requires_an_independent_qa_releaser_signature(cli
     assert resp.json()["signature_id"] is not None
 
 
-async def test_correction_request_then_complete_fails_closed(client, seeded, db):
+async def _request_correction(client, admin_token, object_id, tag) -> str:
+    resp = await client.post(
+        f"/vault/v1/objects/{object_id}/corrections",
+        json={
+            "idempotency_key": idem(),
+            "record_object_id": str(object_id),
+            "reason_code": "DATA_ENTRY_ERROR",
+            "reason_text": f"Quantity was mistyped ({tag}).",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["aggregate_id"]
+
+
+async def test_correction_two_signature_chain_succeeds(client, seeded, db):
+    """SG-035 pair 4, RESOLVED 2026-09-11, project-owner-directed (PHASE_3_DEFERRED_DECISIONS.md item
+    D): Document 106 section 9 row 1 -- `Approved`, "Authorized corrector + independent approver",
+    count 2, "Corrector and approver MUST differ". Position 1 (corrector) is RBAC-gated only (no fixed
+    role); position 2 (approver) requires `QA Releaser` and must differ from the corrector. Proves the
+    positive chain end to end: an unsigned attempt is blocked (MISSING_SIGNATURE), the corrector's
+    signature alone does not yet apply the correction, and only the second, independent signature
+    actually creates the corrected vault version."""
     async with db.begin():
-        await _make_admin(db, seeded)
-    admin_token = await login(client, "admin.vault")
+        corrector = await _make_admin(db, seeded, "admin.vault.corrector")
+        approver = await _make_user_with_qa_releaser(db, seeded, "admin.vault.approver")
+    corrector_token = await login(client, "admin.vault.corrector")
+    approver_token = await login(client, "admin.vault.approver")
 
     async with db.begin():
         obj = await vault_service.release_master(
@@ -227,30 +267,220 @@ async def test_correction_request_then_complete_fails_closed(client, seeded, db)
         )
         object_id = obj.object_id
 
-    resp = await client.post(
-        f"/vault/v1/objects/{object_id}/corrections",
-        json={
-            "idempotency_key": idem(),
-            "record_object_id": str(object_id),
-            "reason_code": "DATA_ENTRY_ERROR",
-            "reason_text": "Quantity was mistyped.",
-        },
-        headers=auth_headers(admin_token),
+    correction_id = await _request_correction(client, corrector_token, object_id, "chain")
+
+    # Position 1, unsigned -- MISSING_SIGNATURE, not SIGNATURE_POLICY_UNRESOLVED (a real row exists now).
+    unsigned = await client.post(
+        f"/vault/v1/corrections/{correction_id}/complete",
+        json={"idempotency_key": idem(), "correction_id": correction_id, "corrected_canonical_payload": {"n": 2}},
+        headers=auth_headers(corrector_token),
     )
-    assert resp.status_code == 200, resp.text
-    correction_id = resp.json()["aggregate_id"]
+    assert unsigned.status_code == 428, unsigned.text
+    assert unsigned.json()["code"] == "MISSING_SIGNATURE"
+
+    # Position 1 (corrector, no fixed role): signs, but the chain isn't complete -- no new vault version yet.
+    challenge_1 = (
+        await client.post(
+            f"/vault/v1/corrections/{correction_id}/signature-challenges",
+            json={"corrected_canonical_payload": {"n": 2}}, headers=auth_headers(corrector_token),
+        )
+    ).json()
+    assert challenge_1["chain_position"] == 1 and challenge_1["signature_count"] == 2
+    resp1 = await client.post(
+        f"/vault/v1/corrections/{correction_id}/complete",
+        json={
+            "idempotency_key": idem(), "correction_id": correction_id, "corrected_canonical_payload": {"n": 2},
+            "challenge_id": challenge_1["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(corrector_token),
+    )
+    assert resp1.status_code == 200, resp1.text
+    assert resp1.json()["signature_id"] is not None
+    versions = (
+        await client.get(f"/vault/v1/business/widget/W-CORRECT/versions", headers=auth_headers(corrector_token))
+    ).json()
+    assert len(versions) == 1  # still just the original -- the correction has not been applied yet
+
+    # Position 2 (independent QA Releaser): signs, and only now is the correction actually applied.
+    challenge_2 = (
+        await client.post(
+            f"/vault/v1/corrections/{correction_id}/signature-challenges",
+            json={"corrected_canonical_payload": {"n": 2}}, headers=auth_headers(approver_token),
+        )
+    ).json()
+    assert challenge_2["chain_position"] == 2
+    resp2 = await client.post(
+        f"/vault/v1/corrections/{correction_id}/complete",
+        json={
+            "idempotency_key": idem(), "correction_id": correction_id, "corrected_canonical_payload": {"n": 2},
+            "challenge_id": challenge_2["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(approver_token),
+    )
+    assert resp2.status_code == 200, resp2.text
+    assert resp2.json()["signature_id"] is not None
+    versions = (
+        await client.get(f"/vault/v1/business/widget/W-CORRECT/versions", headers=auth_headers(corrector_token))
+    ).json()
+    assert len(versions) == 2
+    assert versions[-1]["canonical_payload"] == {"n": 2}
+    assert versions[-1]["corrected_from_object_id"] == str(object_id)
+
+
+async def test_correction_second_signer_must_hold_the_approver_role(client, seeded, db):
+    async with db.begin():
+        corrector = await _make_admin(db, seeded, "admin.vault.role1")
+        wrong_role = await _make_admin(db, seeded, "admin.vault.role2")  # Admin, not QA Releaser
+    corrector_token = await login(client, "admin.vault.role1")
+    wrong_role_token = await login(client, "admin.vault.role2")
+
+    async with db.begin():
+        obj = await vault_service.release_master(
+            db, object_type="widget", business_id="W-CORRECT-ROLE", canonical_payload={"n": 1}
+        )
+        object_id = obj.object_id
+    correction_id = await _request_correction(client, corrector_token, object_id, "role")
+
+    challenge_1 = (
+        await client.post(
+            f"/vault/v1/corrections/{correction_id}/signature-challenges",
+            json={"corrected_canonical_payload": {"n": 2}}, headers=auth_headers(corrector_token),
+        )
+    ).json()
+    await client.post(
+        f"/vault/v1/corrections/{correction_id}/complete",
+        json={
+            "idempotency_key": idem(), "correction_id": correction_id, "corrected_canonical_payload": {"n": 2},
+            "challenge_id": challenge_1["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(corrector_token),
+    )
 
     resp = await client.post(
         f"/vault/v1/corrections/{correction_id}/complete",
-        json={
-            "idempotency_key": idem(),
-            "correction_id": correction_id,
-            "corrected_canonical_payload": {"n": 2},
-        },
-        headers=auth_headers(admin_token),
+        json={"idempotency_key": idem(), "correction_id": correction_id, "corrected_canonical_payload": {"n": 2}},
+        headers=auth_headers(wrong_role_token),
     )
-    assert resp.status_code == 409
-    assert resp.json()["code"] == "SIGNATURE_POLICY_UNRESOLVED"
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+
+async def test_correction_same_signer_cannot_be_both_corrector_and_approver(client, seeded, db):
+    async with db.begin():
+        dual = await _make_admin(db, seeded, "admin.vault.dual")
+        db.add(UserSiteRole(user_id=dual.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+    dual_token = await login(client, "admin.vault.dual")
+
+    async with db.begin():
+        obj = await vault_service.release_master(
+            db, object_type="widget", business_id="W-CORRECT-SELF", canonical_payload={"n": 1}
+        )
+        object_id = obj.object_id
+    correction_id = await _request_correction(client, dual_token, object_id, "self")
+
+    challenge_1 = (
+        await client.post(
+            f"/vault/v1/corrections/{correction_id}/signature-challenges",
+            json={"corrected_canonical_payload": {"n": 2}}, headers=auth_headers(dual_token),
+        )
+    ).json()
+    await client.post(
+        f"/vault/v1/corrections/{correction_id}/complete",
+        json={
+            "idempotency_key": idem(), "correction_id": correction_id, "corrected_canonical_payload": {"n": 2},
+            "challenge_id": challenge_1["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(dual_token),
+    )
+
+    # Same actor (holds QA Releaser too) attempts position 2 -- role check passes, independence rejects.
+    resp = await client.post(
+        f"/vault/v1/corrections/{correction_id}/complete",
+        json={"idempotency_key": idem(), "correction_id": correction_id, "corrected_canonical_payload": {"n": 2}},
+        headers=auth_headers(dual_token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "SOD_INDEPENDENCE_REQUIRED"
+
+
+async def test_correction_third_signature_after_chain_complete_rejected(client, seeded, db):
+    async with db.begin():
+        corrector = await _make_admin(db, seeded, "admin.vault.extra1")
+        approver = await _make_user_with_qa_releaser(db, seeded, "admin.vault.extra2")
+    corrector_token = await login(client, "admin.vault.extra1")
+    approver_token = await login(client, "admin.vault.extra2")
+
+    async with db.begin():
+        obj = await vault_service.release_master(
+            db, object_type="widget", business_id="W-CORRECT-EXTRA", canonical_payload={"n": 1}
+        )
+        object_id = obj.object_id
+    correction_id = await _request_correction(client, corrector_token, object_id, "extra")
+
+    for token in (corrector_token, approver_token):
+        challenge = (
+            await client.post(
+                f"/vault/v1/corrections/{correction_id}/signature-challenges",
+                json={"corrected_canonical_payload": {"n": 2}}, headers=auth_headers(token),
+            )
+        ).json()
+        resp = await client.post(
+            f"/vault/v1/corrections/{correction_id}/complete",
+            json={
+                "idempotency_key": idem(), "correction_id": correction_id, "corrected_canonical_payload": {"n": 2},
+                "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+            },
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 200, resp.text
+
+    # The chain is already complete (signature_count=2) -- the challenge-issuing endpoint itself refuses
+    # a third position before any third completion attempt is even possible.
+    resp = await client.post(
+        f"/vault/v1/corrections/{correction_id}/signature-challenges",
+        json={"corrected_canonical_payload": {"n": 2}}, headers=auth_headers(corrector_token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_correction_second_signer_payload_must_match_the_first(client, seeded, db):
+    async with db.begin():
+        corrector = await _make_admin(db, seeded, "admin.vault.mismatch1")
+        approver = await _make_user_with_qa_releaser(db, seeded, "admin.vault.mismatch2")
+    corrector_token = await login(client, "admin.vault.mismatch1")
+    approver_token = await login(client, "admin.vault.mismatch2")
+
+    async with db.begin():
+        obj = await vault_service.release_master(
+            db, object_type="widget", business_id="W-CORRECT-MISMATCH", canonical_payload={"n": 1}
+        )
+        object_id = obj.object_id
+    correction_id = await _request_correction(client, corrector_token, object_id, "mismatch")
+
+    challenge_1 = (
+        await client.post(
+            f"/vault/v1/corrections/{correction_id}/signature-challenges",
+            json={"corrected_canonical_payload": {"n": 2}}, headers=auth_headers(corrector_token),
+        )
+    ).json()
+    await client.post(
+        f"/vault/v1/corrections/{correction_id}/complete",
+        json={
+            "idempotency_key": idem(), "correction_id": correction_id, "corrected_canonical_payload": {"n": 2},
+            "challenge_id": challenge_1["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(corrector_token),
+    )
+
+    # A different corrected_canonical_payload at position 2 -- the challenge-issuing endpoint itself
+    # refuses (the second signer must approve exactly what the first signer approved).
+    resp = await client.post(
+        f"/vault/v1/corrections/{correction_id}/signature-challenges",
+        json={"corrected_canonical_payload": {"n": 999}}, headers=auth_headers(approver_token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
 
 
 async def test_unauthorized_without_token_rejected(client):

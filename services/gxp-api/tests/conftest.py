@@ -840,6 +840,26 @@ async def seeded(db: AsyncSession) -> dict:
                 policy_source="PLATFORM_FLOOR",
             )
         )
+        # SG-035 pair 4 (record_correction/complete), RESOLVED 2026-09-11, project-owner-directed
+        # (PHASE_3_DEFERRED_DECISIONS.md item D). Document 106 section 9 row 1: `Approved`, count 2,
+        # "Corrector and approver MUST differ", reason mandatory. Position 1 ("Authorized corrector") ->
+        # no fixed role (RBAC `vault.correct` gates who may attempt it); position 2 ("independent
+        # approver") -> `QA Releaser`. No test file adds its own local record_correction/complete row
+        # (only test_vault.py exercises it, using this global row).
+        db.add(
+            SignaturePolicy(
+                record_type="record_correction",
+                action="complete",
+                meaning="Approved",
+                required_role_id=None,
+                requires_independent_signer=True,
+                signature_required=True,
+                signature_count=2,
+                signature_order=[None, "QA Releaser"],
+                reason_required=True,
+                policy_source="PLATFORM_FLOOR",
+            )
+        )
         # Document 106 section 9 row 9 (SPEC-EBMR-000) -- SG-035 partial, 2026-09-10, project-owner-
         # directed ("follow the ebmr-edhr docs"): product_version/suspend is `Performed` by an
         # "Authorized holder (Production / QA)" (role pair -> required_role_id=None; RBAC product.suspend

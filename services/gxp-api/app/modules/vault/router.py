@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy
-from app.modules.signature.service import create_challenge, resolve_signature_requirement
+from app.modules.signature.service import chain_signatures_so_far, create_challenge, resolve_signature_requirement
 from app.modules.vault import service as vault_service
 from app.modules.vault.commands import (
     CompleteCorrectionCommand,
@@ -17,7 +17,8 @@ from app.modules.vault.commands import (
     create_vault_release,
     request_correction,
 )
-from app.mutation.errors import ValidationFailedError
+from app.modules.vault.models import RecordCorrection
+from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import MutationReceipt
 
@@ -150,3 +151,56 @@ async def post_complete_correction(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="vault.correct", site_id=None)
         return await complete_correction(session, cmd, actor.user_id)
+
+
+class CorrectionSignatureChallengeRequest(BaseModel):
+    corrected_canonical_payload: dict
+
+
+@router.post("/corrections/{correction_id}/signature-challenges")
+async def post_correction_signature_challenge(
+    correction_id: uuid.UUID,
+    body: CorrectionSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """SG-035 pair 4, RESOLVED 2026-09-11 (PHASE_3_DEFERRED_DECISIONS.md item D; Document 106 section 9
+    row 1). Never existed before this pass -- `complete_correction()` was always the platform's only
+    single-signature 409/428 fail-closed action with no challenge-issuing endpoint at all (SG-035). The
+    chain position (1 = corrector, 2 = independent approver) is derived from how many valid signatures
+    this correction already carries, never accepted from the caller -- see `complete_correction()`'s own
+    docstring for why that structurally rules out "signature 2 issued before signature 1 exists"
+    (Document 106 section 13 test #5). Bound to `sha256_hex(corrected_canonical_payload)` at version 1 --
+    the same hash `complete_correction()` re-computes at consume time -- and, from position 2 onward,
+    checked against the first signer's own hash so a later signer cannot approve different content than
+    an earlier signer already saw."""
+    async with session.begin():
+        correction = await session.get(RecordCorrection, correction_id)
+        if correction is None:
+            raise NotFoundError("Correction not found")
+        if correction.status not in ("requested", "awaiting_second_signature"):
+            raise ValidationFailedError("Correction is not awaiting a signature", current_status=correction.status)
+        policy = await resolve_signature_requirement(session, record_type="record_correction", action="complete")
+        prior_signatures = await chain_signatures_so_far(
+            session, record_type="record_correction", record_id=correction.correction_id, record_version=1,
+        )
+        position = len(prior_signatures) + 1
+        if position > policy.signature_count:
+            raise ValidationFailedError(
+                "This correction has already collected every required signature",
+                signature_count=policy.signature_count,
+            )
+        record_hash = sha256_hex(body.corrected_canonical_payload)
+        if prior_signatures and record_hash != prior_signatures[0].record_hash:
+            raise ValidationFailedError(
+                "corrected_canonical_payload must match what the earlier signer(s) in this chain approved"
+            )
+        challenge = await create_challenge(
+            session, user_id=actor.user_id, record_type="record_correction", record_id=correction.correction_id,
+            record_version=1, record_hash=record_hash, meaning=policy.meaning,
+        )
+        return {
+            "challenge_id": str(challenge.id), "meaning": challenge.meaning,
+            "chain_position": position, "signature_count": policy.signature_count,
+            "expires_at": challenge.expires_at.isoformat(),
+        }

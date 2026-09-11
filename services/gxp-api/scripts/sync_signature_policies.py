@@ -19,7 +19,7 @@ from sqlalchemy import select
 from app.core.db import SessionLocal
 from app.modules.iam.models import Role
 from app.modules.signature.models import SignaturePolicy
-from scripts.seed import SIGNATURE_POLICY_FLOOR
+from scripts.seed import SIGNATURE_POLICY_CHAIN_FLOOR, SIGNATURE_POLICY_FLOOR
 
 
 async def sync() -> None:
@@ -73,9 +73,63 @@ async def sync() -> None:
                     existing.signature_required = sig_required
                     existing.reason_required = reason_required
 
+            # SG-035 pair 4 (record_correction/complete), RESOLVED 2026-09-11 (PHASE_3_DEFERRED_
+            # DECISIONS.md item D). Every named role in signature_order must already exist in this
+            # deployment, same "skip, don't error" precedent as the single-role loop above -- if any
+            # position's role is missing, the whole chain row is skipped rather than partially applied.
+            for record_type, action, meaning, signature_count, signature_order, reason_required in SIGNATURE_POLICY_CHAIN_FLOOR:
+                missing_role = False
+                for role_name in signature_order:
+                    if role_name and (await session.execute(select(Role).where(Role.name == role_name))).scalar_one_or_none() is None:
+                        missing_role = True
+                        break
+                if missing_role:
+                    skipped += 1
+                    continue
+
+                existing = (
+                    await session.execute(
+                        select(SignaturePolicy).where(
+                            SignaturePolicy.record_type == record_type, SignaturePolicy.action == action
+                        )
+                    )
+                ).scalar_one_or_none()
+                if existing is None:
+                    session.add(
+                        SignaturePolicy(
+                            record_type=record_type,
+                            action=action,
+                            meaning=meaning,
+                            required_role_id=None,
+                            requires_independent_signer=True,
+                            signature_required=True,
+                            signature_count=signature_count,
+                            signature_order=signature_order,
+                            reason_required=reason_required,
+                            policy_source="PLATFORM_FLOOR",
+                        )
+                    )
+                    created += 1
+                else:
+                    if (
+                        existing.meaning,
+                        existing.signature_count,
+                        existing.signature_order,
+                        existing.reason_required,
+                    ) != (meaning, signature_count, signature_order, reason_required):
+                        updated += 1
+                    existing.meaning = meaning
+                    existing.required_role_id = None
+                    existing.requires_independent_signer = True
+                    existing.signature_required = True
+                    existing.signature_count = signature_count
+                    existing.signature_order = signature_order
+                    existing.reason_required = reason_required
+
+    total = len(SIGNATURE_POLICY_FLOOR) + len(SIGNATURE_POLICY_CHAIN_FLOOR)
     print(
         f"signature policies: {created} created, {updated} updated, "
-        f"{skipped} skipped (role not in this deployment), {len(SIGNATURE_POLICY_FLOOR)} total in floor"
+        f"{skipped} skipped (role not in this deployment), {total} total in floor"
     )
 
 

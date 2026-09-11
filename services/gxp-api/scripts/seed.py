@@ -1352,6 +1352,25 @@ SIGNATURE_POLICY_FLOOR = [
     ("ai_provider_switch", "switch", "Approved", "QA Releaser", True, True, True),
 ]
 
+# SG-035 pair 4 (`record_correction/complete`), RESOLVED 2026-09-11, project-owner-directed
+# (PHASE_3_DEFERRED_DECISIONS.md item D). Document 106 section 9 row 1: `Approved`, "Authorized
+# corrector + independent approver", count 2, "Corrector and approver MUST differ", reason mandatory.
+# Kept separate from SIGNATURE_POLICY_FLOOR (a plain 7-tuple assuming signature_count=1 for every one
+# of the ~60 rows above) rather than widening that tuple's shape everywhere -- a chain row's per-
+# position signer classes don't fit the single `required_role_name` column a count=1 row uses.
+# `signature_order` is a list of platform role names, one per 1-indexed chain position (`None` = RBAC-
+# gated, no fixed role, same treatment `required_role_name=None` gets on the count=1 path): position 1
+# ("Authorized corrector") -> no fixed role, RBAC `vault.correct` gates who may attempt it at all;
+# position 2 ("independent approver") -> `QA Releaser`, matching the "QA Approver for the record class"
+# precedent used throughout this file. `required_role_name=None` on the tuple itself (unused for a
+# chain row -- signature_order carries the per-position roles instead); `independent=True` enforced by
+# `enforce_chain_signer_policy()` as "differs from every earlier signer in this chain", not against a
+# record-owner identity column.
+SIGNATURE_POLICY_CHAIN_FLOOR = [
+    # (record_type, action, meaning, signature_count, signature_order, reason_required)
+    ("record_correction", "complete", "Approved", 2, [None, "QA Releaser"], True),  # Doc 106 section 9 row 1
+]
+
 # Document 20 (SPEC-MAT-002B) INV-FR-001/002: warehouse_location has no CRUD operation anywhere in
 # Document 20's own 8-op API list (SG-081) -- seed-only master data, same treatment as Organization/Site.
 # (warehouse_code, location_code, zone_type)
@@ -1597,6 +1616,40 @@ async def seed() -> None:
                     existing_policy.required_role_id = required_role_id
                     existing_policy.requires_independent_signer = independent
                     existing_policy.signature_required = sig_required
+                    existing_policy.reason_required = reason_required
+                    existing_policy.policy_source = "PLATFORM_FLOOR"
+
+            for record_type, action, meaning, signature_count, signature_order, reason_required in SIGNATURE_POLICY_CHAIN_FLOOR:
+                existing_policy = (
+                    await session.execute(
+                        select(SignaturePolicy).where(
+                            SignaturePolicy.record_type == record_type,
+                            SignaturePolicy.action == action,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if existing_policy is None:
+                    session.add(
+                        SignaturePolicy(
+                            record_type=record_type,
+                            action=action,
+                            meaning=meaning,
+                            required_role_id=None,
+                            requires_independent_signer=True,
+                            signature_required=True,
+                            signature_count=signature_count,
+                            signature_order=signature_order,
+                            reason_required=reason_required,
+                            policy_source="PLATFORM_FLOOR",
+                        )
+                    )
+                else:
+                    existing_policy.meaning = meaning
+                    existing_policy.required_role_id = None
+                    existing_policy.requires_independent_signer = True
+                    existing_policy.signature_required = True
+                    existing_policy.signature_count = signature_count
+                    existing_policy.signature_order = signature_order
                     existing_policy.reason_required = reason_required
                     existing_policy.policy_source = "PLATFORM_FLOOR"
 
