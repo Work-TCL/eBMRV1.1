@@ -13,7 +13,8 @@ scope, e.g. one under evaluation without a resolved class) is not retroactively 
 
 from decimal import Decimal, DivisionByZero, InvalidOperation
 
-from app.modules.rules.precision import ClassPolicy, compare as precision_compare
+from app.modules.rules.precision import ClassPolicy
+from app.modules.rules.precision import compare as precision_compare
 from app.mutation.errors import DivisionUndefinedError, ValidationFailedError
 
 _COMPARISON = {

@@ -8,7 +8,6 @@ OBJ-FR-011/012/030 -- no bucket listing is ever exposed) and streams the bytes f
 
 from __future__ import annotations
 
-import base64
 import uuid
 
 from fastapi import APIRouter, Depends, Response

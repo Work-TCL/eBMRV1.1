@@ -1086,9 +1086,10 @@ class FillIpcOosError(GxPError):
     status_code = 422
 
 
-class FilterIntegrityFailedError(GxPError):
-    code = "FILTER_INTEGRITY_FAILED"
-    status_code = 422
+# NOTE: `FilterIntegrityFailedError` (code FILTER_INTEGRITY_FAILED) is defined once, above with the
+# sterile/filter errors at status 409. An accidental duplicate here (status 422) was removed 2026-09-10 —
+# it shadowed the 409 definition and was raised by nothing. If a future Document 42 filtration-integrity
+# check needs it, it already exists at 409.
 
 
 class CciTestFailedError(GxPError):

@@ -16,6 +16,7 @@ from app.modules.qms.scar_models import (
     ScarRecord,
     SupplierQualityCase,
 )
+from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     EffectivenessRequiredError,
@@ -78,6 +79,15 @@ async def _resolve_signature(
     policy = await signature_service.resolve_signature_requirement(session, record_type="scar_record", action=action)
     if not policy.signature_required:
         return None
+    # Document 106 section 9 rows 95/96: review is `Reviewed` by a "QA Reviewer" independent of the
+    # performer; close is `Approved` by a "QA Releaser" independent of the investigator/owner. ScarRecord
+    # stores no performer/owner identity of its own (only a `case_id` to the parent SupplierQualityCase),
+    # so only the required role is enforced here -- same honest limitation recorded for
+    # qa_review_package/complete.
+    await enforce_signer_policy(
+        session, policy=policy, actor_user_id=actor_user_id, site_id=scar.site_id,
+        action_label=f"scar.{action}",
+    )
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"SCAR '{action}' requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)

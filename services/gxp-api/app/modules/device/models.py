@@ -22,7 +22,7 @@ directly from `created` (clearing a hold depends on the gapped accept/rework dis
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -52,6 +52,6 @@ class DeviceUnit(Base):
     udi_di: Mapped[str | None] = mapped_column(String(120))
     udi_pi: Mapped[dict | None] = mapped_column(JSONB)
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="created")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     release_status: Mapped[str] = mapped_column(String(40), nullable=False, default="not_released")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

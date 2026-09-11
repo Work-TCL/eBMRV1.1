@@ -11,7 +11,7 @@ row" precedent.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -47,7 +47,7 @@ class EmProgramVersion(Base):
     operation_shift_coverage: Mapped[dict | None] = mapped_column(JSONB)
     review_trend_rules: Mapped[dict | None] = mapped_column(JSONB)
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="RELEASED")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -65,7 +65,7 @@ class EmLocation(Base):
     criticality: Mapped[str | None] = mapped_column(String(20))
     sample_types: Mapped[dict | None] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -83,7 +83,10 @@ class EmSampleOrReading(Base):
     """
 
     __tablename__ = "em_samples_or_readings"
-    __table_args__ = {"schema": "equipment"}
+    __table_args__ = (
+        Index("ix_em_samples_location", "location_id", "created_at"),
+        {"schema": "equipment"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -104,7 +107,7 @@ class EmSampleOrReading(Base):
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="SAMPLE_TASK")
     requires_deviation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deviation_reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -116,7 +119,10 @@ class EmExcursion(Base):
     never an edit."""
 
     __tablename__ = "em_excursions"
-    __table_args__ = {"schema": "equipment"}
+    __table_args__ = (
+        Index("ix_em_excursions_area", "area_id"),
+        {"schema": "equipment"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -131,5 +137,5 @@ class EmExcursion(Base):
     impact_assessed_at: Mapped[datetime | None] = mapped_column()
     requires_deviation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     deviation_reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

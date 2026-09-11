@@ -11,16 +11,15 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.modules.batch.models import Batch
+from app.modules.batch_execution.models import Batch
 from app.modules.ddcp import coated_device_commands
 from app.modules.ddcp import commands as ddcp_commands
 from app.modules.ddcp.models import DdcpProcessOperation, DdcpProfileVersion, DdcpUnitBinding, DeviceAssemblyRecord, DeviceFunctionalTestLink
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.material.models import Material, MaterialLot
-from app.modules.product.models import Product
 from app.modules.product_master.models import ProductVersion
 from app.modules.qms import change_commands
-from app.modules.recipe.models import Recipe
+from app.modules.recipe_master.models import RecipeFamily, RecipeVersion
 from app.modules.rules import commands as rules_commands
 from app.modules.signature.models import SignaturePolicy
 from app.mutation.errors import (
@@ -70,16 +69,32 @@ async def _release_rule(db, actor_id, *, rule_id, expression_ast, seed_policy=Tr
 
 
 async def _create_batch(db, seeded, *, batch_number: str) -> Batch:
+    # SG-173 / ADR-0013: the DDCP command layer reads batches from `ebmr.gxp_batch`
+    # (app.modules.batch_execution), not the retired scaffold `ebmr.batches`. Build a minimal released
+    # Product Master / Recipe Master pair and the gxp_batch row directly (the commands only read
+    # batch.id / batch.site_id / batch.state).
     site_id = seeded["site_id"]
-    product = Product(site_id=site_id, code=f"PROD-{batch_number}", name="Test Coated Device Product", status="active", version=1)
-    db.add(product)
+    pv = ProductVersion(
+        product_business_id=f"PB-{batch_number}", version_no=1, product_code=f"PROD-{batch_number}",
+        name="Test Coated Device Product", manufacturing_profile_code="pharma", lifecycle_state="released", site_id=site_id,
+    )
+    db.add(pv)
     await db.flush()
-    recipe = Recipe(product_id=product.id, version=1, status="active")
-    db.add(recipe)
+    rf = RecipeFamily(
+        product_business_id=pv.product_business_id, recipe_code=f"RCP-{batch_number}", site_id=site_id,
+        manufacturing_profile_code="pharma",
+    )
+    db.add(rf)
+    await db.flush()
+    rv = RecipeVersion(
+        recipe_family_id=rf.id, version_no=1, product_version_id=pv.id, site_id=site_id,
+        lifecycle_state="released",
+    )
+    db.add(rv)
     await db.flush()
     batch = Batch(
-        site_id=site_id, product_id=product.id, recipe_id=recipe.id, recipe_version=1, batch_number=batch_number,
-        status="in_execution", target_quantity=Decimal("1000"), uom="EA", version=1,
+        site_id=site_id, batch_number=batch_number, product_version_id=pv.id, recipe_version_id=rv.id,
+        target_qty=Decimal("1000"), target_uom="EA", state="in_execution", version=1,
     )
     db.add(batch)
     await db.flush()
@@ -164,7 +179,7 @@ async def test_coating_readiness_and_start_run_records_initial_usage(seeded, db)
 
     substrate_lot = await _create_material_lot(db, seeded, code="SUBSTRATE-1", actor_id=actor_id)
     coating_drug_batch = await _create_batch(db, seeded, batch_number="BULK-COATING-DRUG-1")
-    coating_drug_batch.status = "released"
+    coating_drug_batch.state = "released"
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, substrate_lot, coating_drug_batch)
 
@@ -199,7 +214,7 @@ async def test_process_evidence_excursion_holds_run_and_complete_requires_dual_r
     batch = await _create_batch(db, seeded, batch_number="BATCH-COAT-PARAM-1")
     substrate_lot = await _create_material_lot(db, seeded, code="SUBSTRATE-2", actor_id=actor_id)
     coating_drug_batch = await _create_batch(db, seeded, batch_number="BULK-COATING-DRUG-2")
-    coating_drug_batch.status = "released"
+    coating_drug_batch.state = "released"
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, substrate_lot, coating_drug_batch)
 
@@ -232,7 +247,7 @@ async def test_bind_device_to_coating_rejects_duplicate_and_completes_run(seeded
     batch = await _create_batch(db, seeded, batch_number="BATCH-COAT-BIND-1")
     substrate_lot = await _create_material_lot(db, seeded, code="SUBSTRATE-3", actor_id=actor_id)
     coating_drug_batch = await _create_batch(db, seeded, batch_number="BULK-COATING-DRUG-3")
-    coating_drug_batch.status = "released"
+    coating_drug_batch.state = "released"
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, substrate_lot, coating_drug_batch)
 
@@ -273,7 +288,7 @@ async def test_drug_loading_result_post_sterilization_test_and_release_readiness
     batch = await _create_batch(db, seeded, batch_number="BATCH-COAT-LOAD-1")
     substrate_lot = await _create_material_lot(db, seeded, code="SUBSTRATE-4", actor_id=actor_id)
     coating_drug_batch = await _create_batch(db, seeded, batch_number="BULK-COATING-DRUG-4")
-    coating_drug_batch.status = "released"
+    coating_drug_batch.state = "released"
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, substrate_lot, coating_drug_batch)
 
@@ -304,7 +319,7 @@ async def test_evidence_package_and_complaint_trace(seeded, db):
     batch = await _create_batch(db, seeded, batch_number="BATCH-COAT-TRACE-1")
     substrate_lot = await _create_material_lot(db, seeded, code="SUBSTRATE-5", actor_id=actor_id)
     coating_drug_batch = await _create_batch(db, seeded, batch_number="BULK-COATING-DRUG-5")
-    coating_drug_batch.status = "released"
+    coating_drug_batch.state = "released"
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, substrate_lot, coating_drug_batch)
 
@@ -341,7 +356,7 @@ async def test_surface_prep_drying_curing_and_equipment_bound_run(seeded, db):
     batch = await _create_batch(db, seeded, batch_number="BATCH-COAT-PREP-1")
     substrate_lot = await _create_material_lot(db, seeded, code="SUBSTRATE-PREP-1", actor_id=actor_id)
     coating_drug_batch = await _create_batch(db, seeded, batch_number="BULK-COATING-DRUG-PREP-1")
-    coating_drug_batch.status = "released"
+    coating_drug_batch.state = "released"
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, substrate_lot, coating_drug_batch)
 
@@ -399,7 +414,7 @@ async def test_environment_gate_blocks_readiness_when_not_ready(seeded, db):
     batch = await _create_batch(db, seeded, batch_number="BATCH-COAT-ENV-1")
     substrate_lot = await _create_material_lot(db, seeded, code="SUBSTRATE-ENV-1", actor_id=actor_id)
     coating_drug_batch = await _create_batch(db, seeded, batch_number="BULK-COATING-DRUG-ENV-1")
-    coating_drug_batch.status = "released"
+    coating_drug_batch.state = "released"
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, substrate_lot, coating_drug_batch)
 

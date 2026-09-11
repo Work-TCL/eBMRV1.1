@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -80,7 +80,11 @@ class GenealogyNode(Base):
     only edges are ever superseded (GEN-FR-017)."""
 
     __tablename__ = "genealogy_node"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_genealogy_node_authoritative", "authoritative_record_id"),
+        Index("ix_genealogy_node_type_ref", "node_type", "business_ref"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -88,7 +92,7 @@ class GenealogyNode(Base):
     business_ref: Mapped[str | None] = mapped_column(String(200))
     authoritative_record_type: Mapped[str | None] = mapped_column(String(80))
     authoritative_record_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    authoritative_version: Mapped[int | None] = mapped_column()
+    authoritative_version: Mapped[int | None] = mapped_column(BigInteger, )
     record_hash: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -97,6 +101,9 @@ class GenealogyEdge(Base):
     __tablename__ = "genealogy_edge"
     __table_args__ = (
         UniqueConstraint("from_node_id", "to_node_id", "edge_type", "source_event_id"),
+        Index("ix_genealogy_edge_from", "from_node_id", "edge_type"),
+        Index("ix_genealogy_edge_step", "step_id"),
+        Index("ix_genealogy_edge_to", "to_node_id", "edge_type"),
         {"schema": "ebmr"},
     )
 

@@ -11,7 +11,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -54,7 +54,11 @@ class EquipmentAsset(Base):
     """
 
     __tablename__ = "equipment_assets"
-    __table_args__ = (UniqueConstraint("equipment_code"), {"schema": "equipment"})
+    __table_args__ = (
+        UniqueConstraint("equipment_code"),
+        Index("ix_equipment_assets_site_state", "site_id", "state"),
+        {"schema": "equipment"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -100,7 +104,7 @@ class EquipmentAsset(Base):
         UUID(as_uuid=True), ForeignKey("qms.change_control.id")
     )
 
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -117,7 +121,10 @@ class EquipmentCalibration(Base):
     """
 
     __tablename__ = "equipment_calibrations"
-    __table_args__ = {"schema": "equipment"}
+    __table_args__ = (
+        Index("ix_equipment_calibrations_asset", "equipment_asset_id"),
+        {"schema": "equipment"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     equipment_asset_id: Mapped[uuid.UUID] = mapped_column(
@@ -147,7 +154,7 @@ class EquipmentCalibration(Base):
     deviation_reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="due")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -161,7 +168,10 @@ class MaintenanceWorkOrder(Base):
     """
 
     __tablename__ = "maintenance_work_orders"
-    __table_args__ = {"schema": "equipment"}
+    __table_args__ = (
+        Index("ix_maintenance_work_orders_asset", "equipment_asset_id"),
+        {"schema": "equipment"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     equipment_asset_id: Mapped[uuid.UUID] = mapped_column(
@@ -196,7 +206,7 @@ class MaintenanceWorkOrder(Base):
     started_at: Mapped[datetime] = mapped_column(server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column()
 
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -209,7 +219,10 @@ class EquipmentUseLog(Base):
     """
 
     __tablename__ = "equipment_use_logs"
-    __table_args__ = {"schema": "equipment"}
+    __table_args__ = (
+        Index("ix_equipment_use_logs_asset", "equipment_asset_id", "occurred_at"),
+        {"schema": "equipment"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     equipment_asset_id: Mapped[uuid.UUID] = mapped_column(

@@ -27,7 +27,7 @@ columns.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, String, UniqueConstraint
+from sqlalchemy import BigInteger, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -42,6 +42,7 @@ class ProjectionDocumentMetadata(Base):
     __tablename__ = "projection_document_metadata"
     __table_args__ = (
         UniqueConstraint("index_type", "entity_type", "entity_id", name="uq_projection_document_identity"),
+        Index("ix_projection_document_metadata_index_type", "index_type"),
         {"schema": "readmodels"},
     )
 

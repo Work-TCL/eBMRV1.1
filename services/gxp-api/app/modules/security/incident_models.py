@@ -25,7 +25,7 @@ column -- platform-level, same as every other `security.*` table. `tenant_id` dr
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -49,7 +49,11 @@ class SecurityIncident(Base):
     `privileged_session.actions`)."""
 
     __tablename__ = "security_incident"
-    __table_args__ = (UniqueConstraint("incident_number"), {"schema": "security"})
+    __table_args__ = (
+        UniqueConstraint("incident_number"),
+        Index("ix_security_incident_state", "state"),
+        {"schema": "security"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     incident_number: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -85,7 +89,10 @@ class ForensicEvidence(Base):
     append-only JSONB list of custody events. Never deleted on incident closure (Document 67 # 14)."""
 
     __tablename__ = "forensic_evidence"
-    __table_args__ = {"schema": "security"}
+    __table_args__ = (
+        Index("ix_forensic_evidence_incident", "incident_id"),
+        {"schema": "security"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     incident_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("security.security_incident.id"), nullable=False)

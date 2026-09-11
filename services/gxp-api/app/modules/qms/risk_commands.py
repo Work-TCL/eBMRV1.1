@@ -16,6 +16,7 @@ from app.modules.qms.risk_models import (
     RiskAssessmentVersion,
     RiskRecord,
 )
+from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.rules.models import RuleDefinition
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
@@ -87,6 +88,12 @@ async def _resolve_signature(
     policy = await signature_service.resolve_signature_requirement(session, record_type="risk_record", action=action)
     if not policy.signature_required:
         return None
+    # Document 106 section 9 row 97: `risk_record/review` is `Reviewed` by a "QA Reviewer" independent of
+    # the performer -- checked against the risk record's own `owner_subject_id`.
+    await enforce_signer_policy(
+        session, policy=policy, actor_user_id=actor_user_id, site_id=risk.site_id,
+        action_label=f"risk.{action}", disqualified_subject_ids=(risk.owner_subject_id,),
+    )
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"Risk '{action}' requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)

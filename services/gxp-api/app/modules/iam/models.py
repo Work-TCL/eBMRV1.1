@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -134,6 +134,10 @@ class SodRule(Base):
     __tablename__ = "sod_rules"
     __table_args__ = (
         UniqueConstraint("code", "effective_from"),
+        CheckConstraint(
+            "rule_type <> 'STANDING_ROLE_PAIR' OR (role_a IS NOT NULL AND role_b IS NOT NULL)",
+            name="ck_sod_rules_standing_pair_roles",
+        ),
         {"schema": "iam"},
     )
 

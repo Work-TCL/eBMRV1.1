@@ -45,7 +45,7 @@ Deferred this pass (see SG-101, same discipline as SG-097):
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -62,6 +62,7 @@ class InternalAudit(Base):
     __table_args__ = (
         UniqueConstraint("quality_event_id"),
         UniqueConstraint("audit_number"),
+        Index("ix_internal_audit_state", "site_id", "state"),
         {"schema": "qms"},
     )
 
@@ -81,13 +82,19 @@ class InternalAudit(Base):
     actual_start_at: Mapped[datetime | None] = mapped_column()
     actual_end_at: Mapped[datetime | None] = mapped_column()
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="SCHEDULED")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class AuditFinding(Base):
     __tablename__ = "audit_finding"
-    __table_args__ = (UniqueConstraint("finding_number"), {"schema": "qms"})
+    __table_args__ = (
+        UniqueConstraint("finding_number"),
+        Index("ix_audit_finding_audit", "audit_id"),
+        Index("ix_audit_finding_requirement_ref", "requirement_ref"),
+        Index("ix_audit_finding_state", "site_id", "state"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -107,6 +114,6 @@ class AuditFinding(Base):
     is_repeat_finding: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     verification: Mapped[dict | None] = mapped_column(JSONB)
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="OPEN")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()

@@ -9,13 +9,13 @@ from app.core.security import verify_password
 from app.modules.iam.models import User
 from app.modules.policy.service import evaluate_policy
 from app.modules.signature import service as signature_service
-from app.modules.vault.models import VaultObject
 from app.modules.supplier_quality.models import (
     Supplier,
     SupplierQualification,
     SupplierQualificationEvidence,
     SupplierSite,
 )
+from app.modules.vault.models import VaultObject
 from app.mutation.errors import (
     DuplicateSupplierError,
     InvalidTransitionError,

@@ -47,6 +47,38 @@
 See `docs/generated/33_CODING_STANDARD_COMPLIANCE_MATRIX.md`,
 `docs/generated/34_ARCHITECTURE_GUARDRAIL_MATRIX.md` and `.github/workflows/ci.yml`.
 
+### Applied ruleset (Phase 2, 2026-09-09)
+
+In the repo (`github.com/Work-TCL/eBMRV1.1`) the following is committed:
+
+- `/.github/workflows/ci.yml` — the required status checks (`guardrails`, `lint`, `frontend-lint`,
+  `test`, `supply-chain`).
+- `/.github/CODEOWNERS` — mandatory owners for GxP core / IAM / signature / audit / vault / migrations /
+  security / contracts / CI / validation paths (GIT-FR-007).
+- `/.github/pull_request_template.md` — the CLAUDE.md §6 completion report + gate checklist (GIT-FR-006).
+- `/.github/dependabot.yml` — automated update proposals, no auto-merge (GIT-FR-021 / DEP-FR-026).
+
+The **branch-protection rule itself is a GitHub repo-admin action** (not committable from the tree).
+Apply to `main` (and any `release/*`):
+
+| Setting | Value | Requirement |
+|---|---|---|
+| Require a pull request before merging | on | GIT-FR-005 |
+| Required approvals | 2 (≥1 from a CODEOWNER of every changed path) | GIT-FR-007/008 |
+| Dismiss stale approvals on new commits | on | GIT-FR-010 |
+| Require review from Code Owners | on | GIT-FR-007 |
+| Require status checks to pass | `guardrails`, `lint`, `frontend-lint`, `test`, `supply-chain` | GIT-FR-009 |
+| Require branches up to date before merging | on | GIT-FR-004 |
+| Require conversation resolution | on | GIT-FR-010 |
+| Require signed commits | on for `release/*` tags; policy-configurable for feature branches | GIT-FR-011 |
+| Restrict who can push | none (PR-only) — no direct push, no force-push, no deletion | GIT-FR-003/013 |
+| Do not allow bypassing the above | on (incl. admins, except the documented security-incident procedure) | GIT-FR-009/013 |
+| Allow force pushes / deletions | off | GIT-FR-003/013 |
+
+Repo-level: secret-scanning + push protection **on** (GIT-FR-022 — CI also runs `gitleaks`); Actions
+restricted to this org's + verified-creator actions; fork PRs from outside the org require approval to
+run workflows (GIT-FR-024); Dependabot/CI act as GitHub Apps, not personal PATs (GIT-FR-026).
+
 ## Tests
 
 - direct push protected branch rejected

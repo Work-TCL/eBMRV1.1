@@ -30,7 +30,7 @@ ABORTED have no driving endpoint in Document 16's own 10-API list and are not re
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import BigInteger, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -69,7 +69,7 @@ class PackagingRun(Base):
     product_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_product_version.id"), nullable=False)
     line_ref: Mapped[str | None] = mapped_column(String(120))  # no equipment master to FK to yet (SG-050/055)
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="not_ready")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     line_clearance_completed: Mapped[bool] = mapped_column(nullable=False, default=False)
     reconciliation_state: Mapped[str] = mapped_column(String(40), nullable=False, default="not_started")
     started_at: Mapped[datetime | None] = mapped_column()
@@ -79,12 +79,15 @@ class PackagingRun(Base):
 
 class LabelIssue(Base):
     __tablename__ = "label_issue"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_label_issue_run", "packaging_run_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     packaging_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.packaging_run.id"), nullable=False)
     label_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # no label-master entity exists yet (SG-056)
-    quantity_issued: Mapped[int] = mapped_column(nullable=False)
+    quantity_issued: Mapped[int] = mapped_column(BigInteger, nullable=False)
     serial_range: Mapped[dict | None] = mapped_column(JSONB)
     print_job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # no print_job entity exists yet (SG-056)
     issued_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
@@ -98,13 +101,13 @@ class LabelReconciliation(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     packaging_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.packaging_run.id"), nullable=False)
-    issued: Mapped[int] = mapped_column(nullable=False)
-    applied: Mapped[int] = mapped_column(nullable=False, default=0)
-    returned: Mapped[int] = mapped_column(nullable=False, default=0)
-    destroyed: Mapped[int] = mapped_column(nullable=False, default=0)
-    rejected: Mapped[int] = mapped_column(nullable=False, default=0)
-    samples: Mapped[int] = mapped_column(nullable=False, default=0)
-    calculated_variance: Mapped[int] = mapped_column(nullable=False)
+    issued: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    applied: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    returned: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    destroyed: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    rejected: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    samples: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    calculated_variance: Mapped[int] = mapped_column(BigInteger, nullable=False)
     tolerance_rule: Mapped[str | None] = mapped_column(String(120))  # no released tolerance rule exists yet (SG-056)
     result: Mapped[str] = mapped_column(String(20), nullable=False)
     investigation_link: Mapped[str | None] = mapped_column(String(200))

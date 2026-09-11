@@ -41,7 +41,7 @@ separate retire operation either.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -87,7 +87,11 @@ class ControlledDocument(Base):
 
 class ControlledDocumentVersion(Base):
     __tablename__ = "controlled_document_version"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_controlled_document_version_document", "document_id"),
+        Index("ix_controlled_document_version_state", "document_id", "state"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.controlled_document.id"), nullable=False)
@@ -107,7 +111,7 @@ class ControlledDocumentVersion(Base):
     superseded_by_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.controlled_document_version.id"))
     retirement_reason: Mapped[str | None] = mapped_column(Text)
     retired_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

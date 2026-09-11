@@ -35,8 +35,9 @@ in this codebase) -- so CLOSED is a genuine terminal state here.
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -79,6 +80,7 @@ class NonconformanceRecord(Base):
     __table_args__ = (
         UniqueConstraint("quality_event_id"),
         UniqueConstraint("ncr_number"),
+        Index("ix_nonconformance_record_state", "site_id", "state", "severity"),
         {"schema": "qms"},
     )
 
@@ -103,7 +105,7 @@ class NonconformanceRecord(Base):
     release_blocker_active: Mapped[bool] = mapped_column(nullable=False, default=False)
     verification: Mapped[dict | None] = mapped_column(JSONB)
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="OPEN")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     closure_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()
@@ -118,12 +120,15 @@ class NcrDisposition(Base):
     """
 
     __tablename__ = "ncr_disposition"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_ncr_disposition_ncr", "ncr_id"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     ncr_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.nonconformance_record.id"), nullable=False)
     affected_scope: Mapped[list] = mapped_column(JSONB, nullable=False)
-    quantity: Mapped[float | None] = mapped_column(Numeric(18, 6))
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     serials: Mapped[list | None] = mapped_column(JSONB)
     disposition_type: Mapped[str] = mapped_column(String(20), nullable=False)
     justification: Mapped[str] = mapped_column(Text, nullable=False)

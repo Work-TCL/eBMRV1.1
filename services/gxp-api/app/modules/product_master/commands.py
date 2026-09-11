@@ -762,6 +762,33 @@ async def _transition_with_signature(
     )
     signature_id = None
     if policy.signature_required:
+        # product_version/reinstate -- SG-035 pair 5, RESOLVED 2026-09-11 (PHASE_3_DEFERRED_DECISIONS.md
+        # item B). Document 106 section 9 has no row for this action; the project owner authored one from
+        # the section 8 "resume/unhold/release-hold" family: `Approved`, "QA authority that owns the hold
+        # reason" -> `QA Releaser`, independent of "the person who caused the condition" -- resolved here
+        # as the actor of this product version's own most recent audit event that set
+        # `lifecycle_state` to its *current* (pre-transition) value, the same audit-trail lookup pattern
+        # `release_product_version()` uses against the `Created` event. `product_version/suspend` has
+        # `required_role_id=None` and `requires_independent_signer=False`, so `enforce_signer_policy()` is
+        # a no-op for it -- this block is safe for both actions sharing this helper.
+        disqualified_subject_ids: tuple = ()
+        if policy.requires_independent_signer:
+            cause_actor_id = await session.scalar(
+                select(AuditEvent.actor_id)
+                .where(
+                    AuditEvent.aggregate_type == "product_version",
+                    AuditEvent.aggregate_id == version.id,
+                    AuditEvent.action == "Changed",
+                    AuditEvent.new_value["lifecycle_state"].astext == version.lifecycle_state,
+                )
+                .order_by(AuditEvent.occurred_at.desc())
+                .limit(1)
+            )
+            disqualified_subject_ids = (cause_actor_id,) if cause_actor_id else ()
+        await signature_service.enforce_signer_policy(
+            session, policy=policy, actor_user_id=actor_user_id, site_id=version.site_id,
+            action_label=f"product_version.{signature_action}", disqualified_subject_ids=disqualified_subject_ids,
+        )
         if cmd.challenge_id is None or not cmd.reauth_password:
             raise MissingSignatureError(f"{action_name} requires a signature", required_meaning=policy.meaning)
         actor = await session.get(User, actor_user_id)

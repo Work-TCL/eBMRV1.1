@@ -21,10 +21,10 @@ from app.modules.recipe_master.commands import (
     update_draft,
     validate_draft_command,
 )
+from app.modules.signature.service import create_challenge
 from app.mutation.errors import ValidationFailedError
 from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import MutationReceipt
-from app.modules.signature.service import create_challenge
 
 router = APIRouter(prefix="/recipes/v2", tags=["recipe_master"])
 

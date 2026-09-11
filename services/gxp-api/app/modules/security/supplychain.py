@@ -94,8 +94,9 @@ def verify_deployment_artifact(
 def generate_release_sbom(*, artifact_digest: str, components: list[dict], build_metadata: dict) -> dict:
     """SDLC-FR-009/013: produce a CycloneDX-shaped SBOM document linked to the artifact digest. This
     build emits the structure and a content hash; a real pipeline signs it."""
-    from app.modules.security.crypto import hash_evidence
     import json
+
+    from app.modules.security.crypto import hash_evidence
 
     doc = {
         "bomFormat": "CycloneDX", "specVersion": "1.5", "serialNumber": f"urn:uuid:{uuid.uuid4()}",

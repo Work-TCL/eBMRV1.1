@@ -27,8 +27,27 @@ async def _make_admin(db, seeded, username):
 async def _setup(db, seeded, tag, *, signed=False):
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.doc{tag}")
-        db.add(SignaturePolicy(record_type="controlled_document_version", action="release", meaning="Approved", signature_required=signed))
+        # SG-138 (2026-09-10): Document 106 section 9 row 89 -- release `Released` by a "QA Releaser"
+        # independent of every production performer (checked against the document's `owner_subject_id`).
+        db.add(SignaturePolicy(
+            record_type="controlled_document_version", action="release",
+            meaning=("Released" if signed else "Approved"), signature_required=signed,
+            required_role_id=(seeded["roles"]["QA Releaser"].id if signed else None),
+            requires_independent_signer=signed,
+        ))
     return owner
+
+
+async def _indep_qa_releaser(db, seeded, username):
+    async with db.begin():
+        user = User(
+            username=username, email=f"{username}@example.com", full_name="Indep QA Releaser",
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+    return user
 
 
 def _create_body(site_id, owner_id, **overrides):
@@ -128,17 +147,20 @@ async def test_release_requires_review_confirmation(client, seeded, db):
 
 async def test_release_requires_signature_when_policy_requires_it(client, seeded, db):
     owner = await _setup(db, seeded, "4", signed=True)
+    await _indep_qa_releaser(db, seeded, "qa.doc4")
     token = await login(client, "admin.doc4")
+    releaser_token = await login(client, "qa.doc4")
     version_id = await _create(client, token, seeded["site_id"], owner.id)
     await client.post(
         f"/documents/v1/drafts/{version_id}/submit",
         json={"idempotency_key": idem(), "document_version_id": version_id, "expected_version": 1, "reviewers": [{"role": "technical", "subject_id": str(uuid.uuid4())}]},
         headers=auth_headers(token),
     )
+    # Independent QA Releaser, correct role, no challenge -> still DOCUMENT_SIGNATURE_REQUIRED.
     resp = await client.post(
         f"/documents/v1/drafts/{version_id}/release",
         json={"idempotency_key": idem(), "document_version_id": version_id, "expected_version": 2, "review_completed": True},
-        headers=auth_headers(token),
+        headers=auth_headers(releaser_token),
     )
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "DOCUMENT_SIGNATURE_REQUIRED"
@@ -358,7 +380,9 @@ async def test_signature_challenge_404_for_missing_version(client, seeded, db):
 
 async def test_signature_challenge_round_trip_signs_release(client, seeded, db):
     owner = await _setup(db, seeded, "22", signed=True)
+    await _indep_qa_releaser(db, seeded, "qa.doc22")
     token = await login(client, "admin.doc22")
+    releaser_token = await login(client, "qa.doc22")
     version_id = await _create(client, token, seeded["site_id"], owner.id)
     resp = await client.post(
         f"/documents/v1/drafts/{version_id}/submit",
@@ -368,11 +392,12 @@ async def test_signature_challenge_round_trip_signs_release(client, seeded, db):
     assert resp.status_code == 200, resp.text  # version 1 -> 2
 
     resp = await client.post(
-        f"/documents/v1/drafts/{version_id}/signature-challenges", json={"action": "release"}, headers=auth_headers(token),
+        f"/documents/v1/drafts/{version_id}/signature-challenges", json={"action": "release"},
+        headers=auth_headers(releaser_token),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["meaning"] == "Approved"
+    assert body["meaning"] == "Released"  # Document 106 section 9 row 89
 
     resp = await client.post(
         f"/documents/v1/drafts/{version_id}/release",
@@ -380,7 +405,7 @@ async def test_signature_challenge_round_trip_signs_release(client, seeded, db):
             "idempotency_key": idem(), "document_version_id": version_id, "expected_version": 2, "review_completed": True,
             "challenge_id": body["challenge_id"], "reauth_password": DEMO_PASSWORD,
         },
-        headers=auth_headers(token),
+        headers=auth_headers(releaser_token),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["signature_id"] is not None

@@ -26,7 +26,7 @@ REVIEW_COMPLETE, or REOPENED.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -53,12 +53,12 @@ class QaReviewPackage(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
     batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
-    batch_version: Mapped[int] = mapped_column(nullable=False)
+    batch_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     checklist_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    exception_index_version: Mapped[int] = mapped_column(nullable=False, default=1)
+    exception_index_version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     completeness_status: Mapped[str] = mapped_column(String(40), nullable=False)
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="READY_FOR_REVIEW")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column()

@@ -52,14 +52,42 @@ async def _make_risk(db, seeded, owner) -> uuid.UUID:
     return risk.id
 
 
+async def _indep_user(db, seeded, username, role_name):
+    async with db.begin():
+        user = User(
+            username=username, email=f"{username}@example.com", full_name=role_name,
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"][role_name].id))
+    return user
+
+
 async def _setup(db, seeded, tag, *, signed=False, approve_signed=None, reportability_signed=None):
     approve_signed = signed if approve_signed is None else approve_signed
     reportability_signed = signed if reportability_signed is None else reportability_signed
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.far{tag}")
-        db.add(SignaturePolicy(record_type="field_action", action="close", meaning="Approved", signature_required=signed))
-        db.add(SignaturePolicy(record_type="field_action", action="approve", meaning="Approved", signature_required=approve_signed))
-        db.add(SignaturePolicy(record_type="field_action", action="reportability", meaning="Approved", signature_required=reportability_signed))
+        # SG-138 (2026-09-10): Document 106 section 9 rows 103/104/105 -- approve/close `Approved` by a
+        # "QA Releaser" (independent of the author/owner -- but FieldAction stores no such identity, so
+        # only the role is enforced); reportability `Approved` by a "Regulatory Affairs authorized
+        # submitter" -> the "Postmarket Regulatory Affairs" role, human-only.
+        db.add(SignaturePolicy(
+            record_type="field_action", action="close", meaning="Approved", signature_required=signed,
+            required_role_id=(seeded["roles"]["QA Releaser"].id if signed else None),
+            requires_independent_signer=signed,
+        ))
+        db.add(SignaturePolicy(
+            record_type="field_action", action="approve", meaning="Approved", signature_required=approve_signed,
+            required_role_id=(seeded["roles"]["QA Releaser"].id if approve_signed else None),
+            requires_independent_signer=bool(approve_signed),
+        ))
+        db.add(SignaturePolicy(
+            record_type="field_action", action="reportability", meaning="Approved",
+            signature_required=reportability_signed,
+            required_role_id=(seeded["roles"]["Postmarket Regulatory Affairs"].id if reportability_signed else None),
+        ))
         product_id = await _make_product(db, seeded)
         risk_id = await _make_risk(db, seeded, owner)
     return owner, product_id, risk_id
@@ -387,30 +415,36 @@ async def test_idempotent_replay_returns_same_receipt(client, seeded, db):
 
 async def test_reportability_requires_signature_when_policy_requires_it(client, seeded, db):
     owner, product_id, risk_id = await _setup(db, seeded, "11", signed=False, reportability_signed=True)
+    await _indep_user(db, seeded, "ra.far11", "Postmarket Regulatory Affairs")
     token = await login(client, "admin.far11")
+    ra_token = await login(client, "ra.far11")
     field_action_id = await _create_field_action(client, token, seeded["site_id"])
     await _define_scope(client, token, field_action_id, 1, product_id)
 
-    resp = await _reportability(client, token, field_action_id, 2)
+    resp = await _reportability(client, ra_token, field_action_id, 2)
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
 
 
 async def test_approve_requires_signature_when_policy_requires_it(client, seeded, db):
     owner, product_id, risk_id = await _setup(db, seeded, "12", signed=False, approve_signed=True)
+    await _indep_user(db, seeded, "qa.far12", "QA Releaser")
     token = await login(client, "admin.far12")
+    releaser_token = await login(client, "qa.far12")
     field_action_id = await _create_field_action(client, token, seeded["site_id"])
     await _define_scope(client, token, field_action_id, 1, product_id)
     await _reportability(client, token, field_action_id, 2)
 
-    resp = await _approve(client, token, field_action_id, 3)
+    resp = await _approve(client, releaser_token, field_action_id, 3)
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
 
 
 async def test_close_requires_signature_when_policy_requires_it(client, seeded, db):
     owner, product_id, risk_id = await _setup(db, seeded, "13", signed=True, approve_signed=False, reportability_signed=False)
+    await _indep_user(db, seeded, "qa.far13", "QA Releaser")
     token = await login(client, "admin.far13")
+    releaser_token = await login(client, "qa.far13")
     field_action_id = await _create_field_action(client, token, seeded["site_id"])
     await _define_scope(client, token, field_action_id, 1, product_id)
     await _reportability(client, token, field_action_id, 2)
@@ -419,7 +453,7 @@ async def test_close_requires_signature_when_policy_requires_it(client, seeded, 
     await _reconcile(client, token, field_action_id, 5)
     await _effectiveness(client, token, field_action_id, 6)
 
-    resp = await _close(client, token, field_action_id, 7)
+    resp = await _close(client, releaser_token, field_action_id, 7)
     assert resp.status_code == 428, resp.text
     assert resp.json()["code"] == "MISSING_SIGNATURE"
 
@@ -473,20 +507,23 @@ async def test_signature_challenge_404_for_missing_field_action(client, seeded, 
 
 async def test_signature_challenge_round_trip_signs_reportability(client, seeded, db):
     owner, product_id, risk_id = await _setup(db, seeded, "22", signed=True)
+    await _indep_user(db, seeded, "ra.far22", "Postmarket Regulatory Affairs")
     token = await login(client, "admin.far22")
+    ra_token = await login(client, "ra.far22")
     field_action_id = await _create_field_action(client, token, seeded["site_id"])
     resp = await _define_scope(client, token, field_action_id, 1, product_id)
     assert resp.status_code == 200, resp.text  # 1 -> 2
 
     resp = await client.post(
-        f"/qms/v1/field-actions/{field_action_id}/signature-challenges", json={"action": "reportability"}, headers=auth_headers(token),
+        f"/qms/v1/field-actions/{field_action_id}/signature-challenges", json={"action": "reportability"},
+        headers=auth_headers(ra_token),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["meaning"] == "Approved"
 
     resp = await _reportability(
-        client, token, field_action_id, 2, challenge_id=body["challenge_id"], reauth_password=DEMO_PASSWORD,
+        client, ra_token, field_action_id, 2, challenge_id=body["challenge_id"], reauth_password=DEMO_PASSWORD,
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["signature_id"] is not None

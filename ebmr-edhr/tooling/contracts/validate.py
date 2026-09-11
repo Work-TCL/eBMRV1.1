@@ -336,7 +336,24 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--strict-coverage", action="store_true")
     parser.add_argument("--json", action="store_true", help="emit findings as JSON")
+    parser.add_argument(
+        "--baseline",
+        help="path to a file of accepted 'rule|contract|locator' lines (blank lines and '#' comments "
+        "ignored). Findings that match a baseline line are reported as BASELINED and do not fail the "
+        "run; any finding NOT in the baseline still fails. Use this to enforce contract-first for new "
+        "work while an agreed backlog (e.g. non-M1 work packages) is worked down.",
+    )
     args = parser.parse_args()
+
+    baseline: set[tuple[str, str, str]] = set()
+    if args.baseline:
+        for raw in Path(args.baseline).read_text().splitlines():
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            parts = [p.strip() for p in line.split("|")]
+            if len(parts) == 3:
+                baseline.add((parts[0], parts[1], parts[2]))
 
     findings = Findings()
     docs = load_contracts(findings)
@@ -380,9 +397,20 @@ def main() -> int:
     if findings.skipped:
         print()
 
+    if baseline:
+        matched = [i for i in findings.items if (i["rule"], i["contract"], i["locator"]) in baseline]
+        unexpected = [i for i in findings.items if (i["rule"], i["contract"], i["locator"]) not in baseline]
+        stale = baseline - {(i["rule"], i["contract"], i["locator"]) for i in findings.items}
+        print(f"BASELINED  {len(matched)} accepted finding(s) from {args.baseline}")
+        for entry in sorted(stale):
+            print(f"  STALE BASELINE (finding no longer occurs — remove this line): {' | '.join(entry)}")
+        print()
+        findings.items = unexpected
+
     if not findings.items:
-        print("PASS  no contract conformance violations found")
-        return 0
+        print("PASS  no contract conformance violations found"
+              + (" (outside the accepted baseline)" if baseline else ""))
+        return 1 if (baseline and stale) else 0
 
     by_rule = findings.by_rule()
     print(f"FAIL  {len(findings.items)} violation(s): " + ", ".join(

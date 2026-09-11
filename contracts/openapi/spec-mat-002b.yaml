@@ -340,6 +340,71 @@ paths:
         '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
         '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
 
+  /inventory/v1/adjustments:
+    get:
+      operationId: listAdjustmentRequests
+      tags: [inventory]
+      summary: Paginated inventory-adjustment-request list
+      description: >
+        SG-081 read-side picker/list endpoint — added to the router after this contract's first version;
+        contracted here to close the CTRC-FR-001 gap. Response schema, not a closed payload.
+      x-requirement-ids: [INV-FR-020, CTR-FR-012]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string } }
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer } }
+        - { name: page_size, in: query, required: false, schema: { type: integer } }
+        - { name: sort, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { type: array, items: { type: object, description: "One row." } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+  /inventory/v1/warehouse-locations:
+    get:
+      operationId: listWarehouseLocations
+      tags: [inventory]
+      summary: Active warehouse-location list for a site (SG-081)
+      description: >
+        SG-081 read-side picker/list endpoint — added to the router after this contract's first version;
+        contracted here to close the CTRC-FR-001 gap. Response schema, not a closed payload.
+      x-requirement-ids: [INV-FR-001, INV-FR-002]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: site_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { type: array, items: { type: object, description: "One row." } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+    post:
+      operationId: postCreateWarehouseLocation
+      tags: [inventory]
+      summary: Create a warehouse location (INV-FR-001/002 — SG-081 write side)
+      description: Requires `warehouse_location.create` (Admin / Supervisor). Additive — no update/delete.
+      x-requirement-ids: [INV-FR-001, INV-FR-002, MUT-FR-005, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWarehouseLocationCommand' }
+      responses:
+        '200':
+          description: Created. `aggregate_id` is the warehouse_location id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'spec-gxp-001.yaml#/components/responses/Conflict' }
+        '422':
+          description: VALIDATION_FAILED — unknown zone_type, or duplicate (site_id, warehouse_code, location_code).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -520,3 +585,16 @@ components:
         location_id: { type: string, format: uuid }
         counted_quantity: { type: string, description: "Decimal string. Cannot be negative." }
         reason: { type: [string, "null"] }
+
+    CreateWarehouseLocationCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [INV-FR-001, INV-FR-002, MUT-FR-005]
+      required: [idempotency_key, site_id, warehouse_code, location_code, zone_type]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        site_id: { type: string, format: uuid }
+        warehouse_code: { type: string, minLength: 1 }
+        location_code: { type: string, minLength: 1 }
+        zone_type: { type: string, description: e.g. quarantine / released / rejected. }

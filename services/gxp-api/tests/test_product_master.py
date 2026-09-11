@@ -191,17 +191,153 @@ async def test_release_requires_signature_and_succeeds_with_a_valid_challenge(cl
     detail = (await client.get(f"/products/v1/{product_version_id}", headers=auth_headers(admin_token))).json()
     assert detail["lifecycle_state"] == "released"
 
-    # suspend/reinstate remain unresolved -- SG-035's remaining scope, deliberately not extended here.
+    # suspend -- SG-035 partial 2026-09-10 (project-owner-directed, "follow the ebmr-edhr docs"):
+    # Document 106 section 9 row 9 resolves it to `Performed` / "Authorized holder (Production / QA)" /
+    # no independence / reason required. The signature is enforced, not just nominally resolved.
+    unsigned_suspend = await client.post(
+        f"/products/v1/{product_version_id}/suspend",
+        json={
+            "idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 3,
+            "reason": "market hold",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert unsigned_suspend.status_code == 428, unsigned_suspend.text
+    assert unsigned_suspend.json()["code"] == "MISSING_SIGNATURE"
+
+    suspend_challenge = (
+        await client.post(
+            f"/products/v1/{product_version_id}/signature-challenges",
+            json={"action": "suspend"},
+            headers=auth_headers(admin_token),
+        )
+    ).json()
+    assert suspend_challenge["meaning"] == "Performed"
+
     suspend_resp = await client.post(
         f"/products/v1/{product_version_id}/suspend",
         json={
             "idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 3,
-            "reason": "test",
+            "reason": "market hold",
+            "challenge_id": suspend_challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
         },
         headers=auth_headers(admin_token),
     )
-    assert suspend_resp.status_code == 409
-    assert suspend_resp.json()["code"] == "SIGNATURE_POLICY_UNRESOLVED"
+    assert suspend_resp.status_code == 200, suspend_resp.text
+    detail = (await client.get(f"/products/v1/{product_version_id}", headers=auth_headers(admin_token))).json()
+    assert detail["lifecycle_state"] == "suspended"
+
+    # reinstate -- see test_reinstate_wrong_role_no_challenge_and_independent_success below for the full
+    # three-state path (SG-035 pair 5, RESOLVED 2026-09-11, PHASE_3_DEFERRED_DECISIONS.md item B).
+
+
+async def test_reinstate_wrong_role_no_challenge_and_independent_success(client, seeded, db):
+    """SG-035 pair 5, RESOLVED 2026-09-11, project-owner-directed (PHASE_3_DEFERRED_DECISIONS.md item B):
+    Document 106 section 9 has no row for `product_version/reinstate`; the project owner authored one
+    from the section 8 "resume/unhold" family -- `Approved`, `QA Releaser`, independent of whoever caused
+    the suspend, reason required. Exercises the same three-state path Phase 3 used for every other newly-
+    ratified pair: wrong role -> ROLE_MISSING, right role but no challenge -> MISSING_SIGNATURE, right
+    role + independent + a valid challenge -> success. Both suspend and reinstate require RBAC
+    `product.suspend`, which only `Admin` holds (ROLE_PERMISSIONS) -- so every actor here is Admin, with
+    `QA Releaser` added/removed to move through the three states, the same dual-role pattern
+    `test_product_authored_by_process_engineer_is_released_by_an_independent_qa_releaser` already uses."""
+    async with db.begin():
+        owner = await _make_admin(db, seeded, "admin.reinstate1")
+        _add_release_signature_policy(db, seeded)
+    owner_token = await login(client, "admin.reinstate1")
+
+    resp = await client.post(
+        "/products/v1/drafts", json=_draft_body(seeded["site_id"], "PRD-REINSTATE"), headers=auth_headers(owner_token)
+    )
+    assert resp.status_code == 200, resp.text
+    product_version_id = resp.json()["aggregate_id"]
+    await client.post(
+        f"/products/v1/drafts/{product_version_id}/submit",
+        json={"idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 1},
+        headers=auth_headers(owner_token),
+    )
+    release_challenge = (
+        await client.post(
+            f"/products/v1/{product_version_id}/signature-challenges", json={"action": "release"}, headers=auth_headers(owner_token),
+        )
+    ).json()
+    await client.post(
+        f"/products/v1/drafts/{product_version_id}/release",
+        json={
+            "idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 2,
+            "challenge_id": release_challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(owner_token),
+    )
+    suspend_challenge = (
+        await client.post(
+            f"/products/v1/{product_version_id}/signature-challenges", json={"action": "suspend"}, headers=auth_headers(owner_token),
+        )
+    ).json()
+    suspend_resp = await client.post(
+        f"/products/v1/{product_version_id}/suspend",
+        json={
+            "idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 3,
+            "reason": "market hold", "challenge_id": suspend_challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(owner_token),
+    )
+    assert suspend_resp.status_code == 200, suspend_resp.text
+
+    # State 1: wrong role. `owner` is Admin only -- no QA Releaser -- so the signature policy's required
+    # role rejects before the challenge is even considered.
+    wrong_role = await client.post(
+        f"/products/v1/{product_version_id}/reinstate",
+        json={"idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 4, "reason": "hold lifted"},
+        headers=auth_headers(owner_token),
+    )
+    assert wrong_role.status_code == 403, wrong_role.text
+    assert wrong_role.json()["code"] == "ROLE_MISSING"
+
+    # Grant `owner` QA Releaser too -- right role now, but `owner` is also the actor who caused the
+    # suspend, so independence must reject before any challenge is considered.
+    async with db.begin():
+        db.add(UserSiteRole(user_id=owner.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+    not_independent = await client.post(
+        f"/products/v1/{product_version_id}/reinstate",
+        json={"idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 4, "reason": "hold lifted"},
+        headers=auth_headers(owner_token),
+    )
+    assert not_independent.status_code == 409, not_independent.text
+    assert not_independent.json()["code"] == "SOD_INDEPENDENCE_REQUIRED"
+
+    # A different QA Releaser (right role, independent of the suspend): no challenge yet -> MISSING_SIGNATURE.
+    async with db.begin():
+        reinstater = await _make_user_with_role(db, seeded, "admin.reinstate1.qa", "QA Releaser")
+        db.add(UserSiteRole(user_id=reinstater.id, site_id=seeded["site_id"], role_id=seeded["roles"]["Admin"].id))
+    reinstater_token = await login(client, "admin.reinstate1.qa")
+
+    unsigned = await client.post(
+        f"/products/v1/{product_version_id}/reinstate",
+        json={"idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 4, "reason": "hold lifted"},
+        headers=auth_headers(reinstater_token),
+    )
+    assert unsigned.status_code == 428, unsigned.text
+    assert unsigned.json()["code"] == "MISSING_SIGNATURE"
+
+    reinstate_challenge = (
+        await client.post(
+            f"/products/v1/{product_version_id}/signature-challenges", json={"action": "reinstate"}, headers=auth_headers(reinstater_token),
+        )
+    ).json()
+    assert reinstate_challenge["meaning"] == "Approved"
+
+    reinstate_resp = await client.post(
+        f"/products/v1/{product_version_id}/reinstate",
+        json={
+            "idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 4,
+            "reason": "hold lifted", "challenge_id": reinstate_challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(reinstater_token),
+    )
+    assert reinstate_resp.status_code == 200, reinstate_resp.text
+    detail = (await client.get(f"/products/v1/{product_version_id}", headers=auth_headers(reinstater_token))).json()
+    assert detail["lifecycle_state"] == "released"
 
 
 async def test_product_authored_by_process_engineer_is_released_by_an_independent_qa_releaser(client, seeded, db):

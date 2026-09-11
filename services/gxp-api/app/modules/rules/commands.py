@@ -357,14 +357,20 @@ async def release_rule(
                 rule_id=rule.rule_id,
             )
 
-    # No Document 106 floor row exists for this action — correctly fails closed, same honest pattern
-    # as every other not-yet-policy-resolved action this session (Document 05's export, Document 06's
-    # generic release/correction endpoints).
+    # SG-035 (2026-09-10, project-owner-directed): Document 106 section 9 row 6 -- `rule/release` is
+    # `Released` by a "QA Approver / Batch Release" -> "QA Releaser", "independent of every production
+    # performer on the record". RuleDefinition stores no author/performer identity, so the required role
+    # is enforced (at any site) and the independence clause has no data source -- same honest limitation
+    # recorded for qa_review_package/complete.
     policy = await signature_service.resolve_signature_requirement(
         session, record_type="rule", action="release"
     )
     signature_id = None
     if policy.signature_required:
+        await signature_service.enforce_signer_policy(
+            session, policy=policy, actor_user_id=actor_user_id, site_id=None,
+            action_label="rule.release",
+        )
         if cmd.challenge_id is None or not cmd.reauth_password:
             raise MissingSignatureError("Releasing a rule requires a signature", required_meaning=policy.meaning)
         actor = await session.get(User, actor_user_id)

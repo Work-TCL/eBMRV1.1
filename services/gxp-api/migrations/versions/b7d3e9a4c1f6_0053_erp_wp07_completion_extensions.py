@@ -153,7 +153,12 @@ def downgrade() -> None:
     op.drop_index('ix_integration_inbound_events_entity', table_name='integration_inbound_events', schema='erp')
     op.drop_column('integration_inbound_events', 'external_entity_id', schema='erp')
 
-    op.drop_constraint('fk_erp_instances_validated_by', 'erp_instances', schema='erp', type_='foreignkey')
-    op.drop_column('erp_instances', 'validated_at', schema='erp')
-    op.drop_column('erp_instances', 'validated_by_user_id', schema='erp')
-    op.drop_column('erp_instances', 'validated', schema='erp')
+    # IF EXISTS, not op.drop_constraint()/op.drop_column(): migration 0083 (repair migration for this
+    # same FK + these same 3 columns, d78ea4eb751a_0083_erp_instances_repair_0053_drift.py) downgrades
+    # ahead of this one in a full `alembic downgrade base` walk and already drops all four -- found
+    # 2026-09-10 rebuilding ebmr_new_gxp_test end-to-end (PHASE_2_BACKBONE.md Sec 4 item 4). Matches
+    # 0083's own DROP ... IF EXISTS idiom so the two stay downgrade-order-independent of each other.
+    op.execute("ALTER TABLE erp.erp_instances DROP CONSTRAINT IF EXISTS fk_erp_instances_validated_by")
+    op.execute("ALTER TABLE erp.erp_instances DROP COLUMN IF EXISTS validated_at")
+    op.execute("ALTER TABLE erp.erp_instances DROP COLUMN IF EXISTS validated_by_user_id")
+    op.execute("ALTER TABLE erp.erp_instances DROP COLUMN IF EXISTS validated")

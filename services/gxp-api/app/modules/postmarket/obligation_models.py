@@ -38,7 +38,7 @@ docs/generated/18_SPEC_GAPS.md SG-160 for the full list and the multi-signature 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -77,7 +77,10 @@ CYCLE_TRANSITIONS: dict[str, set[str]] = {
 
 class RegulatoryObligation(Base):
     __tablename__ = "regulatory_obligation"
-    __table_args__ = {"schema": "postmarket"}
+    __table_args__ = (
+        Index("ix_regulatory_obligation_type_due", "site_id", "obligation_type", "current_due_at"),
+        {"schema": "postmarket"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -105,7 +108,7 @@ class RegulatoryObligation(Base):
     legal_hold_at: Mapped[datetime | None] = mapped_column()
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="OPEN")
     owner_subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -125,12 +128,15 @@ class ApplicantRelationship(Base):
     sharing_channel: Mapped[str | None] = mapped_column(String(80))
     valid_from: Mapped[datetime] = mapped_column(server_default=func.now())
     valid_to: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 
 class ConstituentInformationShare(Base):
     __tablename__ = "constituent_information_share"
-    __table_args__ = {"schema": "postmarket"}
+    __table_args__ = (
+        Index("ix_constituent_share_state_due", "site_id", "state", "due_at"),
+        {"schema": "postmarket"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -147,12 +153,15 @@ class ConstituentInformationShare(Base):
     sharing_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     delivery_evidence: Mapped[dict | None] = mapped_column(JSONB)
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 
 class CorrectionRemovalRegulatoryRecord(Base):
     __tablename__ = "correction_removal_regulatory_record"
-    __table_args__ = {"schema": "postmarket"}
+    __table_args__ = (
+        Index("ix_correction_removal_state_due", "site_id", "state", "due_at"),
+        {"schema": "postmarket"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -168,7 +177,7 @@ class CorrectionRemovalRegulatoryRecord(Base):
     scope_amendments: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     retention_class_code: Mapped[str] = mapped_column(String(40), nullable=False, default="RC-806")
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="OPEN")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 
 class PeriodicReportingCycle(Base):
@@ -189,4 +198,4 @@ class PeriodicReportingCycle(Base):
     approved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     approval_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     submission_reference: Mapped[dict | None] = mapped_column(JSONB)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)

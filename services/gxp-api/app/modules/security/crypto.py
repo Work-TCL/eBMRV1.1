@@ -17,15 +17,14 @@ import os
 import uuid
 from datetime import datetime, timezone
 
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives import hashes
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.security.crypto_models import CertificateMetadata, CryptoProfile, SecretMetadata
 from app.mutation.errors import (
-    CryptoHealthFailedError,
     FieldDecryptionDeniedError,
     FieldEncryptionFailedError,
     SecretAccessDeniedError,

@@ -32,7 +32,7 @@ acknowledged gap -- this module's request/approve and open/close steps are genui
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -63,7 +63,7 @@ class PrivilegedAccessRequest(Base):
     requested_end: Mapped[datetime] = mapped_column(nullable=False)
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING_APPROVAL")
     approver_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -72,7 +72,10 @@ class PrivilegedGrant(Base):
     PAM-FR-011: the emergency path bypasses the request/approval gate by design) -- PAM-FR-004/011/012/017."""
 
     __tablename__ = "privileged_grant"
-    __table_args__ = {"schema": "security"}
+    __table_args__ = (
+        Index("ix_privileged_grant_subject_state", "subject_id", "state"),
+        {"schema": "security"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     request_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("security.privileged_access_request.id"))
@@ -87,7 +90,7 @@ class PrivilegedGrant(Base):
     incident_ref: Mapped[str | None] = mapped_column(String(120))
     granted_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
     subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -97,7 +100,10 @@ class PrivilegedSession(Base):
     `executeControlledAdminCommand()` appends to `actions` (no dedicated table -- see module docstring)."""
 
     __tablename__ = "privileged_session"
-    __table_args__ = {"schema": "security"}
+    __table_args__ = (
+        Index("ix_privileged_session_state", "state"),
+        {"schema": "security"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     grant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("security.privileged_grant.id"), nullable=False)
@@ -117,4 +123,4 @@ class PrivilegedSession(Base):
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
     close_outcome: Mapped[str | None] = mapped_column(String(200))
     closed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)

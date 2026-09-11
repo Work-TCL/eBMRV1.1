@@ -13,8 +13,6 @@ then the queryable, superseding source and the seed list is the change-controlle
 
 from __future__ import annotations
 
-import uuid
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

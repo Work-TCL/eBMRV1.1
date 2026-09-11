@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, SmallInteger, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, SmallInteger, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -15,6 +15,7 @@ class SignaturePolicy(Base):
     __tablename__ = "signature_policies"
     __table_args__ = (
         UniqueConstraint("record_type", "action"),
+        CheckConstraint("signature_count BETWEEN 1 AND 4", name="ck_signature_policies_count"),
         {"schema": "signature"},
     )
 
@@ -29,6 +30,13 @@ class SignaturePolicy(Base):
     # as data instead of as an absence.
     signature_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     signature_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
+    # Document 106 section 5 `sig_policy.signature_order` -- "ordered signer classes when count > 1"
+    # (SG-035 pair 4, RESOLVED 2026-09-11, PHASE_3_DEFERRED_DECISIONS.md item D). NULL for every
+    # count=1 row (the single `required_role_id` column already names the one signer class); for a
+    # count>1 row, a JSON list of platform role names (or `null` entries for "RBAC-gated, no fixed
+    # role"), one per 1-indexed chain position -- resolved at runtime by
+    # `signature_service.enforce_chain_signer_policy()`, never by a code conditional (SIGP-FR-001).
+    signature_order: Mapped[list | None] = mapped_column(JSONB)
     policy_source: Mapped[str] = mapped_column(String(30), nullable=False, default="PLATFORM_FLOOR")
     reason_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 

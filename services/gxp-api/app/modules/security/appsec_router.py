@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy
-from app.modules.security import appsec, appsec_commands as commands
+from app.modules.security import appsec
+from app.modules.security import appsec_commands as commands
 from app.modules.security.appsec_models import ApiSecurityPolicy
 from app.mutation.schemas import MutationReceipt
 

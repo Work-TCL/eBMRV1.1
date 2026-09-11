@@ -1,0 +1,22 @@
+# Accepted contract-conformance backlog (CTRC-FR-001) — non-M1 work packages.
+# One line per finding:  rule | contract | locator
+# CI runs the gate with --baseline against this file: NEW uncontracted operations fail; these do not.
+# Remove a line as its work package contracts the operation. WP-06 (equipment), WP-07 (ERP), WP-08 (DDCP).
+
+CTRC-FR-001 | spec-ddcp-001.yaml | GET /ddcp/v1/autoinjector/profiles
+CTRC-FR-001 | spec-ddcp-001.yaml | GET /ddcp/v1/coated-device/profiles
+CTRC-FR-001 | spec-ddcp-001.yaml | GET /ddcp/v1/inhalation/profiles
+CTRC-FR-001 | spec-ddcp-001.yaml | GET /ddcp/v1/prefilled-syringe/profiles
+CTRC-FR-001 | spec-eqp-001.yaml | GET /equipment/v1/areas
+CTRC-FR-001 | spec-eqp-001.yaml | GET /equipment/v1/areas/{area_id}
+CTRC-FR-001 | spec-eqp-001.yaml | POST /equipment/v1/areas
+CTRC-FR-001 | spec-eqp-002.yaml | GET /line-clearance/v1
+CTRC-FR-001 | spec-eqp-003.yaml | GET /aseptic/v1/interventions
+CTRC-FR-001 | spec-eqp-003.yaml | GET /aseptic/v1/profiles
+CTRC-FR-001 | spec-eqp-003.yaml | POST /aseptic/v1/profiles
+CTRC-FR-001 | spec-eqp-003.yaml | POST /aseptic/v1/profiles/{profile_version_id}/supersede
+CTRC-FR-001 | spec-eqp-005.yaml | GET /sterilization/v1/cycles
+CTRC-FR-001 | spec-eqp-005.yaml | GET /sterilization/v1/items/eligible
+CTRC-FR-001 | spec-eqp-005.yaml | GET /sterilization/v1/profiles
+CTRC-FR-001 | spec-erp-006.yaml | GET /integration/v1/instances
+CTRC-FR-001 | spec-qc-002.yaml | GET /integrations/lims

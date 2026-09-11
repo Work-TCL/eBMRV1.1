@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.policy.service import evaluate_policy
+from app.modules.qms.read_support import iso as _iso
 from app.modules.signature.service import create_challenge
 from app.modules.supplier_quality.commands import (
     ApproveSupplierQualificationCommand,
@@ -18,8 +20,6 @@ from app.modules.supplier_quality.commands import (
     create_supplier_qualification,
     qualification_record_hash,
 )
-from app.modules.policy.service import evaluate_policy
-from app.modules.qms.read_support import iso as _iso
 from app.modules.supplier_quality.models import (
     Supplier,
     SupplierQualification,

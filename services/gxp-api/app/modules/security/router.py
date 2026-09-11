@@ -8,9 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.policy.service import evaluate_policy
 from app.modules.security import commands
 from app.modules.security.models import SecurityException, SecurityThreat
-from app.modules.policy.service import evaluate_policy
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 

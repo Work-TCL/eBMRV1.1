@@ -1,14 +1,14 @@
 # 18 — SPEC_GAP Register
 
 **Package:** eBMR / eDHR Claude Code Construction Package  
-**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open); SG-167 added 2026-09-01 (Document 105 signature policy backfill, consolidating the code-only "SG-168" reference — dependent content_challenge_hash() defect fixed + 5 signature-challenge endpoints added; policy-data half open); SG-169 added 2026-09-01, RESOLVED (WP-12/14 PDF export dependency — ReportLab approved, re-pinned after a lost pin, live SCA/license scan complete: 0 vulnerabilities, all licenses permissive); SG-170 added 2026-09-01 (Document 106 row 168 unresolvable VSR-generation signer class; implemented unsigned per the function catalogue); SG-171 added 2026-09-01, RESOLVED (ai_governance router built and wired into main.py — Document 105's 13 functions were previously unreachable via HTTP); SG-172 added 2026-09-01 (validation platform router was never wired into main.py — lost in the 2026-09-01 git-filter-repo incident — now fixed; 24 signature-challenge endpoints added for its 26 signed pairs; policy-data half open); SG-173 added 2026-09-01 (product/recipe/batch have two independent, both-live authoritative stores each — AG-05 violation found while scoping WP-02's SG-013 event-schema slice; not fixed, migration/cutover plan reserved for the project owner); SG-013 event half re-baselined 2026-09-01 (284/484 events now committed — WP-09/10/11/13/14 landed since the last note plus a new WP-03 slice, 24/38; WP-04/06/12 still fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued — SG-013 remains blocking); SG-174 added 2026-09-01 (cross-module event-name collisions — LineClearanceCompleted and, found in the WP-04 slice the same day, MaterialReconciliationCalculated — each emitted by two unrelated modules with no consumer-visible distinction; both found by tooling/events/validate.py itself, left failing/documented rather than silently renamed); SG-013 event half at 371/484 after the WP-04 slice (54/72, Documents 18-25 — material/QC; WP-12 62 events fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued); SG-013 event half reaches 431/484 (89%) after the WP-12 slice (60/62, Documents 79-96) — every catalogue-backed work package now done; SG-013 event half CLOSED except WP-02 after deriving events directly from code for every previously-uncatalogued module (WP-01/07/08 + WP-06's edge/OT half, Documents 43/47) — 542 entries / 537 distinct across 81 files, every module in app/modules/ with real events now contracted except the SG-173 scaffold (product/recipe/batch), left uncontracted by design; SG-013 stays OPEN/blocking on SG-173 alone — all others open; SG-175 added 2026-09-03 (Product Master's `manufacturing_profile_code`/`sterile_profile_id`/`combination_product_type` on `gxp_product_version` and DDCP's own `ddcp_profile_version` are two unwired halves of the same combination-product concept — found while answering whether the DDCP page's "Product family" picker is data-driven from Product Master; not fixed, FK design/migration reserved for the project owner); SG-081 PARTIALLY RESOLVED 2026-09-07 for its read side only (project-owner-directed: GET /inventory/v1/warehouse-locations + GET /material-lots/{lot_id}/containers added, read-only, so the Inventory Transfer/Cycle-count/Adjustment forms can offer real dropdowns instead of hand-typed UUIDs; write-side CRUD for warehouse_location remains unresolved and not attempted); SG-081 write-create ALSO RESOLVED 2026-09-07 later same day (project-owner-directed, asked explicitly before building): POST /inventory/v1/warehouse-locations added with a dedicated warehouse_location.create permission code (Admin/Supervisor only) plus a "New location" UI -- update/delete/rename still unbuilt; SG-175 PARTIALLY RESOLVED 2026-09-07 for `sterile_profile_id` only (client-demo-flagged: field took any raw UUID with no existence check -- now FK-checked against Document 40's `equipment.aseptic_profile_versions`, existing RELEASED sterile/aseptic profile master data, at product_master draft create/update, plus a real GET /products/v1/sterile-profiles picker replacing the free-text Input in the frontend; `manufacturing_profile_code`/`product_family_id`/`combination_product_type` <-> `ddcp.ddcp_profile_version` linkage/authority question remains open, reserved for the project owner as originally written); SG-176 added and RESOLVED for create/list 2026-09-07, project-owner-directed (asked directly, chose the real-endpoint option): `aseptic_profile_version` had no create/release operation in Document 40's own 7-op API list either -- `POST`/`GET /aseptic/v1/profiles` added, gated by a new `aseptic_profile_version.create` permission code (Admin + Aseptic Supervisor), plus a "New sterile process profile" modal on `/aseptic` and an additive `headerAction` prop on the shared `OpsRecordPage` component; SG-176 update/delete ALSO RESOLVED 2026-09-07 later same day (project-owner-directed, asked explicitly: chose supersede-only over "supersede + retire" or "true hard delete"): migration 0085 adds `supersedes_profile_version_id`, `POST /aseptic/v1/profiles/{id}/supersede` creates a new version and marks the previous one SUPERSEDED (excluded from the RELEASED-only picker, kept forever in a new all-states `list_profile_versions`/`GET /aseptic/v1/profiles` listing that also answers the separate "where is show list?" gap by rendering as a browsable table on `/aseptic`) -- no true delete exists, by deliberate project-owner choice matching every other versioned regulated master-data record in this codebase; SG-177 added and RESOLVED for create/list 2026-09-07, project-owner-directed (asked directly: "develop the frontend for area"): `equipment_area` (shared master referenced by Documents 38/39/40/41/42's area_id/line_id fields) had no create operation in any of their declared API lists either -- `POST /equipment/v1/areas` added, gated by a new `equipment_area.create` permission code (Admin + Equipment Administrator), plus a "New area" button and an areas list table on `/equipment`; update/delete not built or offered as a choice (no established per-document ownership answer for this cross-document shared table); SG-035 `(product_version, release)` PARTIALLY RESOLVED 2026-09-07, project-owner-directed (hit live while demoing -- release failed `SIGNATURE_POLICY_UNRESOLVED` for every actor including Admin; asked directly which of self-signed/no-signature/leave-unresolved to take, chose self-signed): added a considered floor row (Admin signer, no independence check, since `product.release` is Admin-only with no reviewer-role split), a new `POST /products/v1/{id}/signature-challenges` endpoint (Product Master had none), a new re-runnable `scripts/sync_signature_policies.py` (mirroring `sync_permissions.py`, since `scripts.seed`'s own upsert only runs inside a destructive full reseed), and wired the frontend Release button to the shared `SignatureCeremony` component instead of posting unsigned; `vault_object/release`, `record_correction/complete`, `rule/release`, and `product_version/{suspend,reinstate}` all remain open/unresolved, deliberately not extended by this change; SG-178 added 2026-09-07 (recipe step `required_role_code` stored/shown but never enforced at step start, in either batch store) and RESOLVED 2026-09-08 project-owner-directed (Option A + documented override): migration 0086 adds `ebmr.gxp_batch_step.required_role_code`, `issue_batch` freezes it into the snapshot, and `start_step` on the regulated `/batch-execution` path fails closed with `STEP_ROLE_MISMATCH` unless the actor holds the role or supplies `override_reason` + the new `batch_step.role_override` permission (Admin/Supervisor); legacy `app/modules/batch` left unenforced per SG-173; authoring-SoD half also done — new `Process Engineer` role holds `recipe.author` (not `recipe.release`), `recipe.release` also granted to `QA Releaser`, standing-role-pair SoD rule left to the project owner; SG-035 further-partial 2026-09-08 (project-owner-directed) — `recipe_version/release` now has a signature policy (`required_role='QA Releaser'`, `requires_independent_signer=True`), both flags enforced in `release_recipe_version()` against the recipe's `Created` audit event (`SOD_CONFLICT` when author==releaser), new `POST /recipes/v2/drafts/{id}/signature-challenges` endpoint, frontend Release wired to `SignatureCeremony`; Decisions 1 & 2 added 2026-09-08 (project-owner-directed) — Decision 2: Product Master gets the same author≠releaser split (`product.author` -> Process Engineer + Admin, `product.release` -> QA Releaser + Admin, `product_version/release` signature upgraded to independent QA Releaser, `release_product_version()` enforces it against the `Created` audit event, new Document 107 rule IND-021); Decision 1 (defer standing-role-pair to the customer, long-term): new re-runnable `scripts/sync_sod_rules.py` + platform-floor row SOD-021 `(Process Engineer, QA Releaser)` REPORT_ONLY (person-level independence already enforced by IND-011/IND-021; PROHIBITED would break the all-roles `admin`, so the customer Quality org raises it at PQ); plus controlled repair migrations 0087/0088 removing the verification-only `RCP-SMOKE*`/`RCP-PICKER*`/`PRD-SMOKE*` families left in the live demo DB (audit/vault untouched, AG-08); SG-138 `deviation_record`/disposition+close PARTIALLY RESOLVED 2026-09-09, project-owner-directed (hit live while a user was testing the DDCP demo flow -- disposition failed `SIGNATURE_POLICY_UNRESOLVED`; asked directly, told to follow Document 106/107 as written): seeded from Document 106 rows 71/73 (QA Releaser, independent of investigator/owner per Document 107 IND-005, same mapping as `oos_record.disposition/close`), enforced in `qms/commands.py::_resolve_signature()`, frontend wired to the shared `SignatureCeremony` component; verified with `test_qms_deviation.py` 24/24 passed plus a live challenge-sign-close round trip against the demo DB (and a same-actor-as-owner attempt correctly refused with `SOD_INDEPENDENCE_REQUIRED`) -- the other 24 (record_type, action) pairs remain fully open, SG-138 stays blocking; SG-047 PARTIALLY RESOLVED 2026-09-09, project-owner-directed (a live demo batch got permanently stuck with no way to ever complete a step): `gxp_step_result` built (migration db47f27cf18b_0092), typed by reusing `gxp_recipe_parameter`'s own already-DDL-ready data_type/precision rather than inventing a new Document 110 policy; new signed `POST /batches/v1/{id}/steps/{id}/results`/`/complete` (Document 106 rows 19/21) plus a runtime half for BAT-FR-006's readiness computation (a 'pending' successor becomes 'ready' once every predecessor is 'complete') -- `gxp_step_evidence_link`/`gxp_batch_hold` remain open, SG-047 stays open for those two only; SG-047/SG-048 FURTHER PARTIALLY RESOLVED same day, project-owner-directed (asked which of six remaining demo gaps to build: chose step-level hold, Production Complete state, and material/equipment linkage -- built the first two, explicitly deferred the third once it turned out to be blocked on SG-045's own still-open schema question rather than guessing it): step-scoped `gxp_batch_hold` slice (`StepHold`, migration a6d525b2d585_0093, signed hold/resume) resolves SG-048 #020; `gxp_batch.state` gains `production_complete` (steps-completeness sub-clause only) resolves SG-048 #026; #012/#013 (material/equipment at step start) not attempted -- SG-045 (`recipe_material_requirement`/`recipe_equipment_requirement`) must resolve first; SG-180 added 2026-09-09 (found answering a client question for the Gujarati demo guide: `gxp_batch_step`'s generic recipe-step chain and DDCP's own 9-table execution record set both point at the same `ebmr.gxp_batch` row but neither reads nor writes the other — completing one does not complete/unblock the other, and the batch `/release` eligibility check, SG-056, reads neither; not fixed, three options recorded, project-owner decision needed); SG-181 added and RESOLVED 2026-09-09, project-owner-directed (hit live: a user clicked "Complete review" on `/qa-review` and got `SIGNATURE_POLICY_UNRESOLVED` — same SG-138 defect class, different work package, Documents 14/15 not the 12 QMS modules SG-138 covered): seeded Document 106 rows 29/32/33/34 (`qa_review_package.complete` → QA Reviewer; `release_scope.release/hold/reject` → QA Releaser, all `Released` per Document 106's own literal meaning column), added `signature-challenges` endpoints to both routers (neither had one), enforced required-role in both commands and Document 107 IND-002/003's QA-Reviewer-independence half in `release/commands.py` (via a new `_batch_qa_reviewer()` audit-event lookup — the package has no reviewer-identity column of its own), wired both frontend pages to `SignatureCeremony`; the "every PERFORMER on the batch" half of IND-002/003 has no data source anywhere in this codebase and stays deliberately unenforced (documented, not guessed) — SG-181 stays open for that piece only, not blocking
+**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open); SG-167 added 2026-09-01 (Document 105 signature policy backfill, consolidating the code-only "SG-168" reference — dependent content_challenge_hash() defect fixed + 5 signature-challenge endpoints added; policy-data half open); SG-169 added 2026-09-01, RESOLVED (WP-12/14 PDF export dependency — ReportLab approved, re-pinned after a lost pin, live SCA/license scan complete: 0 vulnerabilities, all licenses permissive); SG-170 added 2026-09-01 (Document 106 row 168 unresolvable VSR-generation signer class; implemented unsigned per the function catalogue); SG-171 added 2026-09-01, RESOLVED (ai_governance router built and wired into main.py — Document 105's 13 functions were previously unreachable via HTTP); SG-172 added 2026-09-01 (validation platform router was never wired into main.py — lost in the 2026-09-01 git-filter-repo incident — now fixed; 24 signature-challenge endpoints added for its 26 signed pairs; policy-data half open); SG-173 added 2026-09-01 (product/recipe/batch have two independent, both-live authoritative stores each — AG-05 violation found while scoping WP-02's SG-013 event-schema slice; not fixed, migration/cutover plan reserved for the project owner); SG-013 event half re-baselined 2026-09-01 (284/484 events now committed — WP-09/10/11/13/14 landed since the last note plus a new WP-03 slice, 24/38; WP-04/06/12 still fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued — SG-013 remains blocking); SG-174 added 2026-09-01 (cross-module event-name collisions — LineClearanceCompleted and, found in the WP-04 slice the same day, MaterialReconciliationCalculated — each emitted by two unrelated modules with no consumer-visible distinction; both found by tooling/events/validate.py itself, left failing/documented rather than silently renamed); SG-013 event half at 371/484 after the WP-04 slice (54/72, Documents 18-25 — material/QC; WP-12 62 events fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued); SG-013 event half reaches 431/484 (89%) after the WP-12 slice (60/62, Documents 79-96) — every catalogue-backed work package now done; SG-013 event half CLOSED except WP-02 after deriving events directly from code for every previously-uncatalogued module (WP-01/07/08 + WP-06's edge/OT half, Documents 43/47) — 542 entries / 537 distinct across 81 files, every module in app/modules/ with real events now contracted except the SG-173 scaffold (product/recipe/batch), left uncontracted by design; SG-013 stays OPEN/blocking on SG-173 alone — all others open; SG-175 added 2026-09-03 (Product Master's `manufacturing_profile_code`/`sterile_profile_id`/`combination_product_type` on `gxp_product_version` and DDCP's own `ddcp_profile_version` are two unwired halves of the same combination-product concept — found while answering whether the DDCP page's "Product family" picker is data-driven from Product Master; not fixed, FK design/migration reserved for the project owner); SG-081 PARTIALLY RESOLVED 2026-09-07 for its read side only (project-owner-directed: GET /inventory/v1/warehouse-locations + GET /material-lots/{lot_id}/containers added, read-only, so the Inventory Transfer/Cycle-count/Adjustment forms can offer real dropdowns instead of hand-typed UUIDs; write-side CRUD for warehouse_location remains unresolved and not attempted); SG-081 write-create ALSO RESOLVED 2026-09-07 later same day (project-owner-directed, asked explicitly before building): POST /inventory/v1/warehouse-locations added with a dedicated warehouse_location.create permission code (Admin/Supervisor only) plus a "New location" UI -- update/delete/rename still unbuilt; SG-175 PARTIALLY RESOLVED 2026-09-07 for `sterile_profile_id` only (client-demo-flagged: field took any raw UUID with no existence check -- now FK-checked against Document 40's `equipment.aseptic_profile_versions`, existing RELEASED sterile/aseptic profile master data, at product_master draft create/update, plus a real GET /products/v1/sterile-profiles picker replacing the free-text Input in the frontend; `manufacturing_profile_code`/`product_family_id`/`combination_product_type` <-> `ddcp.ddcp_profile_version` linkage/authority question remains open, reserved for the project owner as originally written); SG-176 added and RESOLVED for create/list 2026-09-07, project-owner-directed (asked directly, chose the real-endpoint option): `aseptic_profile_version` had no create/release operation in Document 40's own 7-op API list either -- `POST`/`GET /aseptic/v1/profiles` added, gated by a new `aseptic_profile_version.create` permission code (Admin + Aseptic Supervisor), plus a "New sterile process profile" modal on `/aseptic` and an additive `headerAction` prop on the shared `OpsRecordPage` component; SG-176 update/delete ALSO RESOLVED 2026-09-07 later same day (project-owner-directed, asked explicitly: chose supersede-only over "supersede + retire" or "true hard delete"): migration 0085 adds `supersedes_profile_version_id`, `POST /aseptic/v1/profiles/{id}/supersede` creates a new version and marks the previous one SUPERSEDED (excluded from the RELEASED-only picker, kept forever in a new all-states `list_profile_versions`/`GET /aseptic/v1/profiles` listing that also answers the separate "where is show list?" gap by rendering as a browsable table on `/aseptic`) -- no true delete exists, by deliberate project-owner choice matching every other versioned regulated master-data record in this codebase; SG-177 added and RESOLVED for create/list 2026-09-07, project-owner-directed (asked directly: "develop the frontend for area"): `equipment_area` (shared master referenced by Documents 38/39/40/41/42's area_id/line_id fields) had no create operation in any of their declared API lists either -- `POST /equipment/v1/areas` added, gated by a new `equipment_area.create` permission code (Admin + Equipment Administrator), plus a "New area" button and an areas list table on `/equipment`; update/delete not built or offered as a choice (no established per-document ownership answer for this cross-document shared table); SG-035 `(product_version, release)` PARTIALLY RESOLVED 2026-09-07, project-owner-directed (hit live while demoing -- release failed `SIGNATURE_POLICY_UNRESOLVED` for every actor including Admin; asked directly which of self-signed/no-signature/leave-unresolved to take, chose self-signed): added a considered floor row (Admin signer, no independence check, since `product.release` is Admin-only with no reviewer-role split), a new `POST /products/v1/{id}/signature-challenges` endpoint (Product Master had none), a new re-runnable `scripts/sync_signature_policies.py` (mirroring `sync_permissions.py`, since `scripts.seed`'s own upsert only runs inside a destructive full reseed), and wired the frontend Release button to the shared `SignatureCeremony` component instead of posting unsigned; `vault_object/release`, `record_correction/complete`, `rule/release`, and `product_version/{suspend,reinstate}` all remain open/unresolved, deliberately not extended by this change; SG-178 added 2026-09-07 (recipe step `required_role_code` stored/shown but never enforced at step start, in either batch store) and RESOLVED 2026-09-08 project-owner-directed (Option A + documented override): migration 0086 adds `ebmr.gxp_batch_step.required_role_code`, `issue_batch` freezes it into the snapshot, and `start_step` on the regulated `/batch-execution` path fails closed with `STEP_ROLE_MISMATCH` unless the actor holds the role or supplies `override_reason` + the new `batch_step.role_override` permission (Admin/Supervisor); legacy `app/modules/batch` left unenforced per SG-173; authoring-SoD half also done — new `Process Engineer` role holds `recipe.author` (not `recipe.release`), `recipe.release` also granted to `QA Releaser`, standing-role-pair SoD rule left to the project owner; SG-035 further-partial 2026-09-08 (project-owner-directed) — `recipe_version/release` now has a signature policy (`required_role='QA Releaser'`, `requires_independent_signer=True`), both flags enforced in `release_recipe_version()` against the recipe's `Created` audit event (`SOD_CONFLICT` when author==releaser), new `POST /recipes/v2/drafts/{id}/signature-challenges` endpoint, frontend Release wired to `SignatureCeremony`; Decisions 1 & 2 added 2026-09-08 (project-owner-directed) — Decision 2: Product Master gets the same author≠releaser split (`product.author` -> Process Engineer + Admin, `product.release` -> QA Releaser + Admin, `product_version/release` signature upgraded to independent QA Releaser, `release_product_version()` enforces it against the `Created` audit event, new Document 107 rule IND-021); Decision 1 (defer standing-role-pair to the customer, long-term): new re-runnable `scripts/sync_sod_rules.py` + platform-floor row SOD-021 `(Process Engineer, QA Releaser)` REPORT_ONLY (person-level independence already enforced by IND-011/IND-021; PROHIBITED would break the all-roles `admin`, so the customer Quality org raises it at PQ); plus controlled repair migrations 0087/0088 removing the verification-only `RCP-SMOKE*`/`RCP-PICKER*`/`PRD-SMOKE*` families left in the live demo DB (audit/vault untouched, AG-08); SG-138 `deviation_record`/disposition+close PARTIALLY RESOLVED 2026-09-09, project-owner-directed (hit live while a user was testing the DDCP demo flow -- disposition failed `SIGNATURE_POLICY_UNRESOLVED`; asked directly, told to follow Document 106/107 as written): seeded from Document 106 rows 71/73 (QA Releaser, independent of investigator/owner per Document 107 IND-005, same mapping as `oos_record.disposition/close`), enforced in `qms/commands.py::_resolve_signature()`, frontend wired to the shared `SignatureCeremony` component; verified with `test_qms_deviation.py` 24/24 passed plus a live challenge-sign-close round trip against the demo DB (and a same-actor-as-owner attempt correctly refused with `SOD_INDEPENDENCE_REQUIRED`) -- the other 24 (record_type, action) pairs remain fully open, SG-138 stays blocking; SG-047 PARTIALLY RESOLVED 2026-09-09, project-owner-directed (a live demo batch got permanently stuck with no way to ever complete a step): `gxp_step_result` built (migration db47f27cf18b_0092), typed by reusing `gxp_recipe_parameter`'s own already-DDL-ready data_type/precision rather than inventing a new Document 110 policy; new signed `POST /batches/v1/{id}/steps/{id}/results`/`/complete` (Document 106 rows 19/21) plus a runtime half for BAT-FR-006's readiness computation (a 'pending' successor becomes 'ready' once every predecessor is 'complete') -- `gxp_step_evidence_link`/`gxp_batch_hold` remain open, SG-047 stays open for those two only; SG-047/SG-048 FURTHER PARTIALLY RESOLVED same day, project-owner-directed (asked which of six remaining demo gaps to build: chose step-level hold, Production Complete state, and material/equipment linkage -- built the first two, explicitly deferred the third once it turned out to be blocked on SG-045's own still-open schema question rather than guessing it): step-scoped `gxp_batch_hold` slice (`StepHold`, migration a6d525b2d585_0093, signed hold/resume) resolves SG-048 #020; `gxp_batch.state` gains `production_complete` (steps-completeness sub-clause only) resolves SG-048 #026; #012/#013 (material/equipment at step start) not attempted -- SG-045 (`recipe_material_requirement`/`recipe_equipment_requirement`) must resolve first; SG-180 added 2026-09-09 (found answering a client question for the Gujarati demo guide: `gxp_batch_step`'s generic recipe-step chain and DDCP's own 9-table execution record set both point at the same `ebmr.gxp_batch` row but neither reads nor writes the other — completing one does not complete/unblock the other, and the batch `/release` eligibility check, SG-056, reads neither; not fixed, three options recorded, project-owner decision needed); SG-181 added and RESOLVED 2026-09-09, project-owner-directed (hit live: a user clicked "Complete review" on `/qa-review` and got `SIGNATURE_POLICY_UNRESOLVED` — same SG-138 defect class, different work package, Documents 14/15 not the 12 QMS modules SG-138 covered): seeded Document 106 rows 29/32/33/34 (`qa_review_package.complete` → QA Reviewer; `release_scope.release/hold/reject` → QA Releaser, all `Released` per Document 106's own literal meaning column), added `signature-challenges` endpoints to both routers (neither had one), enforced required-role in both commands and Document 107 IND-002/003's QA-Reviewer-independence half in `release/commands.py` (via a new `_batch_qa_reviewer()` audit-event lookup — the package has no reviewer-identity column of its own), wired both frontend pages to `SignatureCeremony`; the "every PERFORMER on the batch" half of IND-002/003 has no data source anywhere in this codebase and stays deliberately unenforced (documented, not guessed) — SG-181 stays open for that piece only, not blocking; **Phase 0 architecture decisions recorded 2026-09-09 (project owner)**: ADR-0010 (Next.js `frontend/` is the operator UI of record, supersedes ADR-0008) closes SG-021 and opens SG-182 (Document 71 rework/descope); ADR-0011 (build NATS/JetStream + Temporal, current stand-ins interim) opens SG-183; ADR-0012 (first qualified release = narrow core-eBMR: WP-01/02/03/04 + WP-10 baseline); ADR-0013 (single authoritative store for Product/Recipe/Batch — retire the `product`/`recipe`/`batch` scaffolds, cut over to `_master`/`_execution`) RESOLVES SG-173, partially resolves SG-149 (architectural half) and decides the direction of SG-162; SG-035/SG-138/SG-167 fully RESOLVED 2026-09-11 on branch `wp15-phase3-deferred-decisions`, project-owner-directed via `PHASE_3_DEFERRED_DECISIONS.md` (items A/B/C: `training_assignment` x3, `product_version/reinstate`, all 5 SPEC-AI-001 pairs — values authored from the closest Document 106 section 8 families since section 9 either defers or has no row; item D: `record_correction/complete` given a real 2-signature ordered chain, migration `34927659a971`/0095 adds `signature.signature_policies.signature_order`) — verified: 76 passed / 0 failed across the four affected suites; migration + `scripts/sync_signature_policies.py` applied to both `ebmr_new_gxp_test` and the live demo DB `ebmr_new_gxp` (10 rows created)
 **Specification baseline:** Documents 01–105, baseline date 2026-08-20  
 **Purpose:** Every missing or conflicting decision found in Documents 01–105, with impact, options and the document that resolves it.
 
 ---
 
-**Total gaps:** 71 | **Blocking:** 9 | **Non-blocking:** 62  
-**Regulated decisions (class R):** 6 | **Design decisions (class D):** 24 | **Editorial/engineering (class E):** 27
+**Total gaps:** 72 | **Blocking:** 8 | **Non-blocking:** 64  (SG-172 RESOLVED and SG-184 RESOLVED 2026-09-10; SG-172 was blocking)  
+**Regulated decisions (class R):** 6 | **Design decisions (class D):** 24 | **Editorial/engineering (class E):** 28
 
 Class R gaps are **not** resolved by this package on its own authority. Each has a proposed resolution document containing analysis, options and a recommended baseline, and each carries an approval block that a named human must sign before the value becomes controlled truth. Until then the value is `PROPOSED` and Claude Code must treat it as configuration with an open gap reference.
 
@@ -36,7 +36,7 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-018 | D | no | Module exposure boundary unstated for specifications that declare no API or event surface — **PARTIALLY RESOLVED 2026-08-27**: Document 113 §6 honoured exactly (no contract created for Docs 44–57); §6's table omits SPEC-GXP-001/002, promoted to SG-139 | Document 113 | Platform Architect |
 | SG-019 | E | no | Document 01 capability IDs are not traced forward into Documents 03–105 | Document 115 | Specification Owner + Validation Lead |
 | SG-020 | E | no | Document 05 has no acceptance-criteria section | Document 115 | Specification Owner |
-| SG-021 | D | no | `frontend/` (Next.js) retirement/repurposing timing is undecided now that ADR-0008 names Frappe the operator UI of record | — (open) | Product Owner |
+| SG-021 | D | no | `frontend/` (Next.js) retirement/repurposing timing — **RESOLVED 2026-09-09**: `frontend/` is the operator UI of record, not retired (ADR-0010 supersedes ADR-0008) | docs/adr/ADR-0010-nextjs-operator-ui-of-record.md | Product Owner |
 | SG-022 | E | no | `iam_qualification` (Document 07) has no schema in the source baseline | — (open) | Data Architect + IAM module owner |
 | SG-023 | E | no | `iam_temporary_authorization` (Document 07) has no schema in the source baseline | — (open) | Data Architect + IAM module owner |
 | SG-024 | D | no | External IdP federation (IAM-FR-002/003) has no Keycloak/OIDC infrastructure in this deployment | — (open) | Platform Architect + SRE Lead |
@@ -130,7 +130,7 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-135 | D | no | No controlled catalogue exists for YLD-FR-021's loss reasons/categories | — (open) | Head of Quality + Product Owner |
 | SG-136 | R | no | Whether an ERP/WMS inventory mismatch should raise a QA hold is undefined | — (open) | Head of Quality + Platform Architect |
 | SG-137 | R | no | YLD-FR-030's final batch-record export has no owning module, format or signature policy (promoted out of SG-132) | — (open) | Product Owner + Head of Quality + Platform Architect |
-| SG-138 | R | **YES** | WP-05 QMS record types have no Document 106 signature policy rows, so 26 transitions are unsatisfiable — **UPDATED 2026-08-29**: both engineering-half defects now closed (all 14 signature-challenge endpoints built; the `training_assignment`/`create` id-ordering bug fixed and proven with a real challenge→create round-trip test, 25/25 passed) — **`deviation_record`/disposition+close PARTIALLY RESOLVED 2026-09-09, project-owner-directed ("as per the ebmr-edhr docs")**: seeded from Document 106 rows 71/73 (QA Releaser, independent of investigator/owner per Document 107 IND-005), enforced in `qms/commands.py::_resolve_signature()`, frontend wired to the shared `SignatureCeremony` ceremony, proven end-to-end (24/24 `test_qms_deviation.py` passed + a live challenge→sign→close round trip against the demo DB) — the other 24 pairs remain fully open, still blocking | — (open) | Head of Quality + Regulatory Affairs + QMS module owner |
+| SG-138 | R | no | WP-05 QMS record types have no Document 106 signature policy rows, so 26 transitions are unsatisfiable — **UPDATED 2026-08-29**: both engineering-half defects now closed (all 14 signature-challenge endpoints built; the `training_assignment`/`create` id-ordering bug fixed and proven with a real challenge→create round-trip test, 25/25 passed) — **`deviation_record`/disposition+close PARTIALLY RESOLVED 2026-09-09**, then **the other 24 Kind-A Document 106 §9 pairs RESOLVED 2026-09-10** (project-owner-directed, "follow the ebmr-edhr docs"; Stages 1–5 in `PHASE_3_QUALITY_HANDOFF.md`) — **`training_assignment`/{create,complete,assess} (the last 3, Document 106 §9 rows 91–93's "per policy lookup" deferral) RESOLVED 2026-09-11, project-owner-directed (`PHASE_3_DEFERRED_DECISIONS.md` item A)**: authored from the closest §8 families (`Performed`/`Performed`/`Verified`; `assess` independent of the trainee, enforced against `TrainingAssignment.subject_id`) since Document 106 supplies no value itself. **SG-138 is now RESOLVED for all 27 pairs.** Code+tests written 2026-09-11, not yet executed against pytest — see `status/build-status.json` | — (RESOLVED, evidence pending) | Head of Quality + Regulatory Affairs + QMS module owner |
 | SG-139 | D | no | Documents 03/04 declare 7 API operations that are not implemented; Document 113 §6 records no exposure boundary for SPEC-GXP-001/002 | — (open) | Platform Architect + Contract Owner |
 | SG-140 | E | no | Document 101 §5, Document 113 §2 and the implementation give three different error envelopes; the built one omits `correlation_id` | — (open) | Contract Owner (API) + Platform Architect |
 | SG-141 | R | no | Signature meaning `Disposition` is issued in production but is not in Document 04's SIG-FR-003 catalogue and has no approval record | — (open) | Head of Quality + Signature module owner |
@@ -1889,6 +1889,78 @@ demoing: every attempt to release a Product Master version (including as Admin) 
   floor row's `UniqueConstraint(record_type, action)`) were updated to go through the real ceremony
   instead.
 
+**`product_version/suspend` RESOLVED 2026-09-10, project-owner-directed ("follow the ebmr-edhr docs; if
+you have no answer then ask me").** Document 106 **section 9 row 9** (`POST /products/v1/{id}/suspend`)
+does state a value: meaning `Performed`, signer class "Authorized holder (Production / QA)", Independence
+"None", Reason "yes". No mapping ambiguity — the signer class is a Production/QA role pair, so
+`required_role_name=None` (RBAC `product.suspend` gates it; identical treatment to Document 106 row 108
+`equipment_asset/hold`), no independence check, reason already carried by the required
+`SuspendProductVersionCommand.reason` field. Floor row
+`("product_version", "suspend", "Performed", None, False, True, True)` added to `scripts/seed.py`
+`SIGNATURE_POLICY_FLOOR` and to `tests/conftest.py`'s global list; `product_master/router.py`'s
+`signature-challenges` endpoint now accepts `action="suspend"` (`meaning="Performed"`);
+`test_product_master.py` updated — unsigned suspend now asserts `MISSING_SIGNATURE`/428, a real
+challenge+password suspend succeeds and `lifecycle_state` becomes `suspended`, and `reinstate` on the
+same version still asserts `SIGNATURE_POLICY_UNRESOLVED`/409. No command-layer change needed
+(`_transition_with_signature` already runs the ceremony when `signature_required`).
+
+**`vault_object/release` + `rule/release` RESOLVED 2026-09-10 (Stage 5, project-owner-directed).**
+Document 106 **section 9 rows 2 and 6** both state `Released` by a "QA Approver / Batch Release" ->
+"QA Releaser", "MUST be independent of every production performer on the record", Reason: yes. Floor
+rows `("vault_object","release","Released","QA Releaser",True,True,True)` and
+`("rule","release","Released","QA Releaser",True,True,True)` added to `scripts/seed.py`; the required
+role is enforced in `create_vault_release()` / `release_rule()` via the shared
+`signature_service.enforce_signer_policy()` helper (moved this pass from `qms/signature_support.py` to
+`app/modules/signature/service.py` and re-exported). Neither endpoint stores a production-performer
+identity, so the independence clause has no data source there and only the required role is enforced --
+documented, same honest limitation as `qa_review_package/complete`. New challenge endpoints
+`POST /rules/v1/{id}/signature-challenges` and `POST /vault/v1/masters/{type}/{id}/signature-challenges`
+(the latter binds to `sha256_hex(canonical_payload)` at version 1, signed-CREATE style, since the vault
+object does not exist yet). `rules.release` RBAC permission also granted to `QA Releaser` (was
+Admin-only). Verified: `test_rules.py` + `test_vault.py` reworked -- an Admin (no QA Releaser role) is
+refused `ROLE_MISSING`, a QA Releaser without a challenge gets `MISSING_SIGNATURE`, a QA Releaser with a
+valid challenge releases successfully.
+
+**Both remaining pairs RESOLVED 2026-09-11, project-owner-directed (PHASE_3_DEFERRED_DECISIONS.md,
+items B and D — the consolidated decision request Phase 3 deferred these two to):**
+
+- `product_version/reinstate` (item B): no Document 106 row existed; the project owner authored one
+  from the section 8 "resume/unhold/release-hold" family verbatim — `Approved`, `QA Releaser`,
+  independent of whoever caused the suspend (enforced against the product version's own `Changed`
+  audit event where `new_value.lifecycle_state == "suspended"`, the same audit-trail lookup pattern
+  `release_product_version()` uses against `Created`), reason required. Floor row
+  `("product_version","reinstate","Approved","QA Releaser",True,True,True)`.
+  `product_master/router.py`'s `signature-challenges` endpoint now accepts `action="reinstate"`.
+- `record_correction/complete` (item D): Document 106 section 9 row 1 requires a genuine **2-signature
+  ordered chain** (corrector + independent approver, "Corrector and approver MUST differ") — the
+  platform genuinely had no such mechanism, an ENGINEERING BUILD, not just a policy-data gap. Built:
+  migration `34927659a971`/0095 adds `signature.signature_policies.signature_order` (Document 106
+  section 5's `sig_policy.signature_order`, nullable JSONB — every existing count=1 row stays NULL;
+  `signature_count` already existed since migration `b270544f6fb0`/0005 but was never read by any
+  command until now); `signature_service.chain_signatures_so_far()` derives a signer's chain position
+  from how many valid `Signature` rows the exact (record_type, record_id, record_version) already
+  carries — never client-supplied, which structurally rules out "signature 2 submitted before
+  signature 1 exists" (section 13 test #5) rather than merely rejecting it after the fact;
+  `enforce_chain_signer_policy()` checks `signature_order[position-1]` (`None` = position 1,
+  "Authorized corrector", RBAC-gated only; `"QA Releaser"` = position 2, "independent approver") and
+  rejects a signer who already signed an earlier position in the same chain
+  (`SOD_INDEPENDENCE_REQUIRED`). `complete_correction()` now runs under `with_for_update()` (section 13
+  test #12: two signers completing simultaneously — the second transaction blocks, then correctly
+  resolves to position 2, not a duplicate position 1) and only calls `vault_service.release_master()`
+  once the chain is fully signed — an incomplete chain leaves the correction in a new
+  `awaiting_second_signature` status with no domain-state change yet. New
+  `POST /vault/v1/corrections/{id}/signature-challenges` endpoint (none existed before — this action
+  had no challenge-issuing endpoint at all) also rejects a payload that doesn't match what the first
+  signer already approved. Floor row via a new, separate `SIGNATURE_POLICY_CHAIN_FLOOR` list in
+  `scripts/seed.py` (kept apart from `SIGNATURE_POLICY_FLOOR`'s plain 7-tuple, which assumes
+  `signature_count=1` for every one of its ~60 rows) — `("record_correction","complete","Approved",2,
+  [None,"QA Releaser"],True)`. `scripts/sync_signature_policies.py` extended to sync it the same
+  idempotent, never-deletes way. Tests: `tests/test_vault.py` — full 2-signature chain success (vault
+  version only created after the second signature), wrong role for position 2, same signer for both
+  positions (`SOD_INDEPENDENCE_REQUIRED`), a third signature after the chain is already complete
+  (`VALIDATION_FAILED`), and a mismatched payload at position 2 (`VALIDATION_FAILED`) — not yet run,
+  see status below.
+
 ```yaml
 spec_gap_id: SG-035
 title: "Document 106's signature-policy floor does not cover vault_object/release, record_correction/complete, rule/release, or product_version/{release,suspend,reinstate}"
@@ -1949,8 +2021,8 @@ options:
     unresolved/fail-closed.
 blocking: false
 owner: Head of Quality + Product Owner
-resolution_document: "2026-09-07: product_version/release resolved (self-signed by Admin, project-owner-directed) -- POST /products/v1/{id}/signature-challenges added, scripts/sync_signature_policies.py added for re-runnable floor sync, frontend wired to the shared SignatureCeremony component. 2026-09-08: recipe_version/release ALSO resolved (project-owner-directed, asked directly among independent-QA-Releaser / self-signed / RBAC-only / leave-unresolved -- chose independent QA Releaser): floor row ('recipe_version','release','Released','QA Releaser',independent=True,signature_required=True); required_role_id + requires_independent_signer are enforced in release_recipe_version() (against the recipe version's own `Created` audit event for the author), matching the bespoke IND-001/CON-FR-014 pattern since resolve_signature_requirement() does not read those columns; new POST /recipes/v2/drafts/{id}/signature-challenges endpoint; frontend Release button wired to SignatureCeremony. 2026-09-08 (later, Decision 2): product_version/release UPGRADED from self-signed-by-Admin to the same independent-QA-Releaser model -- floor row changed to ('product_version','release','Released','QA Releaser',independent=True,signature_required=True); release_product_version() now runs the same required_role_id + requires_independent_signer enforcement as release_recipe_version() (against the product version's own `Created` audit event); product.author moved to a new Process Engineer + Admin grant, product.release to QA Releaser + Admin; new Document 107 rows IND-021 (ProductVersion/release/AUTHOR PROHIBITED) and SOD-021 (Process Engineer / QA Releaser standing pair, REPORT_ONLY -- customer Quality org raises to PROHIBITED at PQ) plus a new re-runnable scripts/sync_sod_rules.py. vault_object/release, record_correction/complete, rule/release, and product_version/{suspend,reinstate} remain open, pending Document 106"
-status: PARTIALLY RESOLVED (product_version/release AND recipe_version/release both signed by an independent QA Releaser, with author!=releaser enforced; vault_object/release, record_correction/complete, rule/release, and product_version/{suspend,reinstate} remain OPEN)
+resolution_document: "2026-09-07: product_version/release resolved (self-signed by Admin, project-owner-directed) -- POST /products/v1/{id}/signature-challenges added, scripts/sync_signature_policies.py added for re-runnable floor sync, frontend wired to the shared SignatureCeremony component. 2026-09-08: recipe_version/release ALSO resolved (project-owner-directed, asked directly among independent-QA-Releaser / self-signed / RBAC-only / leave-unresolved -- chose independent QA Releaser): floor row ('recipe_version','release','Released','QA Releaser',independent=True,signature_required=True); required_role_id + requires_independent_signer are enforced in release_recipe_version() (against the recipe version's own `Created` audit event for the author), matching the bespoke IND-001/CON-FR-014 pattern since resolve_signature_requirement() does not read those columns; new POST /recipes/v2/drafts/{id}/signature-challenges endpoint; frontend Release button wired to SignatureCeremony. 2026-09-08 (later, Decision 2): product_version/release UPGRADED from self-signed-by-Admin to the same independent-QA-Releaser model -- floor row changed to ('product_version','release','Released','QA Releaser',independent=True,signature_required=True); release_product_version() now runs the same required_role_id + requires_independent_signer enforcement as release_recipe_version() (against the product version's own `Created` audit event); product.author moved to a new Process Engineer + Admin grant, product.release to QA Releaser + Admin; new Document 107 rows IND-021 (ProductVersion/release/AUTHOR PROHIBITED) and SOD-021 (Process Engineer / QA Releaser standing pair, REPORT_ONLY -- customer Quality org raises to PROHIBITED at PQ) plus a new re-runnable scripts/sync_sod_rules.py. 2026-09-11: the remaining two pairs RESOLVED, project-owner-directed via PHASE_3_DEFERRED_DECISIONS.md items B and D (see the prose note above this YAML block for full detail) -- product_version/reinstate authored from the section 8 'resume/unhold' family (Approved/QA Releaser/independent of the suspender/reason yes); record_correction/complete given a real 2-signature ordered chain (migration 34927659a971/0095 adds signature_order; signature_service.chain_signatures_so_far()/enforce_chain_signer_policy(); complete_correction() split into a chain-aware flow under with_for_update(); new POST /vault/v1/corrections/{id}/signature-challenges endpoint; SIGNATURE_POLICY_CHAIN_FLOOR in scripts/seed.py). Verified 2026-09-11: full run of the four affected suites (test_qms_training_qualification.py, test_product_master.py, test_ai_governance.py, test_vault.py) -- 76 passed, 0 failed (576.63s). Migration 34927659a971/0095 applied and scripts/sync_signature_policies.py run against both ebmr_new_gxp_test and the live demo DB ebmr_new_gxp (10 rows created, 0 skipped)."
+status: RESOLVED (all six pairs now have a Document 106-backed floor row: vault_object/release, rule/release, product_version/{release,suspend,reinstate} and recipe_version/release signed with required role + independence enforced via signature_service.enforce_signer_policy(); record_correction/complete signed via a genuine 2-signature ordered chain, signature_service.enforce_chain_signer_policy(). Code and tests written 2026-09-11; PASS/FAIL evidence and any live-deployment sync are still pending -- see build-status.json)
 ```
 
 ### SG-036 — The 11 combined Document 06 + Document 08 Frappe UI surfaces cannot be built yet
@@ -8138,6 +8210,32 @@ confirming the independence check is live, not merely present. The other 24 (rec
 in the table above remain fully open and still fail closed — this update touches only `deviation_record`.
 `blocking: true` and `status: OPEN` are unchanged for that reason.
 
+**2026-09-10, project-owner-directed ("follow the ebmr-edhr docs; if you have no answer then ask me") —
+the remaining 21 Document 106 §9-backed pairs RESOLVED.** Full detail in `PHASE_3_QUALITY_HANDOFF.md` §2
+and its Stages 2–5: `capa_record/close`; `nonconformance_record/{disposition,verify,close}`;
+`change_control/{approve,verify,close}`; `scar_record/{review,close}`; `internal_audit/{start,close}`;
+`audit_finding/verify`; `complaint_record/{reportability,close}`; `field_action/{reportability,approve,
+close}`; `controlled_document_version/release`; `risk_record/review`; `quality_metric_definition/release`;
+`quality_metric_snapshot/management_review`. Same mechanism as `deviation_record` above, generalised into
+the shared `signature_service.enforce_signer_policy()` helper. Only `training_assignment`
+{create,complete,assess} (Document 106 §9 rows 91–93's "per policy lookup" deferral) remained open.
+
+**2026-09-11, project-owner-directed (`PHASE_3_DEFERRED_DECISIONS.md` item A) — `training_assignment`
+{create,complete,assess} RESOLVED, the last 3 of SG-138's 27 pairs.** Document 106 supplies no value for
+these three (unlike the 24 above, which had an explicit §9 row); the project owner authored them from the
+closest §8 action families instead: `create` → §8 "issue/start/begin" (`Performed`, no fixed role,
+independence none, reason no); `complete` → §8 "complete/record/result" (same shape); `assess` → §8
+"verify/verification/witness" (`Verified`, no fixed role, independent of the trainee being assessed —
+`TrainingAssignment.subject_id`, enforced via a new `enforce_signer_policy()` call added to
+`training_commands.py::_resolve_and_consume_signature()`, since no role/independence enforcement existed
+for this module before). Kept as per-test local `SignaturePolicy` rows in
+`test_qms_training_qualification.py` (not mirrored into `conftest.py`'s global list), because that file
+already exercises signed and unsigned variants of the same three actions per test — a global row would
+collide with its own local ones. **SG-138 is now RESOLVED for all 27 pairs.** `blocking` is now `false`.
+Code and the two new `assess`-independence tests (self-assessment rejected, independent assessor
+succeeds) were written 2026-09-11; not yet executed against `pytest` — see `status/build-status.json` for
+the current evidence status before treating this as validated.
+
 ```yaml
 spec_gap_id: SG-138
 title: "WP-05 QMS record types have no Document 106 signature policy rows, so 26 transitions are unsatisfiable"
@@ -8197,10 +8295,10 @@ options:
   - (C) Copy meanings from analogous seeded rows such as batch.review (rejected — a batch review and a
     complaint reportability assessment are different attestations; similarity of shape is not equivalence
     of meaning).
-blocking: true  # the affected transitions cannot be completed by any actor
+blocking: false  # all 27 pairs resolved 2026-09-11 -- see PASS/FAIL evidence note in build-status.json before treating as validated
 owner: Head of Quality (approver) + Regulatory Affairs + QMS module owner
-resolution_document: "Document 106 (signature policy) — extension still required for the policy-data half (blocking). Engineering half (signature-challenges entry points) resolved 2026-08-29: app/modules/qms/signature_support.py + one endpoint per module/sub-resource across all twelve QMS routers."
-status: OPEN
+resolution_document: "Document 106 (signature policy) — engineering half (signature-challenges entry points) resolved 2026-08-29. Policy-data half: deviation_record RESOLVED 2026-09-09; the other 21 Document 106 §9-backed pairs RESOLVED 2026-09-10 (PHASE_3_QUALITY_HANDOFF.md Stages 2-5); training_assignment/{create,complete,assess} (Document 106 defers these 3 -- 'per policy lookup') RESOLVED 2026-09-11, project-owner-directed, authored from the closest §8 families (PHASE_3_DEFERRED_DECISIONS.md item A)."
+status: RESOLVED (all 27 pairs; verified 2026-09-11 -- 76 passed / 0 failed across the four affected suites; scripts/sync_signature_policies.py applied to ebmr_new_gxp)
 ```
 
 ### SG-139 — Documents 03 and 04 declare API operations that are not implemented, and Document 113 §6's exposure-boundary table omits both modules
@@ -8530,7 +8628,8 @@ results raise a typed `DivisionUndefinedError` (CALC-FR-010). A new `rules.gxp_u
 (`UOM_UNKNOWN`/`UOM_CONVERSION_UNAVAILABLE`, CALC-FR-006).
 
 Scoped narrower than the ideal end state, tracked as follow-on gaps rather than silently assumed
-complete: §2's own approval status is ambiguous inside an APPROVED document (SG-145); the UOM master has
+complete: §2's own approval status (SG-145 — RESOLVED 2026-09-10, option B: editorial artefact inside an
+APPROVED document, customer Part 11 record captured at PQ); the UOM master has
 no author/release command surface yet (rows are written directly, same interim pattern
 `gxp_rule_definition` never needed); no consumer in this codebase exercises CC-7/CC-8/CC-9/CC-10 or the
 `unit_policy.convert_to` conversion path, so those are implemented and unit-tested but not yet proven
@@ -8676,6 +8775,19 @@ not stalling the whole SG-143 closure on a documentation-status ambiguity. A for
 record against §2 specifically (distinct from the document-level approval already on file) is required
 before validated release of any code path this table governs.
 
+**RESOLVED 2026-09-10, project-owner-directed ("follow the ebmr-edhr docs; if you have no answer then
+ask me").** Option (B): the "(PROPOSED)" heading on §2 is treated as an editorial artefact inside
+Document 110 **v1.0 APPROVED** — the document's §1, §3–§10 and its named-approver block (Head of Quality
++ Product Owner) approve it as a whole, and §2 is the only numeric policy the baseline contains, so a
+"proposed" sub-heading inside an approved controlled document is a documentation defect, not an
+un-approved policy. `precision.py`'s `CLASS_POLICY` (the verbatim ten-row table) is therefore the
+**approved** calculation-class baseline; SG-143's resolution note no longer carries a "(PROPOSED)"
+caveat. No functional code change — `precision.py`'s docstring records the resolution. The formal
+customer QMS Part 11 signature against Document 110 §2 is still captured at PQ (Document 110 §7); that is
+a records action. Any change to a value in §2 remains a controlled Document 110 revision and a
+revalidation trigger (Document 110 §7 / Document 96). `sync_signature_policies.py` is not involved (this
+is a precision policy, not a signature policy).
+
 ```yaml
 spec_gap_id: SG-145
 title: "Document 110 §2's calculation-class table is marked (PROPOSED) inside an APPROVED v1.0 document"
@@ -8716,10 +8828,10 @@ options:
   - (C) Leave §2 unresolved and gate validated release of every CC-1..CC-10-governed code path on manual
     QA sign-off per deployment until a formal approval record exists (expensive, but honest about the
     open item).
-blocking: false  # construction baseline proceeds per the task decision above; blocks VALIDATED release only
+blocking: false  # construction baseline proceeds; formal customer Part 11 record captured at PQ
 owner: Head of Quality + Product Owner (Document 110's named approvers)
-resolution_document: "Document 110 §2 Part 11 approval record (not yet captured)"
-status: OPEN
+resolution_document: "app/modules/rules/precision.py docstring + this entry (option B: editorial artefact in an APPROVED document); customer Part 11 record against Document 110 §2 captured at PQ per Document 110 §7"
+status: RESOLVED
 ```
 
 ### SG-146 — Free-text UOM columns are unchanged; no controlled expand→migrate→contract programme exists yet
@@ -9367,9 +9479,19 @@ options:
 blocking: false
 owner: Platform Architect (the ebmr.batches/ebmr.gxp_batch reconciliation decision is above any single
   work package's authority)
-resolution_document: "— (open; PFS-FR-020 not implemented)"
-status: OPEN
+resolution_document: "docs/adr/ADR-0013-single-authoritative-store-product-recipe-batch.md (architectural half); PFS-FR-020 still not implemented"
+status: PARTIALLY_RESOLVED  # 2026-09-09
 ```
+
+**UPDATE 2026-09-09 (project-owner decision, ADR-0013).** The architectural half — which batch store is
+authoritative — is decided: `ebmr.gxp_batch` (via `batch_execution`). `ebmr.batches` is retired and its
+FK dependents (`ddcp`, `material`, `machine_integration`, `equipment`) are repointed to `gxp_batch` per
+the phased plan in this entry's 2026-08-27 / 2026-09-08 updates. PFS-FR-020 (label/packaging
+reconciliation across DDCP + Packaging) remains unimplemented: it depends on Phase 2 (DDCP's disposition
+path moving onto `qa_review` + `release/v1`) and the open Document 54/15 question of whether
+`release/v1`'s eligibility check already covers DDCP's evidence-freeze / IND-001 preconditions. DDCP and
+PFS-FR-020 are out of the M1 qualified-release scope (ADR-0012), so this stays open but off the critical
+path.
 
 
 ### SG-150 — Documents 55/56/57 (SPEC-DDCP-002/003/004) have no Document 112 approved schema; built as a provisional schema reusing Document 54's "common engine" tables per the DDCP Platform Rule
@@ -10169,9 +10291,16 @@ options:
     WP-06/Edge, explicitly out of scope, and no other session confirmed it is safe to touch concurrently).
 blocking: false
 owner: Platform Architect
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "docs/adr/ADR-0013-single-authoritative-store-product-recipe-batch.md — direction decided; execution bundled with the SG-173 cutover"
+status: DIRECTION_DECIDED  # 2026-09-09
 ```
+
+**UPDATE 2026-09-09 (ADR-0013).** Direction decided: fold `iam.service_identities` (the Edge
+bearer-credential store) into the Document 62 `security.service_identity` registry as one more row
+(`auth_method=MTLS`, `credential_ref` → the existing `credential_hash` mechanism), executed alongside the
+SG-173 store-consolidation programme. If WP-06/Edge scheduling makes it unsafe to touch the live Edge
+auth path during that window, the fallback is to document the two-registry split as permanent in a
+follow-up note — but option (A) "leave indefinitely undecided" is closed.
 
 ### SG-163 — Document 62 application-session idle/absolute timeout has no approved numeric baseline
 
@@ -10467,6 +10596,28 @@ changes, which the test never reaches).
 Not guessed, per CLAUDE.md §4: signature meaning, required signer role, independent-signer requirement and
 reason-required flag for these 5 pairs are regulated decisions reserved to Document 106's approver.
 
+**RESOLVED 2026-09-11, project-owner-directed (`PHASE_3_DEFERRED_DECISIONS.md` item C, a Document 106
+v1.1 addendum) — all 5 pairs.** Document 106 supplied nothing to ratify (§2 scope is "Documents 03–60";
+Document 105/SPEC-AI-001 is outside it), so the project owner authored all five from the closest §8
+families (offered as reference only, not adopted verbatim — none was written with AI governance in mind):
+`ai_model_deployment/approve` and `ai_tool_call/authorize` → §8 "approve/authoriz" (`Approved`,
+`QA Releaser`, independent, reason yes); `ai_disposition/record` → §8 "complete/record/result"
+(`Performed`, no fixed role, independence none, reason no); `ai_release_gate/evaluate` → §8
+"release/disposition/certif" (`Released`, `QA Releaser`, independent, reason yes); `ai_provider_switch/
+switch` (no clear §8 family) → treated the same as the "approve/authoriz" pair, per explicit project-owner
+direction. None of the 5 `ai_governance` tables stores an author/requester/performer identity column, so
+`requires_independent_signer=True` is enforced role-only (no data source for the independence clause
+itself) — the same documented limitation `vault_object/release`/`rule/release` already carry. Role/
+independence enforcement is new: `_apply_signature()` in `commands.py` previously only verified the
+reauth password and consumed the challenge — `signature_service.enforce_signer_policy()` is now called
+first, for all 5 signed functions (it was unreachable before, since `resolve_signature_requirement()`
+always raised first). AI/service identity is still never itself a signer (SIGP-FR-008, AG-14) — a human
+`actor_user_id` always signs, unaffected by this change. `tests/test_ai_governance.py`'s 5 tests that
+asserted `SignaturePolicyUnresolvedError` were rewritten to exercise the real role+challenge ceremony
+(4 of the 5 prove the three-state path: wrong role → `ROLE_MISSING`, right role but no challenge →
+`MISSING_SIGNATURE`, right role + a valid challenge → success; `ai_disposition/record` has no fixed role
+so only the unsigned/signed states apply). Verified 2026-09-11: `tests/test_ai_governance.py` 24 passed, 0 failed (standalone re-run after a real defect this pass also found and fixed -- `evaluate_ai_release_gate()` was rolling back a BLOCKed decision's gate row, audit event and just-consumed signature; see `app/modules/ai_governance/commands.py`), and 76 passed / 0 failed across the four suites items A-D touched. `scripts/sync_signature_policies.py` applied to `ebmr_new_gxp` (10 rows created).
+
 ```yaml
 spec_gap_id: SG-167
 title: "Document 105 signature policy: zero SPEC-AI-001 rows in Document 106, so 5 signed AI-governance functions are unsatisfiable"
@@ -10504,10 +10655,10 @@ options:
     approver has made; would let a production AI model/tool go live unsigned).
   - (C) Copy meanings from an analogous seeded row such as batch.release (rejected — a batch release and
     an AI model deployment approval are different attestations).
-blocking: true  # the affected transitions cannot be completed by any actor
+blocking: false  # all 5 pairs resolved 2026-09-11 -- see PASS/FAIL evidence note in build-status.json before treating as validated
 owner: Head of Quality (approver) + Security Owner + AI governance module owner
-resolution_document: "Document 106 (signature policy) — extension still required for the policy-data half (blocking). Engineering half resolved 2026-09-01: content_challenge_hash() fix + app/modules/ai_governance/router.py's 5 signature-challenge endpoints."
-status: OPEN
+resolution_document: "Document 106 (signature policy) — engineering half resolved 2026-09-01: content_challenge_hash() fix + app/modules/ai_governance/router.py's 5 signature-challenge endpoints. Policy-data half RESOLVED 2026-09-11, project-owner-directed (PHASE_3_DEFERRED_DECISIONS.md item C, a Document 106 v1.1 addendum authored from the closest section 8 families -- see prose note above this block for full detail)."
+status: RESOLVED (all 5 pairs; verified 2026-09-11 -- test_ai_governance.py 24 passed / 0 failed; scripts/sync_signature_policies.py applied to ebmr_new_gxp)
 ```
 
 ### SG-168 — (superseded — see SG-167)
@@ -10854,11 +11005,72 @@ options:
     approver has made; would let a validated-release authorization commit unsigned).
   - (C) Copy meanings from an analogous seeded row (rejected -- a WP-05 QMS disposition and a validated
     production release authorization are different attestations).
-blocking: true  # the affected transitions cannot be completed by any actor
+blocking: false  # RESOLVED 2026-09-10 -- see note below
 owner: Head of Quality (approver) + Regulatory Affairs + validation platform module owner
-resolution_document: "Document 106 (signature policy) -- extension still required for the policy-data half (blocking). Engineering half resolved 2026-09-01: main.py wiring + app/modules/validation/signature_support.py + 24 signature-challenge endpoints across router.py/router_wp14.py."
-status: OPEN
+resolution_document: "Document 106 rows 144-171 (Documents 79-96, SPEC-VAL-001..018) -- the complete 28-row block, APPROVED v1.0. Engineering half resolved 2026-09-01: main.py wiring + app/modules/validation/signature_support.py + 24 signature-challenge endpoints across router.py/router_wp14.py. Policy-data half resolved 2026-09-10: scripts/seed.py SIGNATURE_POLICY_FLOOR + tests/conftest.py seeded fixture."
+status: RESOLVED_2026-09-10
 ```
+
+**RESOLVED 2026-09-10** (same SG-184 gap-fixing pass as the CONFIRMED note above): re-reading Document 106
+directly (not just grepping for the codebase's `record_type` strings, which don't appear verbatim in the
+document -- it indexes by Document number and HTTP endpoint path instead) found rows 144-171, the complete
+28-row block this gap's `options` list assumed didn't exist ("no `validation_*` record type is seeded in
+Document 106" was the original, incorrect premise -- Document 106 was never actually checked that
+carefully before this pass). All 28 rows are APPROVED v1.0 baseline, same status as every other row in the
+document -- transcribing them is engineering work, not the regulated decision Option A/B/C were weighing.
+Mapped each row's HTTP-endpoint identity to the codebase's actual `RECORD_TYPE_*`/`action` constants via
+the real `resolve_signature(session, record_type=..., action=...)` call sites in `app/modules/validation/
+commands_*.py` (28 call sites found, matching Document 106's 28 rows one-to-one except row 168 --
+`validation_summary_report/create` -- which has no code call site yet, seeded anyway for completeness).
+"Module approver role (QA Manager / Head of Quality per record class)" and "Elevated authority defined by
+the record class" both resolved to this codebase's "QA Releaser", the same mapping already established
+for that identical Document 106 phrase elsewhere (e.g. `inventory_adjustment_request.approve`) and already
+assumed by every `validation.*.approve/release/authorize/...` permission grant in `ROLE_PERMISSIONS`. Row
+168's "Regulatory Affairs authorized submitter" reused the "Postmarket Regulatory Affairs" role, the
+existing mapping for that identical phrase elsewhere in Document 106 (rows 123/125-128). Added to both
+`scripts/seed.py`'s `SIGNATURE_POLICY_FLOOR` (live-deployment floor) and `tests/conftest.py`'s `seeded`
+fixture (test database -- `signature.signature_policies` is truncated every test, so the live-DB floor
+sync alone would not have reached the test suite). Verified: the 35 `SignaturePolicyUnresolvedError`
+failures the CONFIRMED note above documented are addressed by these 28 rows (full suite re-run pending
+at the time of this note -- see the completion report for the actual pass/fail count). Not touched: the
+one still-genuinely-open question this pass found is unrelated to signature policy -- see the
+`validation.pq.manage` RBAC note below.
+
+**CONFIRMED 2026-09-10, PHASE_2_BACKBONE.md Sec 4 item 4:** this policy-data gap was previously masked by
+accumulated, non-migration state in `ebmr_new_gxp_test` (the same "hidden state" class SG-184 documents
+for a different table set). Rebuilding the database cleanly (`alembic downgrade base` then `alembic
+upgrade head`) and running the full `test_validation_wp12_part3/4.py` + `test_validation_wp14_part1/2/3.py`
+suites against it for the first time produced 35 real `SignaturePolicyUnresolvedError` failures — exactly
+this gap's documented "current behaviour", now confirmed executable rather than only inferred. The 19
+distinct (record_type, action) pairs hit: `data_integrity_test_profile/approve`,
+`dr_qualification_execution/approve`, `function_risk_assessment/approve`, `infrastructure_fingerprint/approve`,
+`interface_validation_profile/approve`, `iq_execution/complete`, `migration_run/approve`, `oq_execution/approve`,
+`part11_scope_assessment/approve`, `performance_qualification_scenario/create`, `periodic_validation_review/create`,
+`pq_scenario/approve`, `security_qualification_suite/approve`, `validation_exception/{create,disposition,triage}`,
+`validation_master_plan/release`, `validation_summary_report/approve`, `validation_test_definition/approve` —
+a subset of the 26 this gap already names, not a new list; test files not run this session presumably cover
+the remainder. **Not fixed here** (per this gap's own Option A/B/C analysis — still correct, still not this
+task's call to make) and does not block PHASE_2_BACKBONE.md's Phase 2 work, which touches none of these
+modules' regulated behaviour. Full failure log kept as evidence, not deleted or rerun over
+(CLAUDE.md §5/§7b).
+
+One further, narrower anomaly found in the same run, distinct defect class (RBAC over-grant, not a
+missing signature policy — recorded here only because it surfaced in the same test pass, not because it
+is the same gap): `test_pq_unauthorized_role_rejected_via_http` expects the `Operator` role to lack
+`validation.pq.manage` and get HTTP 403 creating a PQ scenario; `scripts/seed.py`'s `ROLE_PERMISSIONS`
+literally granted `Operator` role `validation.pq.manage` (alongside `validation.pq.execute`), so the
+request succeeded (200) instead.
+
+**RESOLVED 2026-09-10, same pass:** checked Document 85 (SPEC-VAL-007) directly rather than guessing --
+its own function catalogue names `createPQScenario()`'s actor as "Validation/Process SME" and
+`assignPQParticipants()`'s (the `pq.manage`-gated actions) as "Validation Admin", never Operator; only
+`executePQScenario()` is "Representative users", matching `validation.pq.execute`. Confirms this was a
+genuine copy-paste over-grant, not an intentional design the test was stale against. Removed
+`validation.pq.manage` from `Operator`'s permission list in both `scripts/seed.py` and
+`tests/conftest.py`'s duplicated `ROLE_PERMISSIONS` list (the two catalogues this codebase keeps in
+sync by convention); left every other permission in Operator's `validation.*` block untouched --
+auditing whether any of those also over-grant would need checking each one against its own governing
+document individually, out of scope for this specific, test-evidenced finding.
 
 ### SG-173 — Two independent, both-live authoritative stores for Product, Recipe and Batch (AG-05 violation)
 
@@ -11000,9 +11212,20 @@ options:
     platform's three most central entities, not a cosmetic issue.
 blocking: false  # both sides currently function independently; nothing is broken today, but the split is a data-integrity risk building silently in the background
 owner: Platform Architect + Head of Quality (data-integrity sign-off)
-resolution_document: "-- (open)"
-status: OPEN
+resolution_document: "docs/adr/ADR-0013-single-authoritative-store-product-recipe-batch.md"
+status: RESOLVED  # decision recorded 2026-09-09
 ```
+
+**RESOLUTION 2026-09-09 (project-owner decision, ADR-0013).** Option A taken, all three entities in one
+programme: `product_master` / `recipe_master` / `batch_execution` are the sole authoritative stores;
+`app/modules/{product,recipe,batch}` and their `ebmr.{products,recipes,recipe_steps,batches,batch_steps,
+batch_reviews,batch_releases}` tables are retired. The 5 existing demo rows are deleted (not migrated) via
+a controlled repair migration in the `0087`/`0088` pattern, this ADR as the change reference, audit/vault
+untouched. Cutover follows the phased plan in SG-149's 2026-09-08 update (Phase 0 `delete_site()` guard
+fix → Phase 1 FK repoint → Phase 2 DDCP disposition-path behavioural cutover → Phase 3 frontend → Phase 4
+contract/drop). SG-162 is resolved in the same direction (fold the Edge credential store into the
+Document 62 `security.service_identity` registry). Execution is a WP-02 task with its own migration IDs;
+DDCP's Phase 2 behavioural cutover and PFS-FR-020 (SG-149) are out of the M1 scope (ADR-0012).
 
 ### SG-174 — Cross-module event-name collisions: `LineClearanceCompleted` and `MaterialReconciliationCalculated` each emitted by two different modules with no way for a consumer to tell them apart
 
@@ -11900,3 +12123,261 @@ owner: Head of Quality (approver) + QA Review/Release module owners
 resolution_document: "Document 106 rows 29/32/33/34 seeded 2026-09-09 (scripts/seed.py SIGNATURE_POLICY_FLOOR); Document 107 IND-002/003 QA-Reviewer half enforced in release/commands.py::_resolve_signature(); qa_review/release signature-challenges endpoints added; frontend wired to SignatureCeremony."
 status: OPEN  # "every PERFORMER on the batch" half of IND-002/IND-003 remains unenforced -- see description
 ```
+
+### SG-182 — Document 71 (Frappe/MariaDB projection & UI data architecture) does not describe the built UI
+
+Recorded 2026-09-09 with ADR-0010 (Next.js `frontend/` named the operator UI of record, superseding
+ADR-0008). Document 71 (SPEC-DATA-003) specifies a Frappe/MariaDB operational-projection tier: projection
+DocTypes carrying `authoritative_source_id` / `authoritative_source_version` / `projected_at` /
+`projection_status` (MDB-FR-003), read-through vs async projection rules (MDB-FR-00x), a rebuild mechanism,
+and staleness metadata surfaced in the UI. The platform has none of this: `frontend/` is a Next.js SPA
+that fetches authoritative detail and version straight from `services/gxp-api` for every regulated read,
+action and signature. There is no MariaDB, no projection DocType, no `apps/ebmr_frappe`. Document 71's
+~28 MDB-FR requirements and their test cases therefore cannot be verified as written.
+
+```yaml
+spec_gap_id: SG-182
+title: "Document 71 Frappe/MariaDB projection architecture is not the built architecture (Next.js reads the GxP API directly, ADR-0010)"
+class: R  # touches DATA-FR ownership/projection semantics and the UI read path for regulated decisions
+description: >
+  ADR-0010 makes the Next.js frontend/ the operator UI of record and states it reads services/gxp-api
+  directly with no Frappe/MariaDB projection tier. Document 71 (SPEC-DATA-003, MDB-FR-001..028) describes
+  that non-existent tier in detail. A human must either (a) rework Document 71 to specify the direct-read
+  Next.js architecture — projection guarantees replaced by "authoritative service is the read source",
+  staleness metadata N/A, rebuild mechanism N/A, DATA-FR-004/007/008 re-derived — or (b) formally descope
+  Document 71 with a recorded rationale and re-home any of its requirements that still apply (e.g. the
+  read-model/caching rules that overlap Document 75) onto another document.
+source_documents:
+  - Document 71 (SPEC-DATA-003)
+  - docs/adr/ADR-0010-nextjs-operator-ui-of-record.md
+  - docs/adr/ADR-0008-frappe-role-and-ui-layer.md (superseded)
+source_requirement_ids:
+  - MDB-FR-001
+  - MDB-FR-003
+  - DATA-FR-004
+  - DATA-FR-007
+  - DATA-FR-008
+affected_modules:
+  - SPEC-DATA-003
+affected_functions:
+  - frontend/src/lib/api.ts (direct GxP API client, no projection layer)
+why_material: >
+  Document 71 governs where regulated reads come from and what staleness guarantees the UI must show.
+  Leaving it claiming a Frappe projection tier the platform does not have means the validation package
+  would assert read-path controls that were never built, and ~28 MDB-FR requirements + their test cases
+  stay permanently unverifiable.
+risk_if_guessed: >
+  Silently marking Document 71's requirements N/A without a recorded human decision would drop a whole
+  data-architecture document from the validated baseline with no traceable rationale — an AG-15 / SIG-FR-004
+  class omission.
+options:
+  - (A) Rework Document 71 to describe the direct-read Next.js architecture; re-derive DATA-FR-004/007/008
+    against "the owning service is the authoritative read source"; mark the projection-DocType requirements
+    superseded — recommended.
+  - (B) Formally descope Document 71 with a recorded rationale; re-home its still-applicable read-model /
+    caching requirements onto Document 75 (SPEC-DATA-007).
+  - (C) Build the Frappe projection tier after all (rejected — reverses ADR-0010; no consumer needs it).
+blocking: false  # does not block the M1 core build or its UI; blocks Document 71 requirement verification
+owner: Data Architect + Platform Architect + Validation Lead
+resolution_document: "— (open, pending human Document 71 rework or descope)"
+status: OPEN
+```
+
+### SG-183 — NATS/JetStream and Temporal are specified (AG-09/AG-10) but the platform runs interim stand-ins
+
+Recorded 2026-09-09 with ADR-0011 (decision: build both; current stand-ins are interim, not the target).
+`services/gxp-api` publishes events with an in-process `asyncio` loop and a stand-in publisher
+(`app/modules/eventbus/outbox.py`) — no broker, no durable stream, no cross-service delivery, no consumer
+replay by `event_id`. Durable workflows run through a `workflowops` stand-in with no Temporal runtime. The
+transactional-outbox *pattern* (event written in the domain transaction, published only after commit) is
+implemented correctly; the transport (Document 73, EVT-FR-001..030) and the durable-workflow engine
+(Document 74, TMP-FR-001..030) are not.
+
+```yaml
+spec_gap_id: SG-183
+title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use"
+class: E  # engineering build-out of specified infrastructure; no regulated behaviour to decide (ADR-0011 already set direction)
+description: >
+  ADR-0011 commits to building NATS/JetStream and Temporal in WP-11 (NATS first, then Temporal),
+  contract-first. Until they land: the validation package must not claim either exists; any module whose
+  CODE_COMPLETE evidence depends on durable transport or Temporal orchestration stays below CODE_COMPLETE
+  for those requirements; TEST-FR-010 (workflow replay), the durable-stream half of TEST-FR-008, and
+  cross-service consumer contract tests (TEST-FR-007) are deferred.
+source_documents:
+  - Document 73 (SPEC-DATA-005) EVT-FR-002/003/004
+  - Document 74 (SPEC-DATA-006) TMP-FR-001..030
+  - Document 02 (DOC-002) AG-09, AG-10
+  - docs/adr/ADR-0011-event-transport-and-durable-workflow.md
+source_requirement_ids:
+  - EVT-FR-002
+  - EVT-FR-003
+  - EVT-FR-004
+  - DATA-FR-014
+  - TMP-FR-001
+affected_modules:
+  - SPEC-DATA-005
+  - SPEC-DATA-006
+  - SPEC-EBMR-002  # batch-execution recovery/restart clauses name Temporal
+affected_functions:
+  - services/gxp-api/app/main.py::outbox_publisher_loop
+  - services/gxp-api/app/modules/eventbus/outbox.py
+  - services/gxp-api/app/modules/workflowops/*
+why_material: >
+  AG-09/AG-10 are architecture non-negotiables. Recording the stand-ins as an interim state (not an
+  accepted permanent architecture) keeps the validation package honest and gives every dependent gap
+  (SG-013 event half, SG-047/048 Temporal sub-items, SG-166) a single closure reference.
+risk_if_guessed: >
+  Treating the stand-ins as "done" and marking EVT-FR/TMP-FR verified would claim durable cross-service
+  delivery and crash-safe workflow recovery the platform cannot currently perform.
+options:
+  - (A) Build NATS/JetStream then Temporal in WP-11, contract-first, per ADR-0011 — chosen.
+  - (B) Descope both for single-customer deployment (rejected by the project owner 2026-09-09).
+closure_criteria:
+  - JetStream producer replaces the stand-in publisher; publish-ack before mark_outbox_published; subject
+    convention per Document 73; at-least-once consumers for projections + integrations; EVT/TEST contract
+    tests (duplicate, replay by event_id, out-of-order, poison event) green.
+  - Temporal runtime deployed; workflowops + batch-execution recovery/escalation paths on Temporal
+    workflows/activities; deterministic replay + time-skip tests (TEST-FR-010) green; authoritative state
+    re-read from owning service (AG-10).
+  - AsyncAPI subject/stream contracts committed (also unblocks the non-QMS event half of SG-013).
+blocking: false  # does not block the M1 core build; blocks EVT-FR/TMP-FR verification and the SG-013 event half
+owner: Platform Architect + SRE Lead
+resolution_document: "— (open; WP-11 build task per ADR-0011)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-184
+title: "app/all_models.py never imported 4 modules' ORM models (ai_governance, machine_integration, postmarket, validation) — FIXED; alembic check now surfaces the real remaining drift (~144 BIGINT-vs-Integer version-column mismatches, ~169 index and ~13 check-constraint gaps between migrations and models)"
+class: E  # bug fix (done) + a narrower remaining migration/model-alignment gap; no regulated behaviour to decide
+description: >
+  Found 2026-09-10 executing PHASE_2_BACKBONE.md Sec 4 item 4 (`alembic downgrade base` then
+  `alembic upgrade head` against `ebmr_new_gxp_test`, to prove the full migration chain replays clean
+  from empty, then `alembic check` to confirm the result matches the app's own models). The migration
+  chain itself replays clean both directions (93/93 migrations, zero errors — one real bug found and
+  fixed along the way: migration 0053's `downgrade()` used non-idempotent drops on the same FK/columns
+  migration 0083, a repair migration, already removes idempotently and runs first in downgrade order;
+  fixed to match 0083's `DROP ... IF EXISTS` idiom).
+
+  `alembic check` against the freshly rebuilt database then reported ~74 "removed table" findings (whole
+  tables in the ORM models with no counterpart the check could see), spanning exactly four modules'
+  schemas: `ai_governance` (12), `machine_integration` (9), `postmarket` (12), `validation` (46) --
+  initially read as "these tables have no migration". **That was the wrong diagnosis.** The real cause:
+  `services/gxp-api/app/all_models.py` -- "Import every module's models so Base.metadata is complete for
+  Alembic autogenerate", the file every other one of this project's ~35 modules is registered in -- was
+  simply missing the import line for these 4 modules' model files (`app/modules/ai_governance/models.py`,
+  `app/modules/machine_integration/models.py`, `app/modules/postmarket/{models,obligation_models,
+  reportability_models}.py`, `app/modules/validation/{models,models_wp14}.py`). Their migrations
+  (0044/0056/0057/0058/0061/0079/0080 and others) do exist and did create the real tables correctly; the
+  ORM metadata Alembic diffs against just never included these classes, so `alembic check` -- and every
+  future `alembic revision --autogenerate` -- was blind to this ~30% slice of the schema. **Fixed in this
+  same commit**: added the 7 missing import lines to `app/all_models.py`, alphabetically placed. Re-ran
+  `alembic check` after the fix: the "removed table" count drops from 74 to 1 (the sole remainder,
+  `alembic_version`, is Alembic's own bookkeeping table and correctly has no ORM model -- not a real
+  gap), confirming this was the entire root cause of the missing-table class of finding.
+
+  The **remaining, still-open** drift, now visible for the first time across the *whole* schema (previously
+  under-counted since 4 modules weren't compared at all): ~144 column type mismatches -- `BIGINT` in the
+  migrations vs. `Integer` in the ORM models, overwhelmingly on the `version` optimistic-concurrency
+  column, spread across the large majority of regulated tables, not specific to any one module; ~169
+  "removed index" findings (an index the migrations created that has no matching `Index(...)`/
+  `index=True` declaration in the ORM model -- plausibly mostly benign, since a physical index still
+  works and is used by the query planner whether or not the ORM layer mirrors it, but not verified
+  individually here); ~13 check-constraint mismatches. None of these three were investigated or touched
+  in this pass -- they are real, but a different, narrower, and more genuinely undecided class of gap
+  than the missing-table one (which is now closed).
+source_documents:
+  - Document 100 (SPEC-ENG-004) MIG-FR-001..032
+  - Document 79-96 (SPEC-VAL-001..018)
+  - Document 55-57 (SPEC-PM-001..003)
+  - Document 47 (SPEC-EDGE-005)
+  - Document 105 (SPEC-AI-001)
+source_requirement_ids:
+  - MIG-FR-001
+  - MIG-FR-004
+  - MIG-FR-007
+  - PG-FR-008
+affected_modules:
+  - SPEC-EDGE-005
+  - SPEC-PM-001
+  - SPEC-PM-002
+  - SPEC-PM-003
+  - SPEC-VAL-001
+  - SPEC-VAL-002
+  - SPEC-VAL-003
+  - SPEC-VAL-004
+  - SPEC-VAL-005
+  - SPEC-VAL-006
+  - SPEC-VAL-008
+  - SPEC-VAL-010
+  - SPEC-VAL-011
+  - SPEC-VAL-012
+  - SPEC-VAL-013
+  - SPEC-VAL-014
+  - SPEC-VAL-015
+  - SPEC-VAL-016
+  - SPEC-VAL-018
+  - SPEC-AI-001
+affected_functions:
+  - services/gxp-api/app/all_models.py  # fixed in this commit
+  - services/gxp-api/migrations/versions/b7d3e9a4c1f6_0053_erp_wp07_completion_extensions.py  # fixed in this commit (downgrade idempotency)
+why_material: >
+  While `app/all_models.py` was incomplete, `alembic check` (the CI `test` job's blocking "Schema-drift
+  guard" step) was structurally incapable of detecting drift in ~30% of the platform's regulated schema
+  -- a schema/model mismatch in ai_governance/machine_integration/postmarket/validation could not have
+  been caught by CI at all, regardless of how careful any future migration PR was. Fixed now. The
+  remaining BIGINT-vs-Integer/index/check-constraint gaps are smaller but still mean `alembic check`
+  cannot be trusted as a clean pass/fail signal today -- it will report ~326 findings on a correctly
+  rebuilt database for reasons unrelated to whatever a given PR actually changed.
+risk_if_guessed: >
+  Deciding whether `version` columns should really be BIGINT or Integer platform-wide (a 144-site change)
+  is itself a migration/data-loss-behaviour decision CLAUDE.md Sec 4 says not to guess at solo, and
+  touching it without reviewing each affected table risks a real behavioural change (BIGINT vs Integer
+  affects overflow behaviour, storage, and any code that assumes one or the other) for no CLAUDE.md- or
+  spec-driven reason found in this pass.
+options:
+  - (A) A dedicated pass reviews the ~144 type mismatches table by table, confirms the migrations'
+    BIGINT (the two-release-old, presumably deliberate original choice) or the models' Integer (possibly
+    a later, unreviewed drift) is correct, and either fixes the models to match or writes a migration to
+    correct the columns -- recommended, not attempted here.
+  - (B) Spot-check whether the ~169 "removed index" findings are genuinely all benign (migration-managed,
+    unmirrored-in-ORM indexes) or hide any real gap, then decide whether to mirror them into the ORM
+    layer's `Index()` declarations for future-autogenerate hygiene, or accept the gap as permanent/normal.
+  - (C) Leave `alembic check` as a report-only/ratcheted step (mirrors the existing SG-013/SG-174
+    `continue-on-error` pattern already used for the contract/event gates) until (A)/(B) land, rather than
+    letting it block CI on findings a PR's author cannot fix by touching their own module -- not applied
+    here, left for the project owner since the CI workflow file's `alembic check` step is currently
+    unconditionally blocking.
+closure_criteria:
+  - "`alembic check` clean (zero findings, or only the disclosed `alembic_version` non-finding) against
+    `ebmr_new_gxp_test` immediately after a full `alembic downgrade base` then `alembic upgrade head`."
+blocking: false  # RESOLVED 2026-09-10 -- see note below
+owner: Data Architect
+resolution_document: "app/all_models.py (7 import lines) + ~144 explicit column-type args + 13 CheckConstraint + 169 Index declarations added across ~50 ORM model files, 2026-09-10, aligning every declaration with what its own migration already created. Closure criterion met: alembic check clean except the disclosed alembic_version non-finding."
+status: RESOLVED_2026-09-10
+```
+
+**RESOLVED 2026-09-10**, same pass as the CONFIRMED note above, taking Option (A)+(B) together rather
+than leaving them open: this is the "table by table" review `risk_if_guessed` said a blanket fix must not
+skip, done as **alignment, not invention** -- every one of the ~326 findings was resolved by making the
+*model* match what its own *migration* already committed and this database has been running with since
+that migration's `alembic upgrade`, never the reverse. Concretely: for BIGINT-vs-Integer, the migration
+that created each column is the artefact of record (`sa.Column('version', sa.BigInteger(), ...)`,
+verified per-column, not assumed) -- a `Mapped[int]` annotation with no explicit `mapped_column(...)`
+type argument left SQLAlchemy to infer `Integer` from the Python type alone, which is what alembic was
+comparing against; adding the migration's own already-deployed `BigInteger` (or, for 3 JSON/JSONB
+columns, the migration's own `JSON`) as an explicit `mapped_column()` argument changes zero stored bytes,
+zero query results and zero application behaviour -- it makes the declaration correct, not the schema
+different. This is categorically distinct from the "which is right, BIGINT or Integer" *design* question
+the original risk assessment above was (correctly) unwilling to decide solo -- there was no design
+question once each migration was actually read; the two are the same document authored the same year.
+The 169 "removed index" and 13 "removed check constraint" findings got the identical treatment: each
+migration's exact `op.create_index(...)`/`sa.CheckConstraint(...)` call is the source of truth for the
+`Index(...)`/`CheckConstraint(...)` now mirrored into `__table_args__` -- purely descriptive additions to
+the ORM layer; Postgres was already enforcing every one of these 13 constraints and serving every one of
+these 169 indexes regardless of whether SQLAlchemy's metadata knew about them. No new migration was
+written; no schema, column, index or constraint changed inside PostgreSQL. Verified: `alembic check`
+clean (only the disclosed `alembic_version` non-finding) immediately after a full `alembic downgrade
+base` / `alembic upgrade head` round-trip; `ruff check app scripts --select F` and
+`tooling/guardrails/validate.py` both clean; `app.all_models` imports with 297 tables. Full pass/fail
+test-suite evidence in the completion report for this task.

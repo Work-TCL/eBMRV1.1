@@ -1,0 +1,217 @@
+name: ci
+# WP-00 / Documents 103 (SPEC-ENG-007) + 68 (SPEC-SEC-008) + 104 (SPEC-ENG-008).
+# Gate model: docs/generated/39_CI_CD_RELEASE_EVIDENCE_MODEL.md.
+# This is the real pipeline for the built stack (Python/FastAPI GxP Core + Next.js UI, ADR-0007/0010),
+# replacing the pre-ADR-0007 npm-only workflow that lived under ebmr-edhr/.github/ and never ran
+# (GitHub Actions only executes workflows under the repository-root .github/workflows/).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.9.7"
+
+jobs:
+  # ---- PR gate: cheap, fast, always-blocking checks --------------------------------------------------
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Specs are read-only
+        run: |
+          # AG-15 / CLAUDE.md §1 — specs/ and specs subtrees are the controlled baseline.
+          base="${{ github.event.pull_request.base.sha }}"
+          [ -z "$base" ] && base="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"
+          changed="$(git diff --name-only "$base"...HEAD || true)"
+          if echo "$changed" | grep -E '^(ebmr-edhr/)?specs/'; then
+            echo "::error::A change touches specs/ — the controlled baseline is read-only (raise a SPEC_GAP instead)."
+            exit 1
+          fi
+
+      - name: Contract conformance gate  (Doc 101 CTRC-FR-001/002/003/009)
+        working-directory: services/gxp-api
+        # BLOCKING. The M1 surface (WP-01..04) + WP-12 validation are fully contracted. The remaining
+        # 17 uncontracted operations (WP-06 equipment, WP-07 ERP, WP-08 DDCP) are an agreed backlog in
+        # contracts/openapi/.conformance-baseline — a NEW uncontracted operation fails this gate; a
+        # baselined one does not. Remove a baseline line as its work package contracts the op.
+        run: |
+          pip install uv==${UV_VERSION}
+          uv sync --frozen --group dev
+          # run WITH the app importable so CTRC-FR-001 coverage is evaluated, not skipped
+          uv run python ../../ebmr-edhr/tooling/contracts/validate.py \
+            --baseline ../../contracts/openapi/.conformance-baseline
+
+      - name: Event contract gate  (Doc 101 CTRC-FR-008 single-producer + closed payloads)
+        continue-on-error: true   # RATCHET: 2 known event-name collisions (SG-174). Flip to hard-fail
+                                  # when SG-174 is resolved.
+        run: python3 ebmr-edhr/tooling/events/validate.py
+
+      - name: Status rollup is in sync
+        run: |
+          python3 ebmr-edhr/tooling/status/rollup.py
+          # -I ignores the regenerated timestamp lines; only stale *content* fails the gate.
+          git diff --exit-code -I '_Generated ' -I '"generated":' \
+            ebmr-edhr/status/BUILD_STATUS.md ebmr-edhr/status/build-status.json \
+            || { echo "::error::status is stale — run tooling/status/rollup.py and commit."; exit 1; }
+
+      - name: Architecture guardrail lint (Doc 34 — BLOCKING)
+        run: python3 ebmr-edhr/tooling/guardrails/validate.py
+        # Codifies 4 of the 34_ARCHITECTURE_GUARDRAIL_MATRIX.md rows as static AST checks: no cross-
+        # module repository write, no frappe.db.set_value-equivalent, no generic CRUD endpoint, no bus
+        # publish without a committed outbox row. Clean on the real codebase today — this is a hard gate,
+        # not a ratchet (see ebmr-edhr/tooling/guardrails/README.md). Stdlib-only, no uv sync needed.
+
+  # ---- lint / typecheck ---------------------------------------------------------------------------------
+  lint:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: services/gxp-api } }
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx install uv==${UV_VERSION} || pip install uv==${UV_VERSION}
+      - run: uv sync --frozen --group dev
+
+      - name: ruff — pyflakes floor (BLOCKING)
+        run: uv run ruff check app scripts --select F
+        # F-codes are real bugs. This gate blocks every NEW pyflakes finding, including unused imports
+        # (F401), unused variables (F841), redefinitions (F811) and undefined names (F821) — all clean
+        # as of the first ratchet PR (PHASE_2_BACKBONE.md; the 3 pre-existing F811/F821 bugs, incl. the
+        # duplicate FilterIntegrityFailedError in app/mutation/errors.py, were fixed 2026-09-10).
+
+      - name: ruff — full ruleset (report-only, ratcheting)
+        run: uv run ruff check . --output-format github || true
+        # Full E/W/I/B/UP/SIM/RUF set is reported but not yet blocking on the pre-existing baseline
+        # (see PHASE_2_BACKBONE.md ratchet plan).
+
+      - name: mypy (report-only, ratcheting toward --strict per ADR-0007)
+        run: uv run mypy || true
+
+      - name: Architecture guardrail lint — negative-fixture tests
+        run: uv run python -m pytest ../../ebmr-edhr/tooling/guardrails/tests -q
+
+  frontend-lint:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: "npm", cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - name: Generate route types (LayoutProps/PageProps/RouteContext — Next 15.5+)
+        run: npx next typegen
+      - name: typecheck
+        run: npx tsc --noEmit
+
+  # ---- backend test suite (needs a real Postgres) ----------------------------------------------------
+  test:
+    runs-on: ubuntu-latest
+    needs: [guardrails]
+    defaults: { run: { working-directory: services/gxp-api } }
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: ebmr_new_migrator
+          POSTGRES_PASSWORD: ci_migrator_pw
+          POSTGRES_DB: ebmr_new_gxp_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ebmr_new_migrator" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      GXP_TEST_DB_APP_PW: ci_migrator_pw
+      GXP_TEST_DB_MIGRATOR_PW: ci_migrator_pw
+      GXP_JWT_SECRET: ci-only-not-a-real-secret-0000000000000000000000000000000000000000
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx install uv==${UV_VERSION} || pip install uv==${UV_VERSION}
+      - run: uv sync --frozen --group dev
+
+      - name: Create app role  (PG-FR-005/006 — migrations GRANT to ebmr_new_gxp_app, never create it)
+        run: |
+          PGPASSWORD=ci_migrator_pw psql -h localhost -U ebmr_new_migrator -d ebmr_new_gxp_test -v ON_ERROR_STOP=1 \
+            -c "DO \$\$ BEGIN
+                  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ebmr_new_gxp_app') THEN
+                    CREATE ROLE ebmr_new_gxp_app LOGIN PASSWORD 'ci_migrator_pw';
+                  END IF;
+                END \$\$;"
+
+      - name: Bootstrap schemas + migrate to head
+        run: |
+          PGPASSWORD=ci_migrator_pw psql -h localhost -U ebmr_new_migrator -d ebmr_new_gxp_test -v ON_ERROR_STOP=1 \
+            -c "CREATE SCHEMA IF NOT EXISTS audit; CREATE SCHEMA IF NOT EXISTS iam; CREATE SCHEMA IF NOT EXISTS mutation; CREATE SCHEMA IF NOT EXISTS signature; CREATE SCHEMA IF NOT EXISTS vault; CREATE SCHEMA IF NOT EXISTS ebmr; CREATE SCHEMA IF NOT EXISTS materials; CREATE SCHEMA IF NOT EXISTS validation;"
+          GXP_MIGRATION_DATABASE_URL="postgresql+asyncpg://ebmr_new_migrator:ci_migrator_pw@localhost:5432/ebmr_new_gxp_test" \
+            uv run alembic upgrade head
+
+      - name: Schema-drift guard  (Phase 1 follow-up — a stamped-but-unapplied migration must fail CI)
+        run: |
+          # after `alembic upgrade head` the DB must have every column alembic thinks it has.
+          GXP_MIGRATION_DATABASE_URL="postgresql+asyncpg://ebmr_new_migrator:ci_migrator_pw@localhost:5432/ebmr_new_gxp_test" \
+            uv run alembic check || { echo "::error::alembic detects model/schema drift after upgrade head"; exit 1; }
+
+      - name: pytest
+        run: uv run pytest -q -p no:randomly --junitxml=../../test-results.xml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: pytest-junit, path: test-results.xml }
+
+  # ---- security / SBOM / licence (Doc 68 / Doc 104) ------------------------------------------------
+  supply-chain:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: services/gxp-api } }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # gitleaks diffs base..head; a shallow clone can't resolve either SHA
+      - run: pipx install uv==${UV_VERSION} || pip install uv==${UV_VERSION}
+      - run: uv sync --frozen --group dev
+
+      - name: SBOM — Python (CycloneDX)
+        run: uv run --with cyclonedx-bom cyclonedx-py environment .venv -o ../../sbom-gxp-api.cdx.json
+
+      - name: SBOM — frontend (CycloneDX)
+        working-directory: frontend
+        run: |
+          npm ci
+          npx --yes @cyclonedx/cyclonedx-npm --omit dev --output-file ../sbom-frontend.cdx.json
+
+      - name: Licence gate  (DEP-FR-007/009 — no PROHIBITED, no UNKNOWN in a release build)
+        run: |
+          uv run --with pip-licenses pip-licenses --format=json --with-authors --with-urls \
+            --python .venv/bin/python > ../../licences-gxp-api.json
+          uv run python - <<'PY'
+          import json, sys
+          PROHIBITED = {"GPL-2.0","GPL-3.0","AGPL-3.0","AGPL-3.0-only","SSPL-1.0","BUSL-1.1","OSL-3.0","EUPL-1.2"}
+          rows = json.load(open("../../licences-gxp-api.json"))
+          bad = [r for r in rows if r["License"].strip() in ("UNKNOWN","","UNKNOWN LICENSE")]
+          gpl = [r for r in rows if any(p in r["License"] for p in PROHIBITED)]
+          for r in bad: print(f"::error::UNKNOWN licence: {r['Name']} {r['Version']}")
+          for r in gpl: print(f"::error::PROHIBITED licence: {r['Name']} {r['Version']} -> {r['License']}")
+          sys.exit(1 if (bad or gpl) else 0)
+          PY
+
+      - name: pip-audit (SCA — advisory feed)
+        run: uv run --with pip-audit pip-audit --strict || true   # report-only until a triage owner is assigned
+
+      - name: gitleaks (secret scan)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: supply-chain-evidence
+          path: |
+            sbom-gxp-api.cdx.json
+            sbom-frontend.cdx.json
+            licences-gxp-api.json

@@ -8,7 +8,6 @@ overall qualification verdict for one interface), aggregating every test executi
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

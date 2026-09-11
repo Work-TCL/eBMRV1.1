@@ -12,7 +12,6 @@ import abc
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # ERP-ARC-003. Every canonical outbound operation any adapter *may* declare support for. An adapter's
 # capability set is a subset of these -- see PROVIDER_OPERATIONS in each adapters/*.py module.
 PROVIDER_OPERATIONS = (

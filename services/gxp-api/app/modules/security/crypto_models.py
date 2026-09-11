@@ -26,7 +26,7 @@ name/deployment, not a tenant_id column.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -49,7 +49,11 @@ class SecretMetadata(Base):
     bumps `version` and the rotation timestamps (KEY-FR-005/006)."""
 
     __tablename__ = "secret_metadata"
-    __table_args__ = (UniqueConstraint("secret_ref"), {"schema": "security"})
+    __table_args__ = (
+        UniqueConstraint("secret_ref"),
+        Index("ix_secret_metadata_state", "state"),
+        {"schema": "security"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     secret_ref: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -76,7 +80,11 @@ class CertificateMetadata(Base):
     signed (Document 106 rows 137-139, Released, QA Releaser, independent)."""
 
     __tablename__ = "certificate_metadata"
-    __table_args__ = (UniqueConstraint("serial"), {"schema": "security"})
+    __table_args__ = (
+        UniqueConstraint("serial"),
+        Index("ix_certificate_metadata_state", "state"),
+        {"schema": "security"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     serial: Mapped[str] = mapped_column(String(120), nullable=False)

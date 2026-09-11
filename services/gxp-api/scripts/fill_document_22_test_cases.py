@@ -321,8 +321,11 @@ def rewrite_markdown() -> list[dict]:
         raise SystemExit(f"Result mapping for ids not found in the file: {extra}")
 
     out_lines = []
+    current_id: str | None = None
     for line in text.splitlines():
         if STATUS_LINE_RE.match(line):
+            if current_id is None:
+                raise SystemExit("Encountered a status line before any case header")
             case_id = current_id
             status, actual_result, defect = RESULTS[case_id]
             out_lines.append(
@@ -342,7 +345,7 @@ def rewrite_markdown() -> list[dict]:
 def append_library_rows(cases: list[dict]) -> None:
     with open(LIBRARY_CSV, newline="") as f:
         reader = csv.reader(f)
-        fieldnames = next(reader)
+        next(reader)  # skip header
 
     rows = []
     for case in cases:

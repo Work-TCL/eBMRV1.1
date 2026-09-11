@@ -12,7 +12,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.security.netzero_models import DeploymentSecurityProfile, NetworkFlowDefinition
+from app.modules.security.netzero_models import NetworkFlowDefinition
 from app.mutation.errors import (
     NetworkFlowNotAllowedError,
     SegmentationControlFailedError,

@@ -1,12 +1,14 @@
 import uuid
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.equipment.cleaning_models import EquipmentArea
 from app.modules.equipment.commands import (
     CreateEquipmentAreaCommand,
     CreateEquipmentAssetCommand,
@@ -27,13 +29,11 @@ from app.modules.equipment.commands import (
     record_qualification,
     return_to_service,
 )
-from app.modules.equipment.cleaning_models import EquipmentArea
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.policy.service import evaluate_policy
 from app.modules.signature.service import create_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
-from pydantic import BaseModel
 
 router = APIRouter(prefix="/equipment/v1", tags=["equipment"])
 

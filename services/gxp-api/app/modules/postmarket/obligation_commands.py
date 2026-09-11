@@ -26,11 +26,9 @@ from app.modules.postmarket import commands as pm_commands
 from app.modules.postmarket.models import SafetyCase
 from app.modules.postmarket.obligation_models import (
     APPLICANT_ROLES,
-    CORRECTION_REGIMES,
     CYCLE_TRANSITIONS,
     CYCLE_TYPES,
     OBLIGATION_TRANSITIONS,
-    OBLIGATION_TYPES,
     ApplicantRelationship,
     ConstituentInformationShare,
     CorrectionRemovalRegulatoryRecord,

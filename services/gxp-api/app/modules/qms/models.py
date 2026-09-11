@@ -36,7 +36,7 @@ Deferred this pass (see docs/generated/18_SPEC_GAPS.md SG-059..SG-062):
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -92,6 +92,8 @@ class DeviationRecord(Base):
     __table_args__ = (
         UniqueConstraint("quality_event_id"),
         UniqueConstraint("deviation_number"),
+        Index("ix_deviation_record_severity", "site_id", "severity", "state"),
+        Index("ix_deviation_record_state_due", "site_id", "state", "due_date"),
         {"schema": "qms"},
     )
 
@@ -132,7 +134,7 @@ class DeviationRecord(Base):
     # here; `closed_at` itself is only ever set on the *first* closure and is never overwritten.
     closure_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     reopen_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()
 
@@ -144,7 +146,10 @@ class DeviationImpactLink(Base):
     """
 
     __tablename__ = "deviation_impact_link"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_deviation_impact_link_deviation", "deviation_id"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     deviation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.deviation_record.id"), nullable=False)

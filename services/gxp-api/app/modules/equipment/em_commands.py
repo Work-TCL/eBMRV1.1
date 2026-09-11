@@ -10,8 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.equipment import commands as equipment_commands
-from app.modules.equipment.em_models import ALERT_ACTION_STATUSES, EmExcursion, EmLocation, EmProgramVersion, EmSampleOrReading
 from app.modules.equipment.cleaning_models import EquipmentArea
+from app.modules.equipment.em_models import (
+    ALERT_ACTION_STATUSES,
+    EmExcursion,
+    EmLocation,
+    EmProgramVersion,
+    EmSampleOrReading,
+)
 from app.modules.iam.models import User
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (

@@ -1,7 +1,6 @@
 import uuid
 from datetime import datetime, timezone
 
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -127,7 +126,7 @@ async def request_lims_sample(
     session.add(mapping)
 
     correlation_id = uuid.uuid4()
-    message = await _record_message(
+    await _record_message(
         session, instance_id=instance.id, direction="outbound", external_event_id=cmd.external_sample_id,
         internal_correlation_id=sample_receipt.aggregate_id, status="accepted",
     )

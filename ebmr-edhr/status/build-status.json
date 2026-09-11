@@ -1,6 +1,6 @@
 {
  "package": "eBMR / eDHR platform build status",
- "generated": "2026-09-09",
+ "generated": "2026-09-11",
  "baseline": "Documents 01-115",
  "stage_model": [
   "NOT_STARTED",
@@ -527,7 +527,7 @@
     "VLT-FR-007": "VERIFIED",
     "VLT-FR-008": "IN_PROGRESS",
     "VLT-FR-009": "IN_PROGRESS",
-    "VLT-FR-010": "BLOCKED",
+    "VLT-FR-010": "IN_PROGRESS",
     "VLT-FR-011": "IN_PROGRESS",
     "VLT-FR-012": "IN_PROGRESS",
     "VLT-FR-013": "BLOCKED",
@@ -550,7 +550,7 @@
     "VLT-FR-030": "BLOCKED"
    },
    "entities": 5,
-   "apis": 6,
+   "apis": 7,
    "events": 0,
    "test_cases": 147,
    "stage": "IN_DEVELOPMENT",
@@ -560,14 +560,20 @@
      "at": "2026-08-22",
      "by": "Claude Code",
      "note": "Partial build: full backend for release/inspection/correction workflow (app/modules/vault/) -- release_master() creates an immutable, digest-verified, supersession-linked snapshot on every batch release and material-lot disposition; integrity verification detects tampering; corrections can be requested. Frontend page (frontend/src/app/vault/page.tsx) added. Evidence manifest population, void/cancel, retention/hold/archive, WORM, deterministic export, schema evolution, disposition packaging, migration provenance, backup/restore verification, DDCP cross-constituent snapshot, correction completion (signature policy), and the Frappe UI surfaces are not built this pass -- see SG-035, SG-036, SG-037."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-11",
+     "by": "Claude Code",
+     "note": "Phase-4 prerequisite check: full pytest suite (1169 tests) caught test_contract_conformance.py::test_wp01_contracts_cover_every_implemented_wp01_operation failing -- POST /vault/v1/corrections/{id}/signature-challenges (SG-035 pair 4 / VLT-FR-010, implemented in the item-D pass) was never declared in spec-gxp-004.yaml. Contract updated to match the real implementation (request/response schemas, error responses, stale FAILS-CLOSED-TODAY note corrected now that vault_object/release and record_correction/complete both have Document 106 policy rows). Also fixed tests/conftest.py's seeded fixture re-hashing the same demo password 18x per test with bcrypt (~4.8s/test wasted, ~55% of full-suite runtime) -- hashed once and reused. Full suite re-verified green: 1169 passed, 0 failed, 3826.85s."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-22",
    "completed_at": null,
-   "test_pass": 54,
+   "test_pass": 56,
    "test_fail": 0,
-   "test_blocked": 83,
+   "test_blocked": 81,
    "open_defects": 0,
    "blockers": [],
    "prompt": "prompts/WP-01/06_SPEC-GXP-004.md",
@@ -751,7 +757,7 @@
     "PRD-FR-026": "BLOCKED",
     "PRD-FR-027": "BLOCKED",
     "PRD-FR-028": "BLOCKED",
-    "PRD-FR-029": "BLOCKED",
+    "PRD-FR-029": "IN_PROGRESS",
     "PRD-FR-030": "BLOCKED",
     "PRD-FR-031": "IN_PROGRESS",
     "PRD-FR-032": "IN_PROGRESS"
@@ -772,9 +778,9 @@
    "owner": "Claude Code",
    "started_at": "2026-08-22",
    "completed_at": null,
-   "test_pass": 24,
+   "test_pass": 26,
    "test_fail": 0,
-   "test_blocked": 94,
+   "test_blocked": 92,
    "open_defects": 0,
    "blockers": [],
    "prompt": "prompts/WP-02/09_SPEC-EBMR-000.md",
@@ -5107,7 +5113,7 @@
    "module": "SPEC-DATA-001",
    "title": "Enterprise Data Ownership, Persistence Topology & Data Lineage",
    "work_package": "WP-11",
-   "code_location": "infrastructure",
+   "code_location": "services/gxp-api/app/modules/dataops",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 30,
    "requirements_state": {
@@ -5146,9 +5152,16 @@
    "apis": 4,
    "events": 5,
    "test_cases": 67,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-09",
+     "by": "Claude Code",
+     "note": "Phase 1 reconciliation: code exists at services/gxp-api/app/modules/dataops (module + tests present) but was tracked as NOT_STARTED with code_location 'infrastructure'. Stage corrected to IN_DEVELOPMENT (code exists, tests not yet folded into TEST_CASE_LIBRARY). Requirement-level verification still pending test-case execution."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -5165,7 +5178,7 @@
    "module": "SPEC-DATA-002",
    "title": "PostgreSQL GxP Database Architecture, Schema, Partitioning & Concurrency",
    "work_package": "WP-11",
-   "code_location": "infrastructure",
+   "code_location": "services/gxp-api/app/modules/dbops",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 34,
    "requirements_state": {
@@ -5208,9 +5221,16 @@
    "apis": 0,
    "events": 6,
    "test_cases": 69,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-09",
+     "by": "Claude Code",
+     "note": "Phase 1 reconciliation: code exists at services/gxp-api/app/modules/dbops (module + tests present) but was tracked as NOT_STARTED with code_location 'infrastructure'. Stage corrected to IN_DEVELOPMENT (code exists, tests not yet folded into TEST_CASE_LIBRARY). Requirement-level verification still pending test-case execution."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -5227,45 +5247,52 @@
    "module": "SPEC-DATA-003",
    "title": "Frappe / MariaDB Operational Database, Projection & UI Data Architecture",
    "work_package": "WP-11",
-   "code_location": "infrastructure",
+   "code_location": "(none \u2014 Frappe/MariaDB projection tier not built; ADR-0010 / SG-182)",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 28,
    "requirements_state": {
-    "MDB-FR-001": "NOT_STARTED",
-    "MDB-FR-002": "NOT_STARTED",
-    "MDB-FR-003": "NOT_STARTED",
-    "MDB-FR-004": "NOT_STARTED",
-    "MDB-FR-005": "NOT_STARTED",
-    "MDB-FR-006": "NOT_STARTED",
-    "MDB-FR-007": "NOT_STARTED",
-    "MDB-FR-008": "NOT_STARTED",
-    "MDB-FR-009": "NOT_STARTED",
-    "MDB-FR-010": "NOT_STARTED",
-    "MDB-FR-011": "NOT_STARTED",
-    "MDB-FR-012": "NOT_STARTED",
-    "MDB-FR-013": "NOT_STARTED",
-    "MDB-FR-014": "NOT_STARTED",
-    "MDB-FR-015": "NOT_STARTED",
-    "MDB-FR-016": "NOT_STARTED",
-    "MDB-FR-017": "NOT_STARTED",
-    "MDB-FR-018": "NOT_STARTED",
-    "MDB-FR-019": "NOT_STARTED",
-    "MDB-FR-020": "NOT_STARTED",
-    "MDB-FR-021": "NOT_STARTED",
-    "MDB-FR-022": "NOT_STARTED",
-    "MDB-FR-023": "NOT_STARTED",
-    "MDB-FR-024": "NOT_STARTED",
-    "MDB-FR-025": "NOT_STARTED",
-    "MDB-FR-026": "NOT_STARTED",
-    "MDB-FR-027": "NOT_STARTED",
-    "MDB-FR-028": "NOT_STARTED"
+    "MDB-FR-001": "DEFERRED",
+    "MDB-FR-002": "DEFERRED",
+    "MDB-FR-003": "DEFERRED",
+    "MDB-FR-004": "DEFERRED",
+    "MDB-FR-005": "DEFERRED",
+    "MDB-FR-006": "DEFERRED",
+    "MDB-FR-007": "DEFERRED",
+    "MDB-FR-008": "DEFERRED",
+    "MDB-FR-009": "DEFERRED",
+    "MDB-FR-010": "DEFERRED",
+    "MDB-FR-011": "DEFERRED",
+    "MDB-FR-012": "DEFERRED",
+    "MDB-FR-013": "DEFERRED",
+    "MDB-FR-014": "DEFERRED",
+    "MDB-FR-015": "DEFERRED",
+    "MDB-FR-016": "DEFERRED",
+    "MDB-FR-017": "DEFERRED",
+    "MDB-FR-018": "DEFERRED",
+    "MDB-FR-019": "DEFERRED",
+    "MDB-FR-020": "DEFERRED",
+    "MDB-FR-021": "DEFERRED",
+    "MDB-FR-022": "DEFERRED",
+    "MDB-FR-023": "DEFERRED",
+    "MDB-FR-024": "DEFERRED",
+    "MDB-FR-025": "DEFERRED",
+    "MDB-FR-026": "DEFERRED",
+    "MDB-FR-027": "DEFERRED",
+    "MDB-FR-028": "DEFERRED"
    },
    "entities": 0,
    "apis": 1,
    "events": 4,
    "test_cases": 55,
    "stage": "NOT_STARTED",
-   "stage_history": [],
+   "stage_history": [
+    {
+     "stage": "NOT_STARTED",
+     "at": "2026-09-09",
+     "by": "Claude Code",
+     "note": "Phase 1 reconciliation: Document 71's Frappe/MariaDB projection tier is not built and will not be (ADR-0010 names the Next.js frontend the UI of record; SG-182 tracks the Doc 71 rework/descope). Requirements reclassified NOT_STARTED -> DEFERRED."
+    }
+   ],
    "owner": "",
    "started_at": null,
    "completed_at": null,
@@ -5273,7 +5300,9 @@
    "test_fail": 0,
    "test_blocked": 0,
    "open_defects": 0,
-   "blockers": [],
+   "blockers": [
+    "SG-182"
+   ],
    "prompt": "prompts/WP-11/71_SPEC-DATA-003.md",
    "test_case_book": "test-cases/WP-11/Document_71_SPEC-DATA-003_TEST_CASES.md",
    "evidence": "validation/evidence/oq/SPEC-DATA-003/"
@@ -5283,7 +5312,7 @@
    "module": "SPEC-DATA-004",
    "title": "Immutable Evidence, Object Storage, WORM, Archive & File Lifecycle",
    "work_package": "WP-11",
-   "code_location": "infrastructure",
+   "code_location": "services/gxp-api/app/modules/evidence",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 30,
    "requirements_state": {
@@ -5322,9 +5351,16 @@
    "apis": 6,
    "events": 7,
    "test_cases": 62,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-09",
+     "by": "Claude Code",
+     "note": "Phase 1 reconciliation: code exists at services/gxp-api/app/modules/evidence (module + tests present) but was tracked as NOT_STARTED with code_location 'infrastructure'. Stage corrected to IN_DEVELOPMENT (code exists, tests not yet folded into TEST_CASE_LIBRARY). Requirement-level verification still pending test-case execution."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -5341,7 +5377,7 @@
    "module": "SPEC-DATA-005",
    "title": "NATS / JetStream Event Bus, Transactional Outbox & Async Contracts",
    "work_package": "WP-11",
-   "code_location": "infrastructure",
+   "code_location": "services/gxp-api/app/modules/eventbus",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 30,
    "requirements_state": {
@@ -5380,9 +5416,16 @@
    "apis": 0,
    "events": 6,
    "test_cases": 63,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-09",
+     "by": "Claude Code",
+     "note": "Phase 1 reconciliation: code exists at services/gxp-api/app/modules/eventbus (module + tests present) but was tracked as NOT_STARTED with code_location 'infrastructure'. Stage corrected to IN_DEVELOPMENT (code exists, tests not yet folded into TEST_CASE_LIBRARY). Requirement-level verification still pending test-case execution."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -5399,7 +5442,7 @@
    "module": "SPEC-DATA-006",
    "title": "Temporal Durable Workflow Orchestration Architecture",
    "work_package": "WP-11",
-   "code_location": "infrastructure",
+   "code_location": "services/gxp-api/app/modules/workflowops",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 30,
    "requirements_state": {
@@ -5438,9 +5481,16 @@
    "apis": 0,
    "events": 5,
    "test_cases": 69,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-09",
+     "by": "Claude Code",
+     "note": "Phase 1 reconciliation: code exists at services/gxp-api/app/modules/workflowops (module + tests present) but was tracked as NOT_STARTED with code_location 'infrastructure'. Stage corrected to IN_DEVELOPMENT (code exists, tests not yet folded into TEST_CASE_LIBRARY). Requirement-level verification still pending test-case execution."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -5457,7 +5507,7 @@
    "module": "SPEC-DATA-007",
    "title": "Caching, Search, Read Models, Reporting Projections & Analytics Data Access",
    "work_package": "WP-11",
-   "code_location": "infrastructure",
+   "code_location": "services/gxp-api/app/modules/readmodels",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 30,
    "requirements_state": {
@@ -5496,9 +5546,16 @@
    "apis": 4,
    "events": 6,
    "test_cases": 55,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-09",
+     "by": "Claude Code",
+     "note": "Phase 1 reconciliation: code exists at services/gxp-api/app/modules/readmodels (module + tests present) but was tracked as NOT_STARTED with code_location 'infrastructure'. Stage corrected to IN_DEVELOPMENT (code exists, tests not yet folded into TEST_CASE_LIBRARY). Requirement-level verification still pending test-case execution."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -5515,7 +5572,7 @@
    "module": "SPEC-DATA-008",
    "title": "Backup, Restore, Point-in-Time Recovery & Disaster Recovery",
    "work_package": "WP-11",
-   "code_location": "infrastructure",
+   "code_location": "services/gxp-api/app/modules/disaster_recovery",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 32,
    "requirements_state": {
@@ -5556,9 +5613,16 @@
    "apis": 3,
    "events": 6,
    "test_cases": 53,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-09",
+     "by": "Claude Code",
+     "note": "Phase 1 reconciliation: code exists at services/gxp-api/app/modules/disaster_recovery (module + tests present) but was tracked as NOT_STARTED with code_location 'infrastructure'. Stage corrected to IN_DEVELOPMENT (code exists, tests not yet folded into TEST_CASE_LIBRARY). Requirement-level verification still pending test-case execution."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -5575,7 +5639,7 @@
    "module": "SPEC-DATA-009",
    "title": "Cloud-Neutral Deployment, Kubernetes, On-Prem Runtime & Upgrade Architecture",
    "work_package": "WP-11",
-   "code_location": "infrastructure",
+   "code_location": "services/gxp-api/app/modules/deployment",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 35,
    "requirements_state": {
@@ -5619,9 +5683,16 @@
    "apis": 0,
    "events": 7,
    "test_cases": 127,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-09",
+     "by": "Claude Code",
+     "note": "Phase 1 reconciliation: code exists at services/gxp-api/app/modules/deployment (module + tests present) but was tracked as NOT_STARTED with code_location 'infrastructure'. Stage corrected to IN_DEVELOPMENT (code exists, tests not yet folded into TEST_CASE_LIBRARY). Requirement-level verification still pending test-case execution."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -5638,7 +5709,7 @@
    "module": "SPEC-DATA-010",
    "title": "Performance, Capacity, Observability, SLOs & SRE Operations",
    "work_package": "WP-11",
-   "code_location": "infrastructure",
+   "code_location": "services/gxp-api/app/modules/sre",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 36,
    "requirements_state": {
@@ -5683,9 +5754,16 @@
    "apis": 0,
    "events": 7,
    "test_cases": 74,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-09",
+     "by": "Claude Code",
+     "note": "Phase 1 reconciliation: code exists at services/gxp-api/app/modules/sre (module + tests present) but was tracked as NOT_STARTED with code_location 'infrastructure'. Stage corrected to IN_DEVELOPMENT (code exists, tests not yet folded into TEST_CASE_LIBRARY). Requirement-level verification still pending test-case execution."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -6748,7 +6826,7 @@
    "module": "SPEC-ENG-001",
    "title": "Coding Standards",
    "work_package": "WP-00",
-   "code_location": "tooling",
+   "code_location": "services/gxp-api/pyproject.toml ([tool.ruff]/[tool.mypy]); .github/workflows/ci.yml (lint job); ebmr-edhr/docs/generated/33_CODING_STANDARD_COMPLIANCE_MATRIX.md",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 36,
    "requirements_state": {
@@ -6793,9 +6871,22 @@
    "apis": 0,
    "events": 0,
    "test_cases": 65,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-10",
+     "by": "Claude Code",
+     "note": "Phase 2: ruff + mypy configured (FastAPI-aware) and locked; CI runs them. ruff --select F floor blocking (new bugs); full ruleset + mypy report-only, ratcheting from the baseline (app/: ~534 ruff, ~95 F-codes). float-in-regulated-code lint rule + tooling/guardrails/ still open."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-10",
+     "by": "Claude Code",
+     "note": "Phase 2 backbone ratchet, items 1/3/5 (PHASE_2_BACKBONE.md Sec 4): first cleanup PR done -- ruff check app scripts --select F401,I001 --fix (85 files) + 14 hand-fixed F841s, CI floor now the unqualified ruff check app scripts --select F, no ignore list. Both items the previous note left open are done too: ebmr-edhr/tooling/guardrails/ codified (4 architecture-guardrail checks, CI-blocking) and the float-in-regulated-code lint rule added as its 5th check (found + fixed one real bug, qms.NcrDisposition.quantity). Still open: full ruleset (E/W/I/UP/SIM/RUF) and mypy strict remain report-only/ratcheting."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -6876,7 +6967,7 @@
    "module": "SPEC-ENG-003",
    "title": "Repository & Branching Standard",
    "work_package": "WP-00",
-   "code_location": "tooling",
+   "code_location": ".github/workflows/ci.yml; .github/CODEOWNERS; .github/pull_request_template.md; .github/dependabot.yml; ebmr-edhr/docs/engineering/REPOSITORY_BRANCHING_STANDARD.md",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 30,
    "requirements_state": {
@@ -6915,9 +7006,16 @@
    "apis": 0,
    "events": 0,
    "test_cases": 69,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-10",
+     "by": "Claude Code",
+     "note": "Phase 2: root CI workflow + CODEOWNERS + PR template + dependabot committed; branch-protection ruleset specified for the repo admin. GitHub branch-protection settings themselves are an admin action, not code."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -6939,13 +7037,13 @@
    "requirements": 32,
    "requirements_state": {
     "MIG-FR-001": "NOT_STARTED",
-    "MIG-FR-002": "NOT_STARTED",
-    "MIG-FR-003": "NOT_STARTED",
+    "MIG-FR-002": "IN_PROGRESS",
+    "MIG-FR-003": "IN_PROGRESS",
     "MIG-FR-004": "NOT_STARTED",
     "MIG-FR-005": "NOT_STARTED",
     "MIG-FR-006": "NOT_STARTED",
-    "MIG-FR-007": "NOT_STARTED",
-    "MIG-FR-008": "NOT_STARTED",
+    "MIG-FR-007": "IN_PROGRESS",
+    "MIG-FR-008": "IN_PROGRESS",
     "MIG-FR-009": "NOT_STARTED",
     "MIG-FR-010": "NOT_STARTED",
     "MIG-FR-011": "NOT_STARTED",
@@ -6963,7 +7061,7 @@
     "MIG-FR-023": "NOT_STARTED",
     "MIG-FR-024": "NOT_STARTED",
     "MIG-FR-025": "NOT_STARTED",
-    "MIG-FR-026": "NOT_STARTED",
+    "MIG-FR-026": "IN_PROGRESS",
     "MIG-FR-027": "NOT_STARTED",
     "MIG-FR-028": "NOT_STARTED",
     "MIG-FR-029": "NOT_STARTED",
@@ -6975,10 +7073,23 @@
    "apis": 0,
    "events": 0,
    "test_cases": 56,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
-   "started_at": null,
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "at": "2026-09-10",
+     "by": "Claude Code",
+     "stage": "IN_DEVELOPMENT",
+     "note": "Phase 2 backbone ratchet item 4 (PHASE_2_BACKBONE.md Sec 4 item 13): rebuilt ebmr_new_gxp_test with alembic downgrade base then alembic upgrade head (94/94 migrations, both directions, clean), demonstrating MIG-FR-007 (representative test) and MIG-FR-008 (idempotent rerun detection) for the first time end-to-end rather than only per-migration. Found and fixed a real MIG-FR-003 (forward-first / correct rollback) violation: migration 0053's downgrade() was non-idempotent against migration 0083's own repair-migration downgrade, breaking the full chain's downgrade path outright. Wrote migration 0094 as a genuine MIG-FR-026 repair migration (not new development, controlled change record in its own docstring) with a tested, symmetric downgrade(). Narrow, verification-focused slice of this standard -- MIG-FR-002/003/007/008/026 have real evidence; the remaining ~27 requirements (expand-contract window discipline, backfill/checksum reconciliation, lock-duration analysis, dry-run rehearsal on a restore copy, migration evidence capture, etc.) are untouched by this pass."
+    },
+    {
+     "at": "2026-09-10",
+     "by": "Claude Code",
+     "stage": "IN_DEVELOPMENT",
+     "note": "SG-184 fully resolved same day (user-directed gap-closure follow-up): the ~144 BIGINT-vs-Integer/JSON-vs-JSONB, 169 missing-index and 13 missing-check-constraint mismatches alembic check surfaced after the item-4 rebuild were all model-declaration gaps, not real schema drift -- each migration already had the correct type/index/constraint deployed; the ORM model just didn't declare it explicitly. Added every one, reading each migration individually rather than guessing (MIG-FR-*'s own discipline). alembic check now reports zero findings other than the disclosed alembic_version non-finding -- a genuine, trustworthy pass/fail signal for the schema-drift guard for the first time. Full 1162-test suite run against the result: 1162 passed, 0 failed, 0 errors, 0 skipped."
+    }
+   ],
+   "owner": "Claude Code",
+   "started_at": "2026-09-10",
    "completed_at": null,
    "test_pass": 0,
    "test_fail": 0,
@@ -7132,7 +7243,7 @@
    "module": "SPEC-ENG-007",
    "title": "CI/CD & Release Process",
    "work_package": "WP-00",
-   "code_location": "tooling",
+   "code_location": ".github/workflows/ci.yml; ebmr-edhr/docs/generated/39_CI_CD_RELEASE_EVIDENCE_MODEL.md",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 36,
    "requirements_state": {
@@ -7177,9 +7288,22 @@
    "apis": 0,
    "events": 0,
    "test_cases": 83,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-10",
+     "by": "Claude Code",
+     "note": "Phase 2: real CI pipeline for the Python/Next.js stack (guardrails/lint/test/supply-chain jobs) replaces the never-run npm workflow. PR-gate stages implemented; merge-to-main / release-candidate / SAST / IaC-scan / artefact-sign stages still open."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-10",
+     "by": "Claude Code",
+     "note": "Phase 2 backbone ratchet items 1/3/5: ruff floor tightened to full --select F, no ignore list; ebmr-edhr/tooling/guardrails/validate.py wired into the guardrails job as a 5th blocking check family, its pytest fixture tests wired into the lint job. Same open items as before otherwise (merge-to-main / release-candidate / SAST / IaC-scan / artefact-sign)."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -7196,7 +7320,7 @@
    "module": "SPEC-ENG-008",
    "title": "SBOM / Third-Party License Management",
    "work_package": "WP-00",
-   "code_location": "tooling",
+   "code_location": "ebmr-edhr/docs/generated/40_SBOM_LICENSE_DEPENDENCY_REGISTER.md; sbom/sbom-gxp-api.cdx.json; .github/workflows/ci.yml (supply-chain job)",
    "risk_class": "HIGHER-PROCESS-RISK",
    "requirements": 36,
    "requirements_state": {
@@ -7241,9 +7365,22 @@
    "apis": 0,
    "events": 0,
    "test_cases": 130,
-   "stage": "NOT_STARTED",
-   "stage_history": [],
-   "owner": "",
+   "stage": "IN_DEVELOPMENT",
+   "stage_history": [
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-10",
+     "by": "Claude Code",
+     "note": "Phase 2: CycloneDX SBOM generated for services/gxp-api (48 components, all permissive, 0 PROHIBITED/UNKNOWN); 40_ register populated with real versions/licences/owners; CI licence gate + SBOM generation wired. Frontend SBOM step exists but output not yet committed; SECURITY-CRITICAL dep sign-offs (DEP-FR-018) open."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-10",
+     "by": "Claude Code",
+     "note": "Phase 2 backbone ratchet item 2: sbom/sbom-frontend.cdx.json committed (29 resolved production components, 0 UNKNOWN/PROHIBITED). Logged a critical next.js/sharp npm-audit finding under 40_'s Open Items rather than patching (dependency-version bump outside this ratchet's scope, needs its own DEP-FR-025 review). SECURITY-CRITICAL dep sign-offs (DEP-FR-018) still open -- human approval step."
+    }
+   ],
+   "owner": "Claude Code",
    "started_at": null,
    "completed_at": null,
    "test_pass": 0,
@@ -7268,9 +7405,9 @@
     "AI-FR-002": "NOT_STARTED",
     "AI-FR-003": "NOT_STARTED",
     "AI-FR-004": "NOT_STARTED",
-    "AI-FR-005": "NOT_STARTED",
+    "AI-FR-005": "IN_PROGRESS",
     "AI-FR-006": "NOT_STARTED",
-    "AI-FR-007": "NOT_STARTED",
+    "AI-FR-007": "IN_PROGRESS",
     "AI-FR-008": "NOT_STARTED",
     "AI-FR-009": "NOT_STARTED",
     "AI-FR-010": "NOT_STARTED",
@@ -7284,7 +7421,7 @@
     "AI-FR-018": "NOT_STARTED",
     "AI-FR-019": "NOT_STARTED",
     "AI-FR-020": "NOT_STARTED",
-    "AI-FR-021": "NOT_STARTED",
+    "AI-FR-021": "IN_PROGRESS",
     "AI-FR-022": "NOT_STARTED",
     "AI-FR-023": "NOT_STARTED",
     "AI-FR-024": "NOT_STARTED",
@@ -7317,7 +7454,7 @@
     "AI-FR-051": "NOT_STARTED",
     "AI-FR-052": "NOT_STARTED",
     "AI-FR-053": "NOT_STARTED",
-    "AI-FR-054": "NOT_STARTED",
+    "AI-FR-054": "IN_PROGRESS",
     "AI-FR-055": "NOT_STARTED",
     "AI-FR-056": "NOT_STARTED"
    },
@@ -7337,7 +7474,7 @@
    "owner": "Claude Code",
    "started_at": "2026-09-01",
    "completed_at": null,
-   "test_pass": 0,
+   "test_pass": 4,
    "test_fail": 0,
    "test_blocked": 0,
    "open_defects": 0,
@@ -7353,7 +7490,8 @@
   "modules": 103,
   "requirements": 2965,
   "test_cases": 9150,
-  "modules_started": 83,
+  "modules_started": 97,
   "modules_released": 0
- }
+ },
+ "reconciliation_note": "2026-09-09: Phase 1 status reconciliation. WP-11 modules (Docs 69-78) were tracked as NOT_STARTED with a placeholder code_location='infrastructure'; 9 of 10 have real code + tests in services/gxp-api/app/modules (dataops, dbops, evidence, eventbus, workflowops, readmodels, disaster_recovery, deployment, sre) and are now IN_DEVELOPMENT. Doc 71 (Frappe projection tier) is deliberately not built (ADR-0010/SG-182) -> reqs DEFERRED. WP-12/13/14 modules were already IN_DEVELOPMENT with correct code_location; their '0 verified' is accurate (qualification test cases in TEST_CASE_LIBRARY.csv not yet executed), not a tracking error. eventbus (Doc 73 NATS) and workflowops (Doc 74 Temporal) are interim stand-ins per ADR-0011/SG-183.  |  2026-09-10 Phase 2: WP-00 backbone \u2014 SPEC-ENG-001/003/007/008 (Docs 97/99/103/104) moved to IN_DEVELOPMENT on committed enforcement artefacts (root .github/ CI + CODEOWNERS + dependabot, ruff/mypy config, CycloneDX SBOM + populated 40_ register). SPEC-ENG-005 (Doc 101) unchanged. SPEC-ENG-002/004/006 (98/100/102 \u2014 arch-rules-for-agents, migration standard, testing strategy) still NOT_STARTED as codified checks (standards prose exists in ebmr-edhr/docs/engineering/).  |  2026-09-10 Phase 3 close-out: engineering scope COMPLETE and committed (6 commits on wp12-14-rbac-signature-fixes). SG-173/ADR-0013 store cutover done (gxp_batch is the single authoritative Batch store); SG-013 M1 + validation contract surface done and the CI contract gate flipped to blocking with a 17-line non-M1 baseline; 3 genuine backend defects fixed (write_outbox_event flush, duplicate FilterIntegrityFailedError removed, ai_governance seed); SG-143 (rules precision) was already RESOLVED 2026-08-27. Verification 2026-09-10: targeted slice 171 passed / 0 failed across the 8 touched modules; ruff F-floor clean (now blocks F811/F821); contract validator 17->0 with --baseline. NO requirement stage flipped to VERIFIED/VALIDATED in this pass. Phase 3 NOT officially closed: depends on 4 Quality/Product-Owner decisions engineering cannot make \u2014 SG-035 (5 (record_type,action) pairs, all fail closed with SIGNATURE_POLICY_UNRESOLVED, no rows seeded, no values guessed), SG-138 (24 QMS pairs), SG-167 (5 SPEC-AI-001 functions), SG-145 (Document 110 \u00a72 '(PROPOSED)' heading; blocks VALIDATED release only). Deferred/out of M1: 17 WP-06/07/08 contracts (baselined), DDCP post-completion flow (3d), scaffold module drop (3e), frontend retarget (Phase 5), ruff --fix cleanup (separate reviewed PR).  |  2026-09-10 Phase 3 Quality-decision application (project-owner construction-baseline decision, 'follow the ebmr-edhr docs'). Stage 1 DONE: SG-145 RESOLVED (Doc 110 section 2 '(PROPOSED)' treated as editorial inside APPROVED v1.0; precision.py docstring + 18_SPEC_GAPS.md updated; no code change; customer Part 11 record at PQ). SG-035 product_version/suspend RESOLVED from Document 106 section 9 row 9 (Performed / Authorized holder role-pair / no independence / reason required); seeded in SIGNATURE_POLICY_FLOOR + conftest.py; signature-challenges endpoint accepts suspend; sync_signature_policies.py run against ebmr_new_gxp (1 created, 84 total); test_product_master/test_rules/test_recipe_master/test_release 57 passed/0 failed. Still fail-closed: vault_object/release, record_correction/complete, rule/release, product_version/reinstate. Stages 2-5 pending (SG-138 21 pairs from Doc 106 section 9 rows 80-107 + command-layer role/independence enforcement across ~11 QMS modules; SG-035 vault/rule release). Deferred and documented (project-owner-directed): SG-035 record_correction/complete (needs 2-signature ceremony), product_version/reinstate (no Doc 106 row), SG-138 training_assignment x3 (Doc 106 'per policy lookup'), SG-167 x5 (no SPEC-AI-001 rows). No requirement stage flipped to VERIFIED/VALIDATED.  |  2026-09-10 Phase 3 Quality-decision application COMPLETE (Stages 2-5, commits 6992774/40e77a7/8ef320b/61f1dbb/bf01d16). Shared enforcement helper signature_service.enforce_signer_policy() (moved from qms/signature_support.py). SG-138: all 21 open Document 106 section 9 pairs (rows 80-107) applied across CAPA/NCR/change/complaint/scar/field-action/internal-audit/audit-finding/document/risk/quality-metrics; only training_assignment x3 ('per policy lookup') remain deferred. SG-035: vault_object/release (row 2) + rule/release (row 6) applied with new signature-challenge endpoints; only record_correction/complete (2-sig ceremony not built) + product_version/reinstate (no row) remain deferred. RBAC grants added: Postmarket Regulatory Affairs -> complaint/field_action.reportability; QA Reviewer -> quality_metric.management_review; QA Releaser -> rules.release. Live ebmr_new_gxp: signature.signature_policies 83 -> 107 rows; sync_permissions +4 grants. Consolidated regression across 20 touched test files: 366 passed / 1 failed -- the 1 was 2 uncontracted Stage-5 challenge endpoints (fixed: added postRuleReleaseSignatureChallenge to spec-gxp-006.yaml + postVaultReleaseSignatureChallenge to spec-gxp-004.yaml). The order-dependent test_vault.py::test_concurrent_release_same_business_id_raises_clean_conflict PASSED in this fuller ordering (confirms it is the pre-existing TEST-FR-017/030 isolation flake, not a regression). SG-145 RESOLVED. Phase 3: engineering scope complete; every Quality/PO decision either applied or explicitly deferred-with-reason (STEP 8 criterion met). No requirement stage flipped to VERIFIED/VALIDATED."
 }

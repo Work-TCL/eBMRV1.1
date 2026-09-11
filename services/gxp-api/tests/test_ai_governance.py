@@ -3,8 +3,8 @@
 Executable evidence for the 13 Mutation Gateway functions (registration/risk assessment/model approval/
 context building/advisory execution/tool authorization/disposition/evaluation/release gate/prompt
 injection detection/provider switch/retirement/governance package), the AI-FR-003 regulated-decision
-structural refusal, the AI-FR-014 injection defense, the AI-FR-041 fail-closed fallback and the SG-168
-fail-closed signature behaviour.
+structural refusal, the AI-FR-014 injection defense, the AI-FR-041 fail-closed fallback and the 5
+SG-167 signature ceremonies (RESOLVED 2026-09-11, PHASE_3_DEFERRED_DECISIONS.md item C).
 """
 
 import uuid
@@ -15,21 +15,23 @@ from sqlalchemy import select, text
 
 from app.core.db import SessionLocal
 from app.modules.ai_governance import commands as ai
-from app.modules.ai_governance.models import AIAdvisoryLog, AIDisposition, AIUseCase
+from app.modules.ai_governance.models import AIAdvisoryLog, AIDisposition, AIModelDeployment, AIToolRegistry, AIUseCase
 from app.modules.iam.models import UserSiteRole
+from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     AIDataClassificationDeniedError,
+    AIEvaluationCriticalFailureError,
     AIModelNotApprovedError,
     AIOutputInvalidError,
     AIPromptInjectionBlockedError,
     AIToolNotAllowlistedError,
     AIUseCaseNotActiveError,
+    MissingSignatureError,
     RoleMissingError,
-    SignaturePolicyUnresolvedError,
     StaleVersionError,
     ValidationFailedError,
 )
-from tests.conftest import idem
+from tests.conftest import DEMO_PASSWORD, idem
 
 
 async def _admin(s, seeded) -> uuid.UUID:
@@ -48,6 +50,14 @@ async def _admin(s, seeded) -> uuid.UUID:
         s.add(UserSiteRole(user_id=operator.id, site_id=seeded["site_id"], role_id=seeded["roles"]["Admin"].id))
         await s.flush()
     return operator.id
+
+
+async def _grant_qa_releaser(s, seeded, user_id: uuid.UUID) -> None:
+    """SG-167, RESOLVED 2026-09-11 (PHASE_3_DEFERRED_DECISIONS.md item C): 4 of the 5 signed
+    ai_governance pairs require the `QA Releaser` role. Must be called from inside an open `s.begin()`
+    block."""
+    s.add(UserSiteRole(user_id=user_id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+    await s.flush()
 
 
 async def _register_use_case(s, seeded, *, use_case_class="OPERATOR_ADVISORY", data_classes=None):
@@ -89,9 +99,12 @@ async def _ok_client(ctx: dict) -> dict:
 
 
 async def _insert_approved_deployment(s) -> uuid.UUID:
-    """Signature is unreachable (SG-168), so tests that need an APPROVED deployment insert one directly
-    -- the same "the signed path is out of scope, insert the resulting state directly" pattern WP-11
-    used for e.g. a finalized evidence object in tests that only exercise a downstream function."""
+    """Tests that need an APPROVED deployment as setup for a *different* signed action insert one
+    directly rather than running the full approve_ai_model_deployment ceremony -- the same "the signed
+    path is out of scope here, insert the resulting state directly" pattern WP-11 used for e.g. a
+    finalized evidence object in tests that only exercise a downstream function. See
+    test_approve_model_deployment_requires_role_and_succeeds_with_a_valid_challenge for that ceremony
+    exercised directly."""
     from app.modules.ai_governance.models import AIModelDeployment
     deployment = AIModelDeployment(
         provider="anthropic", model="claude", model_version="5", deployment_type="CLOUD_API", state="APPROVED",
@@ -192,35 +205,71 @@ async def test_register_use_case_idempotent_duplicate_submission(db, seeded):
 # --------------------------------------------------------------------------------------------------
 
 
-async def test_approve_model_deployment_fails_closed_no_signature_policy(db, seeded):
-    """SG-168: Document 106 has no SPEC-AI-001 row, so this always raises
-    SignaturePolicyUnresolvedError -- the correct MUT-FR-022 fail-closed behaviour, not a bug."""
+async def test_approve_model_deployment_requires_role_and_succeeds_with_a_valid_challenge(db, seeded):
+    """SG-167, RESOLVED 2026-09-11, project-owner-directed (PHASE_3_DEFERRED_DECISIONS.md item C):
+    Document 106 v1.1 addendum row -- `Approved` / `QA Releaser` / independent / reason yes. Three-state
+    path (the same one every other newly-ratified pair in this codebase is proven with): wrong role ->
+    ROLE_MISSING, right role but no challenge -> MISSING_SIGNATURE, right role + a valid challenge ->
+    success."""
+    kwargs = dict(provider="anthropic", model="claude", model_version="5", deployment_type="CLOUD_API", reason="approve")
     async with SessionLocal() as s:
         async with s.begin():
-            actor = await _admin(s, seeded)
-            with pytest.raises(SignaturePolicyUnresolvedError):
-                await ai.approve_ai_model_deployment(
-                    s, ai.ApproveAIModelDeploymentCommand(
-                        idempotency_key=idem(), provider="anthropic", model="claude", model_version="5",
-                        deployment_type="CLOUD_API", reason="approve",
-                    ), actor,
-                )
+            actor = await _admin(s, seeded)  # Admin only, not QA Releaser
+            with pytest.raises(RoleMissingError):
+                await ai.approve_ai_model_deployment(s, ai.ApproveAIModelDeploymentCommand(idempotency_key=idem(), **kwargs), actor)
+
+        async with s.begin():
+            await _grant_qa_releaser(s, seeded, actor)
+
+        async with s.begin():
+            with pytest.raises(MissingSignatureError):
+                await ai.approve_ai_model_deployment(s, ai.ApproveAIModelDeploymentCommand(idempotency_key=idem(), **kwargs), actor)
+
+        async with s.begin():
+            challenge_cmd = ai.ApproveAIModelDeploymentCommand(idempotency_key=idem(), **kwargs)
+            challenge = await signature_service.create_challenge(
+                s, user_id=actor, record_type="ai_model_deployment", record_id=uuid.uuid4(),
+                record_version=1, record_hash=ai.content_challenge_hash(challenge_cmd), meaning="Approved",
+            )
+            await s.flush()
+            receipt = await ai.approve_ai_model_deployment(
+                s, ai.ApproveAIModelDeploymentCommand(
+                    idempotency_key=idem(), challenge_id=challenge.id, reauth_password=DEMO_PASSWORD, **kwargs,
+                ), actor,
+            )
+    async with SessionLocal() as s:
+        deployment = await s.get(AIModelDeployment, receipt.aggregate_id)
+        assert deployment.state == "APPROVED"
+        assert deployment.signature_id is not None
 
 
-async def test_switch_provider_profile_fails_closed_no_signature_policy(db, seeded):
-    """SG-168 (AI-FR-054): same fail-closed proof for switchAIProviderProfile()."""
+async def test_switch_provider_profile_requires_role_and_succeeds_with_a_valid_challenge(db, seeded):
+    """SG-167, RESOLVED 2026-09-11 (PHASE_3_DEFERRED_DECISIONS.md item C, AI-FR-054): `Approved` /
+    `QA Releaser` / independent / reason yes."""
     async with SessionLocal() as s:
         async with s.begin():
             use_case_id, actor = await _register_use_case(s, seeded)
             deployment_id = await _insert_approved_deployment(s)
+            await _grant_qa_releaser(s, seeded, actor)
+
         async with s.begin():
-            with pytest.raises(SignaturePolicyUnresolvedError):
-                await ai.switch_ai_provider_profile(
-                    s, ai.SwitchAIProviderProfileCommand(
-                        idempotency_key=idem(), use_case_id=use_case_id, to_model_deployment_id=deployment_id,
-                        reason="switch to backup provider",
-                    ), actor,
-                )
+            kwargs = dict(use_case_id=use_case_id, to_model_deployment_id=deployment_id, reason="switch to backup provider")
+            with pytest.raises(MissingSignatureError):
+                await ai.switch_ai_provider_profile(s, ai.SwitchAIProviderProfileCommand(idempotency_key=idem(), **kwargs), actor)
+
+        async with s.begin():
+            challenge_cmd = ai.SwitchAIProviderProfileCommand(idempotency_key=idem(), **kwargs)
+            challenge = await signature_service.create_challenge(
+                s, user_id=actor, record_type="ai_provider_switch", record_id=uuid.uuid4(),
+                record_version=1, record_hash=ai.content_challenge_hash(challenge_cmd), meaning="Approved",
+            )
+            await s.flush()
+            receipt = await ai.switch_ai_provider_profile(
+                s, ai.SwitchAIProviderProfileCommand(
+                    idempotency_key=idem(), challenge_id=challenge.id, reauth_password=DEMO_PASSWORD, **kwargs,
+                ), actor,
+            )
+    assert receipt.signature_id is not None
 
 
 # --------------------------------------------------------------------------------------------------
@@ -258,20 +307,37 @@ async def test_authorize_tool_call_denies_unknown_tool(db, seeded):
                 )
 
 
-async def test_authorize_tool_call_read_tool_fails_closed_on_signature(db, seeded):
-    """Even a plain READ tool call reaches the SG-168 fail-closed signature lookup once it clears the
-    allowlist check -- confirms the signature gate applies uniformly, not just to write tools."""
+async def test_authorize_tool_call_read_tool_requires_role_and_succeeds_with_a_valid_challenge(db, seeded):
+    """SG-167, RESOLVED 2026-09-11 (PHASE_3_DEFERRED_DECISIONS.md item C): `Approved` / `QA Releaser` /
+    independent / reason yes. Even a plain READ tool call reaches this signature gate once it clears the
+    allowlist check -- confirms the gate applies uniformly, not just to write tools."""
     async with SessionLocal() as s:
         async with s.begin():
             use_case_id, actor = await _register_use_case(s, seeded)
+            # A real, active, READ-class tool with no regulated scope: it clears the allowlist and the
+            # AI-FR-003 structural check, so the call reaches the SG-167 signature gate — which is what
+            # this test is about.
+            s.add(AIToolRegistry(tool_name="gxp_read_lookup", risk_class="READ", allowed_scopes=[], active=True))
+            await _grant_qa_releaser(s, seeded, actor)
+
         async with s.begin():
-            with pytest.raises(SignaturePolicyUnresolvedError):
-                await ai.authorize_ai_tool_call(
-                    s, ai.AuthorizeAIToolCallCommand(
-                        idempotency_key=idem(), use_case_id=use_case_id, tool_name="gxp_read_lookup",
-                        reason="read probe",
-                    ), actor,
-                )
+            kwargs = dict(use_case_id=use_case_id, tool_name="gxp_read_lookup", reason="read probe")
+            with pytest.raises(MissingSignatureError):
+                await ai.authorize_ai_tool_call(s, ai.AuthorizeAIToolCallCommand(idempotency_key=idem(), **kwargs), actor)
+
+        async with s.begin():
+            challenge_cmd = ai.AuthorizeAIToolCallCommand(idempotency_key=idem(), **kwargs)
+            challenge = await signature_service.create_challenge(
+                s, user_id=actor, record_type="ai_tool_call", record_id=uuid.uuid4(),
+                record_version=1, record_hash=ai.content_challenge_hash(challenge_cmd), meaning="Approved",
+            )
+            await s.flush()
+            receipt = await ai.authorize_ai_tool_call(
+                s, ai.AuthorizeAIToolCallCommand(
+                    idempotency_key=idem(), challenge_id=challenge.id, reauth_password=DEMO_PASSWORD, **kwargs,
+                ), actor,
+            )
+    assert receipt.signature_id is not None
 
 
 # --------------------------------------------------------------------------------------------------
@@ -408,8 +474,9 @@ async def test_execute_advisory_provider_outage_fails_closed_no_guessed_result(d
 
 async def test_execute_advisory_model_not_approved_rejected(db, seeded):
     """"model version change requires evaluation": a deployment that is not APPROVED cannot serve
-    advisory traffic (approve_ai_model_deployment is itself gated behind SG-168's signature until
-    Document 106 is extended -- this proves the caller-side allowlist check independently)."""
+    advisory traffic (approve_ai_model_deployment is itself gated behind a real SG-167 signature ceremony
+    -- this test inserts a SUSPENDED deployment directly to prove the caller-side allowlist check
+    independently of that ceremony)."""
     from app.modules.ai_governance.models import AIModelDeployment
     async with SessionLocal() as s:
         async with s.begin():
@@ -436,9 +503,12 @@ async def test_execute_advisory_model_not_approved_rejected(db, seeded):
 # --------------------------------------------------------------------------------------------------
 
 
-async def test_disposition_fails_closed_and_original_advisory_retained(db, seeded):
-    """"human rejects advisory but original retained": recordHumanAIDisposition is SG-168 fail-closed,
-    so it cannot commit yet -- but the underlying advisory log row is never touched by the attempt."""
+async def test_disposition_requires_signature_and_original_advisory_retained(db, seeded):
+    """"human rejects advisory but original retained": SG-167, RESOLVED 2026-09-11
+    (PHASE_3_DEFERRED_DECISIONS.md item C): `Performed`, no fixed role, independence none, reason no --
+    an unsigned attempt still cannot commit (MISSING_SIGNATURE), and the underlying advisory log row is
+    never touched by that attempt; a real challenge+password disposition then succeeds without rewriting
+    the original advisory (AI-FR-034 append-only)."""
     async with SessionLocal() as s:
         async with s.begin():
             use_case_id, actor = await _register_use_case(s, seeded)
@@ -454,7 +524,7 @@ async def test_disposition_fails_closed_and_original_advisory_retained(db, seede
             advisory_id = receipt.aggregate_id
 
         async with s.begin():
-            with pytest.raises(SignaturePolicyUnresolvedError):
+            with pytest.raises(MissingSignatureError):
                 await ai.record_human_ai_disposition(
                     s, ai.RecordHumanAIDispositionCommand(
                         idempotency_key=idem(), advisory_id=advisory_id, disposition="REJECTED",
@@ -468,7 +538,30 @@ async def test_disposition_fails_closed_and_original_advisory_retained(db, seede
         dispositions = (await s.execute(
             select(AIDisposition).where(AIDisposition.advisory_id == advisory_id)
         )).scalars().all()
-        assert dispositions == []  # the fail-closed attempt created no row
+        assert dispositions == []  # the unsigned attempt created no row
+
+    async with SessionLocal() as s:
+        async with s.begin():
+            kwargs = dict(advisory_id=advisory_id, disposition="REJECTED", reason="rejecting")
+            challenge_cmd = ai.RecordHumanAIDispositionCommand(idempotency_key=idem(), **kwargs)
+            challenge = await signature_service.create_challenge(
+                s, user_id=actor, record_type="ai_disposition", record_id=uuid.uuid4(),
+                record_version=1, record_hash=ai.content_challenge_hash(challenge_cmd), meaning="Performed",
+            )
+            await s.flush()
+            receipt = await ai.record_human_ai_disposition(
+                s, ai.RecordHumanAIDispositionCommand(
+                    idempotency_key=idem(), challenge_id=challenge.id, reauth_password=DEMO_PASSWORD, **kwargs,
+                ), actor,
+            )
+    async with SessionLocal() as s:
+        advisory = await s.get(AIAdvisoryLog, advisory_id)
+        assert advisory.output_json == {"answer": "x"}  # still untouched -- append-only
+        dispositions = (await s.execute(
+            select(AIDisposition).where(AIDisposition.advisory_id == advisory_id)
+        )).scalars().all()
+        assert len(dispositions) == 1
+        assert dispositions[0].signature_id is not None
 
 
 # --------------------------------------------------------------------------------------------------
@@ -478,8 +571,11 @@ async def test_disposition_fails_closed_and_original_advisory_retained(db, seede
 
 async def test_evaluation_critical_failure_and_release_gate_block(db, seeded):
     """"development agent cannot fabricate CI evidence": a critical dimension below threshold produces
-    a real, non-fabricated FAIL, and evaluateAIReleaseGate cannot be forced to PASS around it (SG-168
-    stops it even earlier, but the evaluation result itself is proven honest first)."""
+    a real, non-fabricated FAIL, and evaluateAIReleaseGate cannot be forced to PASS around it. SG-167,
+    RESOLVED 2026-09-11 (PHASE_3_DEFERRED_DECISIONS.md item C): `Released` / `QA Releaser` / independent
+    / reason yes -- an unsigned attempt is blocked on the signature (MISSING_SIGNATURE) before the BLOCK
+    decision is ever reached; a real challenge+password evaluation still produces BLOCK, proving the
+    critical-failure decision is honest even once the ceremony succeeds, not routed around."""
 
     async def bad_evaluator(dataset_ref, scenario_classes):
         return {"factuality": 5000, "prompt_injection_resistance": 9000}  # 50% factuality
@@ -487,6 +583,7 @@ async def test_evaluation_critical_failure_and_release_gate_block(db, seeded):
     async with SessionLocal() as s:
         async with s.begin():
             use_case_id, actor = await _register_use_case(s, seeded)
+            await _grant_qa_releaser(s, seeded, actor)
         async with s.begin():
             receipt = await ai.run_ai_evaluation_suite(
                 s, ai.RunAIEvaluationSuiteCommand(
@@ -503,13 +600,37 @@ async def test_evaluation_critical_failure_and_release_gate_block(db, seeded):
             assert "factuality" in report.critical_failures
 
         async with s.begin():
-            with pytest.raises(SignaturePolicyUnresolvedError):
+            kwargs = dict(use_case_id=use_case_id, evaluation_report_id=report.id, reason="gate")
+            with pytest.raises(MissingSignatureError):
+                await ai.evaluate_ai_release_gate(s, ai.EvaluateAIReleaseGateCommand(idempotency_key=idem(), **kwargs), actor)
+
+        async with s.begin():
+            challenge_cmd = ai.EvaluateAIReleaseGateCommand(idempotency_key=idem(), **kwargs)
+            challenge = await signature_service.create_challenge(
+                s, user_id=actor, record_type="ai_release_gate", record_id=uuid.uuid4(),
+                record_version=1, record_hash=ai.content_challenge_hash(challenge_cmd), meaning="Released",
+            )
+            await s.flush()
+            # A real defect surfaced by resolving SG-167 (fixed the same pass, see commands.py's
+            # comment on the `decision == "BLOCK"` branch): this raise used to unwind the whole
+            # transaction, silently discarding the gate row, its audit/outbox event and the signature
+            # that was just consumed. It now commits what was already written before raising, so the
+            # caller still gets AIEvaluationCriticalFailureError but nothing vanishes -- checked below in
+            # a fresh session.
+            with pytest.raises(AIEvaluationCriticalFailureError):
                 await ai.evaluate_ai_release_gate(
                     s, ai.EvaluateAIReleaseGateCommand(
-                        idempotency_key=idem(), use_case_id=use_case_id, evaluation_report_id=report.id,
-                        reason="gate",
+                        idempotency_key=idem(), challenge_id=challenge.id, reauth_password=DEMO_PASSWORD, **kwargs,
                     ), actor,
                 )
+    async with SessionLocal() as s:
+        from app.modules.ai_governance.models import AIReleaseGate
+        gates = (await s.execute(
+            select(AIReleaseGate).where(AIReleaseGate.evaluation_report_id == report.id)
+        )).scalars().all()
+        assert len(gates) == 1
+        assert gates[0].decision == "BLOCK"
+        assert gates[0].signature_id is not None
 
 
 async def test_evaluation_suite_passing_scores_not_flagged(db, seeded):

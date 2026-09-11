@@ -97,43 +97,15 @@ async def test_disposition_requires_qc_reviewer_role(client, seeded):
 
 async def test_issue_from_quarantine_lot_rejected(client, seeded):
     """MAT-013: only a released lot is eligible for issue."""
+    from tests.test_inventory_flow import _create_batch
+
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
     material_id = await _create_material(client, op_token, site_id)
     lot_id = await _receive_lot(client, op_token, material_id, site_id)
 
-    product_resp = await client.post(
-        "/products",
-        json={"idempotency_key": idem(), "site_id": str(site_id), "code": "P-MAT", "name": "P"},
-        headers=auth_headers(op_token),
-    )
-    product_id = product_resp.json()["aggregate_id"]
-    recipe_resp = await client.post(
-        "/recipes",
-        json={
-            "idempotency_key": idem(),
-            "product_id": product_id,
-            "version": 1,
-            "steps": [{"step_number": 1, "name": "Step 1", "requires_signature": False}],
-        },
-        headers=auth_headers(op_token),
-    )
-    recipe_id = recipe_resp.json()["aggregate_id"]
-    batch_resp = await client.post(
-        "/batches",
-        json={
-            "idempotency_key": idem(),
-            "site_id": str(site_id),
-            "product_id": product_id,
-            "recipe_id": recipe_id,
-            "recipe_version": 1,
-            "batch_number": "B-MAT-1",
-            "target_quantity": "10.000000",
-            "uom": "kg",
-        },
-        headers=auth_headers(op_token),
-    )
-    batch_id = batch_resp.json()["aggregate_id"]
+    # SG-173 / ADR-0013: material-issue resolves the batch from `ebmr.gxp_batch`.
+    batch_id = await _create_batch(client, op_token, site_id, "MAT1")
 
     resp = await client.post(
         f"/batches/{batch_id}/material-issues",
@@ -153,6 +125,7 @@ async def test_issue_from_quarantine_lot_rejected(client, seeded):
 async def test_full_material_genealogy_flow(client, seeded, db):
     from sqlalchemy import select
     from app.modules.material.models import MaterialIssue
+    from tests.test_inventory_flow import _create_batch
 
     op_token = await login(client, "operator1")
     qc_token = await login(client, "qc.reviewer")
@@ -162,41 +135,9 @@ async def test_full_material_genealogy_flow(client, seeded, db):
     lot_id = await _receive_lot(client, op_token, material_id, site_id, quantity="50.000000")
     await _release_lot(client, qc_token, lot_id)
 
-    product_id = (
-        await client.post(
-            "/products",
-            json={"idempotency_key": idem(), "site_id": str(site_id), "code": "P-MAT2", "name": "P2"},
-            headers=auth_headers(op_token),
-        )
-    ).json()["aggregate_id"]
-    recipe_id = (
-        await client.post(
-            "/recipes",
-            json={
-                "idempotency_key": idem(),
-                "product_id": product_id,
-                "version": 1,
-                "steps": [{"step_number": 1, "name": "Step 1", "requires_signature": False}],
-            },
-            headers=auth_headers(op_token),
-        )
-    ).json()["aggregate_id"]
-    batch_id = (
-        await client.post(
-            "/batches",
-            json={
-                "idempotency_key": idem(),
-                "site_id": str(site_id),
-                "product_id": product_id,
-                "recipe_id": recipe_id,
-                "recipe_version": 1,
-                "batch_number": "B-MAT-2",
-                "target_quantity": "10.000000",
-                "uom": "kg",
-            },
-            headers=auth_headers(op_token),
-        )
-    ).json()["aggregate_id"]
+    # SG-173 / ADR-0013: the material-issue command resolves the batch from `ebmr.gxp_batch`, so the
+    # batch must be created there (not the retired `ebmr.batches` scaffold via POST /batches).
+    batch_id = await _create_batch(client, op_token, site_id, "MAT2")
 
     resp = await client.post(
         f"/batches/{batch_id}/material-issues",
@@ -237,41 +178,10 @@ async def test_over_issue_rejected(client, seeded):
     lot_id = await _receive_lot(client, op_token, material_id, site_id, internal_lot="LOT-OVER", quantity="10.000000")
     await _release_lot(client, qc_token, lot_id)
 
-    product_id = (
-        await client.post(
-            "/products",
-            json={"idempotency_key": idem(), "site_id": str(site_id), "code": "P-OVER", "name": "P"},
-            headers=auth_headers(op_token),
-        )
-    ).json()["aggregate_id"]
-    recipe_id = (
-        await client.post(
-            "/recipes",
-            json={
-                "idempotency_key": idem(),
-                "product_id": product_id,
-                "version": 1,
-                "steps": [{"step_number": 1, "name": "Step 1", "requires_signature": False}],
-            },
-            headers=auth_headers(op_token),
-        )
-    ).json()["aggregate_id"]
-    batch_id = (
-        await client.post(
-            "/batches",
-            json={
-                "idempotency_key": idem(),
-                "site_id": str(site_id),
-                "product_id": product_id,
-                "recipe_id": recipe_id,
-                "recipe_version": 1,
-                "batch_number": "B-OVER",
-                "target_quantity": "10.000000",
-                "uom": "kg",
-            },
-            headers=auth_headers(op_token),
-        )
-    ).json()["aggregate_id"]
+    # SG-173 / ADR-0013: material-issue resolves the batch from `ebmr.gxp_batch`.
+    from tests.test_inventory_flow import _create_batch
+
+    batch_id = await _create_batch(client, op_token, site_id, "OVER")
 
     resp = await client.post(
         f"/batches/{batch_id}/material-issues",

@@ -1,0 +1,39 @@
+# Ownership per docs/generated/35_REPOSITORY_OWNERSHIP_RELEASE_MAP.md.
+# Corrected 2026-09-09 (Phase 2): paths reflect the built layout — one consolidated
+# services/gxp-api (ADR-0002/0009), Next.js frontend/ as the operator UI of record (ADR-0010),
+# no apps/ebmr_frappe / services/security / services/integration-gateway / services/ai-gateway
+# (all consolidated as app/modules/* inside services/gxp-api).
+
+# --- controlled baseline (never edited; raise a SPEC_GAP) ---
+/ebmr-edhr/specs/                              @specification-owner @head-of-quality
+/CLAUDE.md                                     @platform-architect
+/ebmr-edhr/CLAUDE.md                           @platform-architect
+/ebmr-edhr/.claude/                            @platform-architect
+/ebmr-edhr/docs/generated/                     @platform-architect @validation-lead
+/ebmr-edhr/docs/adr/                           @platform-architect
+/ebmr-edhr/status/                             @platform-architect @validation-lead
+/ebmr-edhr/traceability/                       @validation-lead @head-of-quality
+/ebmr-edhr/test-cases/                         @validation-lead @head-of-quality
+
+# --- GxP Core service (Python/FastAPI) ---
+/services/gxp-api/                             @gxp-core-lead @validation-lead
+/services/gxp-api/app/modules/signature/       @gxp-core-lead @head-of-quality
+/services/gxp-api/app/modules/audit/           @gxp-core-lead @head-of-quality
+/services/gxp-api/app/modules/vault/           @gxp-core-lead @head-of-quality
+/services/gxp-api/app/modules/iam/             @gxp-core-lead @security-officer
+/services/gxp-api/app/mutation/                @gxp-core-lead @head-of-quality
+/services/gxp-api/app/modules/security/        @security-lead @security-officer
+/services/gxp-api/app/modules/erp/             @integration-lead
+/services/gxp-api/app/modules/edge/            @edge-lead @security-officer
+/services/gxp-api/app/modules/machine_integration/  @edge-lead @security-officer
+/services/gxp-api/app/modules/ai_governance/   @ai-lead @head-of-quality @security-officer
+/services/gxp-api/app/modules/validation/      @validation-lead @head-of-quality
+/services/gxp-api/migrations/                  @gxp-core-lead @platform-architect
+
+# --- operator UI (Next.js, ADR-0010) ---
+/frontend/                                     @application-lead
+
+# --- contracts, CI, validation evidence ---
+/contracts/                                    @contract-owner @platform-architect
+/.github/                                      @platform-architect @security-lead
+/validation/                                   @validation-lead @head-of-quality

@@ -23,7 +23,7 @@ column -- same platform-level treatment as every other `security.*` table. `tena
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -49,6 +49,7 @@ class NetworkFlowDefinition(Base):
         UniqueConstraint("deployment_profile", "source_zone", "source_service", "destination_zone",
                          "destination_service", "protocol", "port", "version",
                          name="uq_network_flow_definition_identity"),
+        Index("ix_network_flow_definition_lookup", "deployment_profile", "source_zone", "destination_zone", "state"),
         {"schema": "security"},
     )
 

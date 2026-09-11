@@ -14,9 +14,10 @@ from app.modules.qms.complaint_models import (
     CONSTITUENT_CLASSIFICATIONS,
     SOURCE_CHANNELS,
     ComplaintCommunication,
-    ComplaintReportabilityAssessment,
     ComplaintRecord,
+    ComplaintReportabilityAssessment,
 )
+from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     ComplaintClosureBlockedError,
@@ -66,6 +67,16 @@ async def _resolve_signature(
     policy = await signature_service.resolve_signature_requirement(session, record_type="complaint_record", action=action)
     if not policy.signature_required:
         return None
+    # Document 106 section 9 rows 101/102: close is `Approved` by a "QA Releaser" independent of the
+    # investigator/owner; reportability is `Approved` by a "Regulatory Affairs authorized submitter"
+    # (-> the "Postmarket Regulatory Affairs" role, project-owner-directed 2026-09-10) and is human-only,
+    # not a person-independence rule (requires_independent_signer=False in the policy). ComplaintRecord
+    # carries no owner/investigator identity column, so the `close` independence check has no data source
+    # -- role is still enforced; the gap is the same one recorded for qa_review_package/complete.
+    await enforce_signer_policy(
+        session, policy=policy, actor_user_id=actor_user_id, site_id=complaint.site_id,
+        action_label=f"complaint.{action}",
+    )
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"Complaint '{action}' requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)

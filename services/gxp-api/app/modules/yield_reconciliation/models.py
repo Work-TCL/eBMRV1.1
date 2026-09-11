@@ -19,7 +19,7 @@ document:
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -51,7 +51,10 @@ class ManufacturingCalculation(Base):
     row, never an UPDATE of `result`/`state` on an existing one (AG-08)."""
 
     __tablename__ = "manufacturing_calculations"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_manufacturing_calculations_batch", "batch_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -89,7 +92,7 @@ class ManufacturingCalculation(Base):
     verified_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     verified_at: Mapped[datetime | None] = mapped_column()
     supersedes_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.manufacturing_calculations.id"))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -101,7 +104,11 @@ class ReconciliationRecord(Base):
     GxP-computed `variance` column."""
 
     __tablename__ = "reconciliation_records"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_reconciliation_records_batch", "batch_id"),
+        Index("ix_reconciliation_records_device_unit", "device_unit_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -135,5 +142,5 @@ class ReconciliationRecord(Base):
     verified_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     verified_at: Mapped[datetime | None] = mapped_column()
     supersedes_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.reconciliation_records.id"))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

@@ -21,7 +21,7 @@ label column, same posture as every WP-12 table.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -56,7 +56,11 @@ class PqScenario(Base):
     """
 
     __tablename__ = "pq_scenario"
-    __table_args__ = (UniqueConstraint("scenario_number", "version"), {"schema": SCHEMA})
+    __table_args__ = (
+        UniqueConstraint("scenario_number", "version"),
+        Index("ix_pq_scenario_state", "state"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     site_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -98,7 +102,10 @@ class PqExecution(Base):
     """
 
     __tablename__ = "pq_execution"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_pq_execution_scenario", "scenario_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     scenario_id: Mapped[uuid.UUID] = mapped_column(
@@ -145,7 +152,11 @@ class MigrationValidationPlan(Base):
     """
 
     __tablename__ = "migration_validation_plan"
-    __table_args__ = (UniqueConstraint("plan_number", "version"), {"schema": SCHEMA})
+    __table_args__ = (
+        UniqueConstraint("plan_number", "version"),
+        Index("ix_migration_plan_state", "state"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     site_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -185,7 +196,10 @@ class MigrationRun(Base):
     """
 
     __tablename__ = "migration_run"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_migration_run_plan", "plan_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     plan_id: Mapped[uuid.UUID] = mapped_column(
@@ -228,7 +242,10 @@ class MigrationReconciliation(Base):
     """
 
     __tablename__ = "migration_reconciliation"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_migration_reconciliation_run", "run_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     run_id: Mapped[uuid.UUID] = mapped_column(
@@ -274,7 +291,11 @@ class ValidationSummaryReport(Base):
     """
 
     __tablename__ = "validation_summary_report"
-    __table_args__ = (UniqueConstraint("report_number", "version"), {"schema": SCHEMA})
+    __table_args__ = (
+        UniqueConstraint("report_number", "version"),
+        Index("ix_vsr_state", "state"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     site_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -324,7 +345,11 @@ class ValidatedReleaseAuthorization(Base):
     """
 
     __tablename__ = "validated_release_authorization"
-    __table_args__ = (UniqueConstraint("authorization_number", "version"), {"schema": SCHEMA})
+    __table_args__ = (
+        UniqueConstraint("authorization_number", "version"),
+        Index("ix_release_auth_state", "state"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     vsr_id: Mapped[uuid.UUID] = mapped_column(

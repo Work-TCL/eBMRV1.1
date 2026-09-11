@@ -396,8 +396,6 @@ async def verify_evidence_integrity(
 ) -> dict:
     """Not a single-aggregate mutation: it checks a scope and flips any broken object to MISSING (one
     audit + outbox per flipped object). Returns an IntegrityReport."""
-    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
-
     stmt = select(EvidenceObject).where(EvidenceObject.state.in_(("FINALIZED", "ARCHIVED")))
     if cmd.evidence_ids:
         stmt = stmt.where(EvidenceObject.id.in_(cmd.evidence_ids))

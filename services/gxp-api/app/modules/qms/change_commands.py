@@ -24,6 +24,7 @@ from app.modules.qms.change_models import (
     ChangeControl,
     ChangeTask,
 )
+from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     ChangeImpactIncompleteError,
@@ -74,6 +75,14 @@ async def _resolve_signature(
     policy = await signature_service.resolve_signature_requirement(session, record_type="change_control", action=action)
     if not policy.signature_required:
         return None
+    # Document 106 section 9 rows 86/87/88: approve is by a "Module approver role (QA Manager / Head of
+    # Quality)" -> QA Releaser, independent of the author; close is by a "QA Releaser" independent of the
+    # investigator/owner; verify is by a qualified independent verifier who "MUST NOT be the performer"
+    # (no dedicated role). ChangeControl carries owner_subject_id as its single identity column.
+    await enforce_signer_policy(
+        session, policy=policy, actor_user_id=actor_user_id, site_id=change.site_id,
+        action_label=f"change_control.{action}", disqualified_subject_ids=(change.owner_subject_id,),
+    )
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"Change control '{action}' requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)

@@ -23,7 +23,11 @@ import uuid
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.signature.service import create_challenge, resolve_signature_requirement
+from app.modules.signature.service import (
+    create_challenge,
+    enforce_signer_policy,  # noqa: F401 -- re-exported: the 12 QMS command modules import it from here
+    resolve_signature_requirement,
+)
 from app.mutation.errors import ValidationFailedError
 from app.mutation.hashing import sha256_hex
 

@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.policy.service import evaluate_policy
 from app.modules.security import privileged_access_commands as commands
 from app.modules.security.privileged_access_models import PrivilegedAccessRequest, PrivilegedSession
-from app.modules.policy.service import evaluate_policy
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 

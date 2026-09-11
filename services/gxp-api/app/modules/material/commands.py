@@ -9,7 +9,6 @@ from app.core.referential import find_blocking_reference
 from app.core.security import verify_password
 from app.modules.batch_execution.models import Batch, BatchStep
 from app.modules.iam.models import Qualification, User
-from app.modules.policy.service import evaluate_policy
 from app.modules.material.models import (
     PRE_DISPOSITION_LOT_STATES,
     DestructionRecord,
@@ -35,6 +34,7 @@ from app.modules.material.models import (
     WeighingReading,
     WeighingSession,
 )
+from app.modules.policy.service import evaluate_policy
 from app.modules.qc import commands as qc_commands
 from app.modules.qms import commands as qms_commands
 from app.modules.rules import commands as rules_commands
@@ -44,21 +44,16 @@ from app.modules.supplier_quality.models import Supplier
 from app.modules.vault import service as vault_service
 from app.mutation.errors import (
     AdjustmentApprovalRequiredError,
-    BalanceIneligibleError,
     BatchMismatchError,
     ContainerIneligibleError,
     DestructionNotAuthorizedError,
     InvalidTransitionError,
     LotIneligibleError,
-    ManualFallbackNotAllowedError,
     MissingSignatureError,
     NotFoundError,
     QualificationExpiredError,
     QualificationMissingError,
     QuantityExceedsAvailableError,
-    ReadingUnstableError,
-    ReconciliationFailedError,
-    RoleMissingError,
     SourceQuantityInsufficientError,
     StaleVersionError,
     UomUnknownError,

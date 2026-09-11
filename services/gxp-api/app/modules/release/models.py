@@ -25,9 +25,8 @@ action in this codebase. RELEASE_STATES below is the honestly-reachable subset.
 
 import uuid
 from datetime import datetime
-from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String
+from sqlalchemy import BigInteger, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -56,7 +55,10 @@ DECISION_CODES = ("RELEASED", "REJECTED", "HOLD")
 
 class ReleaseScope(Base):
     __tablename__ = "release_scope"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        UniqueConstraint("scope_type", "scope_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -65,7 +67,7 @@ class ReleaseScope(Base):
     product_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_product_version.id"), nullable=False)
     batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="draft_evaluation")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     # No FK constraint: avoids a circular dependency with release_evaluation.release_scope_id, which
     # already enforces the real relationship from the other side. A plain pointer/cache column, same
     # latitude as other logical-reference columns elsewhere in this codebase (e.g. recipe_master's
@@ -82,9 +84,9 @@ class ReleaseEvaluation(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     release_scope_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.release_scope.id"), nullable=False)
-    scope_version: Mapped[int] = mapped_column(nullable=False)
+    scope_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     rule_set_version: Mapped[str | None] = mapped_column(String(40))
-    evaluated_batch_version: Mapped[int] = mapped_column(nullable=False)
+    evaluated_batch_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     blockers: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     warnings: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     eligible: Mapped[bool] = mapped_column(nullable=False)

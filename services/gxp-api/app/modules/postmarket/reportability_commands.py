@@ -16,7 +16,7 @@ docs/generated/18_SPEC_GAPS.md SG-159.
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

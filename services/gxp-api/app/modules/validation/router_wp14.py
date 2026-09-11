@@ -17,16 +17,20 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy
 from app.modules.signature.service import create_challenge
 from app.modules.validation import commands_migration, commands_pq, commands_vsr
-from app.modules.validation.models_wp14 import MigrationRun, PqScenario, ValidatedReleaseAuthorization, ValidationSummaryReport
+from app.modules.validation.models_wp14 import (
+    MigrationRun,
+    PqScenario,
+    ValidatedReleaseAuthorization,
+    ValidationSummaryReport,
+)
 from app.modules.validation.signature_support import SignatureChallengeRequest, create_validation_signature_challenge
 from app.mutation.errors import NotFoundError
 from app.mutation.hashing import sha256_hex

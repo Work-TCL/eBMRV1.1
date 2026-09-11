@@ -41,7 +41,7 @@ shape as SG-163's session-timeout gap).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -94,7 +94,11 @@ class OutboundDestination(Base):
     request (APPSEC-FR-011)."""
 
     __tablename__ = "outbound_destination"
-    __table_args__ = (UniqueConstraint("service_id"), {"schema": "security"})
+    __table_args__ = (
+        UniqueConstraint("service_id"),
+        Index("ix_outbound_destination_state", "state"),
+        {"schema": "security"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     service_id: Mapped[str] = mapped_column(String(120), nullable=False)

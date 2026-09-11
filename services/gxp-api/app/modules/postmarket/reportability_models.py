@@ -26,7 +26,7 @@ supplied). Both fail closed with SIGNATURE_POLICY_UNRESOLVED until Document 106 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -71,7 +71,11 @@ E2B_STANDARD_VERSIONS = ("R2", "R3")
 
 class ReportabilityTrack(Base):
     __tablename__ = "reportability_track"
-    __table_args__ = {"schema": "postmarket"}
+    __table_args__ = (
+        Index("ix_reportability_track_case", "safety_case_id"),
+        Index("ix_reportability_track_state_due", "site_id", "state", "due_at"),
+        {"schema": "postmarket"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -95,18 +99,22 @@ class ReportabilityTrack(Base):
     rule_version: Mapped[str | None] = mapped_column(String(40))
     parent_track_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("postmarket.reportability_track.id"))
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="OPEN")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class RegulatoryReport(Base):
     __tablename__ = "regulatory_report"
-    __table_args__ = (UniqueConstraint("reportability_track_id", "report_version"), {"schema": "postmarket"})
+    __table_args__ = (
+        UniqueConstraint("reportability_track_id", "report_version"),
+        Index("ix_regulatory_report_state", "site_id", "state"),
+        {"schema": "postmarket"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
     reportability_track_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("postmarket.reportability_track.id"), nullable=False)
-    report_version: Mapped[int] = mapped_column(nullable=False)
+    report_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     schema_code: Mapped[str] = mapped_column(String(60), nullable=False)
     schema_version: Mapped[str] = mapped_column(String(40), nullable=False)
     content: Mapped[dict] = mapped_column(JSONB, nullable=False)
@@ -124,7 +132,11 @@ class RegulatoryReport(Base):
 
 class RegulatorySubmissionAttempt(Base):
     __tablename__ = "regulatory_submission_attempt"
-    __table_args__ = (UniqueConstraint("regulatory_report_id", "attempt_no"), {"schema": "postmarket"})
+    __table_args__ = (
+        UniqueConstraint("regulatory_report_id", "attempt_no"),
+        Index("ix_submission_attempt_result", "site_id", "attempted_at"),
+        {"schema": "postmarket"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -147,7 +159,10 @@ class RegulatorySubmissionAck(Base):
     """Append-only -- REG-FR-019: transport success alone never sets AGENCY_ACCEPTANCE."""
 
     __tablename__ = "regulatory_submission_ack"
-    __table_args__ = {"schema": "postmarket"}
+    __table_args__ = (
+        Index("ix_submission_ack_attempt", "submission_attempt_id", "ack_level"),
+        {"schema": "postmarket"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     submission_attempt_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("postmarket.regulatory_submission_attempt.id"), nullable=False)

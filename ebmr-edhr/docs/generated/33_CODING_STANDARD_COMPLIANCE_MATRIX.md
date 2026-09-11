@@ -10,6 +10,15 @@
 unchanged and out of ADR-0007's scope; Edge tooling rows should be reconciled separately if/when Edge
 enforcement tooling is added to this matrix.
 
+**Implementation (Phase 2, 2026-09-09):** the `ci:lint` / `ci:typecheck` jobs named below are now real:
+`.github/workflows/ci.yml` job `lint` runs `ruff check` (config: `services/gxp-api/pyproject.toml`
+`[tool.ruff]`, FastAPI-aware) and `mypy` (`[tool.mypy]`). **`ruff check --select F` (pyflakes — real
+bugs) is blocking today;** the full rule set and `mypy --strict` are report-only and ratcheting down
+from the pre-existing baseline (app/: ~534 ruff findings, ~95 F-codes mostly unused-import; see
+`PHASE_2_BACKBONE.md`). The Decimal / UOM / naming / guardrail rows still rely on `mypy` + review +
+targeted tests; a dedicated `float`-in-regulated-code lint rule and a `tooling/guardrails/` custom
+check set remain open Phase 2 items.
+
 ---
 
 | coding_requirement_id | Requirement | language/component | enforcement_tool | static_rule | runtime_rule | exception_process | test | CI_job | owner |

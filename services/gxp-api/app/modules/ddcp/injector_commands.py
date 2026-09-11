@@ -24,19 +24,14 @@ run), `ddcp_unit_binding` (INJ-FR-008/009, drug-container-to-injector-unit bindi
 
 import uuid
 from datetime import datetime, timezone
-from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.batch_execution.models import Batch
-from app.modules.ddcp import commands as ddcp_commands
 from app.modules.ddcp.commands import (
     _assert_product_version_for_profile,
-    _load_profile_for_update,
-    _profile_hash,
     _receipt_from_existing,
-    _resolve_signature,
     _write_receipt,
 )
 from app.modules.ddcp.models import (
@@ -70,7 +65,6 @@ from app.mutation.errors import (
 from app.mutation.gateway import check_idempotency
 from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import CommandEnvelope, MutationReceipt
-
 
 # ---------------------------------------------------------------------------------------------------
 # DdcpProfileVersion — INJ-FR-001/002/003/028/029. createInjectorProfileVersion().

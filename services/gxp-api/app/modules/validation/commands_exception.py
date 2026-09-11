@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.validation.models import VEX_DISPOSITIONS, VEX_TYPES, ValidationException
 from app.modules.validation.shared import finalize, receipt_from_existing, resolve_signature, verify_reauth_and_consume
-from app.mutation.errors import InvalidTransitionError, NotFoundError, StaleVersionError, ValidationFailedError
+from app.mutation.errors import NotFoundError, StaleVersionError, ValidationFailedError
 from app.mutation.gateway import check_idempotency
 from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import CommandEnvelope, MutationReceipt

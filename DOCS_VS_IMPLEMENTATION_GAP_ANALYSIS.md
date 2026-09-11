@@ -157,7 +157,71 @@ To run the backend suite you need the two Postgres roles (`ebmr_new_gxp_app`, `e
 
 ---
 
-## 9. Appendix — how to regenerate this view
+## 10. Development roadmap (phased)
+
+The organising principle: decisions first, backbone second, then features, then validation. Effort notes
+are rough order-of-magnitude for a small team.
+
+### Phase 0 — Decisions only the project owner can make — ✅ DONE 2026-09-09
+
+Recorded in `PHASE_0_DECISIONS.md` + `ebmr-edhr/docs/adr/ADR-0010..0013`:
+- **Store authority (SG-173):** retire the `product`/`recipe`/`batch` scaffolds; `_master`/`_execution` are authoritative; cut over now (ADR-0013).
+- **UI of record:** the Next.js `frontend/` (supersedes ADR-0008); Document 71 → SPEC_GAP SG-182 (ADR-0010).
+- **NATS + Temporal:** build both in WP-11, contract-first; stand-ins are interim (ADR-0011, SG-183).
+- **First release scope:** narrow core-eBMR — WP-01/02/03/04 + WP-10 baseline (ADR-0012).
+- Still owed by the customer Quality/Regulatory org: the `class R` signature/precision/numeric-baseline sign-offs listed in `PHASE_0_DECISIONS.md` §3 (not build-blocking; feed WP-12 execution).
+
+### Phase 1 — Make the truth legible (1–2 weeks, 1 dev)
+
+Reconcile `build-status.json` + `TRACEABILITY_MASTER.csv` with the WP-10/11/12/13/14 code that already
+exists. Stand up the test DB + `GXP_TEST_DB_*` creds, run all 1 159 backend tests, record real pass/fail.
+Triage the 2 269 BLOCKED test cases: which unblock from pure seeding/wiring vs. real missing features.
+
+### Phase 2 — Engineering backbone (WP-00, 2–4 weeks)
+
+CI pipeline (ruff + mypy strict, pytest, contract-conformance gate, migration forward+rollback test, SBOM
+generation, licence gate); SBOM + licence register (Doc 104) with Doc 104 justifications for `reportlab`
+and any NATS/Temporal/SOAP/SFTP client; coding-standard enforcement matrix (Doc 97 / `33_`) on Python
+tooling; branch protection (Doc 99).
+
+### Phase 3 — Close the blocking gaps (4–8 weeks, parallelizable)
+
+- **ADR-0013 store cutover** — Phase 0 `delete_site()` guard fix → FK repoint (ddcp/material/machine_integration/equipment) → DDCP disposition-path behavioural cutover → frontend → contract/drop. Unblocks WP-02 + the SG-013 event half.
+- **SG-013** — commit remaining OpenAPI + AsyncAPI contracts (WP-01/02/07/08 ops + all event types); add `expected_version` to every aggregate mutation (SG-014); conformance gate in CI.
+- **Signature policy** — seed the full Document 106 floor via `sync_signature_policies.py` (SG-138 remainder, SG-035 remainder, SG-167, postmarket/security/validation signers); add `signature-challenges` endpoints where missing; enforce required-role + independence per command; enforce `reason_required` centrally (SG-091).
+- **SG-143** — rules evaluator applies frozen unit/precision/rounding policy + golden vectors (needs the SG-145 ratification from Phase 0 §3).
+- **SG-142** (audit `action` enum/registry), **SG-140** (unified error envelope + `correlation_id`), **SG-144** (`additionalProperties:false`).
+
+### Phase 4 — Functional feature gaps (8–16 weeks, by domain)
+
+WP-02: recipe material/equipment requirements (SG-045), step evidence links, batch↔DDCP step sync (SG-180).
+WP-03: `qa_review_item`/`comment`, impact-assessment/export entities + event producers, packaging
+reconciliation entities. WP-04: **material-specification-version entity (SG-057)**, QC method master,
+OOS/OOT lifecycle, UOM conversion engine. WP-05: cross-module wiring, notification/escalation worker,
+computed metrics. WP-06 edge: SPEC-EDGE-002/003/004. WP-07 ERP: SG-121–126 + adapter dependency
+approvals. WP-09: signal-rule formula, eMDR/E2B mapping, holiday calendar. WP-11: NATS then Temporal
+(ADR-0011), numeric baselines, DR runbooks + restore tests. WP-13 AI: eval sets, adversarial tests.
+
+### Phase 5 — Frontend build-out (parallel with Phase 4)
+
+New UIs for edge/OT, machine integration, DR/backup ops, SRE dashboards, data-ops, workflow, contract
+registry. Complete the DDCP execution screens (`handoff-decide`, `fill-sub-actions`, `assembly-verify`).
+Depth on genealogy / yield / packaging. RBAC hardening + UX audit; `SignedForm` dedup; `userSelect`
+retrofit; evidence legal-hold. Add the UI test layer (component + e2e) per ADR-0010.
+
+### Phase 6 — Validation execution (WP-12 / WP-14, ongoing → final)
+
+Per module: traceability complete → OQ scripts executed → evidence captured → human `REVIEWED` →
+`QUALIFIED`. Then data-migration validation (Doc 87), performance/load qualification (Doc 93),
+backup/PITR qualification (Doc 91), security qualification / pen test (Doc 92), validation summary +
+go-live authorization (Doc 95). Target the **M1 scope first** (ADR-0012).
+
+**Realistic effort:** full scope is roughly a year of a small team. The fastest route to a *releasable*
+artifact is Phases 1–3 + 6 against the M1 core scope only, not the whole 103-module surface at once.
+
+---
+
+## 11. Appendix — how to regenerate this view
 
 ```bash
 # module + requirement rollup

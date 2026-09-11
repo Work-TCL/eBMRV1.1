@@ -112,41 +112,49 @@ async def _put_away(client, token, lot_id, container_id, to_location_id, quantit
 
 
 async def _create_batch(client, token, site_id, code):
-    product_id = (
-        await client.post(
-            "/products",
-            json={"idempotency_key": idem(), "site_id": str(site_id), "code": code, "name": code},
-            headers=auth_headers(token),
-        )
-    ).json()["aggregate_id"]
-    recipe_id = (
-        await client.post(
-            "/recipes",
-            json={
-                "idempotency_key": idem(),
-                "product_id": product_id,
-                "version": 1,
-                "steps": [{"step_number": 1, "name": "Step 1", "requires_signature": False}],
-            },
-            headers=auth_headers(token),
-        )
-    ).json()["aggregate_id"]
-    return (
-        await client.post(
-            "/batches",
-            json={
-                "idempotency_key": idem(),
-                "site_id": str(site_id),
-                "product_id": product_id,
-                "recipe_id": recipe_id,
-                "recipe_version": 1,
-                "batch_number": f"B-{code}",
-                "target_quantity": "10.000000",
-                "uom": "kg",
-            },
-            headers=auth_headers(token),
-        )
-    ).json()["aggregate_id"]
+    """SG-173 / ADR-0013: the material / inventory / dispensing command layer reads batches from
+    `ebmr.gxp_batch` (app.modules.batch_execution), and every `materials.*` table's `batch_id` FK now
+    targets it (migration 0090). Build a minimal released Product Master / Recipe Master pair and the
+    gxp_batch row directly — the material commands only read `batch.id` / `batch.site_id`.
+    """
+    import uuid as _uuid
+    from decimal import Decimal as _Decimal
+
+    from app.core.db import SessionLocal
+    from app.modules.batch_execution.models import Batch as _GxpBatch
+    from app.modules.product_master.models import ProductVersion as _ProductVersion
+    from app.modules.recipe_master.models import RecipeFamily as _RecipeFamily, RecipeVersion as _RecipeVersion
+
+    site_uuid = site_id if isinstance(site_id, _uuid.UUID) else _uuid.UUID(str(site_id))
+    tag = f"{code}-{_uuid.uuid4().hex[:8]}"
+    async with SessionLocal() as s:
+        async with s.begin():
+            pv = _ProductVersion(
+                product_business_id=f"PB-{tag}", version_no=1, product_code=f"PC-{tag}", name=code,
+                manufacturing_profile_code="pharma", lifecycle_state="released", site_id=site_uuid,
+            )
+            s.add(pv)
+            await s.flush()
+            rf = _RecipeFamily(
+                product_business_id=pv.product_business_id, recipe_code=f"RC-{tag}", site_id=site_uuid,
+                manufacturing_profile_code="pharma",
+            )
+            s.add(rf)
+            await s.flush()
+            rv = _RecipeVersion(
+                recipe_family_id=rf.id, version_no=1, product_version_id=pv.id, site_id=site_uuid,
+                lifecycle_state="released",
+            )
+            s.add(rv)
+            await s.flush()
+            batch = _GxpBatch(
+                site_id=site_uuid, batch_number=f"B-{tag}", product_version_id=pv.id,
+                recipe_version_id=rv.id, target_qty=_Decimal("10"), target_uom="kg",
+                state="in_execution", version=1,
+            )
+            s.add(batch)
+            await s.flush()
+            return str(batch.id)
 
 
 # --- INV-FR-008 put-away / transfer -----------------------------------------------------------------

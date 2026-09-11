@@ -23,7 +23,7 @@ it is out of scope for this pass (same posture as every other module carrying SG
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -74,7 +74,10 @@ class ValidationDeliverableRequirement(Base):
     blocks release (VAL-FR-020/024)."""
 
     __tablename__ = "validation_deliverable_requirement"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_val_deliverable_plan_id", "plan_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     plan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -154,7 +157,10 @@ class FunctionRiskAssessment(Base):
     `commands_risk.py::_derive_risk_category`), not a free-text opinion field."""
 
     __tablename__ = "function_risk_assessment"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_function_risk_function_ref", "function_ref"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     function_ref: Mapped[str] = mapped_column(String(160), nullable=False)
@@ -217,7 +223,10 @@ class TraceLink(Base):
     validation_exception, ...) since links cross multiple owning tables."""
 
     __tablename__ = "trace_link"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_trace_link_source", "source_type", "source_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     source_type: Mapped[str] = mapped_column(String(60), nullable=False)
@@ -292,7 +301,10 @@ class ValidationTestExecution(Base):
     A failure is never overwritten (TST-FR-013): a retest is a new row, never an edit of this one."""
 
     __tablename__ = "validation_test_execution"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_val_test_exec_def_id", "test_definition_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     test_definition_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -348,7 +360,10 @@ class IqExecution(Base):
     the evidence manifest."""
 
     __tablename__ = "iq_execution"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_iq_execution_protocol_id", "protocol_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     protocol_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -399,7 +414,10 @@ class OqExecution(Base):
     OQ-FR-016), deviations and approval."""
 
     __tablename__ = "oq_execution"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_oq_execution_suite_id", "suite_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     suite_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -450,7 +468,10 @@ class InfrastructureFingerprint(Base):
     compared against its profile's `required_components` to detect drift (INFQ-FR-018)."""
 
     __tablename__ = "infrastructure_fingerprint"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_infra_fingerprint_profile_id", "profile_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     profile_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -502,7 +523,10 @@ class Part11ControlEvidence(Base):
     deviation raised. The control matrix (P11-FR-026) is this table filtered by scope assessment."""
 
     __tablename__ = "part11_control_evidence"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_part11_evidence_assessment_id", "scope_assessment_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     scope_assessment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -552,7 +576,10 @@ class TamperTestExecution(Base):
     a passing result -- see `commands_integrity.py`."""
 
     __tablename__ = "tamper_test_execution"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_tamper_test_profile_id", "profile_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     profile_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -603,7 +630,10 @@ class InterfaceTestExecution(Base):
     GxP-side effect and any external reconciliation performed (IFV-FR-021)."""
 
     __tablename__ = "interface_test_execution"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_iface_test_profile_id", "profile_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     profile_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -657,7 +687,10 @@ class DrQualificationExecution(Base):
     deviations if the achieved objective misses the scenario's target."""
 
     __tablename__ = "dr_qualification_execution"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_dr_exec_scenario_id", "scenario_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     scenario_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -713,7 +746,10 @@ class SecurityQualificationFinding(Base):
     `commands_security.py::evaluate_security_gate`)."""
 
     __tablename__ = "security_qualification_finding"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_sec_finding_suite_id", "suite_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     suite_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -765,7 +801,10 @@ class PerformanceRun(Base):
     headroom/bottleneck evaluation against the scenario's thresholds."""
 
     __tablename__ = "performance_run"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_perf_run_scenario_id", "scenario_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     scenario_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -802,7 +841,10 @@ class ValidationException(Base):
     never by mutating this snapshot."""
 
     __tablename__ = "validation_exception"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_val_exception_release_ref", "release_ref"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     release_ref: Mapped[str | None] = mapped_column(String(80))  # VEX-FR-016/022: release-blocker scope
@@ -901,7 +943,10 @@ class PeriodicValidationReview(Base):
     audit trends), findings, follow-up actions and the explicit decision (VSM-FR-021)."""
 
     __tablename__ = "periodic_validation_review"
-    __table_args__ = ({"schema": SCHEMA},)
+    __table_args__ = (
+        Index("ix_periodic_review_release_ref", "release_ref"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = _pk()
     release_ref: Mapped[str] = mapped_column(String(80), nullable=False)

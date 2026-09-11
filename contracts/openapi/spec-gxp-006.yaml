@@ -228,6 +228,40 @@ paths:
         '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
         '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
 
+  /rules/v1/{rule_object_id}/signature-challenges:
+    parameters:
+      - name: rule_object_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postRuleReleaseSignatureChallenge
+      tags: [rules]
+      summary: Create the Part 11 signature challenge for `rule/release` (Document 106 §9 row 6)
+      description: >
+        SG-035 (2026-09-10). Binds the challenge to the rule's canonical
+        (rule_id, semantic_version, expression_ast) hash at version 1 — the same hash `release_rule()`
+        re-computes at consume time. `action` selects the Document 106 signature meaning (`Released`).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012, RUL-FR-002]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RuleReleaseSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the rule does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not a signed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
   /rules/v1/{rule_id}/versions:
     parameters:
       - name: rule_id
@@ -468,11 +502,47 @@ paths:
         '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
         '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
 
+  /rules/v1:
+    get:
+      operationId: getReleasedRules
+      tags: [rules]
+      summary: Released-rule picker data (one row per rule with an effective released version)
+      description: >
+        SG-081 read-side picker/list endpoint — added to the router after this contract's first version;
+        contracted here to close the CTRC-FR-001 gap. Response schema, not a closed payload.
+      x-requirement-ids: [RUL-FR-001, CTR-FR-012]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { type: array, items: { type: object, description: "One row." } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
 
   schemas:
+    RuleReleaseSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Body of the rule signature-challenge endpoint (SG-035).
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [release], default: release }
+
+    SignatureChallengeResponse:
+      type: object
+      description: The challenge receipt returned by a signature-challenge endpoint (response schema, not closed).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
     RuleStatus:
       type: string
       description: >

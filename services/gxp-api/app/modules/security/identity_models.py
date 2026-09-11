@@ -35,7 +35,7 @@ deployment" fallback) is wired to `createApplicationSession()` for real, and `/a
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -87,13 +87,16 @@ class IdentityProviderConfig(Base):
     effective_to: Mapped[datetime | None] = mapped_column()
     # mapExternalIdentity() append-only history -- see module docstring.
     identity_mappings: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class ApplicationSession(Base):
     __tablename__ = "application_session"
-    __table_args__ = {"schema": "security"}
+    __table_args__ = (
+        Index("ix_application_session_subject_state", "subject_id", "state"),
+        {"schema": "security"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
@@ -105,7 +108,7 @@ class ApplicationSession(Base):
     idle_expires_at: Mapped[datetime] = mapped_column(nullable=False)
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
     revoked_reason: Mapped[str | None] = mapped_column(Text)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 
 class SecurityServiceIdentity(Base):
@@ -126,5 +129,5 @@ class SecurityServiceIdentity(Base):
     # IAMSEC-FR-016: a reference only (e.g. a secrets-manager path) -- never the secret itself.
     credential_ref: Mapped[str] = mapped_column(String(300), nullable=False)
     lifecycle_status: Mapped[str] = mapped_column(String(20), nullable=False, default="PROVISIONED")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

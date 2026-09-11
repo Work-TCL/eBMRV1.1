@@ -101,6 +101,766 @@ paths:
         '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
 
+  /validation/v1/master-plans/{plan_id}/signature-challenges:
+    parameters:
+      - { name: plan_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationMasterPlansSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/function-risks/{assessment_id}/signature-challenges:
+    parameters:
+      - { name: assessment_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationFunctionRisksSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/tests/{test_id}/signature-challenges:
+    parameters:
+      - { name: test_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationTestsSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/executions/{execution_id}/signature-challenges:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationExecutionsSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/iq/executions/{execution_id}/signature-challenges:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationIqExecutionsSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/oq/{execution_id}/signature-challenges:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationOqSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/infrastructure/{fingerprint_id}/signature-challenges:
+    parameters:
+      - { name: fingerprint_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationInfrastructureSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/part11/{assessment_id}/signature-challenges:
+    parameters:
+      - { name: assessment_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationPart11SignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/data-integrity/{profile_id}/signature-challenges:
+    parameters:
+      - { name: profile_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationDataIntegritySignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/interfaces/{profile_id}/signature-challenges:
+    parameters:
+      - { name: profile_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationInterfacesSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/dr/{execution_id}/signature-challenges:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationDrSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/security/{suite_id}/signature-challenges:
+    parameters:
+      - { name: suite_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationSecuritySignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/performance/{run_id}/signature-challenges:
+    parameters:
+      - { name: run_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationPerformanceSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/pq/{scenario_id}/signature-challenges:
+    parameters:
+      - { name: scenario_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationPqSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/migrations/{run_id}/signature-challenges:
+    parameters:
+      - { name: run_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationMigrationsSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/summary-reports/{report_id}/signature-challenges:
+    parameters:
+      - { name: report_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationSummaryReportsSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/releases/{authorization_id}/deployment-check/signature-challenges:
+    parameters:
+      - { name: authorization_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationReleasesDeploymentCheckSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/exceptions/{exception_id}/signature-challenges:
+    parameters:
+      - { name: exception_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationExceptionsSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/periodic-reviews/{review_id}/signature-challenges:
+    parameters:
+      - { name: review_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationPeriodicReviewsSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Binds the challenge to the record id + current version + hash (SIG-FR-012/013/014). `action` selects the Document 106 meaning.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/performance/scenarios/signature-challenges:
+    post:
+      operationId: postValidationPerformanceScenariosSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Signed-CREATE (SG-172 pattern). Returns `new_record_id`, which the follow-up create command must echo back.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeWithNewRecordResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/performance/runs/signature-challenges:
+    post:
+      operationId: postValidationPerformanceRunsSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Signed-CREATE (SG-172 pattern). Returns `new_record_id`, which the follow-up create command must echo back.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeWithNewRecordResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/exceptions/signature-challenges:
+    post:
+      operationId: postValidationExceptionCreateSignatureChallenge
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Signed-CREATE (SG-172 pattern). Returns `new_record_id`, which the follow-up create command must echo back.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeWithNewRecordResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/periodic-reviews/signature-challenges:
+    post:
+      operationId: postValidationPeriodicReviewCreateSignatureChallenge
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Signed-CREATE (SG-172 pattern). Returns `new_record_id`, which the follow-up create command must echo back.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeWithNewRecordResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /validation/v1/releases/{vsr_id}/authorize/signature-challenges:
+    parameters:
+      - { name: vsr_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postValidationReleasesAuthorizeSignatureChallenges
+      tags: [validation]
+      summary: Signature challenge for a WP-12/WP-14 validation-platform signed action
+      description: >
+        Content-hash-bound signed-CREATE (Document 106 row 166). The body must carry the exact field values later submitted to the `authorize` command — any difference invalidates the challenge.
+        The signature POLICY itself is unresolved until Head of Quality + Regulatory Affairs supply
+        Document 106 rows (SG-172) — until then the follow-up signed command returns
+        `SIGNATURE_POLICY_UNRESOLVED`, which is the correct evidenced behaviour.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueReleaseAuthorizationChallengeBody' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the referenced record does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not an allowed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -173,3 +933,42 @@ components:
         scope: { type: string }
         methodology: { type: string }
         gate: { $ref: '#/components/schemas/ReleaseGateView' }
+
+    SignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Body of a validation-platform signature-challenge endpoint.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, description: One of the record's allowed signed actions (e.g. release / approve / create / deployment_check). }
+
+    IssueReleaseAuthorizationChallengeBody:
+      type: object
+      description: >
+        The exact field set later submitted to `POST /releases/{vsr_id}/authorize`; the challenge hash
+        is computed over it, so any later difference invalidates the challenge. Shape mirrors
+        `IssueValidatedReleaseAuthorizationCommand` (minus `idempotency_key`); not closed here because
+        that command's field set evolves with the validation-platform build.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010]
+
+    SignatureChallengeResponse:
+      type: object
+      description: The challenge receipt (response schema, not closed).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    SignatureChallengeWithNewRecordResponse:
+      type: object
+      description: Signed-CREATE challenge receipt — carries the pre-generated record id.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at, new_record_id]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+        new_record_id: { type: string, format: uuid }

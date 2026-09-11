@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.modules.batch.models import Batch
+from app.modules.batch_execution.models import Batch
 from app.modules.ddcp import commands as ddcp_commands
 from app.modules.ddcp import injector_commands
 from app.modules.ddcp.models import (
@@ -24,10 +24,9 @@ from app.modules.ddcp.models import (
     ReusableDevicePairing,
 )
 from app.modules.material.models import Material, MaterialLot
-from app.modules.product.models import Product
 from app.modules.product_master.models import ProductVersion
 from app.modules.qms import change_commands
-from app.modules.recipe.models import Recipe
+from app.modules.recipe_master.models import RecipeFamily, RecipeVersion
 from app.modules.rules import commands as rules_commands
 from app.modules.signature.models import SignaturePolicy
 from app.mutation.errors import (
@@ -68,16 +67,32 @@ async def _release_dose_rule(db, actor_id):
 
 
 async def _create_batch(db, seeded, *, batch_number: str) -> Batch:
+    # SG-173 / ADR-0013: the DDCP command layer reads batches from `ebmr.gxp_batch`
+    # (app.modules.batch_execution), not the retired scaffold `ebmr.batches`. Build a minimal released
+    # Product Master / Recipe Master pair and the gxp_batch row directly (the commands only read
+    # batch.id / batch.site_id / batch.state).
     site_id = seeded["site_id"]
-    product = Product(site_id=site_id, code=f"PROD-{batch_number}", name="Test Injector Product", status="active", version=1)
-    db.add(product)
+    pv = ProductVersion(
+        product_business_id=f"PB-{batch_number}", version_no=1, product_code=f"PROD-{batch_number}",
+        name="Test Injector Product", manufacturing_profile_code="pharma", lifecycle_state="released", site_id=site_id,
+    )
+    db.add(pv)
     await db.flush()
-    recipe = Recipe(product_id=product.id, version=1, status="active")
-    db.add(recipe)
+    rf = RecipeFamily(
+        product_business_id=pv.product_business_id, recipe_code=f"RCP-{batch_number}", site_id=site_id,
+        manufacturing_profile_code="pharma",
+    )
+    db.add(rf)
+    await db.flush()
+    rv = RecipeVersion(
+        recipe_family_id=rf.id, version_no=1, product_version_id=pv.id, site_id=site_id,
+        lifecycle_state="released",
+    )
+    db.add(rv)
     await db.flush()
     batch = Batch(
-        site_id=site_id, product_id=product.id, recipe_id=recipe.id, recipe_version=1, batch_number=batch_number,
-        status="in_execution", target_quantity=Decimal("1000"), uom="EA", version=1,
+        site_id=site_id, batch_number=batch_number, product_version_id=pv.id, recipe_version_id=rv.id,
+        target_qty=Decimal("1000"), target_uom="EA", state="in_execution", version=1,
     )
     db.add(batch)
     await db.flush()
@@ -171,7 +186,7 @@ async def test_assembly_readiness_and_start_operation(seeded, db):
     assert readiness["ready"] is False
 
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-DRUG-INJ-1")
-    bulk_batch.status = "released"
+    bulk_batch.state = "released"
     device_lot = await _create_material_lot(db, seeded, code="HOUSING-1", actor_id=actor_id)
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, bulk_batch, device_lot)
@@ -200,7 +215,7 @@ async def test_record_assembly_parameter_and_complete_operation(seeded, db):
     profile = await _create_and_release_profile(db, seeded, actor_id, profile_code="INJ-PARAM")
     batch = await _create_batch(db, seeded, batch_number="BATCH-INJ-PARAM-1")
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-DRUG-INJ-2")
-    bulk_batch.status = "released"
+    bulk_batch.state = "released"
     device_lot = await _create_material_lot(db, seeded, code="HOUSING-2", actor_id=actor_id)
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, bulk_batch, device_lot)
@@ -318,7 +333,7 @@ async def test_release_readiness_evidence_package_and_complaint_trace(seeded, db
     actor_id = seeded["users"]["ddcp.operator"].id
     batch = await _create_batch(db, seeded, batch_number="BATCH-INJ-RELEASE-1")
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-DRUG-INJ-3")
-    bulk_batch.status = "released"
+    bulk_batch.state = "released"
     device_lot = await _create_material_lot(db, seeded, code="HOUSING-3", actor_id=actor_id)
     await db.flush()
     await _accept_constituents(db, seeded, actor_id, batch, bulk_batch, device_lot)
@@ -489,7 +504,7 @@ async def test_release_readiness_blocks_on_pending_handoff_and_failed_test(seede
     actor_id = seeded["users"]["ddcp.operator"].id
     batch = await _create_batch(db, seeded, batch_number="BATCH-INJ-BLOCK-1")
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-DRUG-INJ-BLOCK-1")
-    bulk_batch.status = "released"
+    bulk_batch.state = "released"
     await db.flush()
 
     drug_receipt = await ddcp_commands.record_constituent_handoff(

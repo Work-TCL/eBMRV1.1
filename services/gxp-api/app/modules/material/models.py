@@ -2,7 +2,17 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -209,7 +219,7 @@ class MaterialReceipt(Base):
     # in the source spec beyond prose).
     discrepancy_type: Mapped[str | None] = mapped_column(String(60))
     discrepancy_reason: Mapped[str | None] = mapped_column(String(2000))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -243,7 +253,7 @@ class MaterialContainer(Base):
     )
     source_container_ids: Mapped[dict | None] = mapped_column(JSONB)
     container_status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -267,7 +277,7 @@ class WarehouseLocation(Base):
     zone_type: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
     environment_profile_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -281,7 +291,12 @@ class InventoryTransaction(Base):
     `write_audit_event`'s actor_type/actor_id pair), not a `iam.users` FK."""
 
     __tablename__ = "inventory_transactions"
-    __table_args__ = {"schema": "materials"}
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_inventory_transactions_quantity_positive"),
+        Index("ix_inventory_transactions_lot", "material_lot_id", "occurred_at"),
+        Index("ix_inventory_transactions_source_event", "source_event_id", unique=True),
+        {"schema": "materials"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -318,6 +333,9 @@ class InventoryBalanceProjection(Base):
     __tablename__ = "inventory_balance_projections"
     __table_args__ = (
         UniqueConstraint("material_lot_id", "container_id", "location_id"),
+        CheckConstraint("on_hand >= 0", name="ck_inventory_balance_on_hand_non_negative"),
+        CheckConstraint("reserved >= 0", name="ck_inventory_balance_reserved_non_negative"),
+        CheckConstraint("available >= 0", name="ck_inventory_balance_available_non_negative"),
         {"schema": "materials"},
     )
 
@@ -338,7 +356,7 @@ class InventoryBalanceProjection(Base):
     last_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("materials.inventory_transactions.id")
     )
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -350,7 +368,10 @@ class InventoryReservation(Base):
     Document 20 signature -- see `release_inventory_reservation`."""
 
     __tablename__ = "inventory_reservations"
-    __table_args__ = {"schema": "materials"}
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_inventory_reservations_quantity_positive"),
+        {"schema": "materials"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -378,7 +399,7 @@ class InventoryReservation(Base):
     released_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     released_at: Mapped[datetime | None] = mapped_column()
     release_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -406,7 +427,7 @@ class SamplingOrder(Base):
     # reference; no sterile-equipment qualification check exists (WP-06 Equipment, not built).
     aseptic_evidence_ref: Mapped[str | None] = mapped_column(String(200))
     qc_sample_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.qc_sample.id"))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -454,7 +475,11 @@ class DispensingOrder(Base):
     favor of the two explicit bound columns actually needed to evaluate against."""
 
     __tablename__ = "dispensing_orders"
-    __table_args__ = {"schema": "materials"}
+    __table_args__ = (
+        CheckConstraint("target_qty > 0", name="ck_dispensing_orders_target_qty_positive"),
+        CheckConstraint("tolerance_low <= tolerance_high", name="ck_dispensing_orders_tolerance_order"),
+        {"schema": "materials"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -476,7 +501,7 @@ class DispensingOrder(Base):
     requested_by_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False
     )
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -529,7 +554,7 @@ class WeighingSession(Base):
     started_at: Mapped[datetime] = mapped_column(server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column()
     final_accepted_net: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 
 class WeighingReading(Base):
@@ -540,7 +565,10 @@ class WeighingReading(Base):
     `device_id` column are captured-not-integrated placeholders."""
 
     __tablename__ = "weighing_readings"
-    __table_args__ = {"schema": "materials"}
+    __table_args__ = (
+        CheckConstraint("reading_value >= 0", name="ck_weighing_readings_value_non_negative"),
+        {"schema": "materials"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     weighing_session_id: Mapped[uuid.UUID] = mapped_column(
@@ -597,7 +625,7 @@ class DispensedContainer(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     label_print_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     remaining_quantity: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False, default=Decimal("0"))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -635,7 +663,12 @@ class MaterialConsumption(Base):
     (CON-FR-023/024), never an edit."""
 
     __tablename__ = "material_consumptions"
-    __table_args__ = {"schema": "materials"}
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_material_consumptions_quantity_positive"),
+        Index("ix_material_consumptions_batch", "batch_id"),
+        Index("ix_material_consumptions_dispensed_container", "dispensed_container_id"),
+        {"schema": "materials"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -665,7 +698,11 @@ class MaterialReturn(Base):
     """Document 22 `material_return` -- CON-FR-005/006/007. Append-only (AG-08)."""
 
     __tablename__ = "material_returns"
-    __table_args__ = {"schema": "materials"}
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_material_returns_quantity_positive"),
+        Index("ix_material_returns_batch", "batch_id"),
+        {"schema": "materials"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -731,7 +768,7 @@ class InventoryAdjustmentRequest(Base):
     )
     approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     approved_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -742,7 +779,10 @@ class DestructionRecord(Base):
     Part 11 signature; Document 106 row 56 registers exactly one signer for `execute`."""
 
     __tablename__ = "destruction_records"
-    __table_args__ = {"schema": "materials"}
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_destruction_records_quantity_positive"),
+        {"schema": "materials"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -775,7 +815,7 @@ class DestructionRecord(Base):
     )
     executed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     executed_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -789,7 +829,10 @@ class MaterialReconciliation(Base):
     version."""
 
     __tablename__ = "material_reconciliations"
-    __table_args__ = {"schema": "materials"}
+    __table_args__ = (
+        Index("ix_material_reconciliations_batch", "batch_id", "version"),
+        {"schema": "materials"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -810,7 +853,7 @@ class MaterialReconciliation(Base):
     # CON-FR-022 partial (SG-098): populated only when the caller supplies severity/owner on VARIANCE;
     # no auto-derived severity/owner and no batch-completion-gate enforcement this pass.
     linked_deviation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.deviation_record.id"))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     evaluated_by_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False
     )

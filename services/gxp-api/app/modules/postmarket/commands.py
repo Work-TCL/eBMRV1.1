@@ -25,9 +25,7 @@ from app.modules.iam.models import User
 from app.modules.postmarket.models import (
     CONSTITUENT_ATTRIBUTIONS,
     ESCALATION_TARGET_MODULES,
-    IDENTITY_RESOLUTION_STATES,
     POSTMARKET_SOURCE_TYPES,
-    SAFETY_CASE_TRANSITIONS,
     SIGNAL_DETECTION_SOURCES,
     SIGNAL_TRANSITIONS,
     PostmarketSource,

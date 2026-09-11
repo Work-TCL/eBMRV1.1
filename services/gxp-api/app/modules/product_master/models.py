@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -49,7 +49,7 @@ class ProductVersion(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     product_business_id: Mapped[str] = mapped_column(String(120), nullable=False)
-    version_no: Mapped[int] = mapped_column(nullable=False)
+    version_no: Mapped[int] = mapped_column(BigInteger, nullable=False)
     product_code: Mapped[str] = mapped_column(String(120), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     product_family_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -75,7 +75,7 @@ class ProductVersion(Base):
         UUID(as_uuid=True), ForeignKey("vault.gxp_vault_object.object_id")
     )
     version_hash: Mapped[str | None] = mapped_column(String(64))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -111,7 +111,7 @@ class ConstituentCompatibilityVersion(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     compatibility_code: Mapped[str] = mapped_column(String(120), nullable=False)
-    version_no: Mapped[int] = mapped_column(nullable=False)
+    version_no: Mapped[int] = mapped_column(BigInteger, nullable=False)
     drug_constituent_version_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ebmr.gxp_product_version.id"), nullable=False
     )

@@ -20,6 +20,7 @@ from app.modules.qms.field_action_models import (
     FieldActionReconciliation,
     FieldActionScopeItem,
 )
+from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     CommunicationNotApprovedError,
@@ -70,6 +71,17 @@ async def _resolve_signature(
     policy = await signature_service.resolve_signature_requirement(session, record_type="field_action", action=action)
     if not policy.signature_required:
         return None
+    # Document 106 section 9 rows 103/104/105: approve is `Approved` by a "Module approver role
+    # (QA Manager / Head of Quality)" -> QA Releaser, independent of the author; close is `Approved` by a
+    # "QA Releaser" independent of the investigator/owner; reportability is `Approved` by a "Regulatory
+    # Affairs authorized submitter" -> the "Postmarket Regulatory Affairs" role (project-owner-directed
+    # 2026-09-10) and is human-only, not a person-independence rule. FieldAction carries no owner/author
+    # identity column, so the approve/close independence check has no data source -- role is still
+    # enforced; same gap recorded for qa_review_package/complete.
+    await enforce_signer_policy(
+        session, policy=policy, actor_user_id=actor_user_id, site_id=field_action.site_id,
+        action_label=f"field_action.{action}",
+    )
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"Field action '{action}' requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)

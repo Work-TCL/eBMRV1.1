@@ -499,7 +499,7 @@ def process_document(doc_num: str, spec_id: str, req_status: dict, mandatory: di
 def main() -> None:
     with open(LIBRARY_CSV, newline="") as f:
         reader = csv.reader(f)
-        fieldnames = next(reader)
+        next(reader)  # skip header
 
     all_rows: list[list[str]] = []
     counts: dict[str, int] = {}

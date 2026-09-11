@@ -11,36 +11,40 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 
 from app.core.db import SessionLocal, assert_single_organization
+from app.modules.ai_governance.router import router as ai_governance_router
 from app.modules.audit.router import router as audit_router
 from app.modules.batch.router import router as batch_router
 from app.modules.batch_execution.router import router as batch_execution_router
-from app.modules.ddcp.router import router as ddcp_router
-from app.modules.ddcp.injector_router import router as injector_router
-from app.modules.ddcp.inhalation_router import router as inhalation_router
+from app.modules.dataops.router import router as dataops_router
 from app.modules.ddcp.coated_device_router import router as coated_device_router
+from app.modules.ddcp.inhalation_router import router as inhalation_router
+from app.modules.ddcp.injector_router import router as injector_router
+from app.modules.ddcp.router import router as ddcp_router
 from app.modules.device.router import router as device_router
+from app.modules.disaster_recovery.router import router as disaster_recovery_router
+from app.modules.edge.router import router as edge_router
+from app.modules.equipment.aseptic_router import router as aseptic_router
+from app.modules.equipment.cleaning_router import line_clearance_router
+from app.modules.equipment.cleaning_router import router as cleaning_router
+from app.modules.equipment.em_router import router as em_router
+from app.modules.equipment.router import router as equipment_router
+from app.modules.equipment.sterilization_router import cip_sip_router, filtration_router
+from app.modules.equipment.sterilization_router import router as sterilization_router
+from app.modules.erp.router import router as erp_router
+from app.modules.eventbus import outbox as eventbus_outbox
+from app.modules.evidence.router import router as evidence_router
 from app.modules.genealogy.router import router as genealogy_router
-from app.modules.qa_review.router import router as qa_review_router
-from app.modules.qc.router import router as qc_router
-from app.modules.qc.router import oos_router
-from app.modules.lims_integration.router import router as lims_integration_router
-from app.modules.packaging.router import router as packaging_router
-from app.modules.qms.router import router as qms_router
-from app.modules.qms.capa_router import capa_action_router, capa_router
-from app.modules.qms.ncr_router import ncr_router
-from app.modules.qms.scar_router import scar_router, supplier_case_router
-from app.modules.qms.change_router import change_router
-from app.modules.qms.document_router import document_router
-from app.modules.qms.training_router import training_router
-from app.modules.qms.risk_router import risk_router
-from app.modules.qms.internal_audit_router import audit_finding_router, internal_audit_router
-from app.modules.qms.complaint_router import complaint_router
-from app.modules.qms.field_action_router import field_action_router
-from app.modules.qms.quality_metrics_router import effectiveness_router, quality_metrics_router
-from app.modules.release.router import router as release_router
-from app.modules.iam.router import organization_router, permissions_router, policy_router, roles_router, users_router
+from app.modules.iam.router import (
+    organization_router,
+    permissions_router,
+    policy_router,
+    roles_router,
+    sites_router,
+    users_router,
+)
 from app.modules.iam.router import router as iam_router
-from app.modules.iam.router import sites_router
+from app.modules.lims_integration.router import router as lims_integration_router
+from app.modules.machine_integration.router import router as machine_integration_router
 from app.modules.material.router import dispensing_v1_router as material_dispensing_v1_router
 from app.modules.material.router import inventory_v1_router as material_inventory_v1_router
 from app.modules.material.router import lots_router as material_lots_router
@@ -48,43 +52,46 @@ from app.modules.material.router import reconciliation_v1_router as material_rec
 from app.modules.material.router import router as material_router
 from app.modules.material.router import sampling_orders_router as material_sampling_orders_router
 from app.modules.material.router import v1_router as material_v1_router
-from app.modules.equipment.router import router as equipment_router
-from app.modules.equipment.cleaning_router import router as cleaning_router
-from app.modules.equipment.cleaning_router import line_clearance_router
-from app.modules.equipment.em_router import router as em_router
-from app.modules.equipment.sterilization_router import router as sterilization_router
-from app.modules.equipment.sterilization_router import cip_sip_router, filtration_router
-from app.modules.equipment.aseptic_router import router as aseptic_router
-from app.modules.edge.router import router as edge_router
-from app.modules.erp.router import router as erp_router
-from app.modules.machine_integration.router import router as machine_integration_router
-from app.modules.postmarket.router import router as postmarket_router
-from app.modules.postmarket.reportability_router import router as postmarket_reportability_router
+from app.modules.packaging.router import router as packaging_router
 from app.modules.postmarket.obligation_router import router as postmarket_obligation_router
+from app.modules.postmarket.reportability_router import router as postmarket_reportability_router
+from app.modules.postmarket.router import router as postmarket_router
 from app.modules.product.router import router as product_router
 from app.modules.product_master.router import router as product_master_router
+from app.modules.qa_review.router import router as qa_review_router
+from app.modules.qc.router import oos_router
+from app.modules.qc.router import router as qc_router
+from app.modules.qms.capa_router import capa_action_router, capa_router
+from app.modules.qms.change_router import change_router
+from app.modules.qms.complaint_router import complaint_router
+from app.modules.qms.document_router import document_router
+from app.modules.qms.field_action_router import field_action_router
+from app.modules.qms.internal_audit_router import audit_finding_router, internal_audit_router
+from app.modules.qms.ncr_router import ncr_router
+from app.modules.qms.quality_metrics_router import effectiveness_router, quality_metrics_router
+from app.modules.qms.risk_router import risk_router
+from app.modules.qms.router import router as qms_router
+from app.modules.qms.scar_router import scar_router, supplier_case_router
+from app.modules.qms.training_router import training_router
+from app.modules.readmodels.router import platform_router as readmodels_platform_router
+from app.modules.readmodels.router import reports_router, search_router
 from app.modules.recipe.router import router as recipe_router
 from app.modules.recipe_master.router import router as recipe_master_router
+from app.modules.release.router import router as release_router
 from app.modules.rules.router import router as rules_router
-from app.modules.security.router import router as security_router
-from app.modules.security.identity_router import router as security_identity_router
-from app.modules.security.privileged_access_router import router as security_privileged_access_router
 from app.modules.security.appsec_router import router as security_appsec_router
 from app.modules.security.crypto_router import router as security_crypto_router
-from app.modules.security.netzero_router import router as security_netzero_router
+from app.modules.security.identity_router import router as security_identity_router
 from app.modules.security.incident_router import router as security_incident_router
+from app.modules.security.netzero_router import router as security_netzero_router
+from app.modules.security.privileged_access_router import router as security_privileged_access_router
+from app.modules.security.router import router as security_router
 from app.modules.security.supplychain_router import router as security_supplychain_router
-from app.modules.dataops.router import router as dataops_router
-from app.modules.evidence.router import router as evidence_router
-from app.modules.eventbus import outbox as eventbus_outbox
-from app.modules.disaster_recovery.router import router as disaster_recovery_router
-from app.modules.readmodels.router import search_router, reports_router, platform_router as readmodels_platform_router
 from app.modules.supplier_quality.router import router as supplier_quality_router
-from app.modules.vault.router import router as vault_router
-from app.modules.yield_reconciliation.router import router as yield_reconciliation_router
-from app.modules.ai_governance.router import router as ai_governance_router
 from app.modules.validation.router import router as validation_router
 from app.modules.validation.router_wp14 import router as validation_wp14_router
+from app.modules.vault.router import router as vault_router
+from app.modules.yield_reconciliation.router import router as yield_reconciliation_router
 from app.mutation.errors import DependencyUnavailableError, GxPError
 
 logger = logging.getLogger("gxp_api.outbox")

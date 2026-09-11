@@ -29,7 +29,7 @@ No numeric duration is set here; none exists in the approved baseline to set it 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -108,7 +108,7 @@ class ErpInstance(Base):
     validated: Mapped[bool] = mapped_column(nullable=False, default=False)
     validated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     validated_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -123,6 +123,7 @@ class ErpExternalMapping(Base):
     __tablename__ = "erp_external_mappings"
     __table_args__ = (
         UniqueConstraint("erp_instance_id", "entity_type", "external_id", name="uq_erp_mapping_external"),
+        Index("ix_erp_external_mappings_internal", "erp_instance_id", "entity_type", "internal_id"),
         {"schema": "erp"},
     )
 
@@ -145,7 +146,7 @@ class ErpExternalMapping(Base):
     evidence: Mapped[dict | None] = mapped_column(JSONB)
     approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     approved_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -156,7 +157,10 @@ class ErpMappingConflict(Base):
     flag is informational/routing only, not a signature gate."""
 
     __tablename__ = "erp_mapping_conflicts"
-    __table_args__ = {"schema": "erp"}
+    __table_args__ = (
+        Index("ix_erp_mapping_conflicts_mapping", "mapping_id"),
+        {"schema": "erp"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     mapping_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("erp.erp_external_mappings.id"), nullable=False)
@@ -170,7 +174,7 @@ class ErpMappingConflict(Base):
     resolution_reason: Mapped[str | None] = mapped_column(String(400))
     resolved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     resolved_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -189,7 +193,7 @@ class ErpSyncCheckpoint(Base):
     cursor_value: Mapped[str | None] = mapped_column(String(200))
     last_batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     last_synced_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -204,6 +208,7 @@ class IntegrationCommand(Base):
     __tablename__ = "integration_commands"
     __table_args__ = (
         UniqueConstraint("erp_instance_id", "idempotency_key", name="uq_integration_command_idempotency"),
+        Index("ix_integration_commands_state", "erp_instance_id", "state"),
         {"schema": "erp"},
     )
 
@@ -235,7 +240,7 @@ class IntegrationCommand(Base):
     gxp_authorization_reference: Mapped[dict | None] = mapped_column(JSONB)
     cancelled_reason: Mapped[str | None] = mapped_column(String(400))
     cancelled_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -245,7 +250,10 @@ class IntegrationCommandAttempt(Base):
     treatment as `AsepticEventTimeline` (no `version` column on a pure append-only child log)."""
 
     __tablename__ = "integration_command_attempts"
-    __table_args__ = {"schema": "erp"}
+    __table_args__ = (
+        Index("ix_integration_command_attempts_command", "command_id"),
+        {"schema": "erp"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     command_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("erp.integration_commands.id"), nullable=False)
@@ -268,6 +276,7 @@ class IntegrationInboundEvent(Base):
     __tablename__ = "integration_inbound_events"
     __table_args__ = (
         UniqueConstraint("erp_instance_id", "external_event_id", name="uq_integration_inbound_event"),
+        Index("ix_integration_inbound_events_entity", "erp_instance_id", "entity_type", "external_entity_id"),
         {"schema": "erp"},
     )
 
@@ -310,7 +319,7 @@ class IntegrationReconciliationRun(Base):
     started_at: Mapped[datetime] = mapped_column(server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column()
     difference_count: Mapped[int] = mapped_column(nullable=False, default=0)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -319,7 +328,10 @@ class IntegrationReconciliationDifference(Base):
     exists) and requires an explicit human `resolveReconciliationDifference()` call."""
 
     __tablename__ = "integration_reconciliation_differences"
-    __table_args__ = {"schema": "erp"}
+    __table_args__ = (
+        Index("ix_integration_reconciliation_differences_run", "run_id"),
+        {"schema": "erp"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("erp.integration_reconciliation_runs.id"), nullable=False)
@@ -334,7 +346,7 @@ class IntegrationReconciliationDifference(Base):
     resolution_reason: Mapped[str | None] = mapped_column(String(400))
     resolved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     resolved_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -361,7 +373,7 @@ class IntegrationCircuitBreaker(Base):
     # reliability.py, not on this row.
     rate_window_started_at: Mapped[datetime | None] = mapped_column()
     rate_window_count: Mapped[int] = mapped_column(nullable=False, default=0)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -374,7 +386,10 @@ class IntegrationSecurityEvent(Base):
     audit"; this is the module-scoped security trail, not a regulated business record)."""
 
     __tablename__ = "integration_security_events"
-    __table_args__ = {"schema": "erp"}
+    __table_args__ = (
+        Index("ix_integration_security_events_instance", "erp_instance_id"),
+        {"schema": "erp"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     erp_instance_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("erp.erp_instances.id"), nullable=False)
@@ -415,7 +430,7 @@ class IntegrationBulkJob(Base):
     started_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
     started_at: Mapped[datetime] = mapped_column(server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 
 BULK_JOB_TYPES = ("IMPORT", "EXPORT")
@@ -442,4 +457,4 @@ class ErpMigrationPackage(Base):
     approval_reference: Mapped[str | None] = mapped_column(String(200))
     imported_at: Mapped[datetime] = mapped_column(server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
