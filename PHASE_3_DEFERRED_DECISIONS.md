@@ -419,3 +419,63 @@ Application of any ratified item follows the exact same re-runnable mechanism
 single source of truth; `scripts/sync_signature_policies.py` applies it to an already-seeded
 deployment idempotently and never deletes a row; test files are updated only where a local
 per-test policy row would collide with the new floor row.
+
+---
+
+## Application log — decisions recorded and applied (2026-09-11)
+
+**Decision of record, project owner, in-session:** A (author now, values below) / B (author from
+the §8 default family) / C (author all 5, `ai_provider_switch/switch` treated as the same
+approve/authoriz family as the other 4) / D (D-a, build the full 2-signature chain now). Engineering
+proposed candidate values matching established class→role precedent for A/B/C/D's role mapping; the
+project owner approved every candidate as drafted, with no amendments.
+
+| Item | Values applied | Doc 106 source |
+|---|---|---|
+| A — `training_assignment` create | `Performed`, no fixed role, independence none, reason no | §8 "issue/start/begin" (Document 106 has no §9 row — authored) |
+| A — `training_assignment` complete | `Performed`, no fixed role, independence none, reason no | §8 "complete/record/result" (authored) |
+| A — `training_assignment` assess | `Verified`, no fixed role, independent of the trainee (`subject_id`), reason no | §8 "verify/verification/witness" (authored) |
+| B — `product_version/reinstate` | `Approved`, `QA Releaser`, independent of whoever caused the suspend (audit-trail lookup), reason yes | §8 "resume/unhold/release-hold" (Document 106 has no §9 row — authored) |
+| C — `ai_model_deployment/approve` | `Approved`, `QA Releaser`, independent (role-only), reason yes | §8 "approve/authoriz" (Document 106 has zero SPEC-AI-001 rows — authored) |
+| C — `ai_tool_call/authorize` | `Approved`, `QA Releaser`, independent (role-only), reason yes | §8 "approve/authoriz" (authored) |
+| C — `ai_disposition/record` | `Performed`, no fixed role, independence none, reason no | §8 "complete/record/result" (authored) |
+| C — `ai_release_gate/evaluate` | `Released`, `QA Releaser`, independent (role-only), reason yes | §8 "release/disposition/certif" (authored) |
+| C — `ai_provider_switch/switch` | `Approved`, `QA Releaser`, independent (role-only), reason yes | project-owner direction: same family as the other 4 (no §8 family fits) |
+| D — `record_correction/complete` | `Approved`, count 2, `signature_order=[null, "QA Releaser"]` (position 1 = corrector, RBAC-gated no fixed role; position 2 = independent approver), reason yes | Document 106 §9 row 1, verbatim |
+
+**Engineering build (item D):** migration `34927659a971`/0095 adds
+`signature.signature_policies.signature_order` (nullable JSONB; every existing `signature_count=1`
+row stays NULL). `signature_service.chain_signatures_so_far()` derives a signer's chain position
+from how many valid `Signature` rows the exact record already carries — never client-supplied, which
+structurally rules out submitting position 2 before position 1 exists. `enforce_chain_signer_policy()`
+checks the per-position role and rejects a signer who already signed an earlier position in the same
+chain. `complete_correction()` now runs under `with_for_update()` and only applies the correction
+once the chain is fully signed; an incomplete chain leaves it in a new `awaiting_second_signature`
+status. New `POST /vault/v1/corrections/{id}/signature-challenges` endpoint (none existed before).
+
+**A real defect found and fixed in the same pass (not part of items A–D, but uncovered by resolving
+item C):** `evaluate_ai_release_gate()` raised `AIEvaluationCriticalFailureError` *after* already
+writing the `AIReleaseGate` row, its audit/outbox event, the receipt, and consuming the signature —
+all inside the caller's still-open transaction — so the exception silently rolled all of it back
+(unreachable before this pass, since `SIGNATURE_POLICY_UNRESOLVED` always fired first). Fixed by
+committing what was already written before raising, so the caller still receives the error but the
+BLOCK decision's evidence is no longer lost. See `app/modules/ai_governance/commands.py`.
+
+**Test evidence:** full run of the four affected suites (`test_qms_training_qualification.py`,
+`test_product_master.py`, `test_ai_governance.py`, `test_vault.py`) — **76 passed, 0 failed**
+(576.63s). A prior run before the release-gate fix showed 75 passed / 1 failed, confirming that was
+the only failure and it is now resolved (standalone `test_ai_governance.py` re-run: 24 passed, 0
+failed). Migration `34927659a971`/0095 and `scripts/sync_signature_policies.py` applied to both
+`ebmr_new_gxp_test` and the live demo database `ebmr_new_gxp` (10 rows created, 0 skipped),
+project-owner-directed.
+
+**Tracking files updated:** `docs/generated/18_SPEC_GAPS.md` (SG-035, SG-138, SG-167 all marked
+RESOLVED with the evidence above), `traceability/TRACEABILITY_MASTER.csv` (6 rows: `verification_state`
+BLOCKED→IN_PROGRESS, `gap_reference` updated), `test-cases/TEST_CASE_LIBRARY.csv` (8 pre-written cases
+executed with real PASS results — no parallel test set invented), `status/build-status.json` +
+`status/BUILD_STATUS.md` regenerated via `tooling/status/rollup.py`.
+
+**What remains open, deliberately not exercised this pass:** the stale-challenge and concurrency test
+cases for VLT-FR-010/PRD-FR-029 (TC-006-010-03/04, TC-009-029-03), and `training_assignment`'s
+without-signature-blocked / stale-challenge cases (TC-031-003-02/03, TC-031-006-03) — left `BLOCKED`
+in `test-cases/TEST_CASE_LIBRARY.csv`, not fabricated. Item E (SG-013) was not touched, as scoped.
