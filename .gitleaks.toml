@@ -1,0 +1,17 @@
+title = "eBMR/eDHR gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known false positives -- pre-written test-case documentation prose, not code or config"
+
+# ebmr-edhr/test-cases/*.csv holds 9,150 pre-written executable test-case descriptions (compliance/
+# regulatory prose authored from the specification baseline, not application code or secrets). Dense
+# compliance vocabulary (e.g. "encryption/pseudonymization" in a privacy test-case description,
+# TEST_CASE_LIBRARY.csv:4180) occasionally matches gitleaks' generic high-entropy heuristics. This
+# directory cannot contain real credentials by construction -- it is documentation, never executed,
+# never holds a live connection string or key.
+paths = [
+  '''ebmr-edhr/test-cases/.*\.csv''',
+]
