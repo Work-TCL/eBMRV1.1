@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -33,7 +33,7 @@ class QcTestSpecification(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     spec_code: Mapped[str] = mapped_column(String(120), nullable=False)
-    version_no: Mapped[int] = mapped_column(nullable=False, default=1)
+    version_no: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     scope_type: Mapped[str] = mapped_column(String(40), nullable=False)
     scope_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="draft")
@@ -43,7 +43,7 @@ class QcTestSpecification(Base):
     released_vault_object_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("vault.gxp_vault_object.object_id")
     )
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -58,7 +58,10 @@ class QcTestDefinition(Base):
     """
 
     __tablename__ = "qc_test_definition"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_qc_test_definition_spec", "specification_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     specification_id: Mapped[uuid.UUID] = mapped_column(
@@ -79,7 +82,7 @@ class QcTestDefinition(Base):
     required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     release_blocking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     review_policy: Mapped[str | None] = mapped_column(String(80))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -109,7 +112,7 @@ class QcSample(Base):
     sampler_subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="planned")
     stability_study_ref: Mapped[str | None] = mapped_column(String(160))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -117,7 +120,10 @@ class QcTestOrder(Base):
     """Document 23 §6 `qc_test_order` -- prose-only, typed as an ordinary engineering decision."""
 
     __tablename__ = "qc_test_order"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_qc_test_order_sample", "sample_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     sample_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.qc_sample.id"), nullable=False)
@@ -130,7 +136,7 @@ class QcTestOrder(Base):
     started_at: Mapped[datetime | None] = mapped_column()
     completed_at: Mapped[datetime | None] = mapped_column()
     reviewed_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -140,7 +146,10 @@ class QcTestRun(Base):
     anywhere in this codebase (WP-06 Equipment, not built -- SG-063)."""
 
     __tablename__ = "qc_test_run"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_qc_test_run_order", "test_order_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     test_order_id: Mapped[uuid.UUID] = mapped_column(
@@ -156,7 +165,7 @@ class QcTestRun(Base):
     calculation_rule_object_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("rules.gxp_rule_definition.rule_object_id")
     )
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -170,14 +179,17 @@ class QcResult(Base):
     (QC-FR-024, VLT-FR-010-style)."""
 
     __tablename__ = "qc_result"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_qc_result_order", "test_order_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     test_order_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ebmr.qc_test_order.id"), nullable=False
     )
     test_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.qc_test_run.id"), nullable=False)
-    result_version: Mapped[int] = mapped_column(nullable=False, default=1)
+    result_version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     result_type: Mapped[str] = mapped_column(String(40), nullable=False)
     value_decimal: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
     value_text: Mapped[str | None] = mapped_column(Text())
@@ -218,7 +230,7 @@ class OosRecord(Base):
     material_lot_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("materials.material_lots.id"))
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="open")
     severity: Mapped[str | None] = mapped_column(String(40))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     hold_status: Mapped[str | None] = mapped_column(String(40))
     final_classification: Mapped[str | None] = mapped_column(String(60))
     root_cause_code: Mapped[str | None] = mapped_column(String(100))
@@ -232,7 +244,10 @@ class OosInvestigationActivity(Base):
     entry is never edited, only added to."""
 
     __tablename__ = "oos_investigation_activity"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_oos_investigation_activity_oos", "oos_record_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     oos_record_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.oos_record.id"), nullable=False)
@@ -240,10 +255,10 @@ class OosInvestigationActivity(Base):
     activity_type: Mapped[str] = mapped_column(String(80), nullable=False)
     checklist_item: Mapped[str | None] = mapped_column(String(200))
     response_text: Mapped[str | None] = mapped_column(Text())
-    evidence_refs: Mapped[dict | None] = mapped_column(JSONB)
+    evidence_refs: Mapped[dict | None] = mapped_column(JSON)
     investigator_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 
 class OosRetestPlan(Base):
@@ -263,7 +278,7 @@ class OosRetestPlan(Base):
     instrument_criteria: Mapped[str | None] = mapped_column(String(300))
     interpretation_rule: Mapped[str | None] = mapped_column(Text())
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="authorized")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -281,9 +296,9 @@ class OosResamplePlan(Base):
     sampling_plan_version: Mapped[str | None] = mapped_column(String(40))
     source_ref: Mapped[str | None] = mapped_column(String(200))
     approver_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
-    resulting_sample_ids: Mapped[dict | None] = mapped_column(JSONB)
+    resulting_sample_ids: Mapped[dict | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="authorized")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -301,13 +316,13 @@ class OotRecord(Base):
     trend_rule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.gxp_rule_definition.rule_object_id"))
     trend_rule_version: Mapped[str | None] = mapped_column(String(40))
     baseline_ref: Mapped[str | None] = mapped_column(String(200))
-    trigger_details: Mapped[dict | None] = mapped_column(JSONB)
+    trigger_details: Mapped[dict | None] = mapped_column(JSON)
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="open")
     investigation_notes: Mapped[str | None] = mapped_column(Text())
     impact_assessment: Mapped[str | None] = mapped_column(Text())
     investigation_owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     hold_status: Mapped[str | None] = mapped_column(String(40))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     opened_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()
 

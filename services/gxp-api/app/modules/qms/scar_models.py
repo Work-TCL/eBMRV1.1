@@ -41,7 +41,7 @@ Deferred this pass (see docs/generated/18_SPEC_GAPS.md SG-091, same discipline a
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -67,6 +67,7 @@ class SupplierQualityCase(Base):
     __table_args__ = (
         UniqueConstraint("quality_event_id"),
         UniqueConstraint("case_number"),
+        Index("ix_supplier_quality_case_state", "site_id", "state", "supplier_id"),
         {"schema": "qms"},
     )
 
@@ -91,14 +92,19 @@ class SupplierQualityCase(Base):
     # not a FK, since neither target type is fixed (deviation OR change control record).
     alternate_source_ref: Mapped[dict | None] = mapped_column(JSONB)
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="OPEN")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()
 
 
 class ScarRecord(Base):
     __tablename__ = "scar_record"
-    __table_args__ = (UniqueConstraint("scar_number"), {"schema": "qms"})
+    __table_args__ = (
+        UniqueConstraint("scar_number"),
+        Index("ix_scar_record_case", "case_id"),
+        Index("ix_scar_record_state", "site_id", "state"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -131,7 +137,7 @@ class ScarRecord(Base):
     is_repeat_issue: Mapped[bool] = mapped_column(nullable=False, default=False)
     related_case_ids: Mapped[list | None] = mapped_column(JSONB)
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="SCAR_ISSUED")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     closure_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()

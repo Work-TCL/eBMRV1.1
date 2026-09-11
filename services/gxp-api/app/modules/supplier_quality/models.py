@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -31,7 +31,7 @@ class Supplier(Base):
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="draft")
     country: Mapped[str | None] = mapped_column(String(80))
     external_mappings: Mapped[dict | None] = mapped_column(JSONB)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -42,7 +42,10 @@ class SupplierSite(Base):
     """
 
     __tablename__ = "supplier_site"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_supplier_site_supplier", "supplier_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     supplier_id: Mapped[uuid.UUID] = mapped_column(
@@ -58,7 +61,7 @@ class SupplierSite(Base):
     manufacturer_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     certification_refs: Mapped[dict | None] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -70,7 +73,11 @@ class SupplierQualification(Base):
     """
 
     __tablename__ = "supplier_qualification"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_supplier_qualification_expires", "expires_at"),
+        Index("ix_supplier_qualification_site", "supplier_site_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     supplier_site_id: Mapped[uuid.UUID] = mapped_column(
@@ -89,7 +96,7 @@ class SupplierQualification(Base):
         UUID(as_uuid=True), ForeignKey("vault.gxp_vault_object.object_id")
     )
     approval_signatures: Mapped[dict | None] = mapped_column(JSONB)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -102,7 +109,10 @@ class SupplierQualificationEvidence(Base):
     """
 
     __tablename__ = "supplier_qualification_evidence"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_supplier_qualification_evidence_qual", "supplier_qualification_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     supplier_qualification_id: Mapped[uuid.UUID] = mapped_column(

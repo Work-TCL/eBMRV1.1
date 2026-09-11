@@ -15,7 +15,7 @@ migration since 0002.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -118,7 +118,11 @@ class EdgeObservation(Base):
     """
 
     __tablename__ = "edge_observations"
-    __table_args__ = (UniqueConstraint("gateway_id", "gateway_sequence"), {"schema": "edge"})
+    __table_args__ = (
+        UniqueConstraint("gateway_id", "gateway_sequence"),
+        Index("ix_edge_observations_gateway", "gateway_id", "accepted_at"),
+        {"schema": "edge"},
+    )
 
     event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     gateway_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("edge.edge_gateways.id"), nullable=False)
@@ -144,7 +148,10 @@ class EdgeHealthSnapshot(Base):
     `last_reported_operational_state` carry the latest for cheap reads."""
 
     __tablename__ = "edge_health_snapshots"
-    __table_args__ = {"schema": "edge"}
+    __table_args__ = (
+        Index("ix_edge_health_snapshots_gateway", "gateway_id", "reported_at"),
+        {"schema": "edge"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     gateway_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("edge.edge_gateways.id"), nullable=False)
@@ -162,7 +169,10 @@ class EdgeSecurityEvent(Base):
     `quarantineConnector()`."""
 
     __tablename__ = "edge_security_events"
-    __table_args__ = {"schema": "edge"}
+    __table_args__ = (
+        Index("ix_edge_security_events_gateway", "gateway_id", "reported_at"),
+        {"schema": "edge"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     gateway_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("edge.edge_gateways.id"), nullable=False)

@@ -27,7 +27,7 @@ use-case or model deployment may be org-wide).
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, String, Text
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -57,7 +57,10 @@ class AIUseCase(Base):
     genuinely mutable use-case aggregate; risk assessment and retirement bump `version` on this row."""
 
     __tablename__ = "ai_use_case"
-    __table_args__ = ({"schema": "ai_governance"},)
+    __table_args__ = (
+        Index("ix_ai_use_case_state", "state"),
+        {"schema": "ai_governance"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -85,7 +88,10 @@ class AIRiskAssessment(Base):
     previous one on the use case (`latest_risk_assessment_id`), the old row is retained."""
 
     __tablename__ = "ai_risk_assessment"
-    __table_args__ = ({"schema": "ai_governance"},)
+    __table_args__ = (
+        Index("ix_ai_risk_assessment_use_case", "use_case_id"),
+        {"schema": "ai_governance"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     use_case_id: Mapped[uuid.UUID] = mapped_column(
@@ -112,7 +118,10 @@ class AIModelDeployment(Base):
     exists yet -- see ARCHITECTURE.md / SPEC_GAP)."""
 
     __tablename__ = "ai_model_deployment"
-    __table_args__ = ({"schema": "ai_governance"},)
+    __table_args__ = (
+        Index("ix_ai_model_deployment_state", "state"),
+        {"schema": "ai_governance"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     use_case_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -179,7 +188,10 @@ class AIAdvisoryLog(Base):
     029 prompt privacy) -- prompts are referenced by `ai_prompt_version`, not re-logged verbatim."""
 
     __tablename__ = "ai_advisory_log"
-    __table_args__ = ({"schema": "ai_governance"},)
+    __table_args__ = (
+        Index("ix_ai_advisory_log_use_case", "use_case_id"),
+        {"schema": "ai_governance"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     use_case_id: Mapped[uuid.UUID] = mapped_column(
@@ -205,7 +217,10 @@ class AIToolDecision(Base):
     """FN-1010 `authorizeAIToolCall()` -- AI-FR-009/010/025 tool-safety decision log (allow/deny)."""
 
     __tablename__ = "ai_tool_decision"
-    __table_args__ = ({"schema": "ai_governance"},)
+    __table_args__ = (
+        Index("ix_ai_tool_decision_use_case", "use_case_id"),
+        {"schema": "ai_governance"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     use_case_id: Mapped[uuid.UUID] = mapped_column(
@@ -228,7 +243,10 @@ class AIDisposition(Base):
     time are all retained, not overwritten). SIGNED (Doc 106 lookup required; see ARCHITECTURE.md)."""
 
     __tablename__ = "ai_disposition"
-    __table_args__ = ({"schema": "ai_governance"},)
+    __table_args__ = (
+        Index("ix_ai_disposition_advisory", "advisory_id"),
+        {"schema": "ai_governance"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     advisory_id: Mapped[uuid.UUID] = mapped_column(
@@ -249,7 +267,10 @@ class AIEvaluationReport(Base):
     release regardless of the overall average (AI-FR-024)."""
 
     __tablename__ = "ai_evaluation_report"
-    __table_args__ = ({"schema": "ai_governance"},)
+    __table_args__ = (
+        Index("ix_ai_evaluation_report_use_case", "use_case_id"),
+        {"schema": "ai_governance"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     use_case_id: Mapped[uuid.UUID] = mapped_column(
@@ -299,7 +320,10 @@ class AIPromptInjectionEvent(Base):
     (only its hash) -- this is a security control ledger, not a content archive."""
 
     __tablename__ = "ai_prompt_injection_event"
-    __table_args__ = ({"schema": "ai_governance"},)
+    __table_args__ = (
+        Index("ix_ai_prompt_injection_use_case", "use_case_id"),
+        {"schema": "ai_governance"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     use_case_id: Mapped[uuid.UUID] = mapped_column(

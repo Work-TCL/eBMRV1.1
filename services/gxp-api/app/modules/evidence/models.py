@@ -23,7 +23,7 @@ record (a batch, a QC result, a process cycle). All sizes are `BigInteger`; no f
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -48,7 +48,12 @@ class EvidenceObject(Base):
     # at the same content-addressed object (e.g. one PDF attached to two batches); `put()` is idempotent
     # for identical bytes and refuses a same-key overwrite with *different* bytes (OBJ-FR-004).
     __tablename__ = "evidence_object"
-    __table_args__ = ({"schema": "evidence"},)
+    __table_args__ = (
+        Index("ix_evidence_object_content_hash", "content_hash"),
+        Index("ix_evidence_object_owner", "owner_type", "owner_id"),
+        Index("ix_evidence_object_state", "state"),
+        {"schema": "evidence"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -88,6 +93,7 @@ class EvidenceManifest(Base):
     __table_args__ = (
         UniqueConstraint("owner_type", "owner_id", "manifest_type", "manifest_version",
                          name="uq_evidence_manifest_identity"),
+        Index("ix_evidence_manifest_owner", "owner_type", "owner_id"),
         {"schema": "evidence"},
     )
 

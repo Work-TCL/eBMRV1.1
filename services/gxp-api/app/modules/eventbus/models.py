@@ -21,7 +21,7 @@ event payload it processed may be). No signature (Document 106 has no SPEC-DATA-
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -35,13 +35,14 @@ class ConsumerInbox(Base):
     __tablename__ = "consumer_inbox"
     __table_args__ = (
         UniqueConstraint("consumer_name", "event_id", name="uq_consumer_inbox_identity"),
+        Index("ix_consumer_inbox_result", "result"),
         {"schema": "eventbus"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     consumer_name: Mapped[str] = mapped_column(String(120), nullable=False)
     event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    aggregate_version: Mapped[int | None] = mapped_column()
+    aggregate_version: Mapped[int | None] = mapped_column(BigInteger, )
     result: Mapped[str] = mapped_column(String(20), nullable=False, default="PROCESSED")
     detail: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     attempt_count: Mapped[int] = mapped_column(nullable=False, default=1)

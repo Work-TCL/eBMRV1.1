@@ -19,7 +19,7 @@ only (Security Admin). `GET /security/v1/releases/{id}/security-evidence` is rea
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -64,7 +64,11 @@ class VulnerabilityRecord(Base):
     `approve_vulnerability_exception()`, which is signed (Document 106 row 141 -- unresolved, SG-165)."""
 
     __tablename__ = "vulnerability_record"
-    __table_args__ = (UniqueConstraint("vulnerability_id", "source"), {"schema": "security"})
+    __table_args__ = (
+        UniqueConstraint("vulnerability_id", "source"),
+        Index("ix_vulnerability_record_state", "state"),
+        {"schema": "security"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     vulnerability_id: Mapped[str] = mapped_column(String(80), nullable=False)  # CVE / GHSA / internal id

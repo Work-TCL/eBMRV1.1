@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, SmallInteger, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, SmallInteger, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -15,6 +15,7 @@ class SignaturePolicy(Base):
     __tablename__ = "signature_policies"
     __table_args__ = (
         UniqueConstraint("record_type", "action"),
+        CheckConstraint("signature_count BETWEEN 1 AND 4", name="ck_signature_policies_count"),
         {"schema": "signature"},
     )
 

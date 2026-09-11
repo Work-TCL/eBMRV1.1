@@ -48,7 +48,7 @@ Deferred this pass (see docs/generated/18_SPEC_GAPS.md SG-099/SG-100, same disci
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -75,6 +75,7 @@ class RiskRecord(Base):
     __table_args__ = (
         UniqueConstraint("quality_event_id"),
         UniqueConstraint("risk_number"),
+        Index("ix_risk_record_state", "site_id", "state", "risk_type"),
         {"schema": "qms"},
     )
 
@@ -98,7 +99,7 @@ class RiskRecord(Base):
     # raises it this pass, same "don't register a code nothing throws" discipline as SG-074/SG-088).
     next_review_due_at: Mapped[datetime | None] = mapped_column()
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="DRAFT")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -106,6 +107,7 @@ class RiskAssessmentVersion(Base):
     __tablename__ = "risk_assessment_version"
     __table_args__ = (
         UniqueConstraint("risk_record_id", "cycle_number"),
+        Index("ix_risk_assessment_version_current", "risk_record_id", "is_current"),
         {"schema": "qms"},
     )
 

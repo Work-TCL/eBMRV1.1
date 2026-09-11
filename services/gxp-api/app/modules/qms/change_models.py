@@ -42,7 +42,7 @@ the module's one signature-gated terminal endpoint rather than inventing a new o
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -87,6 +87,7 @@ class ChangeControl(Base):
     __table_args__ = (
         UniqueConstraint("quality_event_id"),
         UniqueConstraint("change_number"),
+        Index("ix_change_control_state", "site_id", "state", "classification"),
         {"schema": "qms"},
     )
 
@@ -114,7 +115,7 @@ class ChangeControl(Base):
     cancel_reason: Mapped[str | None] = mapped_column(Text)
     cancelled_at: Mapped[datetime | None] = mapped_column()
     closure_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()
 
@@ -123,7 +124,10 @@ class ChangeAffectedObject(Base):
     """Insert-only: CHG-FR-004's impact graph is additive evidence, never edited in place."""
 
     __tablename__ = "change_affected_object"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_change_affected_object_change", "change_id"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     change_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.change_control.id"), nullable=False)
@@ -138,7 +142,10 @@ class ChangeAffectedObject(Base):
 
 class ChangeTask(Base):
     __tablename__ = "change_task"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_change_task_change", "change_id"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     change_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.change_control.id"), nullable=False)
@@ -148,6 +155,6 @@ class ChangeTask(Base):
     dependency_links: Mapped[list | None] = mapped_column(JSONB)
     evidence: Mapped[dict | None] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column()

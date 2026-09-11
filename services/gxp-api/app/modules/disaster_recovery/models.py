@@ -19,7 +19,7 @@ unsigned" precedent as every prior unsigned module. No `tenant_id` (ADR-0006); `
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -58,7 +58,10 @@ class BackupInventory(Base):
     checksum/manifest reference, encryption flag and status (DR-FR-005/013/015)."""
 
     __tablename__ = "backup_inventory"
-    __table_args__ = ({"schema": "disaster_recovery"},)
+    __table_args__ = (
+        Index("ix_backup_inventory_component", "component"),
+        {"schema": "disaster_recovery"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     component: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -82,7 +85,10 @@ class RestoreTest(Base):
     compared against the component's `recovery_objective_profile` at report time -- never invented."""
 
     __tablename__ = "restore_test"
-    __table_args__ = ({"schema": "disaster_recovery"},)
+    __table_args__ = (
+        Index("ix_restore_test_backup_id", "backup_id"),
+        {"schema": "disaster_recovery"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     backup_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)

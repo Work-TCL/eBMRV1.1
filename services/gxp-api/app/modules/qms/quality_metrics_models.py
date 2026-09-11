@@ -49,7 +49,7 @@ SG-107, and SG-108 for the smaller items):
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -67,7 +67,11 @@ EFFECTIVENESS_RESULTS = ("pass", "fail", "inconclusive")
 
 class QualityMetricDefinition(Base):
     __tablename__ = "quality_metric_definition"
-    __table_args__ = (UniqueConstraint("metric_code", "version_no"), {"schema": "qms"})
+    __table_args__ = (
+        UniqueConstraint("metric_code", "version_no"),
+        Index("ix_quality_metric_definition_state", "site_id", "state", "metric_code"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -86,13 +90,17 @@ class QualityMetricDefinition(Base):
     effective_from: Mapped[datetime | None] = mapped_column()
     effective_to: Mapped[datetime | None] = mapped_column()
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="DRAFT")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class QualityMetricSnapshot(Base):
     __tablename__ = "quality_metric_snapshot"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_quality_metric_snapshot_definition", "metric_definition_id"),
+        Index("ix_quality_metric_snapshot_package", "review_package_id"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -108,13 +116,17 @@ class QualityMetricSnapshot(Base):
     # this reuses quality_metric_snapshot.state instead of a fourth, undeclared entity.
     review_package_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="COMPLETE")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class EffectivenessCheck(Base):
     __tablename__ = "effectiveness_check"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_effectiveness_check_source", "source_module", "source_record_id"),
+        Index("ix_effectiveness_check_state", "site_id", "state"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -138,6 +150,6 @@ class EffectivenessCheck(Base):
     escalation_rationale: Mapped[str | None] = mapped_column(Text)
     next_observation_due: Mapped[datetime | None] = mapped_column()
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="OBSERVATION")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     evaluated_at: Mapped[datetime | None] = mapped_column()

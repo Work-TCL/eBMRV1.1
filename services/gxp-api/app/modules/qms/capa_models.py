@@ -39,7 +39,7 @@ made for post-release hold (REL-FR-031 reusing hold_scope), not a new invented o
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -86,6 +86,7 @@ class CapaRecord(Base):
     __table_args__ = (
         UniqueConstraint("quality_event_id"),
         UniqueConstraint("capa_number"),
+        Index("ix_capa_record_state_target", "site_id", "state", "target_date"),
         {"schema": "qms"},
     )
 
@@ -113,14 +114,17 @@ class CapaRecord(Base):
     extension_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     closure_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     reopen_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()
 
 
 class CapaAction(Base):
     __tablename__ = "capa_action"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_capa_action_capa", "capa_id"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     capa_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.capa_record.id"), nullable=False)
@@ -138,13 +142,16 @@ class CapaAction(Base):
     verification_status: Mapped[str | None] = mapped_column(String(20))
     verified_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     verified_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class CapaEffectivenessCheck(Base):
     __tablename__ = "capa_effectiveness_check"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_capa_effectiveness_check_capa", "capa_id"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     capa_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.capa_record.id"), nullable=False)

@@ -12,7 +12,7 @@ Document 106's own policy, not a guess.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -48,7 +48,7 @@ class ProcessCycleProfileVersion(Base):
     validation_reference: Mapped[str | None] = mapped_column(String(200))
     sterile_status_validity_hours: Mapped[int | None] = mapped_column(Integer())
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="RELEASED")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -69,7 +69,10 @@ class ProcessCycle(Base):
     validated against any specific QMS record shape (none exists to validate against yet)."""
 
     __tablename__ = "process_cycles"
-    __table_args__ = {"schema": "equipment"}
+    __table_args__ = (
+        Index("ix_process_cycles_equipment", "equipment_id", "created_at"),
+        {"schema": "equipment"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -92,7 +95,7 @@ class ProcessCycle(Base):
     review_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     requires_deviation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deviation_reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -102,7 +105,10 @@ class SterilizationLoadItem(Base):
     `MaterialLot.material_spec_version_id`, since the referenced table varies by `item_type`."""
 
     __tablename__ = "sterilization_load_items"
-    __table_args__ = {"schema": "equipment"}
+    __table_args__ = (
+        Index("ix_sterilization_load_items_cycle", "cycle_id"),
+        {"schema": "equipment"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     cycle_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("equipment.process_cycles.id"), nullable=False)
@@ -111,7 +117,7 @@ class SterilizationLoadItem(Base):
     position: Mapped[str | None] = mapped_column(String(80))
     sterile_status: Mapped[str | None] = mapped_column(String(20))
     sterile_status_expiry: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -146,5 +152,5 @@ class SterileFilterUse(Base):
     performer_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     requires_deviation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deviation_reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

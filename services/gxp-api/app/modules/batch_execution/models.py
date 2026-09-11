@@ -28,7 +28,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -93,7 +93,7 @@ class Batch(Base):
     # (ebmr.gxp_batch is mutable — UPDATE granted, migration f264272f2f0b 0012).
     target_uom_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.gxp_uom.uom_id"))
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="planned")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     production_order_ref: Mapped[str | None] = mapped_column(String(160))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     issued_at: Mapped[datetime | None] = mapped_column()
@@ -118,7 +118,7 @@ class BatchStep(Base):
     scope_type: Mapped[str] = mapped_column(String(40), nullable=False, default="batch")
     scope_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="pending")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     assigned_subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     started_at: Mapped[datetime | None] = mapped_column()
     completed_at: Mapped[datetime | None] = mapped_column()
@@ -139,7 +139,10 @@ class StepResult(Base):
     """
 
     __tablename__ = "gxp_step_result"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_gxp_step_result_step_id", "step_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     step_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch_step.id"), nullable=False)
@@ -168,7 +171,11 @@ class StepHold(Base):
     """
 
     __tablename__ = "gxp_batch_step_hold"
-    __table_args__ = {"schema": "ebmr"}
+    __table_args__ = (
+        Index("ix_gxp_batch_step_hold_batch_id", "batch_id"),
+        Index("ix_gxp_batch_step_hold_step_id", "step_id"),
+        {"schema": "ebmr"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     step_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch_step.id"), nullable=False)

@@ -12,7 +12,7 @@ like Organization/Site").
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -44,7 +44,7 @@ class EquipmentArea(Base):
     criticality: Mapped[str | None] = mapped_column(String(20))
     cleanliness_status: Mapped[str | None] = mapped_column(String(40))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -70,7 +70,7 @@ class CleaningProcedureVersion(Base):
     clean_hold_limit_minutes: Mapped[int | None] = mapped_column(Integer())
     validation_reference: Mapped[str | None] = mapped_column(String(200))
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="RELEASED")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -94,7 +94,11 @@ class CleaningExecution(Base):
     """
 
     __tablename__ = "cleaning_executions"
-    __table_args__ = {"schema": "equipment"}
+    __table_args__ = (
+        Index("ix_cleaning_executions_area", "area_id", "created_at"),
+        Index("ix_cleaning_executions_equipment", "equipment_id", "created_at"),
+        {"schema": "equipment"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -122,7 +126,7 @@ class CleaningExecution(Base):
     dirty_hold_exceeded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     requires_deviation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deviation_reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -146,5 +150,5 @@ class LineClearance(Base):
     verifier_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="NOT_STARTED")
     expiry_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

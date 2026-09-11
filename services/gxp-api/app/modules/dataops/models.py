@@ -31,7 +31,7 @@ existing open gap SG-005; this module records the reference and does not invent 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -96,7 +96,11 @@ class ProjectionCheckpoint(Base):
     Gateway (version++ + audit + outbox + receipt)."""
 
     __tablename__ = "projection_checkpoint"
-    __table_args__ = (UniqueConstraint("projection_type"), {"schema": "dataops"})
+    __table_args__ = (
+        UniqueConstraint("projection_type"),
+        Index("ix_projection_checkpoint_source_stream", "source_stream"),
+        {"schema": "dataops"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # e.g. "frappe.batch_list", "search.batches", "analytics.yield_export"

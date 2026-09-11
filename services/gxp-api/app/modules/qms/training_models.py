@@ -31,7 +31,7 @@ is filed as SG-086 rather than guessed.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Numeric, String, Text
+from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -96,13 +96,17 @@ class TrainingRequirement(Base):
     # controlled policy only" principle).
     required_trainer_qualification_code: Mapped[str | None] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class TrainingAssignment(Base):
     __tablename__ = "training_assignment"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_training_assignment_requirement", "requirement_id"),
+        Index("ix_training_assignment_subject", "subject_id"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -138,13 +142,16 @@ class TrainingAssignment(Base):
     # endpoint (source_type="external" on the requirement signals the assignment is for an external item).
     external_source: Mapped[str | None] = mapped_column(String(200))
     external_reference: Mapped[str | None] = mapped_column(String(200))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class QualificationRecord(Base):
     __tablename__ = "qualification_record"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_qualification_record_subject", "subject_id", "qualification_code"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -160,7 +167,7 @@ class QualificationRecord(Base):
     # TRN-FR-010: renewal supersedes the prior qualification_record rather than editing it in place
     # (the same superseding-history discipline as controlled_document_version).
     renewed_from_qualification_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.qualification_record.id"))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -176,5 +183,5 @@ class TrainingWaiver(Base):
     scope: Mapped[dict | None] = mapped_column(JSONB)
     approved_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

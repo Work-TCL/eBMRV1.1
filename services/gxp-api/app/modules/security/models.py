@@ -68,7 +68,7 @@ endpoint is eventually resolved). `security_threat_model_version.state` stays `D
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -110,7 +110,7 @@ class SecurityThreatModelVersion(Base):
     # Doc 61 `# 6` data-model field; no vault-release function is defined in this module's 8-function
     # catalogue, so this stays unpopulated (nullable) this pass -- not guessed into a fabricated release.
     vault_ref: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -120,7 +120,10 @@ class SecurityThreat(Base):
     module docstring for why those three have no table of their own)."""
 
     __tablename__ = "security_threat"
-    __table_args__ = {"schema": "security"}
+    __table_args__ = (
+        Index("ix_security_threat_model_version", "threat_model_version_id"),
+        {"schema": "security"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     threat_model_version_id: Mapped[uuid.UUID] = mapped_column(
@@ -143,7 +146,7 @@ class SecurityThreat(Base):
     # SEC-THR-015: set by acceptResidualSecurityRisk() once Document 106 resolves its signature point.
     residual_risk_acceptance: Mapped[dict | None] = mapped_column(JSONB)
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="OPEN")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -164,7 +167,7 @@ class SecurityControl(Base):
     # SEC-THR-028: NIST/OWASP/etc framework mappings supplement, never replace, the system-specific
     # threat model itself.
     framework_mappings: Mapped[dict | None] = mapped_column(JSONB)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -172,7 +175,10 @@ class SecurityException(Base):
     """`openSecurityException()` -- SEC-THR-023."""
 
     __tablename__ = "security_exception"
-    __table_args__ = {"schema": "security"}
+    __table_args__ = (
+        Index("ix_security_exception_state", "state", "expiry"),
+        {"schema": "security"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     control_or_requirement: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -190,5 +196,5 @@ class SecurityException(Base):
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="OPEN")
     signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     opened_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

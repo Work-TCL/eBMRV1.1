@@ -57,7 +57,7 @@ See docs/generated/18_SPEC_GAPS.md SG-155 for the full signal-rule-formula gap.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -112,7 +112,10 @@ class PostmarketSource(Base):
     """
 
     __tablename__ = "postmarket_source"
-    __table_args__ = {"schema": "postmarket"}
+    __table_args__ = (
+        Index("ix_postmarket_source_type", "site_id", "source_type"),
+        {"schema": "postmarket"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -122,13 +125,18 @@ class PostmarketSource(Base):
     ingestion_profile_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     owner_subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="ACTIVE")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class SafetyCase(Base):
     __tablename__ = "safety_case"
-    __table_args__ = (UniqueConstraint("safety_case_number"), {"schema": "postmarket"})
+    __table_args__ = (
+        UniqueConstraint("safety_case_number"),
+        Index("ix_safety_case_source", "source_record_type", "source_record_id", "source_record_version"),
+        Index("ix_safety_case_state", "site_id", "state"),
+        {"schema": "postmarket"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -165,7 +173,7 @@ class SafetyCase(Base):
     reassessment_required: Mapped[bool] = mapped_column(nullable=False, default=False)
     reportability_referral_required: Mapped[bool] = mapped_column(nullable=False, default=False)
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="RECEIVED")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -173,7 +181,11 @@ class SafetyCaseFollowup(Base):
     """Append-only -- PMS-FR-016: every material follow-up is an immutable version."""
 
     __tablename__ = "safety_case_followup"
-    __table_args__ = (UniqueConstraint("safety_case_id", "followup_no"), {"schema": "postmarket"})
+    __table_args__ = (
+        UniqueConstraint("safety_case_id", "followup_no"),
+        Index("ix_safety_case_followup_case", "safety_case_id", "followup_no"),
+        {"schema": "postmarket"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     safety_case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("postmarket.safety_case.id"), nullable=False)
@@ -190,7 +202,11 @@ class SafetyCaseFollowup(Base):
 
 class SafetySignal(Base):
     __tablename__ = "safety_signal"
-    __table_args__ = (UniqueConstraint("site_id", "signal_code"), {"schema": "postmarket"})
+    __table_args__ = (
+        UniqueConstraint("site_id", "signal_code"),
+        Index("ix_safety_signal_state", "site_id", "state"),
+        {"schema": "postmarket"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -213,4 +229,4 @@ class SafetySignal(Base):
     owner_subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     opened_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)

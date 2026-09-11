@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -35,7 +35,7 @@ class LimsInstance(Base):
         UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -48,6 +48,7 @@ class LimsMapping(Base):
     __tablename__ = "lims_mapping"
     __table_args__ = (
         UniqueConstraint("instance_id", "external_entity_type", "external_entity_id"),
+        Index("ix_lims_mapping_internal", "internal_object_type", "internal_object_id"),
         {"schema": "ebmr"},
     )
 
@@ -62,7 +63,7 @@ class LimsMapping(Base):
     effective_from: Mapped[datetime | None] = mapped_column()
     effective_to: Mapped[datetime | None] = mapped_column()
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

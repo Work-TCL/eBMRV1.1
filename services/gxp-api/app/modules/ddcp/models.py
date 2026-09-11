@@ -30,7 +30,7 @@ duplicate QC, Genealogy, Equipment or Audit tables", Document 54 §7).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -145,7 +145,7 @@ class DdcpProfileVersion(Base):
         UUID(as_uuid=True), ForeignKey("ebmr.gxp_product_version.id")
     )
     subtype: Mapped[str | None] = mapped_column(String(80))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="DRAFT")
     dosage_form: Mapped[str | None] = mapped_column(String(80))
     presentation: Mapped[str | None] = mapped_column(String(80))
@@ -167,6 +167,7 @@ class ConstituentRequirement(Base):
     __tablename__ = "constituent_requirement"
     __table_args__ = (
         UniqueConstraint("ddcp_profile_version_id", "component_role", "sequence_no"),
+        Index("ix_constituent_requirement_profile", "ddcp_profile_version_id", "constituent_type"),
         {"schema": "ddcp"},
     )
 
@@ -193,7 +194,11 @@ class ConstituentHandoff(Base):
     (batch, from, to) triple against different source batches)."""
 
     __tablename__ = "constituent_handoff"
-    __table_args__ = {"schema": "ddcp"}
+    __table_args__ = (
+        Index("ix_constituent_handoff_batch", "batch_id"),
+        Index("ix_constituent_handoff_state", "state"),
+        {"schema": "ddcp"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -207,7 +212,7 @@ class ConstituentHandoff(Base):
     accepted_at: Mapped[datetime | None] = mapped_column()
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
     rejection_reason: Mapped[str | None] = mapped_column(Text())
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 
 class FillOperation(Base):
@@ -223,6 +228,8 @@ class FillOperation(Base):
     __table_args__ = (
         CheckConstraint("ended_at IS NULL OR ended_at >= started_at", name="ck_fill_operation_end_after_start"),
         CheckConstraint("target_fill > 0", name="ck_fill_operation_target_fill_positive"),
+        Index("ix_fill_operation_batch", "batch_id"),
+        Index("ix_fill_operation_line_started", "line_id", "started_at"),
         {"schema": "ddcp"},
     )
 
@@ -244,8 +251,8 @@ class FillOperation(Base):
     started_at: Mapped[datetime] = mapped_column(nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column()
     line_readiness_reference: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    machine_count_start: Mapped[int | None] = mapped_column()
-    machine_count_end: Mapped[int | None] = mapped_column()
+    machine_count_start: Mapped[int | None] = mapped_column(BigInteger, )
+    machine_count_end: Mapped[int | None] = mapped_column(BigInteger, )
     interventions: Mapped[dict | None] = mapped_column(JSONB)
     alarms: Mapped[dict | None] = mapped_column(JSONB)
     # PFS-FR-008: "bind filter lot/serial, pre/post integrity status ... and evidence." Not in Document
@@ -257,7 +264,7 @@ class FillOperation(Base):
     filter_use_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("equipment.sterile_filter_uses.id"))
     requires_deviation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="SETUP")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -269,6 +276,9 @@ class ProductionCountLedger(Base):
     __tablename__ = "production_count_ledger"
     __table_args__ = (
         CheckConstraint("quantity >= 0", name="ck_production_count_ledger_quantity_non_negative"),
+        Index("ix_production_count_ledger_batch_type", "batch_id", "count_type"),
+        Index("ix_production_count_ledger_occurred", "occurred_at"),
+        Index("ix_production_count_ledger_source_event", "batch_id", "source_event_id"),
         {"schema": "ddcp"},
     )
 
@@ -277,7 +287,7 @@ class ProductionCountLedger(Base):
     batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
     count_type: Mapped[str] = mapped_column(String(60), nullable=False)
     source: Mapped[str] = mapped_column(String(40), nullable=False)
-    quantity: Mapped[int] = mapped_column(nullable=False)
+    quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
     uom: Mapped[str] = mapped_column(String(20), nullable=False, default="EA")
     recorded_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     device_reference: Mapped[dict | None] = mapped_column(JSONB)
@@ -298,6 +308,8 @@ class DeviceAssemblyRecord(Base):
     __tablename__ = "device_assembly_record"
     __table_args__ = (
         CheckConstraint("verified_by IS NULL OR verified_by <> performed_by", name="ck_device_assembly_independent_verify"),
+        Index("ix_device_assembly_record_batch", "batch_id"),
+        Index("ix_device_assembly_record_unit", "unit_identifier"),
         {"schema": "ddcp"},
     )
 
@@ -315,7 +327,7 @@ class DeviceAssemblyRecord(Base):
     verified_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     result: Mapped[str] = mapped_column(String(30), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(nullable=False)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -327,7 +339,10 @@ class DeviceFunctionalTestLink(Base):
     (same treatment as `ConstituentHandoff`'s JSONB-key uniqueness, for the same reason)."""
 
     __tablename__ = "device_functional_test_link"
-    __table_args__ = {"schema": "ddcp"}
+    __table_args__ = (
+        Index("ix_device_functional_test_link_batch_state", "batch_id", "result_state"),
+        {"schema": "ddcp"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -339,7 +354,7 @@ class DeviceFunctionalTestLink(Base):
     result_state: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
     blocks_release: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     linked_at: Mapped[datetime] = mapped_column(nullable=False)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 
 class DdcpReleaseCheckpoint(Base):
@@ -347,7 +362,11 @@ class DdcpReleaseCheckpoint(Base):
     three SATISFIED (`commands.py::evaluate_pfs_release_readiness` is the only writer)."""
 
     __tablename__ = "ddcp_release_checkpoint"
-    __table_args__ = (UniqueConstraint("batch_id", "checkpoint_code"), {"schema": "ddcp"})
+    __table_args__ = (
+        UniqueConstraint("batch_id", "checkpoint_code"),
+        Index("ix_ddcp_release_checkpoint_batch_state", "batch_id", "state"),
+        {"schema": "ddcp"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -359,7 +378,7 @@ class DdcpReleaseCheckpoint(Base):
     decided_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     decision_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     decided_at: Mapped[datetime | None] = mapped_column()
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 
 class BatchEvidenceManifest(Base):
@@ -368,19 +387,23 @@ class BatchEvidenceManifest(Base):
     updates a FROZEN row)."""
 
     __tablename__ = "batch_evidence_manifest"
-    __table_args__ = (UniqueConstraint("batch_id", "manifest_version"), {"schema": "ddcp"})
+    __table_args__ = (
+        UniqueConstraint("batch_id", "manifest_version"),
+        Index("ix_batch_evidence_manifest_batch_state", "batch_id", "state"),
+        {"schema": "ddcp"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
     batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch.id"), nullable=False)
-    manifest_version: Mapped[int] = mapped_column(nullable=False)
+    manifest_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     evidence_set: Mapped[dict] = mapped_column(JSONB, nullable=False)
     digest: Mapped[str] = mapped_column(String(128), nullable=False)
     generated_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
     generated_at: Mapped[datetime] = mapped_column(nullable=False)
     vault_object_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="DRAFT")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 
 # =======================================================================================================
@@ -408,6 +431,7 @@ class DdcpProcessOperation(Base):
     __tablename__ = "ddcp_process_operation"
     __table_args__ = (
         CheckConstraint("ended_at IS NULL OR ended_at >= started_at", name="ck_ddcp_process_operation_end_after_start"),
+        Index("ix_ddcp_process_operation_batch_id", "batch_id"),
         {"schema": "ddcp"},
     )
 
@@ -428,7 +452,7 @@ class DdcpProcessOperation(Base):
     alarms: Mapped[dict | None] = mapped_column(JSONB)
     requires_deviation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="SETUP")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -442,7 +466,10 @@ class DdcpUnitBinding(Base):
     injector_commands.py/coated_device_commands.py, not a DB constraint."""
 
     __tablename__ = "ddcp_unit_binding"
-    __table_args__ = {"schema": "ddcp"}
+    __table_args__ = (
+        Index("ix_ddcp_unit_binding_batch_id", "batch_id"),
+        {"schema": "ddcp"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -453,7 +480,7 @@ class DdcpUnitBinding(Base):
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="BOUND")
     bound_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     bound_at: Mapped[datetime] = mapped_column(nullable=False)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -477,7 +504,7 @@ class ReusableDevicePairing(Base):
     rationale: Mapped[str | None] = mapped_column(Text())
     paired_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     paired_at: Mapped[datetime] = mapped_column(nullable=False)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -491,6 +518,7 @@ class DrugCoatingUsageLedger(Base):
     __tablename__ = "drug_coating_usage_ledger"
     __table_args__ = (
         CheckConstraint("quantity >= 0", name="ck_drug_coating_usage_ledger_quantity_non_negative"),
+        Index("ix_drug_coating_usage_ledger_batch_id", "batch_id"),
         {"schema": "ddcp"},
     )
 

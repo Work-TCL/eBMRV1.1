@@ -46,7 +46,7 @@ Deferred this pass (see docs/generated/18_SPEC_GAPS.md SG-105/SG-106, same disci
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -76,6 +76,7 @@ class FieldAction(Base):
     __table_args__ = (
         UniqueConstraint("quality_event_id"),
         UniqueConstraint("action_number"),
+        Index("ix_field_action_state", "site_id", "state"),
         {"schema": "qms"},
     )
 
@@ -95,14 +96,17 @@ class FieldAction(Base):
     # FAR-FR-019: bumped every time a CLOSED field action is reopened via scope() (scope expansion).
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="ASSESSMENT")
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()
 
 
 class FieldActionScopeItem(Base):
     __tablename__ = "field_action_scope_item"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_field_action_scope_item_action", "field_action_id"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -121,7 +125,10 @@ class FieldActionScopeItem(Base):
 
 class FieldActionCommunication(Base):
     __tablename__ = "field_action_communication"
-    __table_args__ = {"schema": "qms"}
+    __table_args__ = (
+        Index("ix_field_action_communication_action", "field_action_id"),
+        {"schema": "qms"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -150,5 +157,5 @@ class FieldActionReconciliation(Base):
     destroyed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     unavailable_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     outstanding_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

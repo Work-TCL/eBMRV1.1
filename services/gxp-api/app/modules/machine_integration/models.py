@@ -30,7 +30,7 @@ below is this pass's own derivation from the spec's own §4 (`SignalMappingVersi
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -126,7 +126,10 @@ class BatchContext(Base):
     proximity (MAP-FR-013 / §14 prohibition)."""
 
     __tablename__ = "batch_contexts"
-    __table_args__ = {"schema": "machine_integration"}
+    __table_args__ = (
+        Index("ix_batch_contexts_source_status", "source_id", "status"),
+        {"schema": "machine_integration"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)

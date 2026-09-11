@@ -25,7 +25,7 @@ treatment as SG-081's `warehouse_location.create`.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -67,7 +67,7 @@ class AsepticProfileVersion(Base):
     supersedes_profile_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("equipment.aseptic_profile_versions.id")
     )
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -92,7 +92,10 @@ class AsepticOperation(Base):
     """
 
     __tablename__ = "aseptic_operations"
-    __table_args__ = {"schema": "equipment"}
+    __table_args__ = (
+        Index("ix_aseptic_operations_area", "area_id", "created_at"),
+        {"schema": "equipment"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
@@ -114,7 +117,7 @@ class AsepticOperation(Base):
     complete_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     requires_deviation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deviation_reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -126,7 +129,10 @@ class AsepticIntervention(Base):
     `INTERVENTION_TYPES`, not free text)."""
 
     __tablename__ = "aseptic_interventions"
-    __table_args__ = {"schema": "equipment"}
+    __table_args__ = (
+        Index("ix_aseptic_interventions_operation", "operation_id"),
+        {"schema": "equipment"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     operation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("equipment.aseptic_operations.id"), nullable=False)
@@ -141,7 +147,7 @@ class AsepticIntervention(Base):
     evidence_ref: Mapped[dict | None] = mapped_column(JSONB)
     requires_deviation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deviation_reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -150,7 +156,10 @@ class AsepticEventTimeline(Base):
     breach, ASP-FR-021/022) holds the parent operation, same treatment as an unplanned intervention."""
 
     __tablename__ = "aseptic_event_timeline"
-    __table_args__ = {"schema": "equipment"}
+    __table_args__ = (
+        Index("ix_aseptic_event_timeline_operation", "operation_id"),
+        {"schema": "equipment"},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     operation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("equipment.aseptic_operations.id"), nullable=False)
