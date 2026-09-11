@@ -133,12 +133,19 @@ jobs:
       - run: pipx install uv==${UV_VERSION} || pip install uv==${UV_VERSION}
       - run: uv sync --frozen --group dev
 
+      - name: Create app role  (PG-FR-005/006 — migrations GRANT to ebmr_new_gxp_app, never create it)
+        run: |
+          PGPASSWORD=ci_migrator_pw psql -h localhost -U ebmr_new_migrator -d ebmr_new_gxp_test -v ON_ERROR_STOP=1 \
+            -c "DO \$\$ BEGIN
+                  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ebmr_new_gxp_app') THEN
+                    CREATE ROLE ebmr_new_gxp_app LOGIN PASSWORD 'ci_migrator_pw';
+                  END IF;
+                END \$\$;"
+
       - name: Bootstrap schemas + migrate to head
         run: |
           PGPASSWORD=ci_migrator_pw psql -h localhost -U ebmr_new_migrator -d ebmr_new_gxp_test -v ON_ERROR_STOP=1 \
-            -c "CREATE SCHEMA IF NOT EXISTS audit; CREATE SCHEMA IF NOT EXISTS iam; CREATE SCHEMA IF NOT EXISTS mutation; CREATE SCHEMA IF NOT EXISTS signature; CREATE SCHEMA IF NOT EXISTS vault; CREATE SCHEMA IF NOT EXISTS ebmr;"
-          # single app+migration role in CI; the append-only privilege split (mig 0002) is exercised
-          # by its own targeted tests, not the whole suite
+            -c "CREATE SCHEMA IF NOT EXISTS audit; CREATE SCHEMA IF NOT EXISTS iam; CREATE SCHEMA IF NOT EXISTS mutation; CREATE SCHEMA IF NOT EXISTS signature; CREATE SCHEMA IF NOT EXISTS vault; CREATE SCHEMA IF NOT EXISTS ebmr; CREATE SCHEMA IF NOT EXISTS materials; CREATE SCHEMA IF NOT EXISTS validation;"
           GXP_MIGRATION_DATABASE_URL="postgresql+asyncpg://ebmr_new_migrator:ci_migrator_pw@localhost:5432/ebmr_new_gxp_test" \
             uv run alembic upgrade head
 
@@ -193,7 +200,9 @@ jobs:
 
       - name: gitleaks (secret scan)
         uses: gitleaks/gitleaks-action@v2
-        env: { GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false" }
+        env:
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/upload-artifact@v4
         if: always()

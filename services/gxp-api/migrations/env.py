@@ -32,6 +32,14 @@ if config.config_file_name is not None:
 # ... etc.
 
 
+def include_object(object, name, type_, reflected, compare_to):
+    """Alembic's own bookkeeping table is never part of target_metadata (no model owns it), so
+    without this filter every `alembic check` / autogenerate run flags it as a table to remove."""
+    if type_ == "table" and name == "alembic_version":
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -51,6 +59,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
+        include_object=include_object,
         version_table_schema="public",
     )
 
@@ -63,6 +72,7 @@ def do_run_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         include_schemas=True,
+        include_object=include_object,
         version_table_schema="public",
     )
 
