@@ -550,7 +550,7 @@
     "VLT-FR-030": "BLOCKED"
    },
    "entities": 5,
-   "apis": 6,
+   "apis": 7,
    "events": 0,
    "test_cases": 147,
    "stage": "IN_DEVELOPMENT",
@@ -560,6 +560,12 @@
      "at": "2026-08-22",
      "by": "Claude Code",
      "note": "Partial build: full backend for release/inspection/correction workflow (app/modules/vault/) -- release_master() creates an immutable, digest-verified, supersession-linked snapshot on every batch release and material-lot disposition; integrity verification detects tampering; corrections can be requested. Frontend page (frontend/src/app/vault/page.tsx) added. Evidence manifest population, void/cancel, retention/hold/archive, WORM, deterministic export, schema evolution, disposition packaging, migration provenance, backup/restore verification, DDCP cross-constituent snapshot, correction completion (signature policy), and the Frappe UI surfaces are not built this pass -- see SG-035, SG-036, SG-037."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-11",
+     "by": "Claude Code",
+     "note": "Phase-4 prerequisite check: full pytest suite (1169 tests) caught test_contract_conformance.py::test_wp01_contracts_cover_every_implemented_wp01_operation failing -- POST /vault/v1/corrections/{id}/signature-challenges (SG-035 pair 4 / VLT-FR-010, implemented in the item-D pass) was never declared in spec-gxp-004.yaml. Contract updated to match the real implementation (request/response schemas, error responses, stale FAILS-CLOSED-TODAY note corrected now that vault_object/release and record_correction/complete both have Document 106 policy rows). Also fixed tests/conftest.py's seeded fixture re-hashing the same demo password 18x per test with bcrypt (~4.8s/test wasted, ~55% of full-suite runtime) -- hashed once and reused. Full suite re-verified green: 1169 passed, 0 failed, 3826.85s."
     }
    ],
    "owner": "Claude Code",

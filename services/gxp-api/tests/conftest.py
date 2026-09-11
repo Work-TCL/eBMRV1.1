@@ -516,6 +516,9 @@ async def seeded(db: AsyncSession) -> dict:
         await db.flush()
 
         users = {}
+        # All 18 seeded users share DEMO_PASSWORD -- hash it once rather than paying bcrypt's cost 18x
+        # per test (this fixture runs on nearly every test; the redundant hashing alone added ~4.8s/test).
+        demo_password_hash = hash_password(DEMO_PASSWORD)
         for username, role_name in (
             ("operator1", "Operator"),
             ("qa.reviewer", "QA Reviewer"),
@@ -540,7 +543,7 @@ async def seeded(db: AsyncSession) -> dict:
                 username=username,
                 email=f"{username}@example.com",
                 full_name=username,
-                password_hash=hash_password(DEMO_PASSWORD),
+                password_hash=demo_password_hash,
                 status="active",
             )
             db.add(user)

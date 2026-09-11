@@ -20,11 +20,12 @@ info:
     same `vault_objects` rows through the same code — there is no second authoritative store (AG-05).
 
 
-    FAILS CLOSED TODAY: Document 106's approved floor has no policy row for `(vault_object, release)` or
-    `(record_correction, complete)`, so `postReleaseVaultMaster` and `postCompleteCorrection` return
-    `SIGNATURE_POLICY_UNRESOLVED` (409) on every call. That is correct fail-closed behaviour under
-    SIGP-FR-004 — the generic surface will not release or correct an immutable record unsigned because
-    policy data is missing. The domain modules that run their own ceremony are unaffected. See SG-029.
+    RESOLVED 2026-09-11: Document 106's approved floor now carries policy rows for both
+    `(vault_object, release)` (Document 106 §9 row 2, SG-035 pair — 2026-09-10) and
+    `(record_correction, complete)` (Document 106 §9 row 1, SG-035 pair 4 — PHASE_3_DEFERRED_DECISIONS.md
+    item D). `postReleaseVaultMaster` and `postCompleteCorrection` no longer fail closed for these
+    record types; `SIGNATURE_POLICY_UNRESOLVED` (409) is now reserved for any other `(record_type,
+    action)` this generic surface is pointed at that still has no policy row (SIGP-FR-004). See SG-029.
 
 
     NOT BUILT THIS PASS: effective-dating lifecycle transitions and obsolete-version selection guards
@@ -288,6 +289,52 @@ paths:
         '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
         '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
 
+  /vault/v1/corrections/{correction_id}/signature-challenges:
+    parameters:
+      - name: correction_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postCorrectionSignatureChallenge
+      tags: [vault]
+      summary: Create a signature challenge for one position in the correction's ordered chain (Document 106 §9 row 1)
+      description: >
+        SG-035 pair 4, RESOLVED 2026-09-11 (PHASE_3_DEFERRED_DECISIONS.md item D). `complete_correction()`
+        was previously the platform's only single-signature 409/428 fail-closed action with no
+        challenge-issuing endpoint at all; this is that endpoint. `chain_position` (1 = corrector,
+        2 = independent approver) is derived server-side from how many valid signatures this correction
+        already carries, never accepted from the caller — this structurally rules out a second-position
+        signature being issued before the first exists (Document 106 §13 test #5). Bound to
+        `sha256_hex(corrected_canonical_payload)` at version 1, the same hash `complete_correction()`
+        re-computes at consume time; from chain position 2 onward, the supplied payload is checked against
+        the first signer's own hash so a later signer cannot approve different content than an earlier
+        signer saw.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012, SIG-FR-018, VLT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CorrectionSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/CorrectionSignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409':
+          description: >
+            SIGNATURE_POLICY_UNRESOLVED, or every required signature for this correction has already been
+            collected.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: >
+            VALIDATION_FAILED — the correction is not in a state awaiting a signature, or
+            `corrected_canonical_payload` does not match what an earlier signer in this chain approved.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -313,6 +360,37 @@ components:
       properties:
         challenge_id: { type: string, format: uuid }
         meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    CorrectionSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Body of the record-correction signature-challenge endpoint (SG-035 pair 4, Document 106 §9 row 1).
+      x-requirement-ids: [SIG-FR-005, VLT-FR-010]
+      required: [corrected_canonical_payload]
+      properties:
+        corrected_canonical_payload:
+          type: object
+          description: The proposed corrected payload; hashed and bound to the issued challenge.
+
+    CorrectionSignatureChallengeResponse:
+      type: object
+      description: >
+        The challenge receipt for one position in the correction's ordered signature chain (response
+        schema, not closed).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-018, SIG-FR-027, VLT-FR-010]
+      required: [challenge_id, meaning, chain_position, signature_count, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        chain_position:
+          type: integer
+          minimum: 1
+          description: This challenge's position in the ordered chain (1 = corrector, 2 = independent approver).
+        signature_count:
+          type: integer
+          minimum: 1
+          description: The total number of signatures Document 106 policy requires for this correction.
         expires_at: { type: string, format: date-time }
 
     VaultObject:
