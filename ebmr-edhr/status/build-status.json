@@ -1,6 +1,6 @@
 {
  "package": "eBMR / eDHR platform build status",
- "generated": "2026-09-10",
+ "generated": "2026-09-11",
  "baseline": "Documents 01-115",
  "stage_model": [
   "NOT_STARTED",
@@ -7074,6 +7074,12 @@
      "by": "Claude Code",
      "stage": "IN_DEVELOPMENT",
      "note": "Phase 2 backbone ratchet item 4 (PHASE_2_BACKBONE.md Sec 4 item 13): rebuilt ebmr_new_gxp_test with alembic downgrade base then alembic upgrade head (94/94 migrations, both directions, clean), demonstrating MIG-FR-007 (representative test) and MIG-FR-008 (idempotent rerun detection) for the first time end-to-end rather than only per-migration. Found and fixed a real MIG-FR-003 (forward-first / correct rollback) violation: migration 0053's downgrade() was non-idempotent against migration 0083's own repair-migration downgrade, breaking the full chain's downgrade path outright. Wrote migration 0094 as a genuine MIG-FR-026 repair migration (not new development, controlled change record in its own docstring) with a tested, symmetric downgrade(). Narrow, verification-focused slice of this standard -- MIG-FR-002/003/007/008/026 have real evidence; the remaining ~27 requirements (expand-contract window discipline, backfill/checksum reconciliation, lock-duration analysis, dry-run rehearsal on a restore copy, migration evidence capture, etc.) are untouched by this pass."
+    },
+    {
+     "at": "2026-09-10",
+     "by": "Claude Code",
+     "stage": "IN_DEVELOPMENT",
+     "note": "SG-184 fully resolved same day (user-directed gap-closure follow-up): the ~144 BIGINT-vs-Integer/JSON-vs-JSONB, 169 missing-index and 13 missing-check-constraint mismatches alembic check surfaced after the item-4 rebuild were all model-declaration gaps, not real schema drift -- each migration already had the correct type/index/constraint deployed; the ORM model just didn't declare it explicitly. Added every one, reading each migration individually rather than guessing (MIG-FR-*'s own discipline). alembic check now reports zero findings other than the disclosed alembic_version non-finding -- a genuine, trustworthy pass/fail signal for the schema-drift guard for the first time. Full 1162-test suite run against the result: 1162 passed, 0 failed, 0 errors, 0 skipped."
     }
    ],
    "owner": "Claude Code",
