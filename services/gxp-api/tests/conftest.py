@@ -857,6 +857,44 @@ async def seeded(db: AsyncSession) -> dict:
                 policy_source="PLATFORM_FLOOR",
             )
         )
+        # product_version/reinstate -- SG-035 pair 5, RESOLVED 2026-09-11, project-owner-directed
+        # (PHASE_3_DEFERRED_DECISIONS.md item B). No test file adds its own local product_version/
+        # reinstate row (only test_product_master.py exercises it, and it uses this global row).
+        db.add(
+            SignaturePolicy(
+                record_type="product_version",
+                action="reinstate",
+                meaning="Approved",
+                required_role_id=roles["QA Releaser"].id,
+                requires_independent_signer=True,
+                signature_required=True,
+                reason_required=True,
+                policy_source="PLATFORM_FLOOR",
+            )
+        )
+        # SG-167 -- all 5 AI-governance pairs, RESOLVED 2026-09-11, project-owner-directed
+        # (PHASE_3_DEFERRED_DECISIONS.md item C). No test file adds its own local row for any of the 5
+        # ai_governance record types -- test_ai_governance.py's 5 formerly "fails closed, no policy" tests
+        # were rewritten to exercise the real ceremony against this global row.
+        for record_type, action, meaning, role_name, independent, reason in (
+            ("ai_model_deployment", "approve", "Approved", "QA Releaser", True, True),
+            ("ai_tool_call", "authorize", "Approved", "QA Releaser", True, True),
+            ("ai_disposition", "record", "Performed", None, False, False),
+            ("ai_release_gate", "evaluate", "Released", "QA Releaser", True, True),
+            ("ai_provider_switch", "switch", "Approved", "QA Releaser", True, True),
+        ):
+            db.add(
+                SignaturePolicy(
+                    record_type=record_type,
+                    action=action,
+                    meaning=meaning,
+                    required_role_id=roles[role_name].id if role_name else None,
+                    requires_independent_signer=independent,
+                    signature_required=True,
+                    reason_required=reason,
+                    policy_source="PLATFORM_FLOOR",
+                )
+            )
         # Document 106 row 108 (SPEC-EQP-001) -- same row scripts/seed.py upserts.
         db.add(
             SignaturePolicy(

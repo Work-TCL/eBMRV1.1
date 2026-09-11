@@ -1177,9 +1177,19 @@ SIGNATURE_POLICY_FLOOR = [
     # `required_role_name=None` (RBAC `product.suspend` gates it; same treatment as Document 106 row 108
     # equipment_asset/hold) -- Independence "None", Reason "yes" (already satisfied by the required
     # `SuspendProductVersionCommand.reason` field). No bespoke enforcement needed: no role check, no
-    # independence check. `product_version/reinstate` has no Document 106 row and stays unresolved
-    # (SG-035, deferred 2026-09-10) -- deliberately not extended here.
+    # independence check.
     ("product_version", "suspend", "Performed", None, False, True, True),
+    # product_version/reinstate -- SG-035 pair 5, RESOLVED 2026-09-11, project-owner-directed
+    # (PHASE_3_DEFERRED_DECISIONS.md item B). No Document 106 section 9 row names this action; the
+    # project owner chose the section 8 "resume / unhold / release-hold" PROPOSED family verbatim
+    # (meaning `Approved`, signer "QA authority that owns the hold reason" -> `QA Releaser`, same
+    # class->role mapping already used for "QA Approver for the record class" elsewhere;
+    # independence "MUST be independent of the person who caused the condition" -- enforced in
+    # `reinstate_product_version()` against the actor of this product version's own most recent
+    # `suspend` audit event, the same audit-trail lookup pattern `release_product_version()` uses
+    # against the `Created` event; reason yes, already satisfied by the required
+    # `ReinstateProductVersionCommand.reason` field).
+    ("product_version", "reinstate", "Approved", "QA Releaser", True, True, True),
     # SG-035 vault_object/release + rule/release -- 2026-09-10, project-owner-directed ("follow the
     # ebmr-edhr docs"): Document 106 section 9 rows 2 and 6 both state `Released` by a "QA Approver /
     # Batch Release" -> "QA Releaser", "MUST be independent of every production performer on the record",
@@ -1292,6 +1302,54 @@ SIGNATURE_POLICY_FLOOR = [
     ("risk_record", "review", "Reviewed", "QA Reviewer", True, True, False),                 # section 9 row 97
     ("quality_metric_definition", "release", "Released", "QA Releaser", True, True, True),    # section 9 row 106
     ("quality_metric_snapshot", "management_review", "Reviewed", "QA Reviewer", True, True, False),  # section 9 row 107
+    # ---------------------------------------------------------------------------------------------------
+    # SG-138 Kind B -- `training_assignment` create/complete/assess, RESOLVED 2026-09-11,
+    # project-owner-directed (PHASE_3_DEFERRED_DECISIONS.md item A). Document 106 section 9 rows 91-93
+    # literally defer these three ("per challenge" / "Per policy lookup") rather than stating a value --
+    # the project owner authored them from the closest section 8 action families rather than Document 106
+    # supplying the text verbatim, unlike every Kind-A row elsewhere in this file:
+    #   create   -- section 8 "issue / start / begin": `Performed`, "Production Supervisor or qualified
+    #               issuer" -> no fixed role (RBAC `training.assignment.create` gates it), independence
+    #               none, reason no.
+    #   complete -- section 8 "complete / record / result / execute / perform / confirm": `Performed`,
+    #               "Qualified performer for the task" -> no fixed role (RBAC gates it), independence
+    #               none, reason no.
+    #   assess   -- section 8 "verify / verification / witness / second-check / double-check": `Verified`,
+    #               "Qualified independent verifier" -> no fixed role (RBAC gates it, same "no role pair"
+    #               precedent as `nonconformance_record/verify` etc.), independence "MUST NOT be the
+    #               performer" read here as MUST NOT be the trainee being assessed -- enforced in
+    #               `assess_assignment()` against `TrainingAssignment.subject_id`, reason no.
+    ("training_assignment", "create", "Performed", None, False, True, False),
+    ("training_assignment", "complete", "Performed", None, False, True, False),
+    ("training_assignment", "assess", "Verified", None, True, True, False),
+    # ---------------------------------------------------------------------------------------------------
+    # SG-167 -- all 5 AI-governance pairs, RESOLVED 2026-09-11, project-owner-directed
+    # (PHASE_3_DEFERRED_DECISIONS.md item C, a Document 106 v1.1 addendum -- Document 105 is outside
+    # Document 106 section 2's "Documents 03-60" scope, so section 9 has zero rows for these; the project
+    # owner authored all five from the closest section 8 families (offered as reference only in the
+    # decision request, not adopted by engineering) rather than Document 106 supplying them verbatim:
+    #   ai_model_deployment/approve -- section 8 "approve / approval / authoriz": `Approved`, "Module
+    #     approver role (QA Manager / Head of Quality)" -> `QA Releaser` (precedent: row 43
+    #     supplier_qualification/approve), independent, reason yes.
+    #   ai_tool_call/authorize -- same "approve / authoriz" family, same mapping.
+    #   ai_disposition/record -- section 8 "complete / record / result / execute / perform / confirm":
+    #     `Performed`, qualified performer -> no fixed role, independence none, reason no.
+    #   ai_release_gate/evaluate -- section 8 "release / disposition / certif": `Released`, "QA Approver /
+    #     Batch Release" -> `QA Releaser`, independent, reason yes.
+    #   ai_provider_switch/switch -- no section 8 family fits; project owner directed treating it as the
+    #     same "approve / authoriz" family as the first two (it changes which AI system a use case
+    #     trusts going forward), `Approved` / `QA Releaser` / independent / reason yes.
+    # None of the five ai_governance tables store an author/requester/performer identity column, so
+    # `requires_independent_signer=True` is enforced as role-only in each command via
+    # `signature_service.enforce_signer_policy(disqualified_subject_ids=())` -- the independence clause
+    # itself has no data source, same documented limitation as `vault_object/release` / `rule/release` /
+    # `qa_review_package/complete`. AI / service identity is never itself a signer regardless
+    # (SIGP-FR-008, AG-14) -- unaffected by this change, a human actor_user_id always signs.
+    ("ai_model_deployment", "approve", "Approved", "QA Releaser", True, True, True),
+    ("ai_tool_call", "authorize", "Approved", "QA Releaser", True, True, True),
+    ("ai_disposition", "record", "Performed", None, False, True, False),
+    ("ai_release_gate", "evaluate", "Released", "QA Releaser", True, True, True),
+    ("ai_provider_switch", "switch", "Approved", "QA Releaser", True, True, True),
 ]
 
 # Document 20 (SPEC-MAT-002B) INV-FR-001/002: warehouse_location has no CRUD operation anywhere in
