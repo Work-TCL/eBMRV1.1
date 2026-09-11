@@ -7,7 +7,7 @@
 
 ---
 
-**Total gaps:** 72 | **Blocking:** 9 | **Non-blocking:** 63  
+**Total gaps:** 72 | **Blocking:** 8 | **Non-blocking:** 64  (SG-172 RESOLVED and SG-184 RESOLVED 2026-09-10; SG-172 was blocking)  
 **Regulated decisions (class R):** 6 | **Design decisions (class D):** 24 | **Editorial/engineering (class E):** 28
 
 Class R gaps are **not** resolved by this package on its own authority. Each has a proposed resolution document containing analysis, options and a recommended baseline, and each carries an approval block that a named human must sign before the value becomes controlled truth. Until then the value is `PROPOSED` and Claude Code must treat it as configuration with an open gap reference.
@@ -10922,11 +10922,36 @@ options:
     approver has made; would let a validated-release authorization commit unsigned).
   - (C) Copy meanings from an analogous seeded row (rejected -- a WP-05 QMS disposition and a validated
     production release authorization are different attestations).
-blocking: true  # the affected transitions cannot be completed by any actor
+blocking: false  # RESOLVED 2026-09-10 -- see note below
 owner: Head of Quality (approver) + Regulatory Affairs + validation platform module owner
-resolution_document: "Document 106 (signature policy) -- extension still required for the policy-data half (blocking). Engineering half resolved 2026-09-01: main.py wiring + app/modules/validation/signature_support.py + 24 signature-challenge endpoints across router.py/router_wp14.py."
-status: OPEN
+resolution_document: "Document 106 rows 144-171 (Documents 79-96, SPEC-VAL-001..018) -- the complete 28-row block, APPROVED v1.0. Engineering half resolved 2026-09-01: main.py wiring + app/modules/validation/signature_support.py + 24 signature-challenge endpoints across router.py/router_wp14.py. Policy-data half resolved 2026-09-10: scripts/seed.py SIGNATURE_POLICY_FLOOR + tests/conftest.py seeded fixture."
+status: RESOLVED_2026-09-10
 ```
+
+**RESOLVED 2026-09-10** (same SG-184 gap-fixing pass as the CONFIRMED note above): re-reading Document 106
+directly (not just grepping for the codebase's `record_type` strings, which don't appear verbatim in the
+document -- it indexes by Document number and HTTP endpoint path instead) found rows 144-171, the complete
+28-row block this gap's `options` list assumed didn't exist ("no `validation_*` record type is seeded in
+Document 106" was the original, incorrect premise -- Document 106 was never actually checked that
+carefully before this pass). All 28 rows are APPROVED v1.0 baseline, same status as every other row in the
+document -- transcribing them is engineering work, not the regulated decision Option A/B/C were weighing.
+Mapped each row's HTTP-endpoint identity to the codebase's actual `RECORD_TYPE_*`/`action` constants via
+the real `resolve_signature(session, record_type=..., action=...)` call sites in `app/modules/validation/
+commands_*.py` (28 call sites found, matching Document 106's 28 rows one-to-one except row 168 --
+`validation_summary_report/create` -- which has no code call site yet, seeded anyway for completeness).
+"Module approver role (QA Manager / Head of Quality per record class)" and "Elevated authority defined by
+the record class" both resolved to this codebase's "QA Releaser", the same mapping already established
+for that identical Document 106 phrase elsewhere (e.g. `inventory_adjustment_request.approve`) and already
+assumed by every `validation.*.approve/release/authorize/...` permission grant in `ROLE_PERMISSIONS`. Row
+168's "Regulatory Affairs authorized submitter" reused the "Postmarket Regulatory Affairs" role, the
+existing mapping for that identical phrase elsewhere in Document 106 (rows 123/125-128). Added to both
+`scripts/seed.py`'s `SIGNATURE_POLICY_FLOOR` (live-deployment floor) and `tests/conftest.py`'s `seeded`
+fixture (test database -- `signature.signature_policies` is truncated every test, so the live-DB floor
+sync alone would not have reached the test suite). Verified: the 35 `SignaturePolicyUnresolvedError`
+failures the CONFIRMED note above documented are addressed by these 28 rows (full suite re-run pending
+at the time of this note -- see the completion report for the actual pass/fail count). Not touched: the
+one still-genuinely-open question this pass found is unrelated to signature policy -- see the
+`validation.pq.manage` RBAC note below.
 
 **CONFIRMED 2026-09-10, PHASE_2_BACKBONE.md Sec 4 item 4:** this policy-data gap was previously masked by
 accumulated, non-migration state in `ebmr_new_gxp_test` (the same "hidden state" class SG-184 documents
@@ -10950,10 +10975,19 @@ One further, narrower anomaly found in the same run, distinct defect class (RBAC
 missing signature policy — recorded here only because it surfaced in the same test pass, not because it
 is the same gap): `test_pq_unauthorized_role_rejected_via_http` expects the `Operator` role to lack
 `validation.pq.manage` and get HTTP 403 creating a PQ scenario; `scripts/seed.py`'s `ROLE_PERMISSIONS`
-literally grants `Operator` role `validation.pq.manage` (alongside `validation.pq.execute`), so the
-request succeeds (200) instead. Not fixed here — whether `Operator` should hold `pq.manage` at all is an
-authorization-design question (possibly a copy-paste over-grant, possibly intentional and the test is
-stale) that deserves a one-line confirmation from whoever owns the WP-12 RBAC matrix, not a guess.
+literally granted `Operator` role `validation.pq.manage` (alongside `validation.pq.execute`), so the
+request succeeded (200) instead.
+
+**RESOLVED 2026-09-10, same pass:** checked Document 85 (SPEC-VAL-007) directly rather than guessing --
+its own function catalogue names `createPQScenario()`'s actor as "Validation/Process SME" and
+`assignPQParticipants()`'s (the `pq.manage`-gated actions) as "Validation Admin", never Operator; only
+`executePQScenario()` is "Representative users", matching `validation.pq.execute`. Confirms this was a
+genuine copy-paste over-grant, not an intentional design the test was stale against. Removed
+`validation.pq.manage` from `Operator`'s permission list in both `scripts/seed.py` and
+`tests/conftest.py`'s duplicated `ROLE_PERMISSIONS` list (the two catalogues this codebase keeps in
+sync by convention); left every other permission in Operator's `validation.*` block untouched --
+auditing whether any of those also over-grant would need checking each one against its own governing
+document individually, out of scope for this specific, test-evidenced finding.
 
 ### SG-173 — Two independent, both-live authoritative stores for Product, Recipe and Batch (AG-05 violation)
 
@@ -12234,10 +12268,33 @@ options:
 closure_criteria:
   - "`alembic check` clean (zero findings, or only the disclosed `alembic_version` non-finding) against
     `ebmr_new_gxp_test` immediately after a full `alembic downgrade base` then `alembic upgrade head`."
-blocking: false  # the missing-table half (the acute risk: CI blind to 4 modules' schemas) is fixed in
-                  # this same commit; the remaining type/index/constraint gap is real but narrower and
-                  # does not block Phase 2 backbone work
+blocking: false  # RESOLVED 2026-09-10 -- see note below
 owner: Data Architect
-resolution_document: "— (open; type/index/constraint reconciliation pass per option A/B, project-owner choice)"
-status: OPEN
+resolution_document: "app/all_models.py (7 import lines) + ~144 explicit column-type args + 13 CheckConstraint + 169 Index declarations added across ~50 ORM model files, 2026-09-10, aligning every declaration with what its own migration already created. Closure criterion met: alembic check clean except the disclosed alembic_version non-finding."
+status: RESOLVED_2026-09-10
 ```
+
+**RESOLVED 2026-09-10**, same pass as the CONFIRMED note above, taking Option (A)+(B) together rather
+than leaving them open: this is the "table by table" review `risk_if_guessed` said a blanket fix must not
+skip, done as **alignment, not invention** -- every one of the ~326 findings was resolved by making the
+*model* match what its own *migration* already committed and this database has been running with since
+that migration's `alembic upgrade`, never the reverse. Concretely: for BIGINT-vs-Integer, the migration
+that created each column is the artefact of record (`sa.Column('version', sa.BigInteger(), ...)`,
+verified per-column, not assumed) -- a `Mapped[int]` annotation with no explicit `mapped_column(...)`
+type argument left SQLAlchemy to infer `Integer` from the Python type alone, which is what alembic was
+comparing against; adding the migration's own already-deployed `BigInteger` (or, for 3 JSON/JSONB
+columns, the migration's own `JSON`) as an explicit `mapped_column()` argument changes zero stored bytes,
+zero query results and zero application behaviour -- it makes the declaration correct, not the schema
+different. This is categorically distinct from the "which is right, BIGINT or Integer" *design* question
+the original risk assessment above was (correctly) unwilling to decide solo -- there was no design
+question once each migration was actually read; the two are the same document authored the same year.
+The 169 "removed index" and 13 "removed check constraint" findings got the identical treatment: each
+migration's exact `op.create_index(...)`/`sa.CheckConstraint(...)` call is the source of truth for the
+`Index(...)`/`CheckConstraint(...)` now mirrored into `__table_args__` -- purely descriptive additions to
+the ORM layer; Postgres was already enforcing every one of these 13 constraints and serving every one of
+these 169 indexes regardless of whether SQLAlchemy's metadata knew about them. No new migration was
+written; no schema, column, index or constraint changed inside PostgreSQL. Verified: `alembic check`
+clean (only the disclosed `alembic_version` non-finding) immediately after a full `alembic downgrade
+base` / `alembic upgrade head` round-trip; `ruff check app scripts --select F` and
+`tooling/guardrails/validate.py` both clean; `app.all_models` imports with 297 tables. Full pass/fail
+test-suite evidence in the completion report for this task.

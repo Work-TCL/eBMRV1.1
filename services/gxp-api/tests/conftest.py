@@ -24,24 +24,32 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.config import settings
-
 from app.core.db import SessionLocal
 from app.core.security import hash_password
 from app.main import app
-from app.modules.iam.models import Organization, Permission, Qualification, Role, RolePermission, Site, User, UserSiteRole
-from app.modules.material.models import WarehouseLocation
-from app.modules.equipment.cleaning_models import CleaningProcedureVersion, EquipmentArea
-from app.modules.equipment.em_models import EmLocation, EmProgramVersion
-from app.modules.equipment.sterilization_models import ProcessCycleProfileVersion
-from app.modules.equipment.aseptic_models import AsepticProfileVersion
-from app.modules.edge.models import EdgeEnrollmentToken
-from app.modules.erp.models import ErpInstance
-from app.modules.rules.models import RuleDefinition
-from app.modules.signature.models import SignaturePolicy
 from app.modules.dataops.models import DataOwnershipRegistry
 from app.modules.dataops.registry import OWNERSHIP_SEED
 from app.modules.disaster_recovery.models import RecoveryObjectiveProfile
 from app.modules.disaster_recovery.registry import DOCUMENT_109_TIER_SEED
+from app.modules.edge.models import EdgeEnrollmentToken
+from app.modules.equipment.aseptic_models import AsepticProfileVersion
+from app.modules.equipment.cleaning_models import CleaningProcedureVersion, EquipmentArea
+from app.modules.equipment.em_models import EmLocation, EmProgramVersion
+from app.modules.equipment.sterilization_models import ProcessCycleProfileVersion
+from app.modules.erp.models import ErpInstance
+from app.modules.iam.models import (
+    Organization,
+    Permission,
+    Qualification,
+    Role,
+    RolePermission,
+    Site,
+    User,
+    UserSiteRole,
+)
+from app.modules.material.models import WarehouseLocation
+from app.modules.rules.models import RuleDefinition
+from app.modules.signature.models import SignaturePolicy
 from app.modules.sre.models import CapacityForecast, SloDefinition
 from app.modules.sre.registry import DOCUMENT_109_CAPACITY_SEED, DOCUMENT_109_SLO_SEED
 from app.mutation.hashing import sha256_hex
@@ -1067,6 +1075,101 @@ async def seeded(db: AsyncSession) -> dict:
             )
         )
 
+        # WP-12/WP-14 (Documents 79-96, SPEC-VAL-001..018) -- Document 106 rows 144-171, the complete
+        # 28-row validation-platform signature-policy block (SG-172's "policy-data half"). Confirmed
+        # 2026-09-10 (SG-184/SG-172 gap-fixing pass): all 28 rows are approved in Document 106 and were
+        # simply never transcribed anywhere -- not a regulated decision left to make here, a transcription
+        # gap. "Module approver role (QA Manager / Head of Quality per record class)" and "Elevated
+        # authority defined by the record class" both map to this codebase's "QA Releaser" -- same
+        # established precedent as every other "Module approver role" row above (e.g. row 55/56's
+        # inventory_adjustment_request.approve), and QA Releaser already holds every validation.*.approve/
+        # release/authorize/deployment_check/disposition/triage/retest_plan/create permission code
+        # (scripts/seed.py ROLE_PERMISSIONS) -- the permission layer already assumed this exact mapping.
+        # Same 28 rows scripts/seed.py's SIGNATURE_POLICY_FLOOR upserts.
+        for _rt, _act in (
+            ("function_risk_assessment", "approve"),          # row 145
+            ("validation_test_definition", "approve"),        # row 147
+            ("iq_execution", "approve"),                      # row 148
+            ("oq_execution", "approve"),                      # row 150
+            ("pq_scenario", "approve"),                       # row 151
+            ("infrastructure_fingerprint", "approve"),        # row 152
+            ("migration_run", "approve"),                     # row 153
+            ("part11_scope_assessment", "approve"),           # row 154
+            ("data_integrity_test_profile", "approve"),       # row 155
+            ("interface_validation_profile", "approve"),      # row 156
+            ("dr_qualification_execution", "approve"),        # row 157
+            ("security_qualification_suite", "approve"),      # row 158
+            ("validation_exception", "create"),               # row 162
+            ("validation_exception", "retest_plan"),          # row 164
+            ("validation_exception", "triage"),               # row 165
+            ("validation_summary_report", "approve"),         # row 169
+        ):
+            db.add(
+                SignaturePolicy(
+                    record_type=_rt, action=_act, meaning="Approved",
+                    required_role_id=roles["QA Releaser"].id, requires_independent_signer=True,
+                    signature_required=True, reason_required=True, policy_source="PLATFORM_FLOOR",
+                )
+            )
+        for _rt, _act in (
+            ("validation_master_plan", "release"),            # row 144
+            ("validation_exception", "disposition"),          # row 163
+            ("validated_release_authorization", "authorize"),        # row 166
+            ("validated_release_authorization", "deployment_check"),  # row 167
+        ):
+            db.add(
+                SignaturePolicy(
+                    record_type=_rt, action=_act, meaning="Released",
+                    required_role_id=roles["QA Releaser"].id, requires_independent_signer=True,
+                    signature_required=True, reason_required=True, policy_source="PLATFORM_FLOOR",
+                )
+            )
+        # "Qualified performer for the task", independence "None required unless the step is flagged
+        # critical" -- same no-fixed-role treatment as every other "qualified performer" row (e.g.
+        # dispensing_order.start above); the per-record critical-flag conditional isn't built this pass
+        # (no commands_*.py in app/modules/validation/ checks a `critical` flag for these actions today),
+        # so independent=False/reason_required=False at the floor level, same documented limitation as
+        # cleaning_execution.complete/equipment_asset.hold's own critical-flag callouts above.
+        for _rt, _act in (
+            ("validation_test_execution", "complete"),  # row 146
+            ("iq_execution", "complete"),                # row 149
+            ("performance_run", "create"),               # row 159
+            ("performance_qualification_scenario", "create"),  # row 160
+            ("performance_run", "evaluate"),             # row 161
+        ):
+            db.add(
+                SignaturePolicy(
+                    record_type=_rt, action=_act, meaning="Performed",
+                    required_role_id=None, requires_independent_signer=False,
+                    signature_required=True, reason_required=False, policy_source="PLATFORM_FLOOR",
+                )
+            )
+        for _act in ("create", "decision"):  # rows 170/171
+            db.add(
+                SignaturePolicy(
+                    record_type="periodic_validation_review", action=_act, meaning="Reviewed",
+                    required_role_id=roles["QA Reviewer"].id, requires_independent_signer=True,
+                    signature_required=True, reason_required=False, policy_source="PLATFORM_FLOOR",
+                )
+            )
+        # Row 168 (POST /validation/v1/summary-reports, VSR authoring/create): "Regulatory Affairs
+        # authorized submitter" -- the identical phrase Document 106 rows 123/125-128 (Document 59) use,
+        # already mapped in this codebase to the "Postmarket Regulatory Affairs" role (see the WP-09/
+        # SG-138 certificate/incident rows above); reused verbatim here as the literal, least-inventive
+        # reading rather than guessing a validation-specific role no spec names. Independence column says
+        # "MUST be a human; service identity prohibited (SIG-FR-023)" -- an identity-type restriction, not
+        # an independence-from-another-actor requirement, so requires_independent_signer=False (no
+        # commands_vsr.py call site resolves this action today -- create_validation_summary_report is
+        # unsigned/RBAC-gated per SG-172's own affected_functions list -- this row is inert until that
+        # changes, kept only so the floor is complete rather than partially transcribed).
+        db.add(
+            SignaturePolicy(
+                record_type="validation_summary_report", action="create", meaning="Approved",
+                required_role_id=roles["Postmarket Regulatory Affairs"].id, requires_independent_signer=False,
+                signature_required=True, reason_required=True, policy_source="PLATFORM_FLOOR",
+            )
+        )
+
         # NOTE: no global product_version/release row here, deliberately -- SG-035 PARTIALLY RESOLVED
         # 2026-09-07 (project-owner-directed: self-signed by Admin) added this row to the *live-DB* floor
         # (scripts/seed.py SIGNATURE_POLICY_FLOOR, applied via scripts/sync_signature_policies.py), but at
@@ -1646,7 +1749,7 @@ async def seeded(db: AsyncSession) -> dict:
                     "validation.post_go_live.record",
                 ],
             ),
-            ("Operator", ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.execute", "batch_execution.view", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "equipment_asset.hold", "cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", "validation.plan.manage", "validation.gate.view", "validation.package.view", "validation.intended_use.manage", "validation.function_risk.manage", "validation.function_risk.view", "validation.requirement.manage", "validation.trace_link.manage", "validation.baseline.manage", "validation.traceability.view", "validation.test_definition.manage", "validation.test_execution.manage", "validation.test_execution.complete", "validation.iq.manage", "validation.iq.complete", "validation.oq.manage", "validation.oq.view", "validation.infrastructure.manage", "validation.part11.manage", "validation.data_integrity.manage", "validation.interface.manage", "validation.dr.manage", "validation.security.manage", "validation.security.view", "validation.performance.manage", "validation.performance.view", "validation.exception.view", "validation.change_impact.manage", "validation.periodic_review.manage", "validation.periodic_review.decide", "validation.state_baseline.decommission", "validation.pq.manage", "validation.pq.execute", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"]),
+            ("Operator", ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.execute", "batch_execution.view", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "equipment_asset.hold", "cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", "validation.plan.manage", "validation.gate.view", "validation.package.view", "validation.intended_use.manage", "validation.function_risk.manage", "validation.function_risk.view", "validation.requirement.manage", "validation.trace_link.manage", "validation.baseline.manage", "validation.traceability.view", "validation.test_definition.manage", "validation.test_execution.manage", "validation.test_execution.complete", "validation.iq.manage", "validation.iq.complete", "validation.oq.manage", "validation.oq.view", "validation.infrastructure.manage", "validation.part11.manage", "validation.data_integrity.manage", "validation.interface.manage", "validation.dr.manage", "validation.security.manage", "validation.security.view", "validation.performance.manage", "validation.performance.view", "validation.exception.view", "validation.change_impact.manage", "validation.periodic_review.manage", "validation.periodic_review.decide", "validation.state_baseline.decommission", "validation.pq.execute", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"]),
             ("Supervisor", ["batch_step.start", "batch_step.role_override", "rules.evaluate", "product.view", "recipe.view", "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view", "device.create", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate"]),
             ("Process Engineer", ["product.author", "product.view", "recipe.author", "recipe.view", "rules.evaluate"]),
             ("QA Reviewer", ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation", "equipment_asset.hold", "equipment_asset.return_to_service", "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify", "em_sample.review", "em_excursion.impact", "process_cycle.create", "process_cycle.start", "process_cycle.review", "reconciliation.verify", "machine_evidence.review_view", "evidence.upload", "evidence.download", "evidence.manifest", "evidence.legal_hold", "evidence.integrity_check", "ai_governance.use_case.register", "ai_governance.use_case.assess_risk", "ai_governance.context.build", "ai_governance.advisory.execute", "ai_governance.disposition.record", "ai_governance.evaluation.run", "ai_governance.release_gate.evaluate", "ai_governance.injection.detect", "validation.gate.view", "validation.package.view", "validation.function_risk.approve", "validation.function_risk.view", "validation.traceability.view", "validation.oq.view", "validation.security.view", "validation.performance.view", "validation.exception.view", "validation.periodic_review.decide", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view",

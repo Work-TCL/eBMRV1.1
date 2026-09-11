@@ -169,6 +169,34 @@ The ruff floor found 3 real issues the gate ignores for now (each `noqa`-free so
     representative slice + every test file for the 4 newly-visible modules (ai_governance,
     machine_integration, postmarket, validation ×7 files) + test_qms_ncr.py (the NCR float→Decimal fix,
     §4 item 5) — see §6 completion report for the pass/fail count.
+14. ✅ **DONE 2026-09-10** — Closed every gap and limitation the ratchet's own completion report flagged
+    as open (user-directed follow-up, same day). **SG-184 fully resolved** (was: root cause fixed, ~144
+    type + ~169 index + 13 check-constraint residual open): re-read every one of the ~144 BIGINT-vs-
+    Integer/JSON-vs-JSONB mismatches, 169 missing `Index()` declarations and 13 missing
+    `CheckConstraint()` declarations against the exact migration that created each column/index/
+    constraint, and added the migration's own already-deployed type/index/constraint to the ORM model —
+    alignment, not invention (the two documents are the same migration file; there was no open design
+    question once each was actually read, contrary to the original risk assessment's caution). No new
+    migration; zero schema/data change; `alembic check` now clean except the disclosed `alembic_version`
+    non-finding — a genuine pass/fail signal for the first time. One additional, smaller instance of the
+    same class found along the way and fixed: `release_scope`'s migration-created `UniqueConstraint
+    (scope_type, scope_id)` was also unmirrored in its model. **SG-172 fully resolved** (was: policy-
+    data half open, 35 test failures): Document 106 rows 144-171 turned out to already be an APPROVED
+    28-row block for the entire WP-12/WP-14 validation platform — the prior note's "no validation_*
+    record type is seeded in Document 106" was never actually checked against the document itself.
+    Mapped all 28 rows to the codebase's real `resolve_signature()` call sites, added them to both
+    `scripts/seed.py`'s `SIGNATURE_POLICY_FLOOR` and `tests/conftest.py`'s duplicated `seeded` fixture,
+    then ran `scripts/sync_signature_policies.py` against the live `ebmr_new_gxp` deployment (28 created,
+    0 skipped) so the fix reaches the running dev server too, not only the test suite. One further, more
+    narrowly-scoped RBAC over-grant found in the same test run and fixed after checking Document 85
+    directly (not guessed): `Operator` held `validation.pq.manage`, which Document 85's own function
+    catalogue assigns to "Validation/Process SME"/"Validation Admin", never Operator — removed from both
+    catalogues, then `scripts/sync_permissions.py` run against `ebmr_new_gxp` (1 grant revoked). Full
+    reasoning for every mapping decision is in SG-172/SG-184's own resolution notes in
+    `18_SPEC_GAPS.md` — this is a summary, not the record. **Not fixed, and not fixable here**: CI has
+    still never executed on GitHub (needs the `workflow`-scope token only the user holds) — everything
+    above is verified by running the same checks locally the CI jobs would run, not by an actual GitHub
+    Actions run.
 
 ---
 
