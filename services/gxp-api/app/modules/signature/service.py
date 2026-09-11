@@ -61,6 +61,66 @@ async def enforce_signer_policy(
             )
 
 
+async def chain_signatures_so_far(
+    session: AsyncSession, *, record_type: str, record_id: uuid.UUID, record_version: int,
+) -> list[Signature]:
+    """SG-035 pair 4, RESOLVED 2026-09-11 (PHASE_3_DEFERRED_DECISIONS.md item D). For a
+    `signature_count > 1` policy, a chain's position is derived, not client-supplied: it is one more
+    than however many valid `Signature` rows already exist for this exact (record_type, record_id,
+    record_version) -- `sign()` denormalizes all three onto every `Signature` row precisely so this
+    query needs no join. Ordered oldest-first so `[0]` is always the position-1 signer (Document 106
+    section 9 row 1: "Corrector and approver MUST differ" checks every later position against every
+    earlier one, SIGP-FR-007's ordered-chain requirement)."""
+    result = await session.execute(
+        select(Signature)
+        .where(
+            Signature.record_type == record_type,
+            Signature.record_id == record_id,
+            Signature.record_version == record_version,
+        )
+        .order_by(Signature.signed_at)
+    )
+    return list(result.scalars().all())
+
+
+async def enforce_chain_signer_policy(
+    session: AsyncSession,
+    *,
+    policy: SignaturePolicy,
+    position: int,
+    actor_user_id: uuid.UUID,
+    site_id: uuid.UUID | None,
+    action_label: str,
+    prior_signer_ids: Iterable[uuid.UUID],
+) -> None:
+    """SG-035 pair 4, RESOLVED 2026-09-11 (PHASE_3_DEFERRED_DECISIONS.md item D; Document 106 section 5
+    `sig_policy.signature_order`, SIGP-FR-007). `position` is 1-indexed. Distinct from
+    `enforce_signer_policy()` above: a `signature_count > 1` policy's signers are not interchangeable
+    copies of one role (Document 106 section 9 row 1: "Authorized corrector + independent approver" are
+    two different signer classes, not the same class signing twice), so the role check reads
+    `signature_order[position - 1]` instead of the single `required_role_id` column. `null` at a
+    position means that class is RBAC-gated with no fixed platform role (matching
+    `enforce_signer_policy()`'s `required_role_id is None` treatment). Independence -- "MUST differ" --
+    rejects the actor if they signed any earlier position in this same chain, not against a
+    record-owner identity column (that is what `disqualified_subject_ids` is for on the count=1 path).
+    """
+    role_names = policy.signature_order or []
+    role_name = role_names[position - 1] if position - 1 < len(role_names) else None
+    if role_name is not None:
+        if role_name not in await effective_role_names(session, actor_user_id, site_id):
+            raise RoleMissingError(
+                f"{action_label}: chain position {position} of {policy.signature_count} requires the "
+                f"'{role_name}' role",
+                action=action_label, required_role=role_name,
+            )
+    if policy.requires_independent_signer and actor_user_id in set(prior_signer_ids):
+        raise SodIndependenceRequiredError(
+            f"{action_label}: the signer at chain position {position} must differ from every earlier "
+            "signer in this chain (Document 106 section 9 row 1)",
+            action=action_label,
+        )
+
+
 async def resolve_signature_requirement(
     session: AsyncSession, *, record_type: str, action: str
 ) -> SignaturePolicy:

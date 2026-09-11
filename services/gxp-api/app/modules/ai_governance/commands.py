@@ -5,14 +5,14 @@
 SIG-FR-004; baseline values -> SG-004)" in the function catalogue: `approve_ai_model_deployment`,
 `authorize_ai_tool_call`, `record_human_ai_disposition`, `evaluate_ai_release_gate`,
 `switch_ai_provider_profile`. Each calls `signature_service.resolve_signature_requirement()`, exactly
-like every other signed action in this codebase. **Document 106 has zero SPEC-AI-001 rows** (checked --
-no `ai_use_case`/`ai_model_deployment`/etc. entries anywhere in
-`specs/Documents_106_115/Document_106...`), so every one of those 5 calls raises
-`SignaturePolicyUnresolvedError` on every real invocation right now -- this is the same intentional
-fail-closed behaviour WP-01's four originally-unresolved signed commands used (MUT-FR-022: a compliance
-dependency that cannot resolve does not let the mutation succeed), not a bug. See
-`docs/generated/18_SPEC_GAPS.md` (SG-167) and `ARCHITECTURE.md`. The other 8 functions have "none
-identified in source" for signature and are RBAC-gated + audit-only.
+like every other signed action in this codebase. **Document 106 had zero SPEC-AI-001 rows** (checked --
+no `ai_use_case`/`ai_model_deployment`/etc. entries anywhere in `specs/Documents_106_115/Document_106...`)
+until SG-167 was RESOLVED 2026-09-11, project-owner-directed (PHASE_3_DEFERRED_DECISIONS.md item C, a
+Document 106 v1.1 addendum authored from the closest section 8 families): all 5 pairs now carry a
+`scripts/seed.py` `SIGNATURE_POLICY_FLOOR` row (`Approved`/`Performed` meaning, `ai_disposition/record`
+role-free, the other 4 requiring `QA Releaser`), enforced via `_apply_signature()` ->
+`enforce_signer_policy()`. See `docs/generated/18_SPEC_GAPS.md` (SG-167) and `ARCHITECTURE.md`. The
+other 8 functions have "none identified in source" for signature and are RBAC-gated + audit-only.
 
 **AI-FR-004/AI-FR-003 boundary.** None of these functions ever write GxP domain state (no import of
 any `app.modules.{batch,release,qa_review,qms,...}` model or command anywhere in this module) -- the
@@ -290,7 +290,9 @@ async def approve_ai_model_deployment(
     )
     signature_id = None
     if policy.signature_required:
-        signature_id = await _apply_signature(session, cmd, actor_user_id, record_version=1)
+        signature_id = await _apply_signature(
+            session, cmd, actor_user_id, record_version=1, policy=policy, action_label="ai_model_deployment.approve",
+        )
 
     deployment = AIModelDeployment(
         use_case_id=cmd.use_case_id, provider=cmd.provider, model=cmd.model, model_version=cmd.model_version,
@@ -326,14 +328,22 @@ def content_challenge_hash(cmd) -> str:
     )
 
 
-async def _apply_signature(session, cmd, actor_user_id, *, record_version: int) -> uuid.UUID:
+async def _apply_signature(session, cmd, actor_user_id, *, record_version: int, policy, action_label: str) -> uuid.UUID:
     """Shared step-up-then-consume-then-sign flow, matching evidence.commands.apply_evidence_legal_hold.
-    Unreachable in this pass (resolve_signature_requirement always raises first -- SG-167), kept
-    implemented so no further code change is needed once Document 106 gains a SPEC-AI-001 row."""
+    SG-167, RESOLVED 2026-09-11, project-owner-directed (PHASE_3_DEFERRED_DECISIONS.md item C): Document
+    106 had zero SPEC-AI-001 rows, so this was unreachable -- resolve_signature_requirement() always
+    raised first. Now that all 5 pairs carry a Document 106 v1.1-addendum floor row, role/independence
+    enforcement is added here (none of the 5 ai_governance tables stores an author/requester/performer
+    identity column, so independence is role-only -- the same documented limitation as
+    vault_object/release / rule/release)."""
     from app.core.security import verify_password
     from app.modules.iam.models import User
     from app.mutation.errors import MissingSignatureError
 
+    await signature_service.enforce_signer_policy(
+        session, policy=policy, actor_user_id=actor_user_id, site_id=None,
+        action_label=action_label, disqualified_subject_ids=(),
+    )
     actor = await session.get(User, actor_user_id)
     if actor is None or not cmd.reauth_password or not verify_password(cmd.reauth_password, actor.password_hash):
         raise MissingSignatureError("Fresh step-up authentication failed")
@@ -580,7 +590,9 @@ async def authorize_ai_tool_call(
     )
     signature_id = None
     if policy.signature_required:
-        signature_id = await _apply_signature(session, cmd, actor_user_id, record_version=1)
+        signature_id = await _apply_signature(
+            session, cmd, actor_user_id, record_version=1, policy=policy, action_label="ai_tool_call.authorize",
+        )
 
     decision_row = AIToolDecision(
         use_case_id=use_case.id, advisory_id=cmd.advisory_id, tool_name=cmd.tool_name,
@@ -635,7 +647,9 @@ async def record_human_ai_disposition(
     )
     signature_id = None
     if policy.signature_required:
-        signature_id = await _apply_signature(session, cmd, actor_user_id, record_version=1)
+        signature_id = await _apply_signature(
+            session, cmd, actor_user_id, record_version=1, policy=policy, action_label="ai_disposition.record",
+        )
 
     # AI-FR-034: this is an INSERT -- the original advisory (`advisory.output_json`) is never edited.
     row = AIDisposition(
@@ -749,7 +763,9 @@ async def evaluate_ai_release_gate(
     )
     signature_id = None
     if policy.signature_required:
-        signature_id = await _apply_signature(session, cmd, actor_user_id, record_version=1)
+        signature_id = await _apply_signature(
+            session, cmd, actor_user_id, record_version=1, policy=policy, action_label="ai_release_gate.evaluate",
+        )
 
     if report.critical_failures:
         # AI-FR-024: a critical failure class blocks release regardless of the overall average.
@@ -775,6 +791,18 @@ async def evaluate_ai_release_gate(
         command_type="EvaluateAIReleaseGate", aggregate_type="ai_release_gate",
     )
     if decision == "BLOCK":
+        # Real defect surfaced 2026-09-11 while resolving SG-167 (this raise was unreachable before --
+        # resolve_signature_requirement() always raised SignaturePolicyUnresolvedError first, so a real
+        # BLOCK evaluation could never previously reach this line). Raising here, inside the caller's
+        # still-open `session.begin()` (router.py's post_release_gates), rolls the whole transaction
+        # back -- the gate row just written above, its audit event, outbox event, receipt, and the
+        # signature that was just consumed all vanish, exactly the "audit is immutable" guarantee AG-08
+        # exists to protect. A critical-failure BLOCK is itself the record most worth keeping (AI-FR-024:
+        # "cannot be forced to PASS around it" means the *decision* must stand, not that evidence of it
+        # is allowed to disappear). Explicitly commit what has already been written before raising, so
+        # the caller still receives the error (the HTTP response and behaviour AI-FR-024's test expects
+        # are unchanged) but the gate/audit/outbox/signature are durable regardless.
+        await session.commit()
         raise AIEvaluationCriticalFailureError(reason, evaluation_report_id=str(report.id))
     return receipt
 
@@ -867,7 +895,9 @@ async def switch_ai_provider_profile(
     )
     signature_id = None
     if policy.signature_required:
-        signature_id = await _apply_signature(session, cmd, actor_user_id, record_version=1)
+        signature_id = await _apply_signature(
+            session, cmd, actor_user_id, record_version=1, policy=policy, action_label="ai_provider_switch.switch",
+        )
 
     switch = AIProviderSwitch(
         use_case_id=cmd.use_case_id, from_model_deployment_id=cmd.from_model_deployment_id,

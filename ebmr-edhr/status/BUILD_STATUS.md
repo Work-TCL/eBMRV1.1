@@ -2,7 +2,7 @@
 
 _Generated 2026-09-11 — do not hand-edit._
 
-**Overall:** 97/103 modules started · 0 released · 763/2965 requirements verified · 2504/9150 test cases executed
+**Overall:** 97/103 modules started · 0 released · 763/2965 requirements verified · 2512/9150 test cases executed
 
 ## Work packages
 
@@ -31,10 +31,10 @@ _Generated 2026-09-11 — do not hand-edit._
 | 03 | SPEC-GXP-001 | WP-01 | H | 32 | 5 | 135 | 74 | 0 | 61 | IN_DEVELOPMENT | Claude Code |
 | 04 | SPEC-GXP-002 | WP-01 | H | 30 | 1 | 145 | 63 | 0 | 82 | IN_DEVELOPMENT | Claude Code |
 | 05 | SPEC-GXP-003 | WP-01 | H | 30 | 7 | 81 | 38 | 0 | 59 | IN_DEVELOPMENT | Claude Code |
-| 06 | SPEC-GXP-004 | WP-01 | H | 30 | 8 | 147 | 54 | 0 | 83 | IN_DEVELOPMENT | Claude Code |
+| 06 | SPEC-GXP-004 | WP-01 | H | 30 | 8 | 147 | 56 | 0 | 81 | IN_DEVELOPMENT | Claude Code |
 | 07 | SPEC-IAM-001 | WP-01 | H | 32 | 3 | 118 | 6 | 0 | 110 | IN_DEVELOPMENT | Claude Code |
 | 08 | SPEC-GXP-006 | WP-01 | H | 32 | 10 | 134 | 43 | 0 | 83 | IN_DEVELOPMENT | Claude Code |
-| 09 | SPEC-EBMR-000 | WP-02 | H | 32 | 0 | 121 | 24 | 0 | 94 | IN_DEVELOPMENT | Claude Code |
+| 09 | SPEC-EBMR-000 | WP-02 | H | 32 | 0 | 121 | 26 | 0 | 92 | IN_DEVELOPMENT | Claude Code |
 | 10 | SPEC-EBMR-001 | WP-02 | H | 36 | 4 | 115 | 29 | 0 | 83 | IN_DEVELOPMENT | Claude Code |
 | 11 | SPEC-EBMR-002 | WP-02 | H | 36 | 1 | 96 | 32 | 0 | 99 | IN_DEVELOPMENT | Claude Code |
 | 12 | SPEC-EBMR-003 | WP-02 | H | 30 | 6 | 71 | 19 | 0 | 90 | IN_DEVELOPMENT | Claude Code |
@@ -130,7 +130,7 @@ _Generated 2026-09-11 — do not hand-edit._
 | 102 | SPEC-ENG-006 | WP-00 | H | 36 | 0 | 76 | 0 | 0 | 0 | NOT_STARTED | — |
 | 103 | SPEC-ENG-007 | WP-00 | H | 36 | 0 | 83 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 | 104 | SPEC-ENG-008 | WP-00 | H | 36 | 0 | 130 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
-| 105 | SPEC-AI-001 | WP-13 | H | 56 | 0 | 158 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 105 | SPEC-AI-001 | WP-13 | H | 56 | 0 | 158 | 4 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 
 ## Blocked modules
 

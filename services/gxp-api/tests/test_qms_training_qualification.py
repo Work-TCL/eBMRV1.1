@@ -24,6 +24,16 @@ async def _make_admin(db, seeded, username):
     return user
 
 
+# SG-138 Kind B, RESOLVED 2026-09-11 (PHASE_3_DEFERRED_DECISIONS.md item A): Document 106 section 9 rows
+# 91-93 defer create/complete/assess to "per policy lookup"; the project owner authored `assess` from the
+# section 8 "verify" family (`Verified`, independent of the trainee being assessed) and create/complete
+# from "issue/start" and "complete/record" (`Performed`, no independence). This module's own tests keep
+# full per-test control of signature_required (see docstring below) rather than a global conftest.py row,
+# so each test's local SignaturePolicy still needs the *real* meaning per action to reflect what
+# scripts/seed.py's SIGNATURE_POLICY_FLOOR now ships.
+_ACTION_MEANING = {"create": "Performed", "complete": "Performed", "assess": "Verified"}
+
+
 async def _setup(db, seeded, tag, *, signed_actions=None):
     """`signed_actions` maps action -> signature_required for every training_assignment action the test
     will exercise (create/complete/assess are each independently policy-resolved -- fail-closed per
@@ -34,7 +44,7 @@ async def _setup(db, seeded, tag, *, signed_actions=None):
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.trn{tag}")
         for action, signed in signed_actions.items():
-            db.add(SignaturePolicy(record_type="training_assignment", action=action, meaning="Performed", signature_required=signed))
+            db.add(SignaturePolicy(record_type="training_assignment", action=action, meaning=_ACTION_MEANING[action], signature_required=signed))
     return owner
 
 
@@ -486,6 +496,85 @@ async def test_create_assignment_round_trip_signs_create(client, seeded, db):
     assert assignment is not None
     assert str(assignment.id) == pregenerated_id
     assert assignment.version == 1
+
+
+# --- SG-138 Kind B `assess` independence (PHASE_3_DEFERRED_DECISIONS.md item A) ------------------
+
+
+async def _setup_independent_assess(db, seeded, tag):
+    """Distinct from `_setup()`: `assess` needs `requires_independent_signer=True`, which `_setup()`'s
+    (action, signed) shape has no room for."""
+    async with db.begin():
+        owner = await _make_admin(db, seeded, f"admin.trn{tag}")
+        db.add(SignaturePolicy(record_type="training_assignment", action="create", meaning="Performed", signature_required=False))
+        db.add(SignaturePolicy(record_type="training_assignment", action="complete", meaning="Performed", signature_required=False))
+        db.add(SignaturePolicy(
+            record_type="training_assignment", action="assess", meaning="Verified",
+            signature_required=True, requires_independent_signer=True,
+        ))
+    return owner
+
+
+async def test_assess_requires_independent_signer_rejects_self_assessment(client, seeded, db):
+    owner = await _setup_independent_assess(db, seeded, "23")
+    token = await login(client, "admin.trn23")
+    requirement_id = await _create_requirement(client, token, seeded["site_id"], training_type="exam", requires_assessment=True, pass_score=70)
+    assignment_id = await _create_assignment(client, token, requirement_id, owner.id)
+    await client.post(
+        f"/training/v1/assignments/{assignment_id}/complete",
+        json={"idempotency_key": idem(), "assignment_id": assignment_id, "expected_version": 1},
+        headers=auth_headers(token),
+    )
+    resp = await client.post(
+        f"/training/v1/assignments/{assignment_id}/signature-challenges", json={"action": "assess"}, headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    challenge = resp.json()
+    assert challenge["meaning"] == "Verified"
+
+    # `owner` is both the trainee (subject_id) and the actor attempting to assess -- MUST be rejected.
+    resp = await client.post(
+        f"/training/v1/assignments/{assignment_id}/assess",
+        json={
+            "idempotency_key": idem(), "assignment_id": assignment_id, "expected_version": 2, "passed": True, "score": 90,
+            "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "SOD_INDEPENDENCE_REQUIRED"
+
+
+async def test_assess_signature_round_trip_succeeds_with_independent_assessor(client, seeded, db):
+    owner = await _setup_independent_assess(db, seeded, "24")
+    assessor = await _make_admin(db, seeded, "admin.trn24.assessor")
+    await db.commit()
+    token = await login(client, "admin.trn24")
+    assessor_token = await login(client, "admin.trn24.assessor")
+    requirement_id = await _create_requirement(client, token, seeded["site_id"], training_type="exam", requires_assessment=True, pass_score=70)
+    assignment_id = await _create_assignment(client, token, requirement_id, owner.id)
+    await client.post(
+        f"/training/v1/assignments/{assignment_id}/complete",
+        json={"idempotency_key": idem(), "assignment_id": assignment_id, "expected_version": 1},
+        headers=auth_headers(token),
+    )
+
+    resp = await client.post(
+        f"/training/v1/assignments/{assignment_id}/signature-challenges", json={"action": "assess"}, headers=auth_headers(assessor_token),
+    )
+    assert resp.status_code == 200, resp.text
+    challenge = resp.json()
+
+    resp = await client.post(
+        f"/training/v1/assignments/{assignment_id}/assess",
+        json={
+            "idempotency_key": idem(), "assignment_id": assignment_id, "expected_version": 2, "passed": True, "score": 91,
+            "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(assessor_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is not None
 
 
 async def test_create_assignment_stale_challenge_rejected_if_id_reused_after_expiry_window(client, seeded, db):

@@ -1178,9 +1178,19 @@ SIGNATURE_POLICY_FLOOR = [
     # `required_role_name=None` (RBAC `product.suspend` gates it; same treatment as Document 106 row 108
     # equipment_asset/hold) -- Independence "None", Reason "yes" (already satisfied by the required
     # `SuspendProductVersionCommand.reason` field). No bespoke enforcement needed: no role check, no
-    # independence check. `product_version/reinstate` has no Document 106 row and stays unresolved
-    # (SG-035, deferred 2026-09-10) -- deliberately not extended here.
+    # independence check.
     ("product_version", "suspend", "Performed", None, False, True, True),
+    # product_version/reinstate -- SG-035 pair 5, RESOLVED 2026-09-11, project-owner-directed
+    # (PHASE_3_DEFERRED_DECISIONS.md item B). No Document 106 section 9 row names this action; the
+    # project owner chose the section 8 "resume / unhold / release-hold" PROPOSED family verbatim
+    # (meaning `Approved`, signer "QA authority that owns the hold reason" -> `QA Releaser`, same
+    # class->role mapping already used for "QA Approver for the record class" elsewhere;
+    # independence "MUST be independent of the person who caused the condition" -- enforced in
+    # `reinstate_product_version()` against the actor of this product version's own most recent
+    # `suspend` audit event, the same audit-trail lookup pattern `release_product_version()` uses
+    # against the `Created` event; reason yes, already satisfied by the required
+    # `ReinstateProductVersionCommand.reason` field).
+    ("product_version", "reinstate", "Approved", "QA Releaser", True, True, True),
     # SG-035 vault_object/release + rule/release -- 2026-09-10, project-owner-directed ("follow the
     # ebmr-edhr docs"): Document 106 section 9 rows 2 and 6 both state `Released` by a "QA Approver /
     # Batch Release" -> "QA Releaser", "MUST be independent of every production performer on the record",
@@ -1344,6 +1354,73 @@ SIGNATURE_POLICY_FLOOR = [
     ("validation_summary_report", "approve", "Approved", "QA Releaser", True, True, True),           # row 169
     ("periodic_validation_review", "create", "Reviewed", "QA Reviewer", True, True, False),          # row 170
     ("periodic_validation_review", "decision", "Reviewed", "QA Reviewer", True, True, False),        # row 171
+    # ---------------------------------------------------------------------------------------------------
+    # SG-138 Kind B -- `training_assignment` create/complete/assess, RESOLVED 2026-09-11,
+    # project-owner-directed (PHASE_3_DEFERRED_DECISIONS.md item A). Document 106 section 9 rows 91-93
+    # literally defer these three ("per challenge" / "Per policy lookup") rather than stating a value --
+    # the project owner authored them from the closest section 8 action families rather than Document 106
+    # supplying the text verbatim, unlike every Kind-A row elsewhere in this file:
+    #   create   -- section 8 "issue / start / begin": `Performed`, "Production Supervisor or qualified
+    #               issuer" -> no fixed role (RBAC `training.assignment.create` gates it), independence
+    #               none, reason no.
+    #   complete -- section 8 "complete / record / result / execute / perform / confirm": `Performed`,
+    #               "Qualified performer for the task" -> no fixed role (RBAC gates it), independence
+    #               none, reason no.
+    #   assess   -- section 8 "verify / verification / witness / second-check / double-check": `Verified`,
+    #               "Qualified independent verifier" -> no fixed role (RBAC gates it, same "no role pair"
+    #               precedent as `nonconformance_record/verify` etc.), independence "MUST NOT be the
+    #               performer" read here as MUST NOT be the trainee being assessed -- enforced in
+    #               `assess_assignment()` against `TrainingAssignment.subject_id`, reason no.
+    ("training_assignment", "create", "Performed", None, False, True, False),
+    ("training_assignment", "complete", "Performed", None, False, True, False),
+    ("training_assignment", "assess", "Verified", None, True, True, False),
+    # ---------------------------------------------------------------------------------------------------
+    # SG-167 -- all 5 AI-governance pairs, RESOLVED 2026-09-11, project-owner-directed
+    # (PHASE_3_DEFERRED_DECISIONS.md item C, a Document 106 v1.1 addendum -- Document 105 is outside
+    # Document 106 section 2's "Documents 03-60" scope, so section 9 has zero rows for these; the project
+    # owner authored all five from the closest section 8 families (offered as reference only in the
+    # decision request, not adopted by engineering) rather than Document 106 supplying them verbatim:
+    #   ai_model_deployment/approve -- section 8 "approve / approval / authoriz": `Approved`, "Module
+    #     approver role (QA Manager / Head of Quality)" -> `QA Releaser` (precedent: row 43
+    #     supplier_qualification/approve), independent, reason yes.
+    #   ai_tool_call/authorize -- same "approve / authoriz" family, same mapping.
+    #   ai_disposition/record -- section 8 "complete / record / result / execute / perform / confirm":
+    #     `Performed`, qualified performer -> no fixed role, independence none, reason no.
+    #   ai_release_gate/evaluate -- section 8 "release / disposition / certif": `Released`, "QA Approver /
+    #     Batch Release" -> `QA Releaser`, independent, reason yes.
+    #   ai_provider_switch/switch -- no section 8 family fits; project owner directed treating it as the
+    #     same "approve / authoriz" family as the first two (it changes which AI system a use case
+    #     trusts going forward), `Approved` / `QA Releaser` / independent / reason yes.
+    # None of the five ai_governance tables store an author/requester/performer identity column, so
+    # `requires_independent_signer=True` is enforced as role-only in each command via
+    # `signature_service.enforce_signer_policy(disqualified_subject_ids=())` -- the independence clause
+    # itself has no data source, same documented limitation as `vault_object/release` / `rule/release` /
+    # `qa_review_package/complete`. AI / service identity is never itself a signer regardless
+    # (SIGP-FR-008, AG-14) -- unaffected by this change, a human actor_user_id always signs.
+    ("ai_model_deployment", "approve", "Approved", "QA Releaser", True, True, True),
+    ("ai_tool_call", "authorize", "Approved", "QA Releaser", True, True, True),
+    ("ai_disposition", "record", "Performed", None, False, True, False),
+    ("ai_release_gate", "evaluate", "Released", "QA Releaser", True, True, True),
+    ("ai_provider_switch", "switch", "Approved", "QA Releaser", True, True, True),
+]
+
+# SG-035 pair 4 (`record_correction/complete`), RESOLVED 2026-09-11, project-owner-directed
+# (PHASE_3_DEFERRED_DECISIONS.md item D). Document 106 section 9 row 1: `Approved`, "Authorized
+# corrector + independent approver", count 2, "Corrector and approver MUST differ", reason mandatory.
+# Kept separate from SIGNATURE_POLICY_FLOOR (a plain 7-tuple assuming signature_count=1 for every one
+# of the ~60 rows above) rather than widening that tuple's shape everywhere -- a chain row's per-
+# position signer classes don't fit the single `required_role_name` column a count=1 row uses.
+# `signature_order` is a list of platform role names, one per 1-indexed chain position (`None` = RBAC-
+# gated, no fixed role, same treatment `required_role_name=None` gets on the count=1 path): position 1
+# ("Authorized corrector") -> no fixed role, RBAC `vault.correct` gates who may attempt it at all;
+# position 2 ("independent approver") -> `QA Releaser`, matching the "QA Approver for the record class"
+# precedent used throughout this file. `required_role_name=None` on the tuple itself (unused for a
+# chain row -- signature_order carries the per-position roles instead); `independent=True` enforced by
+# `enforce_chain_signer_policy()` as "differs from every earlier signer in this chain", not against a
+# record-owner identity column.
+SIGNATURE_POLICY_CHAIN_FLOOR = [
+    # (record_type, action, meaning, signature_count, signature_order, reason_required)
+    ("record_correction", "complete", "Approved", 2, [None, "QA Releaser"], True),  # Doc 106 section 9 row 1
 ]
 
 # Document 20 (SPEC-MAT-002B) INV-FR-001/002: warehouse_location has no CRUD operation anywhere in
@@ -1591,6 +1668,40 @@ async def seed() -> None:
                     existing_policy.required_role_id = required_role_id
                     existing_policy.requires_independent_signer = independent
                     existing_policy.signature_required = sig_required
+                    existing_policy.reason_required = reason_required
+                    existing_policy.policy_source = "PLATFORM_FLOOR"
+
+            for record_type, action, meaning, signature_count, signature_order, reason_required in SIGNATURE_POLICY_CHAIN_FLOOR:
+                existing_policy = (
+                    await session.execute(
+                        select(SignaturePolicy).where(
+                            SignaturePolicy.record_type == record_type,
+                            SignaturePolicy.action == action,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if existing_policy is None:
+                    session.add(
+                        SignaturePolicy(
+                            record_type=record_type,
+                            action=action,
+                            meaning=meaning,
+                            required_role_id=None,
+                            requires_independent_signer=True,
+                            signature_required=True,
+                            signature_count=signature_count,
+                            signature_order=signature_order,
+                            reason_required=reason_required,
+                            policy_source="PLATFORM_FLOOR",
+                        )
+                    )
+                else:
+                    existing_policy.meaning = meaning
+                    existing_policy.required_role_id = None
+                    existing_policy.requires_independent_signer = True
+                    existing_policy.signature_required = True
+                    existing_policy.signature_count = signature_count
+                    existing_policy.signature_order = signature_order
                     existing_policy.reason_required = reason_required
                     existing_policy.policy_source = "PLATFORM_FLOOR"
 

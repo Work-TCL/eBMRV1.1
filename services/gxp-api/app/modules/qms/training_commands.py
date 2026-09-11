@@ -70,10 +70,22 @@ def _record_hash(assignment: TrainingAssignment) -> str:
 async def _resolve_and_consume_signature(
     session: AsyncSession, *, record_type: str, action: str, actor_user_id: uuid.UUID, record_version: int,
     record_hash: str, challenge_id: uuid.UUID | None, reauth_password: str | None,
+    site_id: uuid.UUID | None = None, disqualified_subject_ids: tuple = (),
 ) -> uuid.UUID | None:
     policy = await signature_service.resolve_signature_requirement(session, record_type=record_type, action=action)
     if not policy.signature_required:
         return None
+    # SG-138 Kind B, RESOLVED 2026-09-11 (PHASE_3_DEFERRED_DECISIONS.md item A). Document 106 section 9
+    # rows 91-93 defer create/complete/assess to "per policy lookup" rather than stating a value; the
+    # project owner authored `assess` from the section 8 "verify" family: `Verified`, no fixed role
+    # (RBAC-gated), independence "MUST NOT be the performer" read as MUST NOT be the trainee being
+    # assessed. `create`/`complete` carry no independence requirement. Enforced the same way every other
+    # Document 106 section 9 row with a required role/independence clause is -- resolve_signature_
+    # requirement() itself does not read required_role_id/requires_independent_signer.
+    await signature_service.enforce_signer_policy(
+        session, policy=policy, actor_user_id=actor_user_id, site_id=site_id,
+        action_label=f"training_assignment.{action}", disqualified_subject_ids=disqualified_subject_ids,
+    )
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"{action} requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)
@@ -221,7 +233,7 @@ async def create_assignment(session: AsyncSession, cmd: CreateTrainingAssignment
     signature_id = await _resolve_and_consume_signature(
         session, record_type="training_assignment", action="create", actor_user_id=actor_user_id,
         record_version=assignment.version, record_hash=_record_hash(assignment),
-        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password, site_id=assignment.site_id,
     )
 
     return await _write_assignment_receipt(
@@ -279,7 +291,7 @@ async def complete_assignment(session: AsyncSession, cmd: CompleteTrainingAssign
     signature_id = await _resolve_and_consume_signature(
         session, record_type="training_assignment", action="complete", actor_user_id=actor_user_id,
         record_version=assignment.version, record_hash=_record_hash(assignment),
-        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password, site_id=assignment.site_id,
     )
 
     old_state = assignment.state
@@ -344,7 +356,8 @@ async def assess_assignment(session: AsyncSession, cmd: AssessTrainingAssignment
     signature_id = await _resolve_and_consume_signature(
         session, record_type="training_assignment", action="assess", actor_user_id=actor_user_id,
         record_version=assignment.version, record_hash=_record_hash(assignment),
-        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password, site_id=assignment.site_id,
+        disqualified_subject_ids=(assignment.subject_id,),
     )
 
     old_state = assignment.state
