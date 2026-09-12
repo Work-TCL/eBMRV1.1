@@ -8,8 +8,13 @@ info:
     create/receive, test order create/start, raw data + result recording with acceptance/trend-rule-driven
     PASS/OOS/OOT/pending classification (reusing the existing `rules` module), analyst completion, signed
     second-person review, and the 2-signature result correction ceremony (Document 106 row 57). Dashboard/
-    export/instrument-eligibility/method-modification/OOS-OOT-record-creation are deferred — see
-    docs/generated/18_SPEC_GAPS.md SG-057/SG-063.
+    export/instrument-eligibility/OOS-OOT-record-creation are deferred — see docs/generated/18_SPEC_GAPS.md
+    SG-057/SG-063.
+
+
+    Method modification (QC-FR-003/004, SG-066) added Phase 4: `QcMethodVersion` mirrors
+    `MaterialSpecificationVersion`'s master+immutable-version split, `qc_test_definition` gets an additive
+    `method_version_id`. Release correctly fails closed pending a Document 106 policy row (SG-186).
 tags:
   - name: qc
 
@@ -70,6 +75,102 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '428': { $ref: '#/components/responses/MissingSignature' }
+
+  /qc/v1/methods/drafts:
+    post:
+      operationId: postCreateQcMethodDraft
+      tags: [qc]
+      summary: Draft a QC method version (SG-066, QC-FR-003/004)
+      description: >
+        Requires `qc_method.author`. QC-FR-004: a new version after the first requires
+        `modification_reason` — VALIDATION_FAILED otherwise. The original method version is never edited,
+        only superseded.
+      x-requirement-ids: [QC-FR-003, QC-FR-004, MUT-FR-005, MUT-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateQcMethodDraftCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /qc/v1/methods/{method_code}/versions:
+    parameters:
+      - { name: method_code, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getQcMethodVersions
+      tags: [qc]
+      summary: List the versions declared for one method_code (SG-066)
+      description: Requires `qc_method.view`. Response schema, not a closed payload.
+      x-requirement-ids: [QC-FR-003, QC-FR-004]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/QcMethodVersion' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /qc/v1/methods/{method_version_id}:
+    parameters:
+      - { name: method_version_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getQcMethodVersionDetail
+      tags: [qc]
+      summary: QC method version detail (SG-066)
+      description: Requires `qc_method.view`.
+      x-requirement-ids: [QC-FR-003, QC-FR-004]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/QcMethodVersion' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /qc/v1/methods/{method_version_id}/signature-challenges:
+    parameters:
+      - { name: method_version_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postQcMethodSignatureChallenge
+      tags: [qc]
+      summary: Create the Part 11 signature challenge for releasing this QC method version (SG-066)
+      description: >
+        SG-186: no Document 106 policy row exists yet for `qc_method_version`/`release` — the challenge
+        endpoint is real, but release fails closed with SIGNATURE_POLICY_UNRESOLVED until one is seeded.
+      x-requirement-ids: [QC-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [action], properties: { action: { type: string, enum: [release] } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /qc/v1/methods/drafts/{method_version_id}/release:
+    parameters:
+      - { name: method_version_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postReleaseQcMethodVersion
+      tags: [qc]
+      summary: Release a draft QC method version (SG-066, QC-FR-004)
+      description: Requires `qc_method.release`. Correctly fails closed pending SG-186's resolution.
+      x-requirement-ids: [QC-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseQcMethodVersionCommand' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MutationReceipt' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
         '428': { $ref: '#/components/responses/MissingSignature' }
 
   /qc/v1/samples:
@@ -456,6 +557,7 @@ components:
         test_code: { type: string }
         test_name: { type: string }
         method_version: { type: [string, "null"] }
+        method_version_id: { type: [string, "null"], format: uuid, description: "Additive FK to QcMethodVersion (SG-066); NOT_FOUND if it doesn't reference a real row." }
         result_data_type: { type: string }
         uom: { type: [string, "null"] }
         acceptance_rule_business_id: { type: [string, "null"] }
@@ -488,6 +590,53 @@ components:
         expected_version: { type: integer }
         challenge_id: { type: string, format: uuid }
         reauth_password: { type: string }
+
+    CreateQcMethodDraftCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-003, QC-FR-004, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, method_code, method_type, name, site_id]
+      properties:
+        idempotency_key: { type: string }
+        method_code: { type: string }
+        method_type: { type: string, enum: [compendial, internal, validated] }
+        name: { type: string }
+        site_id: { type: string, format: uuid }
+        validation_evidence_reference: { type: [string, "null"], description: "Captured, unenforced reference -- same precedent as equipment_class_id elsewhere in this codebase." }
+        modification_reason: { type: [string, "null"], description: "Required (VALIDATION_FAILED otherwise) when this method_code already has a prior version -- QC-FR-004." }
+
+    ReleaseQcMethodVersionCommand:
+      type: object
+      additionalProperties: false
+      x-requirement-ids: [QC-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010, SIG-FR-004]
+      required: [idempotency_key, method_version_id, expected_version]
+      properties:
+        idempotency_key: { type: string }
+        method_version_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], description: Present only when a signature is required; never logged. }
+
+    QcMethodVersion:
+      type: object
+      description: Response schema, not closed.
+      x-requirement-ids: [QC-FR-003, QC-FR-004]
+      required: [method_version_id, method_code, version_no, name, method_type, lifecycle_state, version, site_id]
+      properties:
+        method_version_id: { type: string, format: uuid }
+        method_code: { type: string }
+        version_no: { type: integer }
+        name: { type: string }
+        method_type: { type: string, enum: [compendial, internal, validated] }
+        validation_evidence_reference: { type: [string, "null"] }
+        modification_reason: { type: [string, "null"] }
+        lifecycle_state: { type: string }
+        effective_from: { type: [string, "null"], format: date-time }
+        effective_to: { type: [string, "null"], format: date-time }
+        released_vault_object_id: { type: [string, "null"], format: uuid }
+        version_hash: { type: [string, "null"] }
+        version: { type: integer }
+        site_id: { type: string, format: uuid }
 
     CreateSampleCommand:
       type: object

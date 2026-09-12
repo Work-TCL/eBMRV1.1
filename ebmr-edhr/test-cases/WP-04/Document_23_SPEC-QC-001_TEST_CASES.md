@@ -190,7 +190,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /qc/v1/specifications/drafts` (or the owning command) exercising: Modified method requires controlled version, reason, validation/suitability evidence and approval; original method remains. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** 211.194(b)-style record support. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS  |  **Executed by:** Claude Code  |  **Date:** 2026-09-12  |  **Actual result:** tests/test_qc_method.py::test_second_version_requires_modification_reason — a second version without modification_reason is rejected (422), with one it succeeds, and the original version's row is confirmed unchanged (retained, not edited).  |  **Defect:** —
 
 ### TC-023-004-02 — Method modification — Concurrent writers on one aggregate
 
@@ -204,7 +204,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Expected error code:** `STALE_VERSION`
 - **Depends on:** TC-023-004-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS  |  **Executed by:** Claude Code  |  **Date:** 2026-09-12  |  **Actual result:** tests/test_qc_method.py::test_release_rejects_stale_expected_version — release with a wrong expected_version is rejected (409 STALE_VERSION).  |  **Defect:** —
 
 ### TC-023-005-01 — Sampling plan — required behaviour
 

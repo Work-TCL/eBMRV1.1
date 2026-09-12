@@ -1335,6 +1335,9 @@ async def seeded(db: AsyncSession) -> dict:
             ("training.subject.view", "view", "training_assignment"),
             ("training.matrix.view", "view", "training_requirement"),
             ("qc_test_specification.release", "release", "qc_test_specification"),
+            ("qc_method.author", "author", "qc_method_version"),
+            ("qc_method.release", "release", "qc_method_version"),
+            ("qc_method.view", "view", "qc_method_version"),
             ("qc_test_order.review", "review", "qc_test_order"),
             ("qc_result.correct", "correct", "qc_result"),
             ("lims_sample.cancel", "cancel", "lims_mapping"),
@@ -1702,7 +1705,8 @@ async def seeded(db: AsyncSession) -> dict:
                     "training.requirement.create", "training.assignment.create", "training.assignment.complete",
                     "training.assignment.assess", "training.qualification.create", "training.waiver.create",
                     "training.subject.view", "training.matrix.view",
-                    "qc_test_specification.release", "qc_test_order.review", "qc_result.correct", "lims_sample.cancel",
+                    "qc_test_specification.release", "qc_method.author", "qc_method.release", "qc_method.view",
+                    "qc_test_order.review", "qc_result.correct", "lims_sample.cancel",
                     "oos_record.extended_investigation", "oos_record.disposition", "oos_record.close", "oot_record.close",
                     "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
                     "material_lot.collect_sample", "material_lot.release", "material_lot.reject", "material_lot.retest",
@@ -1822,7 +1826,7 @@ async def seeded(db: AsyncSession) -> dict:
                 # (Document 106 section 9 rows 96/97/107) needs; aligned with scripts/seed.py's own
                 # QA Reviewer grant.
                 "scar.review", "risk.review", "quality_metric.management_review"]),
-            ("QA Releaser", ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "rules.release", "product.view", "product.release", "material_spec.view", "material_spec.release", "recipe.view", "recipe.release", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "supplier_qualification.approve", "qc_test_specification.release", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", "security_incident.close",
+            ("QA Releaser", ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "rules.release", "product.view", "product.release", "material_spec.view", "material_spec.release", "recipe.view", "recipe.release", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", "security_incident.close",
                 # SG-138 policy-data half (2026-09-10) -- QMS signing codes, aligned with scripts/seed.py's
                 # own QA Releaser grant so an independent QA Releaser can actually reach the signed QMS
                 # transitions Document 106 section 9 rows 80-107 now require.
@@ -1838,7 +1842,7 @@ async def seeded(db: AsyncSession) -> dict:
                 "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
                 "quality_metric.definition.create", "quality_metric.definition.release", "quality_metric.management_review",
                 "validation.exception.create", "validation.exception.triage", "validation.exception.retest_plan", "validation.exception.disposition", "validation.plan.release", "validation.function_risk.approve", "validation.test_definition.approve", "validation.iq.approve", "validation.oq.approve", "validation.infrastructure.approve", "validation.part11.approve", "validation.data_integrity.approve", "validation.interface.approve", "validation.dr.approve", "validation.security.approve", "validation.pq.approve", "validation.migration.approve", "validation.vsr.approve", "validation.release_auth.authorize", "validation.release_auth.deployment_check", "validation.post_go_live.record"]),
-            ("QC Reviewer", ["material_lot.disposition", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.view", "qc_result.correct", "material_lot.collect_sample", "material_lot.retest", "dispensing_order.verify", "cleaning_execution.verify", "em_sample.review", "process_cycle.review"]),
+            ("QC Reviewer", ["material_lot.disposition", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.view", "qc_method.author", "qc_method.view", "qc_result.correct", "material_lot.collect_sample", "material_lot.retest", "dispensing_order.verify", "cleaning_execution.verify", "em_sample.review", "process_cycle.review"]),
             ("Equipment Administrator", ["equipment_asset.create", "equipment_asset.qualify", "machine_command.submit", "equipment_area.create"]),
             ("Engineering Manager", ["equipment_asset.return_to_service"]),
             ("Calibration Technician", ["equipment_asset.calibrate"]),
