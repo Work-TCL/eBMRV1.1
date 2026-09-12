@@ -78,7 +78,7 @@ async def sync_master_data(
         if instance is None:
             raise NotFoundError("ERP instance not found")
         vendor, site_id = instance.vendor, instance.site_id
-        adapter = erp_commands.build_adapter(instance)
+        adapter = await erp_commands.build_adapter(session, instance)
 
         checkpoint = (
             await session.execute(

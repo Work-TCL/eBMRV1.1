@@ -4253,6 +4253,31 @@ state
 - Migration owner: `platform/security` (Doc 100)
 - Source: Document 65
 
+### `secret_value` (SG-126 gap resolution, added WP-07 pass, 2026-09-12)
+
+```text
+id uuid PK
+secret_id uuid FK -> secret_metadata.id UNIQUE
+envelope jsonb  -- AES-256-GCM {algorithm, key_version, key_context, nonce, ciphertext, aad}; never plaintext
+version bigint
+set_by_user_id uuid FK -> iam.users.id
+```
+
+- Only populated for `secret_metadata.provider = 'ON_PREM'` -- K8S_SECRET/AWS_SM/VAULT secrets get no row
+  here (`fetch_secret_value()` fails closed `SECRET_PROVIDER_NOT_INTEGRATED` for those, no live client
+  exists in this build).
+- Does not violate Document 65 # 14 ("no key material in ordinary tables"): `envelope` holds only
+  ciphertext/nonce/tag under a DEK that never leaves `crypto.py`, the same envelope shape
+  `encrypt_sensitive_field()` already produces for every other sensitive field in this codebase.
+- Tenant scope: none, same as `secret_metadata`/`certificate_metadata`/`crypto_profile` (ADR-0006,
+  platform-level, not per-tenant).
+- Versioning: `version bigint` optimistic concurrency (Doc 70 / MUT-FR-009), bound to `set_secret_value()`'s
+  `expected_version`.
+- Immutability: overwritten under optimistic concurrency, not superseded/history-retained -- an ON_PREM
+  secret's prior ciphertext is not a regulated historical record (it is a credential, not a GxP result).
+- Migration owner: `platform/security` (Doc 100)
+- Source: Document 65 (SG-126 gap resolution)
+
 ### `certificate_metadata`
 
 ```text

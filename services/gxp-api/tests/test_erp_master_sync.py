@@ -30,7 +30,11 @@ def _mock_adapter(handler) -> ERPNextAdapter:
 
 def _patch_adapter(monkeypatch, handler) -> None:
     adapter = _mock_adapter(handler)
-    monkeypatch.setattr(erp_commands, "build_adapter", lambda instance: adapter)
+
+    async def _fake_build_adapter(session, instance):
+        return adapter
+
+    monkeypatch.setattr(erp_commands, "build_adapter", _fake_build_adapter)
 
 
 async def test_sync_pulls_material_changes_and_proposes_explicit_and_fuzzy_matches(seeded, db, monkeypatch):

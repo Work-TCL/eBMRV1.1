@@ -1,12 +1,19 @@
 """Document 65 (SPEC-SEC-005) -- Secrets Management, PKI, Cryptography & Key Lifecycle. Same `security`
 PostgreSQL schema Documents 61-64 created; adds the 3 owned entities the approved
-`04_DATA_MODEL_CATALOGUE.md` lists: `secret_metadata`, `certificate_metadata`, `crypto_profile`.
+`04_DATA_MODEL_CATALOGUE.md` lists: `secret_metadata`, `certificate_metadata`, `crypto_profile`, plus
+`secret_value` (SG-126 gap resolution, added WP-07 pass -- the ON_PREM provider's encrypted value store).
 
-**Metadata only -- never a secret or private key value.** Document 65 # 14 prohibits storing private
-keys in ordinary application tables and logging secret values. `secret_metadata` holds a *reference*
-(`secret_ref`) into an external secret manager plus lifecycle metadata; `certificate_metadata` holds
-the serial / subject / SANs / validity / state; neither table ever holds key material.
-`app/modules/security/crypto.py::resolve_secret()` returns a handle, not a value, in this build.
+**Metadata only -- never a secret or private key value in the clear.** Document 65 # 14 prohibits storing
+private keys/secret values in ordinary application tables and logging them. `secret_metadata` holds a
+*reference* (`secret_ref`) into an external secret manager plus lifecycle metadata; `certificate_metadata`
+holds the serial / subject / SANs / validity / state; neither ever holds key material.
+`app/modules/security/crypto.py::resolve_secret()` returns a handle, not a value.
+
+`secret_value` is the one exception, and it does not violate # 14: for `provider="ON_PREM"` secrets it
+stores only the AES-256-GCM envelope (nonce + ciphertext + tag) `encrypt_sensitive_field()` produces --
+the same envelope shape already used for every other sensitive field in this codebase, never plaintext.
+K8S_SECRET/AWS_SM/VAULT secrets get no row here; fetching those fails closed (SECRET_PROVIDER_NOT_INTEGRATED,
+SG-126) rather than the platform pretending to host their value.
 
 **Signature: certificate issue/rotate/revoke require a `Released` signature** -- Document 106 rows
 137-139 (QA Approver / Batch Release, MUST be independent of every production performer). Resolved to
@@ -69,6 +76,30 @@ class SecretMetadata(Base):
     incident_ref: Mapped[str | None] = mapped_column(String(120))
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class SecretValue(Base):
+    """SG-126 (Document 65 # 6 gap resolution, ON_PREM provider only). The AES-256-GCM ciphertext
+    envelope for a `secret_metadata` row registered with `provider="ON_PREM"` -- never the plaintext
+    value (Document 65 # 14 is satisfied because `envelope` holds only nonce/ciphertext/tag under a DEK
+    that never leaves `crypto.py`, the same shape `encrypt_sensitive_field()` already produces for every
+    other sensitive field). One row per secret; `set_secret_value()` overwrites it under optimistic
+    concurrency on `version`, same pattern as every other mutable aggregate.
+
+    K8S_SECRET/AWS_SM/VAULT secrets never get a row here -- `fetch_secret_value()` fails closed with
+    SECRET_PROVIDER_NOT_INTEGRATED for those providers rather than this table pretending to hold their
+    value (no live external target in this build, see SG-126)."""
+
+    __tablename__ = "secret_value"
+    __table_args__ = (UniqueConstraint("secret_id"), {"schema": "security"})
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    secret_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("security.secret_metadata.id"), nullable=False)
+    envelope: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
+    set_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

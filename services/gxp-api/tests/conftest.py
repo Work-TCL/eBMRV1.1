@@ -1552,6 +1552,9 @@ async def seeded(db: AsyncSession) -> dict:
             ("webhook_profile.register", "register", "webhook_profile"),
             ("api_inventory.view", "view", "api_security_policy"),
             # WP-10 (Document 65, SPEC-SEC-005) — same rows scripts/seed.py's PERMISSION_CATALOG adds.
+            # secret.create/set_value added WP-07/SG-126 pass.
+            ("secret.create", "create", "secret_metadata"),
+            ("secret.set_value", "set_value", "secret_value"),
             ("secret.rotate", "rotate", "secret_metadata"),
             ("certificate.issue", "issue", "certificate_metadata"),
             ("certificate.rotate", "rotate", "certificate_metadata"),
@@ -1778,6 +1781,7 @@ async def seeded(db: AsyncSession) -> dict:
                     "privileged_session.open_support", "privileged_session.break_glass", "privileged_session.execute_command",
                     "privileged_session.close", "privileged_session.review",
                     "outbound_destination.register", "webhook_profile.register", "api_inventory.view",
+                    "secret.create", "secret.set_value",
                     "secret.rotate", "certificate.issue", "certificate.rotate", "certificate.revoke",
                     "crypto_health.view", "network_flow.view", "deployment_security_profile.view",
                     "security_incident.open", "security_incident.contain", "security_incident.evidence",

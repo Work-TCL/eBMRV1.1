@@ -1534,6 +1534,30 @@ class CryptoHealthFailedError(GxPError):
     status_code = 503
 
 
+class SecretAlreadyExistsError(GxPError):
+    """`createSecret()` -- a `secret_metadata` row already uses this `secret_ref` (unique per KEY-FR-002)."""
+
+    code = "SECRET_ALREADY_EXISTS"
+    status_code = 409
+
+
+class SecretProviderNotIntegratedError(GxPError):
+    """`fetchSecretValue()` -- SG-126: the secret is registered against a provider (K8S_SECRET, AWS_SM,
+    VAULT) this build has no live client for. Fails closed rather than fabricating a fetch; ON_PREM is
+    the only provider with a real value-fetch path in this build."""
+
+    code = "SECRET_PROVIDER_NOT_INTEGRATED"
+    status_code = 501
+
+
+class SecretValueNotSetError(GxPError):
+    """`fetchSecretValue()` -- the secret is a registered ON_PREM secret but no value has been stored
+    for it yet (`setSecretValue()` was never called)."""
+
+    code = "SECRET_VALUE_NOT_SET"
+    status_code = 404
+
+
 # ---------------------------------------------------------------------------------------------------
 # Document 66 (SPEC-SEC-006) -- Network, Tenant, Deployment Isolation & Zero-Trust. Codes from # 4.
 # ---------------------------------------------------------------------------------------------------

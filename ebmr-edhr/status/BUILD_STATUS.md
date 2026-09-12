@@ -2,7 +2,7 @@
 
 _Generated 2026-09-12 — do not hand-edit._
 
-**Overall:** 97/103 modules started · 0 released · 764/2965 requirements verified · 2516/9150 test cases executed
+**Overall:** 97/103 modules started · 0 released · 765/2965 requirements verified · 2517/9150 test cases executed
 
 ## Work packages
 
@@ -90,7 +90,7 @@ _Generated 2026-09-12 — do not hand-edit._
 | 62 | SPEC-SEC-002 | WP-10 | H | 26 | 6 | 56 | 15 | 0 | 0 | CODE_COMPLETE | Claude Code |
 | 63 | SPEC-SEC-003 | WP-10 | H | 26 | 5 | 47 | 12 | 0 | 0 | CODE_COMPLETE | Claude Code |
 | 64 | SPEC-SEC-004 | WP-10 | H | 30 | 10 | 47 | 23 | 0 | 0 | CODE_COMPLETE | Claude Code |
-| 65 | SPEC-SEC-005 | WP-10 | H | 28 | 9 | 55 | 25 | 0 | 0 | CODE_COMPLETE | Claude Code |
+| 65 | SPEC-SEC-005 | WP-10 | H | 28 | 10 | 55 | 26 | 0 | 0 | CODE_COMPLETE | Claude Code |
 | 66 | SPEC-SEC-006 | WP-10 | H | 30 | 5 | 54 | 20 | 0 | 0 | CODE_COMPLETE | Claude Code |
 | 67 | SPEC-SEC-007 | WP-10 | H | 30 | 4 | 58 | 17 | 0 | 0 | CODE_COMPLETE | Claude Code |
 | 68 | SPEC-SEC-008 | WP-10 | H | 34 | 7 | 60 | 21 | 0 | 0 | CODE_COMPLETE | Claude Code |

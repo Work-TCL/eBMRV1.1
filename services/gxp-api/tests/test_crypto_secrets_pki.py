@@ -14,12 +14,15 @@ from app.modules.audit.models import AuditEvent
 from app.modules.iam.models import User, UserSiteRole
 from app.modules.mutation.models import OutboxEvent
 from app.modules.security import crypto, crypto_commands as commands
-from app.modules.security.crypto_models import CertificateMetadata, CryptoProfile, SecretMetadata
+from app.modules.security.crypto_models import CertificateMetadata, CryptoProfile, SecretMetadata, SecretValue
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     FieldDecryptionDeniedError,
     MissingSignatureError,
     SecretAccessDeniedError,
+    SecretAlreadyExistsError,
+    SecretProviderNotIntegratedError,
+    SecretValueNotSetError,
     StaleVersionError,
     TrustAllProhibitedError,
     ValidationFailedError,
@@ -126,6 +129,147 @@ async def test_rotate_secret_emergency_carries_incident_ref(db, seeded):
             incident_ref="INC-7788"), actor.id)
     row = await _get(db, SecretMetadata, s.id)
     assert row.incident_ref == "INC-7788"
+
+
+# =================================================================================================
+# createSecret() / setSecretValue() / fetchSecretValue() — SG-126 gap resolution, no signature
+# =================================================================================================
+
+
+@pytest.mark.asyncio
+async def test_create_secret_registers_row_and_rejects_duplicate_ref(db, seeded):
+    async with db.begin():
+        actor = await _user(db, seeded, "cs1")
+    async with db.begin():
+        receipt = await commands.create_secret(db, commands.CreateSecretCommand(
+            idempotency_key=idem(), secret_ref="oauth/lims-new", provider="AWS_SM", purpose="LIMS OAuth secret",
+            owner="platform-team", consumer_identities=["svc:lims-adapter"]), actor.id)
+    row = await _get(db, SecretMetadata, receipt.aggregate_id)
+    assert row.provider == "AWS_SM" and row.state == "ACTIVE" and row.version == 1
+
+    async with db.begin():
+        with pytest.raises(SecretAlreadyExistsError):
+            await commands.create_secret(db, commands.CreateSecretCommand(
+                idempotency_key=idem(), secret_ref="oauth/lims-new", provider="AWS_SM", purpose="dup",
+                owner="platform-team"), actor.id)
+
+    async with db.begin():
+        with pytest.raises(ValidationFailedError):
+            await commands.create_secret(db, commands.CreateSecretCommand(
+                idempotency_key=idem(), secret_ref="bad", provider="NOT_A_PROVIDER", purpose="x", owner="y"), actor.id)
+
+
+@pytest.mark.asyncio
+async def test_create_secret_on_prem_with_initial_value_is_encrypted_and_fetchable(db, seeded):
+    async with db.begin():
+        actor = await _user(db, seeded, "cs2")
+    async with db.begin():
+        receipt = await commands.create_secret(db, commands.CreateSecretCommand(
+            idempotency_key=idem(), secret_ref="on-prem/erp-adapter-1", provider="ON_PREM",
+            purpose="ERP adapter credential", owner="platform-team", consumer_identities=["svc:erp-adapter"],
+            initial_value="s3cr3t-credential"), actor.id)
+
+    # never stored/returned in the clear
+    async with db.begin():
+        value_row = (await db.execute(select(SecretValue).where(SecretValue.secret_id == receipt.aggregate_id))).scalar_one()
+        assert "s3cr3t-credential" not in str(value_row.envelope)
+
+    async with db.begin():
+        value = await crypto.fetch_secret_value(
+            db, secret_ref="on-prem/erp-adapter-1", service_identity="svc:erp-adapter", purpose="test")
+        assert value == b"s3cr3t-credential"
+
+    # wrong consumer identity still fails closed through resolve_secret's own allowlist check
+    async with db.begin():
+        with pytest.raises(SecretAccessDeniedError):
+            await crypto.fetch_secret_value(
+                db, secret_ref="on-prem/erp-adapter-1", service_identity="svc:someone-else", purpose="test")
+
+
+@pytest.mark.asyncio
+async def test_create_secret_rejects_initial_value_for_non_on_prem_provider(db, seeded):
+    async with db.begin():
+        actor = await _user(db, seeded, "cs3")
+    async with db.begin():
+        with pytest.raises(ValidationFailedError):
+            await commands.create_secret(db, commands.CreateSecretCommand(
+                idempotency_key=idem(), secret_ref="vault/thing", provider="VAULT", purpose="x", owner="y",
+                initial_value="oops"), actor.id)
+
+
+@pytest.mark.asyncio
+async def test_fetch_secret_value_fails_closed_for_unintegrated_provider(db, seeded):
+    async with db.begin():
+        await _seed_secret(db, ref="k8s/thing", consumers=["svc:x"])
+    async with db.begin():
+        with pytest.raises(SecretProviderNotIntegratedError):
+            await crypto.fetch_secret_value(db, secret_ref="k8s/thing", service_identity="svc:x", purpose="test")
+
+
+@pytest.mark.asyncio
+async def test_set_secret_value_creates_then_updates_with_optimistic_concurrency(db, seeded):
+    async with db.begin():
+        actor = await _user(db, seeded, "sv1")
+        receipt = await commands.create_secret(db, commands.CreateSecretCommand(
+            idempotency_key=idem(), secret_ref="on-prem/rotatable", provider="ON_PREM", purpose="x",
+            owner="platform-team", consumer_identities=["svc:x"]), actor.id)
+        secret_id = receipt.aggregate_id
+
+    # no value yet -> SECRET_VALUE_NOT_SET
+    async with db.begin():
+        with pytest.raises(SecretValueNotSetError):
+            await crypto.fetch_secret_value(db, secret_ref="on-prem/rotatable", service_identity="svc:x", purpose="t")
+
+    # first set: expected_version 0 (nothing exists yet)
+    async with db.begin():
+        await commands.set_secret_value(db, commands.SetSecretValueCommand(
+            idempotency_key=idem(), secret_id=secret_id, expected_version=0, value="v1", reason="initial load"), actor.id)
+    async with db.begin():
+        assert await crypto.fetch_secret_value(db, secret_ref="on-prem/rotatable", service_identity="svc:x", purpose="t") == b"v1"
+
+    # stale expected_version rejected
+    async with db.begin():
+        with pytest.raises(StaleVersionError):
+            await commands.set_secret_value(db, commands.SetSecretValueCommand(
+                idempotency_key=idem(), secret_id=secret_id, expected_version=0, value="v2", reason="rotate"), actor.id)
+
+    # correct expected_version updates it
+    async with db.begin():
+        await commands.set_secret_value(db, commands.SetSecretValueCommand(
+            idempotency_key=idem(), secret_id=secret_id, expected_version=1, value="v2", reason="rotate"), actor.id)
+    async with db.begin():
+        assert await crypto.fetch_secret_value(db, secret_ref="on-prem/rotatable", service_identity="svc:x", purpose="t") == b"v2"
+
+
+@pytest.mark.asyncio
+async def test_set_secret_value_rejects_non_on_prem_provider(db, seeded):
+    async with db.begin():
+        actor = await _user(db, seeded, "sv2")
+        s = await _seed_secret(db, ref="vault/other")  # K8S_SECRET provider from _seed_secret's default
+    async with db.begin():
+        with pytest.raises(ValidationFailedError):
+            await commands.set_secret_value(db, commands.SetSecretValueCommand(
+                idempotency_key=idem(), secret_id=s.id, expected_version=0, value="x", reason="r"), actor.id)
+
+
+@pytest.mark.asyncio
+async def test_is_registered_secret_distinguishes_managed_from_unmanaged_refs(db, seeded):
+    async with db.begin():
+        await _seed_secret(db, ref="managed/one")
+    async with db.begin():
+        assert await crypto.is_registered_secret(db, "managed/one") is True
+        assert await crypto.is_registered_secret(db, "totally-unregistered-ref") is False
+
+
+@pytest.mark.asyncio
+async def test_secret_endpoints_rbac_denied_for_unprivileged_user(db, seeded, client):
+    async with db.begin():
+        await _user(db, seeded, "csop", role="Operator")
+    token = await login(client, "crypto.ucsop")
+    r = await client.post("/security/v1/secrets", headers=auth_headers(token), json={
+        "idempotency_key": idem(), "secret_ref": "x/y", "provider": "ON_PREM", "purpose": "p", "owner": "o",
+    })
+    assert r.status_code == 403
 
 
 # =================================================================================================

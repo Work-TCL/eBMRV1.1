@@ -77,18 +77,32 @@ ADAPTER_REGISTRY: dict[str, type[ERPProvider]] = {
 }
 
 
-def build_adapter(instance: ErpInstance) -> ERPProvider:
+async def build_adapter(session: AsyncSession, instance: ErpInstance) -> ERPProvider:
     """ERP-ARC-001/003. Resolves the vendor-neutral contract from `ErpInstance.vendor` -- no vendor type
-    leaks past this one function into command.py's own logic."""
+    leaks past this one function into command.py's own logic.
+
+    SG-126 (partially resolved WP-07 pass): if `auth_secret_ref` names a secret actually registered in
+    `security.secret_metadata`, resolve it through the owning module's authorization-gated, audited
+    `fetch_secret_value()` instead of using the ref as the credential -- this is the only branch that
+    can succeed for a K8S_SECRET/AWS_SM/VAULT-provider registration too (it fails closed there,
+    SECRET_PROVIDER_NOT_INTEGRATED, rather than silently falling back). If the ref is not registered at
+    all, this instance predates secret-manager integration and the ref is used directly as the
+    credential, unchanged from before this pass -- purely additive, no existing instance's behavior
+    changes."""
+    from app.modules.security.crypto import fetch_secret_value, is_registered_secret
 
     adapter_cls = ADAPTER_REGISTRY[instance.vendor]
+    auth_secret = instance.auth_secret_ref
+    if instance.auth_secret_ref and await is_registered_secret(session, instance.auth_secret_ref):
+        value = await fetch_secret_value(
+            session, secret_ref=instance.auth_secret_ref,
+            service_identity=f"erp_instance:{instance.id}", purpose="erp_adapter_auth",
+        )
+        auth_secret = value.decode()
     config = AdapterConfig(
         base_url=instance.base_url,
         auth_method=instance.auth_method,
-        # ERP-ARC-028: auth_secret_ref is an opaque secret-manager reference, never the raw secret at
-        # rest. Phase 1 has no secret-manager integration (out of scope this pass, see SG-126) -- the
-        # referenced value is used directly as the credential, which is why it is never logged/audited.
-        auth_secret=instance.auth_secret_ref,
+        auth_secret=auth_secret,
         contract_version=instance.contract_version,
         extra=(
             {"endpoint_map": (instance.capabilities or {}).get("endpoint_map", {})} if instance.vendor == "GENERIC"
@@ -331,7 +345,7 @@ async def get_capabilities(session: AsyncSession, instance_id: uuid.UUID) -> dic
     instance = await session.get(ErpInstance, instance_id)
     if instance is None:
         raise NotFoundError("ERP instance not found")
-    adapter = build_adapter(instance)
+    adapter = await build_adapter(session, instance)
     reachable = await adapter.probe()
     caps = adapter.capabilities()
     return {
@@ -871,7 +885,7 @@ async def dispatch_erp_command(session: AsyncSession, command_id: uuid.UUID, act
             internal_ref={"source_aggregate_id": str(command.source_aggregate_id) if command.source_aggregate_id else None},
             payload=command.payload, idempotency_key=command.idempotency_key,
         )
-        adapter = build_adapter(instance)
+        adapter = await build_adapter(session, instance)
 
     # Step 2 -- real outbound HTTP call, deliberately outside any open transaction (rule 01).
     response = await adapter.dispatch(canonical)
