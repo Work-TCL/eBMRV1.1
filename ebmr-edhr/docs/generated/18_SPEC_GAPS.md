@@ -3913,8 +3913,24 @@ options:
   - (B) Guess the schemas/endpoints now (rejected — the risk above).
 blocking: false
 owner: Data Architect + QC module owner + Equipment module owner (WP-06)
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "2026-09-12, Phase 4 (wp17-phase4-wp04-qc-method-master): QC-FR-004's Method-master
+  half resolved taking option (A) -- QcMethodVersion built (app/modules/qc/models.py, migration
+  dd78daa66970) mirroring MaterialSpecificationVersion's master+immutable-version split, with
+  qc_test_definition.method_version_id an additive nullable FK (dual-written best-effort, same MIG-FR-004
+  expand-step pattern as uom_id). Release correctly fails closed pending a Document 106 policy row --
+  new gap SG-186, not guessed. Verified: tests/test_qc_method.py 9/9 passed (new file).
+  Separately (found while re-verifying this gap's premises before starting, not resolved by this pass):
+  QC-FR-011's qualification-expiry check and QC-FR-012/instrument_ref (WP-06 Equipment) remain open as
+  described. qc_test_specification.scope_type='material' also remains rejected pending a project-owner
+  decision on whether to wire it against SG-057's now-existing MaterialSpecificationVersion (a small,
+  separate follow-on, not attempted this pass). QC-FR-036/037 dashboard/export ops remain open.
+  CORRECTION: this entry's OOS/OOT premise is stale -- Document 25 (OOS/OOT Management, SPEC-QC-003) was
+  built in a later, separate pass than when this gap was written; qc_result.oos_record_id/oot_record_id
+  now carry a real FK (confirmed directly in app/modules/qc/models.py:205 before this pass started), so
+  that sub-item is not actually open despite this gap's own text still saying so."
+status: PARTIALLY RESOLVED (Method-master / QC-FR-004 built; scope_type='material' wiring, WP-06
+  instrument eligibility, QC-FR-011 qualification-expiry, and QC-FR-036/037 dashboard/export remain open;
+  the OOS/OOT sub-item was already resolved elsewhere, this entry just hadn't been updated to say so)
 ```
 
 ### SG-069 — NCR-FR-016: reopen has no operation in Document 28's own 6-op API list
@@ -12500,6 +12516,58 @@ options:
     specification from ever being released.
 blocking: false
 owner: Quality/Regulatory org (signature policy authority) + Materials module owner
+resolution_document: "— (open)"
+status: OPEN
+```
+
+
+### SG-186 — `qc_method_version`/`release` has no Document 106 signature policy row
+
+Added 2026-09-12, Phase 4 / wp17-phase4-wp04-qc-method-master (SG-066's Method-master resolution).
+Document 106 was authored before this pass's new `QcMethodVersion` entity existed, so it has no row for
+`(qc_method_version, release)` — the same class of gap `material_specification_version/release` (SG-185),
+`vault_object/release` and `record_correction/complete` had before their own resolutions.
+
+```yaml
+spec_gap_id: SG-186
+title: "qc_method_version/release has no Document 106 signature policy row"
+class: R
+description: >
+  scripts/seed.py's SIGNATURE_POLICY_FLOOR and Document 106 §9 have no row for
+  (qc_method_version, release) because this record type did not exist before Phase 4's
+  wp17-phase4-wp04-qc-method-master branch (SG-066's Method-master resolution) introduced it.
+  resolve_signature_requirement() therefore raises SignaturePolicyUnresolvedError, and
+  POST /qc/v1/methods/drafts/{id}/release correctly returns 409 SIGNATURE_POLICY_UNRESOLVED for every
+  actor, including Admin.
+source_documents:
+  - Document 106 (signature policy baseline)
+  - docs/generated/18_SPEC_GAPS.md SG-066 (the entity this policy would govern)
+source_requirement_ids:
+  - SIG-FR-004
+  - SIGP-FR-004
+affected_modules:
+  - SPEC-QC-001
+affected_functions:
+  - app/modules/qc/commands.py::release_qc_method_version
+why_material: >
+  Whether releasing a QC method version requires a signature, which meaning, which signer role and
+  whether independence is required (QC-FR-004 names "approval" but not by whom) are exactly the class of
+  regulated-process decisions this pass has no authority to invent — the same reasoning SG-035/SG-138/
+  SG-167/SG-181/SG-185 all applied to their own previously-unmapped record_type/action pairs.
+risk_if_guessed: >
+  A guessed signer class or independence requirement could pass validation review while not matching the
+  Quality organization's actual intended control for method release — a released method underlies every
+  test result recorded against it, so a wrong policy here has the same downstream risk class as a wrong
+  test-specification release policy (Document 106 row 58).
+options:
+  - (A) Author from the closest existing Document 106 §8/§9 family analogue, matching how SG-035/SG-138/
+    SG-167/SG-185 were resolved — recommended. `qc_test_specification/release` (row 58: QA Approver/Batch
+    Release role, independent of every production performer) is the nearest existing precedent in the
+    same module.
+  - (B) Leave fail-closed indefinitely (current state) — correct and safe, but blocks any real QC method
+    from ever being released, and blocks qc_test_definition rows from ever citing a released method.
+blocking: false
+owner: Quality/Regulatory org (signature policy authority) + QC module owner
 resolution_document: "— (open)"
 status: OPEN
 ```

@@ -1,6 +1,6 @@
 {
  "package": "eBMR / eDHR platform build status",
- "generated": "2026-09-11",
+ "generated": "2026-09-12",
  "baseline": "Documents 01-115",
  "stage_model": [
   "NOT_STARTED",
@@ -1705,7 +1705,7 @@
     "QC-FR-001": "VERIFIED",
     "QC-FR-002": "VERIFIED",
     "QC-FR-003": "IN_PROGRESS",
-    "QC-FR-004": "BLOCKED",
+    "QC-FR-004": "VERIFIED",
     "QC-FR-005": "IN_PROGRESS",
     "QC-FR-006": "IN_PROGRESS",
     "QC-FR-007": "VERIFIED",
@@ -1741,8 +1741,8 @@
     "QC-FR-037": "BLOCKED",
     "QC-FR-038": "IN_PROGRESS"
    },
-   "entities": 6,
-   "apis": 13,
+   "entities": 7,
+   "apis": 18,
    "events": 10,
    "test_cases": 98,
    "stage": "IN_DEVELOPMENT",
@@ -1752,14 +1752,20 @@
      "at": "2026-08-24",
      "by": "Claude Code",
      "note": "Partial build (WP-04 Document 23, chosen next over Document 19 because it is far less blocked than the materials-domain Documents 19-22 -- see SG-057). A net-new Native Basic QC & Sampling module (app/modules/qc/) covering all 6 catalogued entities (qc_test_specification/qc_test_definition/qc_sample/qc_test_order/qc_test_run/qc_result) plus qc_result_correction, a 7th table implementing Document 106 row 57's 2-signature result-correction ceremony (corrector + independent approver, mandatory reason) -- built as two endpoints (request/approve) since a single HTTP call can only carry one authenticated identity. Calculations and acceptance/trend-rule PASS/OOS/OOT classification reuse the existing rules module's evaluate_rule() directly (no new calculation engine); no released rule for a test definition leaves the result 'pending', an explicitly valid state, not a silent pass. Built and tested: spec draft/release (scope_type product/in_process/device; material scope rejected, same missing material-specification-version entity as SG-057), sample create/receive, test order create/start, raw-data + result recording with rule-driven pass/oos/pending classification, analyst completion blocked on missing required results, signed independent second-person review, and the full 2-signature correction flow including the same-corrector-cannot-approve SoD rejection. Real blockers (SG-066, new gap): instrument/equipment eligibility (WP-06 not built), the actual OOS/OOT record entity (Document 25 not built -- only detection/classification is built), a Method-master entity for controlled method modification (Document 23 never defines one), and dashboard/export (no operation in Document 23's own 13-operation API list). Several requirements have real code support but no dedicated executed test this pass (chain-of-custody transfers, reference standards, replicate results, system suitability, microbiology/device result types, stability tagging) -- recorded IN_PROGRESS, not VERIFIED, per this project's evidence discipline. Full pre-existing suite plus 6 new qc tests pass unmodified."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-12",
+     "by": "Claude Code",
+     "note": "Phase 4 (wp17-phase4-wp04-qc-method-master, SG-066): QcMethodVersion built (migration dd78daa66970) mirroring MaterialSpecificationVersion's master+immutable-version split -- QC-FR-004's Method-master entity, which Document 23 never itself defines. qc_test_definition.method_version_id added as an additive nullable FK (MIG-FR-004 expand step, same pattern as uom_id). modification_reason required (VALIDATION_FAILED otherwise) on any version after the first. Release correctly fails closed pending a Document 106 policy row -- new gap SG-186, not guessed. Verified: tests/test_qc_method.py 10/10 passed (new file), plus tests/test_qc.py/test_qc_oos.py/test_qc_uom.py (14/14) as an untouched-module control."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-24",
    "completed_at": null,
-   "test_pass": 42,
+   "test_pass": 44,
    "test_fail": 0,
-   "test_blocked": 103,
+   "test_blocked": 101,
    "open_defects": 0,
    "blockers": [],
    "prompt": "prompts/WP-04/23_SPEC-QC-001.md",

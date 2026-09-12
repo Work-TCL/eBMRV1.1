@@ -47,11 +47,50 @@ class QcTestSpecification(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class QcMethodVersion(Base):
+    """SG-066 (QC-FR-003/004) -- the Method-master entity Document 23 never defines. QC-FR-003: each
+    test references an approved method/version, a compendial/internal/validated method type and a
+    suitability/validation evidence reference. QC-FR-004: a modified method requires a controlled
+    version, reason, validation/suitability evidence and approval, with the original method retained.
+    Mirrors `material_specification.MaterialSpecificationVersion`'s master+immutable-version split
+    exactly (same pattern already approved for Product/Recipe/MaterialSpecification, not a new one).
+    `validation_evidence_reference` is a captured, unenforced reference -- same precedent as
+    `equipment_class_id`/`recipe_equipment_requirement.equipment_class` elsewhere in this codebase (no
+    validation-evidence-record entity exists to FK against). `modification_reason` is required by
+    QC-FR-004 whenever a new version supersedes a prior one for the same `method_code` (enforced in
+    `commands.create_qc_method_draft`, not by a DB constraint, since version_no==1 legitimately has
+    none)."""
+
+    __tablename__ = "qc_method_version"
+    __table_args__ = (UniqueConstraint("method_code", "version_no"), {"schema": "ebmr"})
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    method_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    version_no: Mapped[int] = mapped_column(nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    method_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    validation_evidence_reference: Mapped[str | None] = mapped_column(String(255))
+    modification_reason: Mapped[str | None] = mapped_column(Text)
+    lifecycle_state: Mapped[str] = mapped_column(String(40), nullable=False, default="draft")
+    effective_from: Mapped[datetime | None] = mapped_column()
+    effective_to: Mapped[datetime | None] = mapped_column()
+    released_vault_object_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("vault.gxp_vault_object.object_id")
+    )
+    version_hash: Mapped[str | None] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(nullable=False, default=1)
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class QcTestDefinition(Base):
     """Document 23 §6 `qc_test_definition` -- prose-only field list, typed here as an ordinary
-    engineering decision (SG-045's precedent). `method_version` is a plain field, not a FK to a Method
-    master -- no such entity exists anywhere in this codebase or in Document 23's own data model
-    (SG-063). `acceptance_rule_business_id`/`trend_rule_business_id` are the `rules.gxp_rule_definition
+    engineering decision (SG-045's precedent). `method_version` is a plain, free-text field kept
+    unchanged for backward compatibility; `method_version_id` is an additive, nullable FK to the new
+    `QcMethodVersion` (SG-066), dual-written best-effort at creation time the same way `uom_id` is
+    (SG-146's expand-step pattern) -- pre-existing rows keep it NULL forever (this table is append-only,
+    no UPDATE grant, so no backfill is possible or attempted). `acceptance_rule_business_id`/
+    `trend_rule_business_id` are the `rules.gxp_rule_definition
     .rule_id` business keys resolved at evaluation time via `rules_service.get_effective_released_rule`
     -- same convention `f"batch-release-eligibility:{product_id}"` already uses; no rule reference is
     persisted here until a result is actually evaluated against one (see `QcResult.acceptance_rule_id`).
@@ -70,6 +109,7 @@ class QcTestDefinition(Base):
     test_code: Mapped[str] = mapped_column(String(80), nullable=False)
     test_name: Mapped[str] = mapped_column(String(200), nullable=False)
     method_version: Mapped[str | None] = mapped_column(String(80))
+    method_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.qc_method_version.id"))
     result_data_type: Mapped[str] = mapped_column(String(40), nullable=False)
     uom: Mapped[str | None] = mapped_column(String(40))
     # SG-146 (remainder), MIG-FR-004 expand step: dual-written best-effort at spec-authoring time

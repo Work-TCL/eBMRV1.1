@@ -20,6 +20,7 @@ from app.modules.qc.models import (
     OosResamplePlan,
     OosRetestPlan,
     OotRecord,
+    QcMethodVersion,
     QcResult,
     QcResultCorrection,
     QcSample,
@@ -115,6 +116,7 @@ class TestDefinitionInput(BaseModel):
     test_code: str
     test_name: str
     method_version: str | None = None
+    method_version_id: uuid.UUID | None = None
     result_data_type: str
     uom: str | None = None
     acceptance_rule_business_id: str | None = None
@@ -173,12 +175,17 @@ async def create_test_specification_draft(
     await session.flush()
 
     for td in cmd.test_definitions:
+        if td.method_version_id is not None and (await session.get(QcMethodVersion, td.method_version_id)) is None:
+            raise NotFoundError(
+                "test_definition references an unknown method_version_id", method_version_id=str(td.method_version_id)
+            )
         session.add(
             QcTestDefinition(
                 specification_id=spec.id,
                 test_code=td.test_code,
                 test_name=td.test_name,
                 method_version=td.method_version,
+                method_version_id=td.method_version_id,
                 result_data_type=td.result_data_type,
                 uom=td.uom,
                 uom_id=await _resolve_uom_id(session, td.uom),
@@ -327,6 +334,178 @@ async def release_test_specification(
     )
     return MutationReceipt(
         command_id=receipt.id, aggregate_id=spec.id, resulting_version=spec.version,
+        audit_event_id=audit_event.id, signature_id=signature_id, correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# CreateQcMethodDraft / ReleaseQcMethodVersion -- SG-066 (QC-FR-003/004): the Method-master entity
+# Document 23 never defines. Mirrors CreateTestSpecificationDraft/ReleaseTestSpecification's own shape,
+# RBAC-gated at the router (new qc_method.author/.release actions, not this module's older convention of
+# no create-time check -- deliberately the stronger, already-established posture used elsewhere this
+# session for every other new master-data entity).
+# ---------------------------------------------------------------------------
+
+
+class CreateQcMethodDraftCommand(CommandEnvelope):
+    method_code: str
+    method_type: str  # compendial | internal | validated
+    name: str
+    site_id: uuid.UUID
+    validation_evidence_reference: str | None = None
+    modification_reason: str | None = None
+
+
+QC_METHOD_TYPES = ("compendial", "internal", "validated")
+
+
+async def create_qc_method_draft(
+    session: AsyncSession, cmd: CreateQcMethodDraftCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if cmd.method_type not in QC_METHOD_TYPES:
+        raise ValidationFailedError("Unknown method_type", method_type=cmd.method_type, allowed=list(QC_METHOD_TYPES))
+
+    existing_versions = (
+        await session.execute(select(QcMethodVersion.version_no).where(QcMethodVersion.method_code == cmd.method_code))
+    ).scalars().all()
+    next_version = max(existing_versions) + 1 if existing_versions else 1
+
+    # QC-FR-004: a modification (any version after the first) requires a documented reason; the
+    # original method is never edited, only superseded by this new draft.
+    if next_version > 1 and not cmd.modification_reason:
+        raise ValidationFailedError(
+            "modification_reason is required when a new version supersedes an existing method_code",
+            method_code=cmd.method_code, version_no=next_version,
+        )
+
+    method = QcMethodVersion(
+        method_code=cmd.method_code,
+        version_no=next_version,
+        name=cmd.name,
+        method_type=cmd.method_type,
+        validation_evidence_reference=cmd.validation_evidence_reference,
+        modification_reason=cmd.modification_reason,
+        site_id=cmd.site_id,
+        lifecycle_state="draft",
+    )
+    session.add(method)
+    await session.flush()
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=cmd.site_id, aggregate_type="qc_method_version", aggregate_id=method.id,
+        aggregate_version=1, action="Created", actor_id=actor_user_id, correlation_id=correlation_id,
+        new_value={"method_code": method.method_code, "version_no": method.version_no},
+    )
+    await write_outbox_event(
+        session, event_type="QcMethodVersionCreated", aggregate_type="qc_method_version",
+        aggregate_id=method.id, aggregate_version=1,
+        payload={"id": str(method.id), "method_code": method.method_code}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=cmd.site_id, command_type="CreateQcMethodDraft", aggregate_type="qc_method_version",
+        aggregate_id=method.id, expected_version=None, resulting_version=1,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=method.id, resulting_version=1,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+class ReleaseQcMethodVersionCommand(CommandEnvelope):
+    method_version_id: uuid.UUID
+    expected_version: int
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+async def release_qc_method_version(
+    session: AsyncSession, cmd: ReleaseQcMethodVersionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    method = await session.get(QcMethodVersion, cmd.method_version_id)
+    if method is None:
+        raise NotFoundError("QC method version not found")
+    if method.version != cmd.expected_version:
+        raise StaleVersionError(
+            "QC method version was modified since it was read",
+            expected_version=cmd.expected_version, current_version=method.version,
+        )
+    if method.lifecycle_state != "draft":
+        raise InvalidTransitionError("Only a draft QC method version can be released", current_state=method.lifecycle_state)
+
+    # SG-186 (2026-09-12): no Document 106 policy row exists yet for this brand-new record type --
+    # resolve_signature_requirement() fails closed with SIGNATURE_POLICY_UNRESOLVED (SIGP-FR-004) until a
+    # project-owner decision seeds one, matching how material_specification_version/release (SG-185) and
+    # every prior brand-new record type in this codebase were correctly left before their own resolutions.
+    policy = await signature_service.resolve_signature_requirement(
+        session, record_type="qc_method_version", action="release"
+    )
+
+    signature_id = None
+    if policy.signature_required:
+        if cmd.challenge_id is None or not cmd.reauth_password:
+            raise MissingSignatureError("Releasing a QC method version requires a signature", required_meaning=policy.meaning)
+        actor = await session.get(User, actor_user_id)
+        if actor is None or not verify_password(cmd.reauth_password, actor.password_hash):
+            raise MissingSignatureError("Fresh step-up authentication failed")
+        challenge = await signature_service.consume_challenge(
+            session, challenge_id=cmd.challenge_id, user_id=actor_user_id,
+            record_version=method.version, record_hash=_record_hash(method, "lifecycle_state"),
+        )
+        signature = await signature_service.sign(session, challenge=challenge, auth_context={"method": "password_reauth"})
+        signature_id = signature.id
+
+    old_state = method.lifecycle_state
+    method.lifecycle_state = "released"
+    method.effective_from = datetime.now(timezone.utc)
+    method.version += 1
+
+    vault_object = await vault_service.release_master(
+        session, object_type="qc_method_version", business_id=method.method_code,
+        site_id=method.site_id, actor_user_id=actor_user_id, business_version_label=str(method.version_no),
+        canonical_payload={
+            "method_code": method.method_code, "version_no": method.version_no, "name": method.name,
+            "method_type": method.method_type,
+            "validation_evidence_reference": method.validation_evidence_reference,
+            "modification_reason": method.modification_reason,
+            "signature_id": str(signature_id) if signature_id else None,
+        },
+    )
+    method.released_vault_object_id = vault_object.object_id
+    method.version_hash = vault_object.digest
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=method.site_id, aggregate_type="qc_method_version", aggregate_id=method.id,
+        aggregate_version=method.version, action="Released", actor_id=actor_user_id,
+        correlation_id=correlation_id, old_value={"lifecycle_state": old_state},
+        new_value={"lifecycle_state": method.lifecycle_state}, signature_id=signature_id,
+    )
+    await write_outbox_event(
+        session, event_type="QcMethodVersionReleased", aggregate_type="qc_method_version",
+        aggregate_id=method.id, aggregate_version=method.version,
+        payload={"id": str(method.id), "method_code": method.method_code}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=method.site_id, command_type="ReleaseQcMethodVersion", aggregate_type="qc_method_version",
+        aggregate_id=method.id, expected_version=cmd.expected_version, resulting_version=method.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=method.id, resulting_version=method.version,
         audit_event_id=audit_event.id, signature_id=signature_id, correlation_id=correlation_id,
     )
 
