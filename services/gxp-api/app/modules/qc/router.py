@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -6,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.policy.service import evaluate_policy
 from app.modules.qc.commands import (
     ApproveDispositionCommand,
     ApproveResultCorrectionCommand,
@@ -15,6 +18,7 @@ from app.modules.qc.commands import (
     CloseOosCommand,
     CloseOotCommand,
     CompleteTestOrderCommand,
+    CreateQcMethodDraftCommand,
     CreateSampleCommand,
     CreateTestOrderCommand,
     CreateTestSpecificationDraftCommand,
@@ -25,6 +29,7 @@ from app.modules.qc.commands import (
     RecordLabInvestigationCommand,
     RecordRawDataCommand,
     RecordResultCommand,
+    ReleaseQcMethodVersionCommand,
     ReleaseTestSpecificationCommand,
     RequestResultCorrectionCommand,
     ReviewTestOrderCommand,
@@ -39,6 +44,7 @@ from app.modules.qc.commands import (
     close_oos,
     close_oot,
     complete_test_order,
+    create_qc_method_draft,
     create_sample,
     create_test_order,
     create_test_specification_draft,
@@ -49,6 +55,7 @@ from app.modules.qc.commands import (
     record_lab_investigation,
     record_raw_data,
     record_result,
+    release_qc_method_version,
     release_test_specification,
     request_result_correction,
     review_test_order,
@@ -61,6 +68,7 @@ from app.modules.qc.models import (
     OosResamplePlan,
     OosRetestPlan,
     OotRecord,
+    QcMethodVersion,
     QcResult,
     QcSample,
     QcTestDefinition,
@@ -202,6 +210,105 @@ async def post_release_specification(
         raise ValidationFailedError("specification_id in path and body must match")
     async with session.begin():
         return await release_test_specification(session, cmd, actor.user_id)
+
+
+def _qc_method_dict(m: QcMethodVersion) -> dict:
+    return {
+        "method_version_id": str(m.id),
+        "method_code": m.method_code,
+        "version_no": m.version_no,
+        "name": m.name,
+        "method_type": m.method_type,
+        "validation_evidence_reference": m.validation_evidence_reference,
+        "modification_reason": m.modification_reason,
+        "lifecycle_state": m.lifecycle_state,
+        "effective_from": m.effective_from.isoformat() if m.effective_from else None,
+        "effective_to": m.effective_to.isoformat() if m.effective_to else None,
+        "released_vault_object_id": str(m.released_vault_object_id) if m.released_vault_object_id else None,
+        "version_hash": m.version_hash,
+        "version": m.version,
+        "site_id": str(m.site_id),
+    }
+
+
+@router.post("/methods/drafts", response_model=MutationReceipt)
+async def post_create_qc_method_draft(
+    cmd: CreateQcMethodDraftCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qc_method.author", site_id=cmd.site_id)
+        return await create_qc_method_draft(session, cmd, actor.user_id)
+
+
+@router.get("/methods/{method_code}/versions")
+async def get_qc_method_versions(
+    method_code: str,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    await evaluate_policy(session, actor.user_id, action="qc_method.view", site_id=None)
+    versions = (
+        await session.execute(
+            select(QcMethodVersion).where(QcMethodVersion.method_code == method_code).order_by(QcMethodVersion.version_no)
+        )
+    ).scalars().all()
+    return [_qc_method_dict(v) for v in versions]
+
+
+@router.get("/methods/{method_version_id}")
+async def get_qc_method_version_detail(
+    method_version_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    await evaluate_policy(session, actor.user_id, action="qc_method.view", site_id=None)
+    method = await session.get(QcMethodVersion, method_version_id)
+    if method is None:
+        raise NotFoundError("QC method version not found")
+    return _qc_method_dict(method)
+
+
+class QcMethodSignatureChallengeRequest(BaseModel):
+    action: str  # "release"
+
+
+@router.post("/methods/{method_version_id}/signature-challenges")
+async def post_qc_method_signature_challenge(
+    method_version_id: uuid.UUID,
+    body: QcMethodSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """SG-186: no Document 106 policy row exists yet for qc_method_version/release -- the challenge
+    endpoint is real, but release_qc_method_version()'s resolve_signature_requirement() fails closed
+    until a policy row is seeded."""
+    async with session.begin():
+        method = await session.get(QcMethodVersion, method_version_id)
+        if method is None:
+            raise NotFoundError("QC method version not found")
+        if body.action != "release":
+            raise ValidationFailedError("Unknown action", action=body.action)
+        challenge = await create_challenge(
+            session, user_id=actor.user_id, record_type="qc_method_version", record_id=method.id,
+            record_version=method.version, record_hash=_record_hash(method, "lifecycle_state"), meaning="Released",
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
+
+
+@router.post("/methods/drafts/{method_version_id}/release", response_model=MutationReceipt)
+async def post_release_qc_method_version(
+    method_version_id: uuid.UUID,
+    cmd: ReleaseQcMethodVersionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.method_version_id != method_version_id:
+        raise ValidationFailedError("method_version_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qc_method.release", site_id=None)
+        return await release_qc_method_version(session, cmd, actor.user_id)
 
 
 @router.post("/samples", response_model=MutationReceipt)
