@@ -650,7 +650,7 @@ components:
       type: object
       additionalProperties: false
       description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
-      x-requirement-ids: [YLD-FR-001, YLD-FR-003, YLD-FR-006, YLD-FR-007, YLD-FR-008, MUT-FR-005, MUT-FR-010]
+      x-requirement-ids: [YLD-FR-001, YLD-FR-003, YLD-FR-006, YLD-FR-007, YLD-FR-008, YLD-FR-022, MUT-FR-005, MUT-FR-010]
       required: [idempotency_key, batch_id, theoretical_quantity, actual_quantity, uom]
       properties:
         idempotency_key: { type: string, maxLength: 200 }
@@ -666,12 +666,14 @@ components:
         manual_source: { type: [string, "null"], description: Required together with manual_reason, or neither (YLD-FR-008). }
         manual_reason: { type: [string, "null"] }
         input_refs: { type: object, default: {} }
+        supersedes_id: { type: [string, "null"], format: uuid, description: "YLD-FR-022: id of the prior calculation this one corrects." }
+        reason: { type: [string, "null"], description: Required when supersedes_id is set. }
 
     EvaluatePotencyCommand:
       type: object
       additionalProperties: false
       description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
-      x-requirement-ids: [YLD-FR-015, MUT-FR-005, MUT-FR-010]
+      x-requirement-ids: [YLD-FR-015, YLD-FR-022, MUT-FR-005, MUT-FR-010]
       required: [idempotency_key, batch_id, rule_id, inputs]
       properties:
         idempotency_key: { type: string, maxLength: 200 }
@@ -682,12 +684,14 @@ components:
         rule_id: { type: string, description: Must resolve to an effective released Document 08 rule. }
         inputs: { type: object, description: Passed through verbatim to the rule engine. }
         uom: { type: [string, "null"] }
+        supersedes_id: { type: [string, "null"], format: uuid, description: "YLD-FR-022: id of the prior calculation this one corrects." }
+        reason: { type: [string, "null"], description: Required when supersedes_id is set. }
 
     EvaluateReconciliationCommand:
       type: object
       additionalProperties: false
       description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Shared by material and packaging reconciliation.
-      x-requirement-ids: [YLD-FR-009, YLD-FR-011, YLD-FR-018, YLD-FR-019, YLD-FR-021, MUT-FR-005, MUT-FR-010]
+      x-requirement-ids: [YLD-FR-009, YLD-FR-011, YLD-FR-018, YLD-FR-019, YLD-FR-021, YLD-FR-022, MUT-FR-005, MUT-FR-010]
       required: [idempotency_key, batch_id, reconciliation_type, item_ref, quantities, uom, tolerance_rule]
       properties:
         idempotency_key: { type: string, maxLength: 200 }
@@ -704,12 +708,14 @@ components:
         external_reference: { oneOf: [{ $ref: '#/components/schemas/ExternalReference' }, { type: "null" }] }
         loss_reasons: { type: [array, "null"], items: { $ref: '#/components/schemas/LossReasonEntry' } }
         linked_deviation_id: { type: [string, "null"], format: uuid }
+        supersedes_id: { type: [string, "null"], format: uuid, description: "YLD-FR-022: id of the prior reconciliation record this one corrects." }
+        reason: { type: [string, "null"], description: Required when supersedes_id is set. }
 
     EvaluateLabelReconciliationCommand:
       type: object
       additionalProperties: false
       description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). No quantities — sourced from Document 16.
-      x-requirement-ids: [YLD-FR-012, YLD-FR-018, YLD-FR-019, YLD-FR-021, MUT-FR-005, MUT-FR-010]
+      x-requirement-ids: [YLD-FR-012, YLD-FR-018, YLD-FR-019, YLD-FR-021, YLD-FR-022, MUT-FR-005, MUT-FR-010]
       required: [idempotency_key, packaging_run_id, tolerance_rule]
       properties:
         idempotency_key: { type: string, maxLength: 200 }
@@ -718,12 +724,14 @@ components:
         external_reference: { oneOf: [{ $ref: '#/components/schemas/ExternalReference' }, { type: "null" }] }
         loss_reasons: { type: [array, "null"], items: { $ref: '#/components/schemas/LossReasonEntry' } }
         linked_deviation_id: { type: [string, "null"], format: uuid }
+        supersedes_id: { type: [string, "null"], format: uuid, description: "YLD-FR-022: id of the prior reconciliation record this one corrects." }
+        reason: { type: [string, "null"], description: Required when supersedes_id is set. }
 
     EvaluateComponentReconciliationCommand:
       type: object
       additionalProperties: false
       description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
-      x-requirement-ids: [YLD-FR-013, YLD-FR-018, YLD-FR-019, YLD-FR-021, YLD-FR-026, MUT-FR-005, MUT-FR-010]
+      x-requirement-ids: [YLD-FR-013, YLD-FR-018, YLD-FR-019, YLD-FR-021, YLD-FR-022, YLD-FR-026, MUT-FR-005, MUT-FR-010]
       required: [idempotency_key, batch_id, item_ref, quantities, uom, tolerance_rule]
       properties:
         idempotency_key: { type: string, maxLength: 200 }
@@ -741,6 +749,8 @@ components:
         external_reference: { oneOf: [{ $ref: '#/components/schemas/ExternalReference' }, { type: "null" }] }
         loss_reasons: { type: [array, "null"], items: { $ref: '#/components/schemas/LossReasonEntry' } }
         linked_deviation_id: { type: [string, "null"], format: uuid }
+        supersedes_id: { type: [string, "null"], format: uuid, description: "YLD-FR-022: id of the prior reconciliation record this one corrects." }
+        reason: { type: [string, "null"], description: Required when supersedes_id is set. }
 
     MaterialDispensingReconciliationOutcome:
       type: string
