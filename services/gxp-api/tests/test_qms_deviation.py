@@ -603,3 +603,78 @@ async def test_signature_challenge_unknown_action_rejected(client, seeded, db):
     )
     assert resp.status_code == 422, resp.text
     assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+# =================================================================================================
+# SG-060 gap resolution: change_control_id / training_assignment_id FK on disposition
+# =================================================================================================
+
+
+async def test_disposition_links_existing_change_control_and_training_assignment(client, seeded, db):
+    from app.modules.qms.change_models import ChangeControl
+    from app.modules.qms.models import DeviationRecord
+    from app.modules.qms.training_models import TrainingAssignment, TrainingRequirement
+
+    owner = await _setup(db, seeded, "24")
+    async with db.begin():
+        cc = ChangeControl(
+            site_id=seeded["site_id"], change_number=f"CHG-{uuid.uuid4().hex[:8]}", change_type="process",
+            classification="permanent", current_state={"desc": "as-is"}, proposed_state={"desc": "to-be"},
+            reason="deviation follow-up", owner_subject_id=owner.id, version=1,
+        )
+        db.add(cc)
+        req = TrainingRequirement(
+            site_id=seeded["site_id"], title="Retrain on revised SOP", source_type="deviation", training_type="sop",
+            version=1,
+        )
+        db.add(req)
+        await db.flush()
+        ta = TrainingAssignment(
+            site_id=seeded["site_id"], subject_id=owner.id, requirement_id=req.id, assigned_by_user_id=owner.id,
+            version=1,
+        )
+        db.add(ta)
+        await db.flush()
+        cc_id, ta_id = cc.id, ta.id
+
+    token = await login(client, "admin.dev24")
+    deviation_id = await _create(client, token, seeded["site_id"], owner.id)
+    next_version = await _advance_to_disposition(client, token, deviation_id, investigator_id=owner.id)
+    resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/disposition",
+        json={
+            "idempotency_key": idem(), "deviation_id": deviation_id, "expected_version": next_version,
+            "disposition_code": "CONTINUE", "disposition_rationale": "no impact found", "capa_required": False,
+            "capa_rationale": "isolated event, no systemic pattern",
+            "change_control_required": True, "change_control_rationale": "SOP must change",
+            "change_control_id": str(cc_id),
+            "training_required": True, "training_rationale": "operators must retrain",
+            "training_assignment_id": str(ta_id),
+        },
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    deviation = await db.get(DeviationRecord, uuid.UUID(deviation_id))
+    assert deviation.change_control_id == cc_id
+    assert deviation.training_assignment_id == ta_id
+
+
+async def test_disposition_rejects_unknown_change_control_id(client, seeded, db):
+    owner = await _setup(db, seeded, "25")
+    token = await login(client, "admin.dev25")
+    deviation_id = await _create(client, token, seeded["site_id"], owner.id)
+    next_version = await _advance_to_disposition(client, token, deviation_id, investigator_id=owner.id)
+    resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/disposition",
+        json={
+            "idempotency_key": idem(), "deviation_id": deviation_id, "expected_version": next_version,
+            "disposition_code": "CONTINUE", "disposition_rationale": "no impact found", "capa_required": False,
+            "capa_rationale": "isolated event, no systemic pattern",
+            "change_control_required": True, "change_control_rationale": "SOP must change",
+            "change_control_id": str(uuid.uuid4()),
+        },
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["code"] == "NOT_FOUND"

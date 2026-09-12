@@ -1944,8 +1944,8 @@
     "DEV-FR-011": "VERIFIED",
     "DEV-FR-012": "IN_PROGRESS",
     "DEV-FR-013": "VERIFIED",
-    "DEV-FR-014": "BLOCKED",
-    "DEV-FR-015": "BLOCKED",
+    "DEV-FR-014": "VERIFIED",
+    "DEV-FR-015": "VERIFIED",
     "DEV-FR-016": "VERIFIED",
     "DEV-FR-017": "VERIFIED",
     "DEV-FR-018": "IN_PROGRESS",
@@ -1985,14 +1985,20 @@
      "at": "2026-08-29",
      "by": "Claude Code",
      "note": "Event-schema first slice (SG-013 event half): committed contracts/events/event-qms-001.json (JSON Schema draft 2020-12) covering every SPEC-SPEC-QMS-001-declared event type actually emitted by this module's command layer, cross-referenced against real event_type= literals/dynamic ternary assignments in the code (not the catalogue alone). Divergences from 07_EVENT_CATALOGUE.yaml, if any, are recorded in the file's own description rather than silently normalized. Verified via tooling/events/validate.py: PASS, 0 violations (platform-wide: 13 files, 84 event entries). Uses the shared contracts/events/event-data-005.json envelope. No application code changed by this pass -- contract-only."
+    },
+    {
+     "at": "2026-09-12",
+     "by": "Claude Code",
+     "stage": "IN_DEVELOPMENT",
+     "note": "SG-060 gap resolution (WP-05 pass): DEV-FR-014/015's flag+rationale-only limitation is now partially resolved. qms.change_control (Document 29) and qms.training_assignment (Document 31) both now exist (built in later WP-05 passes than this module's own), so deviation_record gained real change_control_id/training_assignment_id FK columns (migration 0102_deviation_change_training_fk) and DispositionCommand accepts them optionally with an existence check (NotFoundError if not found) -- same shape as SCAR's supplier_id precedent. Not done: linking a Change Control/Training Assignment created after disposition already committed, and the identical fast-follow for NCR/Complaint/Field Action's own capa_required flags -> qms.capa_record (left for a future pass). Tests: tests/test_qms_deviation.py grew 26 -> 28 (2 new), 28/28 passed. TC-026-014-01/015-01 (the only 2 pre-written cases for these requirements) moved NOT_STARTED -> PASS."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-24",
    "completed_at": null,
-   "test_pass": 31,
+   "test_pass": 33,
    "test_fail": 0,
-   "test_blocked": 28,
+   "test_blocked": 26,
    "open_defects": 0,
    "blockers": [
     "SG-059",
