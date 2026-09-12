@@ -12,16 +12,19 @@ import secrets as _pysecrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.iam.models import User
-from app.modules.security.crypto_models import CertificateMetadata, SecretMetadata
+from app.modules.security.crypto import encrypt_sensitive_field, secret_value_key_context
+from app.modules.security.crypto_models import CertificateMetadata, SecretMetadata, SecretValue
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     InvalidTransitionError,
     MissingSignatureError,
     NotFoundError,
+    SecretAlreadyExistsError,
     SecretRotationFailedError,
     StaleVersionError,
     ValidationFailedError,
@@ -83,6 +86,132 @@ async def _write_receipt(
     return MutationReceipt(
         command_id=receipt.id, aggregate_id=aggregate_id, resulting_version=version,
         audit_event_id=audit_event.id, signature_id=signature_id, correlation_id=correlation_id,
+    )
+
+
+_SECRET_PROVIDERS = {"K8S_SECRET", "AWS_SM", "VAULT", "ON_PREM"}
+
+
+# =================================================================================================
+# createSecret() -- KEY-FR-002/003/004. No signature (no Document 106 row, same as secret.rotate).
+# SG-126 gap resolution: no create-path existed for `secret_metadata` before this pass -- only
+# `rotate_secret()`, which requires the row to already exist.
+# =================================================================================================
+
+
+class CreateSecretCommand(CommandEnvelope):
+    secret_ref: str
+    provider: str
+    purpose: str
+    owner: str
+    consumer_identities: list[str] = []
+    rotation_interval_days: int = 90
+    # ON_PREM only: the plaintext value to store, encrypted immediately and never persisted raw or
+    # placed in the audit/outbox payload (Document 65 # 14). Rejected for every other provider -- their
+    # value lives externally, this build has no client to verify/store it against (SG-126).
+    initial_value: str | None = None
+
+
+async def create_secret(session: AsyncSession, cmd: CreateSecretCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if cmd.provider not in _SECRET_PROVIDERS:
+        raise ValidationFailedError(f"provider must be one of {sorted(_SECRET_PROVIDERS)}")
+    if not cmd.secret_ref or not cmd.purpose or not cmd.owner:
+        raise ValidationFailedError("secret_ref, purpose and owner are required")
+    if cmd.rotation_interval_days < 1 or cmd.rotation_interval_days > 3650:
+        raise ValidationFailedError("rotation_interval_days must be between 1 and 3650")
+    if cmd.initial_value is not None and cmd.provider != "ON_PREM":
+        raise ValidationFailedError(
+            "initial_value is only accepted for provider ON_PREM -- other providers store the value "
+            "externally and this build has no live client to write it there (SG-126)"
+        )
+    if (
+        await session.execute(select(SecretMetadata.id).where(SecretMetadata.secret_ref == cmd.secret_ref))
+    ).first() is not None:
+        raise SecretAlreadyExistsError("A secret with this secret_ref is already registered", secret_ref=cmd.secret_ref)
+
+    row = SecretMetadata(
+        id=uuid.uuid4(), secret_ref=cmd.secret_ref, provider=cmd.provider, purpose=cmd.purpose, owner=cmd.owner,
+        consumer_identities=list(cmd.consumer_identities), rotation_interval_days=cmd.rotation_interval_days,
+        state="ACTIVE", version=1,
+    )
+    session.add(row)
+    await session.flush()
+
+    if cmd.initial_value is not None:
+        envelope = encrypt_sensitive_field(
+            key_context=secret_value_key_context(row.id), plaintext=cmd.initial_value.encode(),
+        )
+        session.add(SecretValue(secret_id=row.id, envelope=envelope, version=1, set_by_user_id=actor_user_id))
+        await session.flush()
+
+    return await _write_receipt(
+        session, cmd=cmd, payload_hash=payload_hash, aggregate_type="secret_metadata",
+        aggregate_id=row.id, version=row.version, action="Created", actor_user_id=actor_user_id,
+        reason=None, old_state=None, event_type="SecretCreated",
+        event_payload={"secret_id": str(row.id), "secret_ref": row.secret_ref, "provider": row.provider,
+                       "has_value": cmd.initial_value is not None},
+        expected_version=None, command_type="CreateSecret",
+    )
+
+
+# =================================================================================================
+# setSecretValue() -- KEY-FR-002/003/004, ON_PREM provider only. No signature (no Document 106 row).
+# =================================================================================================
+
+
+class SetSecretValueCommand(CommandEnvelope):
+    secret_id: uuid.UUID
+    expected_version: int
+    value: str
+    reason: str
+
+
+async def set_secret_value(session: AsyncSession, cmd: SetSecretValueCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    secret = await session.get(SecretMetadata, cmd.secret_id)
+    if secret is None:
+        raise NotFoundError("Secret metadata not found")
+    if secret.provider != "ON_PREM":
+        raise ValidationFailedError(
+            f"Cannot store a value for provider {secret.provider} -- only ON_PREM secrets are value-managed "
+            "in this build (SG-126)"
+        )
+    if not cmd.reason:
+        raise ValidationFailedError("reason is required")
+
+    value_row = (
+        await session.execute(select(SecretValue).where(SecretValue.secret_id == cmd.secret_id))
+    ).scalar_one_or_none()
+    current_version = value_row.version if value_row is not None else 0
+    if current_version != cmd.expected_version:
+        raise StaleVersionError("Secret value changed since this request was prepared", current_version=current_version)
+
+    envelope = encrypt_sensitive_field(key_context=secret_value_key_context(secret.id), plaintext=cmd.value.encode())
+    old_state = "SET" if value_row is not None else "UNSET"
+    if value_row is None:
+        value_row = SecretValue(secret_id=secret.id, envelope=envelope, version=1, set_by_user_id=actor_user_id)
+        session.add(value_row)
+    else:
+        value_row.envelope = envelope
+        value_row.set_by_user_id = actor_user_id
+        value_row.version += 1
+    await session.flush()
+
+    return await _write_receipt(
+        session, cmd=cmd, payload_hash=payload_hash, aggregate_type="secret_value",
+        aggregate_id=secret.id, version=value_row.version, action="Changed", actor_user_id=actor_user_id,
+        reason=cmd.reason, old_state=old_state, event_type="SecretValueSet",
+        event_payload={"secret_id": str(secret.id), "secret_ref": secret.secret_ref, "version": value_row.version},
+        expected_version=cmd.expected_version, command_type="SetSecretValue",
     )
 
 
