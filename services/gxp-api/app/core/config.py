@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # qualification/production use.
     session_idle_timeout_minutes: int = 1440
     session_absolute_timeout_minutes: int = 1440
+    # WP-11 (Document 73, ADR-0011): NATS JetStream transport for the transactional outbox. Bound to
+    # localhost by default (see infra/nats-server.conf) -- never exposed beyond this deployment.
+    nats_url: str = "nats://127.0.0.1:4222"
 
 
 settings = Settings()

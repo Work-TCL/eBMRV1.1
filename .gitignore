@@ -37,3 +37,6 @@ config/*.pid
 # --- Claude Code local runtime state ---
 /.claude/
 config.bat
+
+# --- WP-11 local infra runtime data (rebuildable, never authoritative -- AG-09) ---
+infra/nats-data/

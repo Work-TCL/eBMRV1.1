@@ -18,7 +18,7 @@ The frozen Document 02 §6.1 ADRs, with the supersessions recorded in `docs/adr/
 | GxP authoritative DB | PostgreSQL 14 | unchanged | ADR-0003 |
 | Identity | Keycloak-compatible / customer SSO | unchanged (local password fallback in dev) | ADR-0004 |
 | Durable workflow | Temporal | **interim `workflowops` stand-in; real Temporal committed** | ADR-0006 → **ADR-0011** |
-| Event bus | NATS-compatible | **interim in-process outbox publisher; real NATS/JetStream committed** | ADR-0008 → **ADR-0011** |
+| Event bus | NATS-compatible | **real NATS JetStream, single-node, `app/modules/eventbus/jetstream.py` (WP-11 Stage 1)** | ADR-0008 → **ADR-0011** |
 | Object storage | S3-compatible | `LocalEvidenceStore` in dev; S3 adapter is the target | ADR-0009 |
 | GxP service language | TypeScript/Node.js LTS | **Python 3.12 + FastAPI + async SQLAlchemy 2.0 + Alembic** | ADR-010 → **ADR-0007** |
 | Contracts | OpenAPI 3.1 + JSON Schema + AsyncAPI | unchanged (`contracts/openapi/`, `contracts/events/`) | ADR-0003 |
@@ -74,6 +74,7 @@ PROHIBITED, zero strong-copyleft (GPL / AGPL / SSPL).** Source: `uv.lock` (pinne
 | httpx | 0.28.1 | BSD-3-Clause | APPROVED | the one outbound HTTP client (WP-07 ERP adapters) | `pyproject.toml` L17–24 (Document 104 justification) |
 | reportlab | 5.0.1 | BSD (BSD-3-Clause family) | APPROVED | PDF export for WP-12/WP-14 validation reports | **SG-169** (approved; re-pinned) |
 | pillow | 12.3.0 | MIT-CMU | APPROVED | reportlab image support (transitive) | via reportlab |
+| nats-py | 2.15.0 | Apache-2.0 | APPROVED | real NATS JetStream transport for the outbox publisher (WP-11, ADR-0011 / SG-183) — official `nats-io` client, pure-Python, zero transitive dependencies | `pyproject.toml` (Document 104 justification, WP-11) |
 
 ### Dev / CI dependencies (`[dependency-groups].dev` — not in any runtime artefact)
 

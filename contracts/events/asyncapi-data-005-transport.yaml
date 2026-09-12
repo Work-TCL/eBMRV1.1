@@ -1,0 +1,77 @@
+asyncapi: 3.0.0
+info:
+  title: SPEC-DATA-005 — GxP Outbox NATS JetStream Transport
+  version: 1.0.0
+  description: >
+    Document 73 (SPEC-DATA-005) EVT-FR-002/003/004, ADR-0011 / SG-183 (WP-11 pass). Documents the
+    broker-level subject/stream/dedup/consumer conventions for the transactional-outbox publisher
+    (`app/modules/eventbus/jetstream.py` + `outbox.py::publish_outbox_event`). The event *payload*
+    schema (the canonical envelope) is `contracts/events/event-data-005.json`'s `EventEnvelope` — this
+    file is the transport layer around it, not a second envelope definition.
+
+
+    STAGE 1 OF SG-183: this contracts the real JetStream **producer** side only (stream, subject
+    convention, dedup). Durable consumer wiring for projections/integrations (the other half of
+    EVT-FR-003's "at-least-once, consumer-side idempotent apply") is a later WP-11 stage, not built yet
+    — do not read this file as claiming a consumer exists.
+defaultContentType: application/json
+
+servers:
+  local:
+    host: 127.0.0.1:4222
+    protocol: nats
+    description: >
+      Single-node NATS JetStream, bound to localhost only (`infra/nats-server.conf`), tight resource
+      limits (max_file_store 512MB, max_memory_store 64MB) given this deployment's shared-host disk
+      headroom. Not exposed beyond this deployment; production profiles will point `GXP_NATS_URL` at a
+      real cluster.
+
+channels:
+  gxpEvents:
+    address: "gxp.v1.>"
+    description: >
+      EVT-FR-007's versioned subject namespace: `gxp.v1.{aggregate_type}.{event_type}`
+      (`outbox.py::subject_for()`). One JetStream stream (`GXP_EVENTS`) captures every subject under this
+      wildcard — every producer in `app/modules/*` that calls `write_outbox_event()` publishes here, with
+      no per-module stream proliferation.
+    messages:
+      gxpEvent:
+        $ref: '#/components/messages/gxpEvent'
+
+operations:
+  publishGxpEvent:
+    action: send
+    channel:
+      $ref: '#/channels/gxpEvents'
+    summary: >
+      `outbox_publisher_loop` claims committed, unpublished `mutation.outbox_events` rows
+      (`FOR UPDATE SKIP LOCKED`) and publishes each to JetStream, marking it published only after the
+      broker's PubAck (EVT-FR-004) — never before.
+    description: >
+      Deduplication: `Nats-Msg-Id` is set to the outbox row's own `event_id` (a stable UUID, never
+      regenerated). JetStream's own duplicate-message window (server default) recognizes a republish of
+      the same `event_id` — the exact shape produced if the publisher crashes between a successful
+      publish and marking the row published locally — as a duplicate rather than a new message
+      (`ack.duplicate = true`), so a retried publish after a crash never double-delivers. This is the
+      broker-level backstop; `mark_outbox_published()`'s own `OutboxPublishStateConflictError` guards the
+      same race at the PostgreSQL row level.
+    messages:
+      - $ref: '#/components/messages/gxpEvent'
+
+components:
+  messages:
+    gxpEvent:
+      name: GxpEvent
+      title: Canonical GxP domain event envelope
+      summary: Every event this service publishes, in the exact shape event-data-005.json's EventEnvelope defines.
+      contentType: application/json
+      headers:
+        type: object
+        properties:
+          Nats-Msg-Id:
+            type: string
+            format: uuid
+            description: Set to event_id — JetStream's dedup key for this message.
+      payload:
+        $ref: '../../contracts/events/event-data-005.json#/$defs/EventEnvelope'
+      x-requirement-ids: [EVT-FR-001, EVT-FR-002, EVT-FR-003, EVT-FR-004, EVT-FR-007]

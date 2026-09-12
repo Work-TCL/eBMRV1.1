@@ -23,6 +23,14 @@ dependencies = [
     # HTTP client in the whole service, not one per vendor.
     "httpx>=0.27",
     "reportlab>=5.0,<6.0",
+    # WP-11 (Documents 69-78, ADR-0011): real NATS JetStream transport replacing the interim in-process
+    # outbox publisher (Document 73, EVT-FR-002/003/004). Document 104 justification: no approved
+    # dependency in this project already solves durable pub/sub; `nats-py` is the official NATS client
+    # (nats-io org), Apache-2.0, pure-Python with zero transitive dependencies (verified via `pip show`),
+    # actively maintained, async-native (matches this service's async SQLAlchemy/FastAPI stack). Not
+    # security-critical (transport only -- no crypto/auth primitives of its own; TLS is the underlying
+    # `ssl` stdlib module). SBOM/licence scan: see docs/generated/40_SBOM_LICENSE_DEPENDENCY_REGISTER.md.
+    "nats-py>=2.10",
 ]
 
 [dependency-groups]
