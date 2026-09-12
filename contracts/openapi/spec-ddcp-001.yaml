@@ -598,6 +598,72 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/DdcpChangeLinkage' } } }
         '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
 
+  /ddcp/v1/prefilled-syringe/step-mappings:
+    post:
+      operationId: postCreateDdcpStepMapping
+      tags: [ddcp-prefilled-syringe]
+      summary: Declare which DDCP execution action corresponds to which generic recipe step (SG-180)
+      description: >
+        Read-only/visibility use this pass -- see DdcpStepMapping's model docstring
+        (app/modules/ddcp/models.py) for why no write-side auto-completion is built: Document 106's
+        `(batch_step, complete)`/`(batch_step, results)` policy is unconditionally
+        `signature_required=True`, so an auto-completion write would always need a signature DDCP's own
+        action doesn't collect. This mapping plus GET .../step-sync-status fixes SG-180's actual root
+        cause -- an operator with no way to see the two systems are related -- without ever bypassing a
+        signature.
+      x-requirement-ids: [BAT-FR-006, BAT-FR-026]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDdcpStepMappingCommand' }
+      responses:
+        '200':
+          description: Mapping created. `aggregate_id` is the mapping id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: stable_step_code not found on this recipe version.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422': { $ref: 'spec-gxp-001.yaml#/components/responses/ValidationFailed' }
+    get:
+      operationId: getDdcpStepMappings
+      tags: [ddcp-prefilled-syringe]
+      summary: List the DDCP action -> generic step mappings declared for one recipe version (SG-180)
+      x-requirement-ids: [BAT-FR-006, BAT-FR-026]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: recipe_version_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/DdcpStepMapping' } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+
+  /ddcp/v1/prefilled-syringe/batches/{batch_id}/step-sync-status:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getBatchDdcpStepSyncStatus
+      tags: [ddcp-prefilled-syringe]
+      summary: DDCP action <-> generic step state side by side, per mapped action, for one batch (SG-180)
+      description: >
+        The read that actually addresses SG-180: joins this batch's declared step mappings against
+        `gxp_batch_step.state` so an operator sees the connection between the two progress trackers
+        instead of two apparently-unrelated ones.
+      x-requirement-ids: [BAT-FR-006, BAT-FR-026]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/BatchDdcpStepSyncStatus' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -1006,3 +1072,45 @@ components:
       properties:
         idempotency_key: { type: string, maxLength: 200 }
         batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+
+    CreateDdcpStepMappingCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [BAT-FR-006, MUT-FR-005, MUT-FR-010]
+      required: [idempotency_key, recipe_version_id, ddcp_action, stable_step_code]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        recipe_version_id: { type: string, format: uuid }
+        ddcp_action:
+          type: string
+          enum: [constituent_handoff.accept, filling_stage.complete, device_assembly.verify]
+        stable_step_code: { type: string, maxLength: 80 }
+
+    DdcpStepMapping:
+      type: object
+      description: Response schema, not closed (Document 113 §3 F6 closes command payloads only).
+      x-requirement-ids: [BAT-FR-006]
+      required: [id, recipe_version_id, ddcp_action, stable_step_code]
+      properties:
+        id: { type: string, format: uuid }
+        recipe_version_id: { type: string, format: uuid }
+        ddcp_action: { type: string }
+        stable_step_code: { type: string }
+
+    BatchDdcpStepSyncStatus:
+      type: object
+      description: Response schema, not closed.
+      x-requirement-ids: [BAT-FR-006, BAT-FR-026]
+      required: [batch_id, mappings]
+      properties:
+        batch_id: { type: string, format: uuid }
+        mappings:
+          type: array
+          items:
+            type: object
+            required: [ddcp_action, stable_step_code, generic_step_state]
+            properties:
+              ddcp_action: { type: string }
+              stable_step_code: { type: string }
+              generic_step_state: { type: [string, "null"], description: "gxp_batch_step.state, or null if this batch has no step at that code." }

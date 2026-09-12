@@ -250,7 +250,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /recipes/v1/drafts` (or the owning command) exercising: Each requirement references material/component specification, target quantity/formula, tolerance, stage and alternative-policy reference. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Wrong material blocked. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS  |  **Executed by:** Claude Code  |  **Date:** 2026-09-11  |  **Actual result:** tests/test_recipe_master.py::test_material_and_equipment_requirements_round_trip + test_material_requirement_rejects_unknown_material_spec_version_id (422 for a wrong/unknown material). Tolerance values stored, not runtime-enforced (BAT-FR-012/013 deferred).  |  **Defect:** —
 
 ### TC-010-009-02 — Material requirements — Limit boundary behaviour
 
@@ -263,7 +263,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Expected result:** Inside passes, boundary follows the declared inclusivity, outside fails; rounding occurs only at declared stages.
 - **Depends on:** TC-010-009-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** BLOCKED  |  **Executed by:** Claude Code  |  **Date:** 2026-09-11  |  **Actual result:** Cannot execute — min_value/max_value are captured, unenforced fields this pass; no rule-execution engine evaluates them at batch step start (BAT-FR-012, SG-048 #012, still deferred). Re-attempt once that enforcement is built.  |  **Defect:** SG-045 (enforcement not yet built)
 
 ### TC-010-010-01 — Equipment requirements — required behaviour
 
@@ -275,7 +275,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /recipes/v1/drafts` (or the owning command) exercising: Step references equipment class/asset eligibility, qualification/calibration/cleaning status and optional redundancy. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Equipment checks enforceable. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS  |  **Executed by:** Claude Code  |  **Date:** 2026-09-11  |  **Actual result:** tests/test_recipe_master.py::test_material_and_equipment_requirements_round_trip creates and reads back a recipe_equipment_requirement. Calibration/qualification gating declared, not runtime-enforced (same BAT-FR-012/013 deferral).  |  **Defect:** —
 
 ### TC-010-010-02 — Equipment requirements — Illegal state transition is rejected
 
@@ -289,7 +289,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Expected error code:** `STATE_TRANSITION_INVALID`
 - **Depends on:** TC-010-010-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** BLOCKED  |  **Executed by:** Claude Code  |  **Date:** 2026-09-11  |  **Actual result:** Cannot execute — recipe_equipment_requirement has no state machine of its own; it is a declared child row replaced wholesale with its parent recipe draft, not an independently-transitioned aggregate. The scenario does not apply to the entity as built.  |  **Defect:** SG-045 (no independent state machine on this entity)
 
 ### TC-010-011-01 — Personnel requirements — required behaviour
 

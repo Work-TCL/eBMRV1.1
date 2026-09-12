@@ -189,3 +189,27 @@ class StepHold(Base):
     release_reason: Mapped[str | None] = mapped_column(String(2000))
     release_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("signature.signatures.id"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class StepEvidenceLink(Base):
+    """SG-047 (`gxp_step_evidence_link` half). `evidence_id`/`evidence_version`/`evidence_sha256`/
+    `media_type` reuse `vault.VaultEvidence`'s own shape exactly (VLT-FR-005) rather than inventing a
+    parallel evidence-manifest schema -- SG-047 explicitly required this table to "agree with Document 06's
+    Vault evidence manifest shape, not a guessed one." Append-only, same reasoning as `StepResult`: a step's
+    evidence trail is never edited in place, only added to (AG-08)."""
+
+    __tablename__ = "gxp_step_evidence_link"
+    __table_args__ = (
+        Index("ix_gxp_step_evidence_link_step_id", "step_id"),
+        {"schema": "ebmr"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    step_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch_step.id"), nullable=False)
+    evidence_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    evidence_version: Mapped[int] = mapped_column(nullable=False, default=1)
+    evidence_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    media_type: Mapped[str | None] = mapped_column(String(120))
+    requirement_code: Mapped[str | None] = mapped_column(String(80))
+    linked_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

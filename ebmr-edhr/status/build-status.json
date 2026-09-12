@@ -804,8 +804,8 @@
     "RCP-FR-006": "IN_PROGRESS",
     "RCP-FR-007": "VERIFIED",
     "RCP-FR-008": "BLOCKED",
-    "RCP-FR-009": "BLOCKED",
-    "RCP-FR-010": "BLOCKED",
+    "RCP-FR-009": "IN_PROGRESS",
+    "RCP-FR-010": "IN_PROGRESS",
     "RCP-FR-011": "BLOCKED",
     "RCP-FR-012": "BLOCKED",
     "RCP-FR-013": "IN_PROGRESS",
@@ -833,7 +833,7 @@
     "RCP-FR-035": "VERIFIED",
     "RCP-FR-036": "BLOCKED"
    },
-   "entities": 9,
+   "entities": 11,
    "apis": 10,
    "events": 6,
    "test_cases": 115,
@@ -844,14 +844,20 @@
      "at": "2026-08-22",
      "by": "Claude Code",
      "note": "Partial build, expand-only (WP-02 Document 10): a real, net-new Master Recipe / Master Manufacturing Record (app/modules/recipe_master/) -- draft/validate/simulate/submit/release lifecycle, structured sections/steps, a real dependency graph with DFS cycle detection and BFS unreachable-step detection, parameter definitions with a real Document 08 rule-resolution check in the completeness validator, semantic version compare, vault snapshot on release. Deliberately additive: ebmr.recipes/ebmr.recipe_steps (the legacy Batch-facing stub) and Batch/Recipe themselves are completely untouched -- the full pre-existing 71-test suite passes unmodified. Schema is unusually incomplete in the source baseline (7 of 9 entities were prose only, worse than Document 09's ratio): recipe_material_requirement/recipe_equipment_requirement are ambiguous policy prose, not a column list, and are deferred (SG-045); 16 further requirements depend on modules/infrastructure that don't exist yet -- QC order management, live batch execution consuming this model (SG-044), sterile/device/packaging masters, an exception-policy engine, Document 16/17 -- and are deferred (SG-046). Release fails closed pending Document 106 (SG-035, extended to recipe_version)."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-11",
+     "by": "Claude Code",
+     "note": "Phase 4 (wp16-phase4-wp02-recipe-batch-sync, SG-045): recipe_material_requirement/recipe_equipment_requirement built (migration 4c2d52d2b8a2), wired into recipe draft create/update, exposed on GET /recipes/v2/versions/{id}. Every ambiguous field either reuses an already-approved shape (RecipeParameter's tolerance columns, EquipmentAsset.equipment_class_id's captured-reference precedent) or is captured for a future BAT-FR-012/013 batch_execution enforcement wiring, never invented. Verified: tests/test_recipe_master.py 21/21 passed (4 new)."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-22",
    "completed_at": null,
-   "test_pass": 29,
+   "test_pass": 31,
    "test_fail": 0,
-   "test_blocked": 83,
+   "test_blocked": 81,
    "open_defects": 0,
    "blockers": [],
    "prompt": "prompts/WP-02/10_SPEC-EBMR-001.md",
@@ -904,8 +910,8 @@
     "BAT-FR-035": "IN_PROGRESS",
     "BAT-FR-036": "IN_PROGRESS"
    },
-   "entities": 5,
-   "apis": 15,
+   "entities": 6,
+   "apis": 16,
    "events": 16,
    "test_cases": 96,
    "stage": "IN_DEVELOPMENT",
@@ -927,6 +933,12 @@
      "at": "2026-09-09",
      "by": "Claude Code",
      "note": "SG-047/SG-048 further partial resolution, project-owner-directed (asked which of six remaining demo gaps to build; chose step-level hold, Production Complete state, and material/equipment linkage -- built the first two, explicitly deferred the third once found blocked on SG-045's own open schema question). Step-scoped gxp_batch_hold slice (StepHold, migration a6d525b2d585_0093): signed hold/resume per Document 106 row 14/17's shapes, POST /batches/v1/{id}/steps/{id}/hold and /resume -- resolves BAT-FR-020's step scope (its full generality, arbitrary scope + quality-event linkage, stays open). gxp_batch.state gains production_complete (steps-completeness sub-clause of BAT-FR-026 only -- yield/reconciliation needs Document 17, not checked), signed per Document 106 row 16, POST /batches/v1/{id}/production-complete, error PRODUCTION_NOT_COMPLETE. BAT-FR-012/013 (material consume / equipment eligibility at step start) NOT built -- RecipeStep has no field declaring which material/equipment a step needs, and that declaration is itself SG-045's still-open schema question; attempting it would mean guessing that schema too. Verified: test_batch_execution.py 27/27 (4 new tests) plus test_batch_flow.py/test_release.py/test_qa_review.py as an untouched-module control, 34/34."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-11",
+     "by": "Claude Code",
+     "note": "Phase 4 (wp16-phase4-wp02-recipe-batch-sync, SG-047 remainder): gxp_step_evidence_link built (migration 2e0dcac852aa), reusing vault.gxp_vault_evidence's exact shape per this gap's own requirement to agree with Document 06's manifest shape. New unsigned POST /batches/v1/{id}/steps/{id}/evidence-links (evidence attachment is a capture, not a signed release/disposition decision -- no Document 106 policy row exists for it). Verified: tests/test_batch_execution.py 30/30 passed (3 new)."
     }
    ],
    "owner": "Claude Code",
@@ -1393,6 +1405,12 @@
      "at": "2026-08-24",
      "by": "Claude Code",
      "note": "Partial build (WP-04 Document 18): a net-new Supplier Quality module (app/modules/supplier_quality/) covering 3 of Document 18's 6 entities -- supplier, supplier_site, supplier_qualification (all typed as DDL-ready or genuinely unambiguous prose per SG-045's precedent), plus a supplier_qualification_evidence join table reusing the existing Vault release pattern for SUP-FR-005 rather than inventing a new evidence mechanism. Built: create a supplier with embedded sites and duplicate-legal-identity detection (SUP-FR-001/002/029), request a qualification (cascading the supplier's own DRAFT->UNDER_QUALIFICATION lifecycle per Document 18 Section 5, SUP-FR-003/004/013), and a signed approve/conditional/reject decision on that qualification (Document 106 row 43 -- meaning Approved, 1 signature, independent of the requester -- cascading the supplier to APPROVED, SUP-FR-009/012). No table-name or concept collision was found with the already-built app/modules/material/ module (Documents 19-22) after checking as instructed. The real constraint hit was upstream: approved_supplier_material, purchase_requisition and purchase_order_ref all key on a 'material specification version' entity (architecture rule C-014, Specification Master) that does not exist anywhere in this codebase -- the already-built materials module only implements the flat C-013 raw-material master, with no released/immutable specification-version entity the way Product/Recipe have (gxp_product_version/gxp_recipe_version). Guessing that linkage would be a record-authority decision, not an engineering nicety -- raised as SG-057, blocking SUP-FR-007/008/010/011/017/018/019/020/022/023/024/025/026/027/028 (15 requirements) plus the GET eligible-suppliers read. A second, smaller gap (SG-058, same pattern as Document 16's SG-056) covers 5 requirements Document 18 itself never defines an entity for (supplier audit, change notification, supplier performance, SCAR -- the latter two also depending on WP-05 QMS, not yet built) or, for RFQ, an API operation either. Document 18's own API list (10 operations) defines no GET/read operation for supplier/site/qualification at all, matching the same style of gap already logged for Document 16 -- no read endpoint was invented; state is verified via direct DB reads in tests, same as the packaging module's precedent. 104 pre-written Document 18 test cases executed: 21 PASS (8 direct positive-path pytest runs plus 3 cases covered by reused, unmodified shared-mechanism evidence -- idempotency/replay and the append-only privilege grant on supplier_qualification_evidence -- following the same structural-verification precedent WP-01's own test evidence already established), 10 N/A with a recorded justification (single-tenant/no-site-scoping-on-this-entity by design, insert-only tables with no concurrency surface, requirement text that doesn't match this module's actual signature points), 73 BLOCKED citing SG-057/SG-058 or a specific untested code path (e.g. the disqualified-supplier guard exists but is unreachable -- no endpoint this pass ever sets a supplier to disqualified). Full pre-existing suite (151 tests before this pass) plus 12 new supplier_quality tests pass unmodified."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-11",
+     "by": "Claude Code",
+     "note": "Phase 4 (wp16-phase4-wp02-recipe-batch-sync, SG-057): MaterialSpecification/MaterialSpecificationVersion built in a new, separate module (app/modules/material_specification/, migration d2d738c7f191) mirroring product_master.ProductVersion's master+immutable-version split exactly -- pulled into scope as a dependency of SG-045 (recipe_material_requirement needs this FK target), not tracked as its own Document/module in this registry. Full create_draft/release command surface + router; release correctly fails closed pending a new Document 106 policy row (SG-185, raised not guessed). Document 18's own named entities (approved_supplier_material/purchase_requisition/purchase_order_ref/eligible-suppliers) remain unbuilt -- only the blocking entity was in scope. Verified: tests/test_material_specification.py 7/7 passed (new file)."
     }
    ],
    "owner": "Claude Code",
@@ -4079,7 +4097,7 @@
     "PFS-FR-029": "VERIFIED",
     "PFS-FR-030": "IN_PROGRESS"
    },
-   "entities": 9,
+   "entities": 10,
    "apis": 0,
    "events": 0,
    "test_cases": 72,
@@ -4108,6 +4126,12 @@
      "at": "2026-08-29",
      "by": "Claude Code",
      "note": "Resync: this module's requirements_state was also found partially reverted from earlier writes this session (same shared build-status.json lost-update pattern found and fixed for SPEC-DDCP-002/003/004 -- see their own stage_history entries). Corrected against real, currently-passing test evidence: tests/test_ddcp_flow.py's full 18/18 pass (confirmed multiple times this session, most recently as part of a 59/59 combined run across all four DDCP test files, ps -ef clear before/after). 29 of 30 PFS-FR requirements VERIFIED; PFS-FR-020 (label/packaging) stays NOT_STARTED -- blocked by SG-149 (ebmr.batches vs ebmr.gxp_batch divergence), not guessed."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-11",
+     "by": "Claude Code",
+     "note": "Phase 4 (wp16-phase4-wp02-recipe-batch-sync, SG-180 option B, project-owner-directed): gxp_ddcp_step_mapping built (migration 1d2ce758fc70) -- declarative DDCP-action<->stable_step_code mapping, plus GET /ddcp/v1/prefilled-syringe/batches/{id}/step-sync-status joining it against BatchStep.state. Write-side auto-completion deliberately NOT built: _require_step_signature() resolves batch_step complete/results from a single platform-wide Document 106 policy (signature_required=True unconditionally), not per-step, so an auto-completion write would always need a signature DDCP's own action doesn't collect -- would be permanently inert. This read-only mapping+visibility is what actually fixes SG-180's root cause (an operator with no way to see the two progress trackers are related). Verified: tests/test_ddcp_step_mapping.py 6/6 passed (new file)."
     }
    ],
    "owner": "",

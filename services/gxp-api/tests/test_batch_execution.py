@@ -1066,3 +1066,96 @@ async def test_production_complete_rejected_from_a_state_it_is_not_allowed_from(
     )
     assert resp.status_code == 409, resp.text
     assert resp.json()["code"] == "INVALID_TRANSITION"
+
+
+# ---------------------------------------------------------------------------
+# SG-047 (gxp_step_evidence_link) -- unsigned by design (no Document 106 policy row for an evidence-link
+# action; a capture, not a release/disposition decision).
+# ---------------------------------------------------------------------------
+
+async def test_link_step_evidence_succeeds_on_in_progress_step(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "evlink1")
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-EVLINK-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"], "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    evidence_id = str(uuid.uuid4())
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/evidence-links",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": step_version,
+            "links": [
+                {
+                    "evidence_id": evidence_id, "evidence_version": 1,
+                    "evidence_sha256": "a" * 64, "media_type": "image/jpeg", "requirement_code": "PHOTO",
+                }
+            ],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is None
+
+
+async def test_link_step_evidence_rejects_empty_links(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "evlink2")
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-EVLINK-2"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"], "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/evidence-links",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": step_version, "links": [],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_link_step_evidence_rejects_step_not_in_progress(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "evlink3")
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-EVLINK-3"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/evidence-links",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": ready_step["version"],
+            "links": [{"evidence_id": str(uuid.uuid4()), "evidence_sha256": "b" * 64}],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "INVALID_TRANSITION"
