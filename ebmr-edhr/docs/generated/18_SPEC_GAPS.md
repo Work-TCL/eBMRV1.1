@@ -7892,9 +7892,13 @@ request's own transaction; no async job/queue path exists) are all named in Docu
 behavior beyond what the generic yield/reconciliation read/write mechanics already provide. Unlike SG-132,
 none of these depend on another module -- each is a genuine functional gap within this module's own scope.
 
+**Update (2026-09-12, Phase 4 WP-03 pass):** YLD-FR-022's "correction preserving the original" half is now
+built and PARTIALLY RESOLVED -- see the resolution note below. The "re-evaluating downstream results" half
+of YLD-FR-022 and all 8 other requirements listed remain fully open.
+
 ```yaml
 spec_gap_id: SG-133
-title: "9 Document 17 requirements have no distinct implementation this pass beyond the generic yield/reconciliation mechanics"
+title: "9 Document 17 requirements have no distinct implementation this pass beyond the generic yield/reconciliation mechanics -- YLD-FR-022's supersede half PARTIALLY RESOLVED 2026-09-12"
 class: E
 description: >
   YLD-FR-004 (automated-equipment auto-verification profile), YLD-FR-008 (externally-precomputed-value
@@ -7905,6 +7909,22 @@ description: >
   (sub-lot-to-parent aggregation) and YLD-FR-032 (asynchronous large-scale reconciliation) are named by
   Document 17 but this pass built only the generic yield/reconciliation calculate-and-verify mechanics, not
   each of these specific behaviors.
+
+  **Update (2026-09-12):** YLD-FR-022's "never overwrite, always supersede" half is now built. All five
+  `Evaluate*` commands (`EvaluateYieldCommand`, `EvaluatePotencyCommand`, `EvaluateReconciliationCommand`,
+  `EvaluateLabelReconciliationCommand`, `EvaluateComponentReconciliationCommand`) accept an optional
+  `supersedes_id` + required `reason`; `app/modules/yield_reconciliation/commands.py::_apply_supersede()`
+  flags the original row `SUPERSEDED` (same `calculation_type`/`reconciliation_type` and `batch_id`
+  required, rejecting a mismatched or already-superseded original), links the new row via `supersedes_id`,
+  and writes a `Corrected` audit event + `ReconciliationSuperseded` outbox event on the original -- the
+  same discipline `genealogy.service.correct_edge()` already established (AG-08, no new regulated
+  behavior invented). `ReconciliationSuperseded` was already declared in `07_EVENT_CATALOGUE.yaml` with no
+  producing code path; it now has one, contracted in `contracts/events/event-ebmr-008.json`. The "and
+  re-evaluating downstream results" half remains unbuilt -- what counts as a "downstream result" of a
+  yield/reconciliation calculation is undefined anywhere in the baseline and would require guessing a
+  dependency graph, so it stays open. Verified: `tests/test_yield_reconciliation.py` grew from 33 to 37
+  tests, 37/37 passed (happy path, missing-reason, double-supersede, cross-batch rejection, plus the
+  pre-existing 33 as an untouched-path regression check).
 source_documents:
   - Document 17 (SPEC-EBMR-008)
 source_requirement_ids:
@@ -7938,8 +7958,8 @@ options:
   - (B) Build a plausible default for each now (rejected — AG-15, no regulated behavior is guessed).
 blocking: false
 owner: Platform Architect
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "YLD-FR-022 supersede half: app/modules/yield_reconciliation/commands.py::_apply_supersede(), migration-free (supersedes_id already existed on both tables); remaining 8 items + YLD-FR-022's downstream-re-evaluation half stay open"
+status: PARTIALLY_RESOLVED
 ```
 
 ### SG-134 — YLD-FR-012's "applicable waiver/profile rule" has no waiver or profile-rule concept in the baseline

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ebmr.internal/contracts/events/event-ebmr-008.json",
   "title": "SPEC-EBMR-008 — Yield, Calculations & Manufacturing Reconciliation Events",
-  "description": "Document 113 event contract for the events app/modules/yield_reconciliation/commands.py actually emits. 6 of the catalogue's 7 declared Document 17 events are implemented: YieldCalculated, YieldOutOfLimit (mutually exclusive on the same call site -- ternary on out_of_limit), MaterialReconciliationCalculated, ReconciliationFailed (mutually exclusive -- ternary on within-tolerance), YieldVerified, ReconciliationVerified (mutually exclusive -- ternary on cmd.record_kind). ReconciliationSuperseded is declared in 07_EVENT_CATALOGUE.yaml but has no producing code path -- superseding an already-verified reconciliation record is not yet built. Verified directly against source, not assumed. KNOWN DEFECT (SG-174, not fixed here): app/modules/material/commands.py also emits the literal event_type \"MaterialReconciliationCalculated\" (Document 22 material-level reconciliation, aggregate_type material_reconciliation) -- a second, independent cross-module name collision, same class as LineClearanceCompleted. See event-mat-002d.json.",
+  "description": "Document 113 event contract for the events app/modules/yield_reconciliation/commands.py actually emits. All 7 of the catalogue's declared Document 17 events are now implemented: YieldCalculated, YieldOutOfLimit (mutually exclusive on the same call site -- ternary on out_of_limit), MaterialReconciliationCalculated, ReconciliationFailed (mutually exclusive -- ternary on within-tolerance), YieldVerified, ReconciliationVerified (mutually exclusive -- ternary on cmd.record_kind), and ReconciliationSuperseded (YLD-FR-022 gap resolution, WP-03 pass -- emitted by `_apply_supersede()` on the ORIGINAL row when a new `EvaluateYield`/`EvaluatePotency`/`EvaluateReconciliation*` call supplies `supersedes_id`; fires on both `manufacturing_calculation` and `reconciliation_record` aggregate types, same producer, same payload shape, per 07_EVENT_CATALOGUE.yaml's single declared name for this concept). Verified directly against source, not assumed. KNOWN DEFECT (SG-174, not fixed here): app/modules/material/commands.py also emits the literal event_type \"MaterialReconciliationCalculated\" (Document 22 material-level reconciliation, aggregate_type material_reconciliation) -- a second, independent cross-module name collision, same class as LineClearanceCompleted. See event-mat-002d.json.",
   "x-requirement-ids": [
     "YLD-FR-001",
     "YLD-FR-002",
@@ -191,6 +191,29 @@
         "YLD-FR-007",
         "YLD-FR-008"
       ]
+    },
+    "ReconciliationSupersededPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "corrected_by_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "The original (now SUPERSEDED) record's id."
+        },
+        "corrected_by_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "The new record's id that corrects it."
+        }
+      },
+      "x-requirement-ids": [
+        "YLD-FR-022"
+      ]
     }
   },
   "events": [
@@ -306,6 +329,30 @@
         "YLD-FR-006",
         "YLD-FR-007",
         "YLD-FR-008"
+      ]
+    },
+    {
+      "event_type": "ReconciliationSuperseded",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-008",
+      "aggregate_type": "manufacturing_calculation",
+      "payload": {
+        "$ref": "#/$defs/ReconciliationSupersededPayload"
+      },
+      "x-requirement-ids": [
+        "YLD-FR-022"
+      ]
+    },
+    {
+      "event_type": "ReconciliationSuperseded",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-008",
+      "aggregate_type": "reconciliation_record",
+      "payload": {
+        "$ref": "#/$defs/ReconciliationSupersededPayload"
+      },
+      "x-requirement-ids": [
+        "YLD-FR-022"
       ]
     }
   ]
