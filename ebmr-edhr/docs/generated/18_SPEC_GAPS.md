@@ -7276,7 +7276,7 @@ status: OPEN
 
 ```yaml
 spec_gap_id: SG-126
-title: "WP-07 build depth: shared operation set + mapping/ledger CRUD built and tested; deep per-vendor field mapping, SOAP/file/DB adapters and secret-manager integration not built this pass -- item (1)/most of (4) resolved by SG-147, item (2) substantially resolved 2026-08-29 (33/38 requirements)"
+title: "WP-07 build depth: shared operation set + mapping/ledger CRUD built and tested; deep per-vendor field mapping, SOAP/file/DB adapters and secret-manager integration not built this pass -- item (1)/most of (4) resolved by SG-147, item (2) substantially resolved 2026-08-29 (33/38 requirements), item (3) ON_PREM provider resolved 2026-09-12 (K8S_SECRET/AWS_SM/VAULT remain open)"
 class: C
 description: >
   Within the 161 WP-07 requirements, this pass built and tested: the vendor-neutral ERPProvider contract
@@ -7341,12 +7341,38 @@ description: >
   this pass added (`integration_security_events`, `integration_bulk_jobs`, `erp_migration_packages`) are
   now recorded in `docs/generated/05_DATABASE_OWNERSHIP_MATRIX.md` alongside the pre-existing SG-121 rows,
   so the matrix is current as of this pass, not still missing the original gap plus three more silently.
+
+  **Update (2026-09-12, WP-07 secret-manager pass):** item (3) is now partially resolved. Investigation
+  found `app/modules/security/crypto.py::resolve_secret()` (Document 65) already existed but was
+  deliberately authorization/audit-only -- it never fetched a value, by design, and no create-path for a
+  `secret_metadata` row existed at all (`rotate_secret()` requires the row to pre-exist). Built this
+  pass: `security.secret_value` (new table, AES-256-GCM envelope only, never plaintext -- reuses the
+  existing zero-new-dependency `encrypt_sensitive_field`/`decrypt_sensitive_field` primitives from
+  Document 65), `create_secret()`/`POST /security/v1/secrets` (the missing create path, `initial_value`
+  accepted only for `provider=ON_PREM`), `set_secret_value()`/`POST /security/v1/secrets/{id}/value`
+  (optimistic-concurrency update of the encrypted value), and `fetch_secret_value()` in `crypto.py` (calls
+  `resolve_secret()` for authorization/audit, then decrypts and returns the real value -- **ON_PREM
+  provider only**). `app/modules/erp/commands.py::build_adapter()` now calls `fetch_secret_value()`
+  whenever `auth_secret_ref` names a secret actually registered in `secret_metadata`; an unregistered ref
+  (every pre-existing `ErpInstance` row in this codebase) falls back to using the ref directly, unchanged
+  from before this pass -- purely additive, no existing instance's behavior changes.
+
+  **What remains open, deliberately:** K8S_SECRET/AWS_SM/VAULT providers still have no live client --
+  `fetch_secret_value()` fails closed with `SECRET_PROVIDER_NOT_INTEGRATED` (501) for those rather than
+  fabricating a fetch, matching the SG-125/126-established precedent of never claiming a live external
+  call that didn't happen. Building a real client for any of them needs a reachable vendor endpoint to
+  verify against (none is available in this environment, same constraint as the ERP adapters themselves)
+  plus a Document 104 dependency justification for the relevant SDK (`boto3`, `hvac`, `kubernetes`) --
+  neither exists yet, so this is recorded here rather than guessed. Evidence: `tests/test_crypto_secrets_
+  pki.py` (18 passed, 8 new), `tests/test_erp_flow.py` + `test_erp_master_sync.py` (58 passed, including
+  2 new tests proving both the managed-secret and legacy-fallback branches of `build_adapter()`).
 source_documents:
   - Document 48 (SPEC-ERP-001)
   - Document 49 (SPEC-ERP-002)
   - Document 50 (SPEC-ERP-003)
   - Document 51 (SPEC-ERP-004)
   - Document 52 (SPEC-ERP-005)
+  - Document 65 (SPEC-SEC-005) -- item (3)'s resolution, added 2026-09-12
 source_requirement_ids:
   - MDS-FR-004
   - MDS-FR-005
@@ -7359,6 +7385,9 @@ source_requirement_ids:
   - MULTI-FR-016
   - ERP-ARC-004
   - ERP-ARC-028
+  - KEY-FR-002
+  - KEY-FR-003
+  - KEY-FR-004
 affected_modules:
   - SPEC-ERP-001
   - SPEC-ERP-002
@@ -7369,6 +7398,12 @@ affected_functions:
   - services/gxp-api/app/modules/erp/adapters/*.py fetch_changes() -- implemented, never called
   - services/gxp-api/app/modules/erp/commands.py -- no stageInboundMasterRecords()/normalizeMasterRecord()/
     matchInternalEntity() functions exist
+  - services/gxp-api/app/modules/security/crypto.py fetch_secret_value()/is_registered_secret() -- added
+    2026-09-12, ON_PREM provider only
+  - services/gxp-api/app/modules/security/crypto_commands.py create_secret()/set_secret_value() -- added
+    2026-09-12, closes the "no create path for secret_metadata" sub-gap
+  - services/gxp-api/app/modules/erp/commands.py build_adapter() -- added 2026-09-12, resolves a
+    registered secret through fetch_secret_value() instead of using auth_secret_ref directly
 why_material: >
   This is a scope/depth disclosure, not a single regulated-behaviour guess -- it exists so traceability and
   build-status reflect real, verified capability rather than "requirement mentioned in a file that exists."
@@ -7386,7 +7421,7 @@ options:
     for the deep vendor-specific and pipeline items).
 blocking: false
 owner: Platform Architect
-resolution_document: "app/modules/erp/sync.py + app/modules/erp/matching.py (item 1 and most of item 4, resolved 2026-08-29 -- see SG-147); item 2 substantially resolved 2026-08-29 (33/38 WP-07 requirements, see the later same-day update above) with ENXT-FR-018/023, SAP-FR-018/023, MULTI-FR-014/015/016 remaining deliberately deferred -- the three deferred MULTI-FR items now have their own precise, blocking SPEC_GAP entries (SG-151 manifest/checksum/replay rule shape, SG-152 no real DB schema to build against, SG-153 no Document 104 dependency approval for a SOAP/SFTP client) rather than staying folded into this umbrella entry alone; item 3 (secret manager) untouched; item 5 (ownership matrix) current as of 2026-08-29 including this pass's own new tables"
+resolution_document: "app/modules/erp/sync.py + app/modules/erp/matching.py (item 1 and most of item 4, resolved 2026-08-29 -- see SG-147); item 2 substantially resolved 2026-08-29 (33/38 WP-07 requirements, see the later same-day update above) with ENXT-FR-018/023, SAP-FR-018/023, MULTI-FR-014/015/016 remaining deliberately deferred -- the three deferred MULTI-FR items now have their own precise, blocking SPEC_GAP entries (SG-151 manifest/checksum/replay rule shape, SG-152 no real DB schema to build against, SG-153 no Document 104 dependency approval for a SOAP/SFTP client) rather than staying folded into this umbrella entry alone; item 3 (secret manager) partially resolved 2026-09-12 -- app/modules/security/crypto_models.py SecretValue + crypto.py fetch_secret_value()/is_registered_secret() + crypto_commands.py create_secret()/set_secret_value() close the ON_PREM provider end-to-end and wire app/modules/erp/commands.py::build_adapter() to it; K8S_SECRET/AWS_SM/VAULT remain open, no live client, no Document 104 approval yet; item 5 (ownership matrix) current as of 2026-08-29 including this pass's own new tables"
 status: PARTIALLY_RESOLVED
 ```
 

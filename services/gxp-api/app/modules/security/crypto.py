@@ -23,11 +23,13 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.security.crypto_models import CertificateMetadata, CryptoProfile, SecretMetadata
+from app.modules.security.crypto_models import CertificateMetadata, CryptoProfile, SecretMetadata, SecretValue
 from app.mutation.errors import (
     FieldDecryptionDeniedError,
     FieldEncryptionFailedError,
     SecretAccessDeniedError,
+    SecretProviderNotIntegratedError,
+    SecretValueNotSetError,
     TrustAllProhibitedError,
 )
 
@@ -78,6 +80,53 @@ async def resolve_secret(
         "purpose": purpose,
         "resolved": True,
     }
+
+
+async def is_registered_secret(session: AsyncSession, secret_ref: str) -> bool:
+    """Query helper (KEY-FR-002) so a caller (e.g. `erp.commands.build_adapter`) can tell whether a
+    reference has actually been registered as a managed secret before deciding whether to resolve/fetch
+    it through this module or fall back to using it directly as a legacy, unmanaged credential. Never
+    reaches into `secret_metadata` from outside this module -- this is the owning module's own query
+    interface (AG-05/rule 00)."""
+    row = (await session.execute(select(SecretMetadata.id).where(SecretMetadata.secret_ref == secret_ref))).first()
+    return row is not None
+
+
+def secret_value_key_context(secret_id: uuid.UUID) -> str:
+    """The `encrypt_sensitive_field`/`decrypt_sensitive_field` key context for one secret's ON_PREM
+    envelope -- shared with `crypto_commands.py` so `create_secret`/`set_secret_value` encrypt under the
+    exact context `fetch_secret_value` decrypts with."""
+    return f"secret-value/{secret_id}"
+
+
+async def fetch_secret_value(
+    session: AsyncSession, *, secret_ref: str, service_identity: str, purpose: str
+) -> bytes:
+    """SG-126 gap resolution (ON_PREM provider only). Authorizes through `resolve_secret()` first (same
+    allowlist/ACTIVE checks, same `SecretAccessDenied` audit trail), then returns the actual plaintext
+    value for a `provider="ON_PREM"` secret by decrypting its `secret_value` envelope. For every other
+    provider (K8S_SECRET, AWS_SM, VAULT) this build has no live client to fetch from -- raises
+    `SecretProviderNotIntegratedError` rather than fabricating a fetch (AG-15, no fake external I/O).
+    Never logs the returned value (Document 65 # 14)."""
+    handle = await resolve_secret(session, secret_ref=secret_ref, service_identity=service_identity, purpose=purpose)
+    row = (
+        await session.execute(select(SecretMetadata).where(SecretMetadata.secret_ref == secret_ref))
+    ).scalar_one()  # resolve_secret() already proved this row exists and is ACTIVE
+
+    if handle["provider"] != "ON_PREM":
+        raise SecretProviderNotIntegratedError(
+            f"No live {handle['provider']} client is integrated in this build (SG-126)", provider=handle["provider"],
+        )
+
+    value_row = (
+        await session.execute(select(SecretValue).where(SecretValue.secret_id == row.id))
+    ).scalar_one_or_none()
+    if value_row is None:
+        raise SecretValueNotSetError("No value has been stored for this ON_PREM secret yet", secret_ref=secret_ref)
+
+    return decrypt_sensitive_field(
+        envelope=value_row.envelope, access_context={"key_context": secret_value_key_context(row.id)},
+    )
 
 
 # --------------------------------------------------------------------------------------------------

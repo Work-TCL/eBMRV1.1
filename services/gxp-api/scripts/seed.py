@@ -466,8 +466,11 @@ PERMISSION_CATALOG = [
     ("webhook_profile.register", "register", "webhook_profile", "Register an inbound webhook trust profile (Document 64)"),
     ("api_inventory.view", "view", "api_security_policy", "Read the live API security inventory (Document 64)"),
     # WP-10 (Document 65, SPEC-SEC-005) — same rows tests/conftest.py's own independent copy adds.
-    # secret.rotate / crypto_health.view have no Document 106 row -> RBAC only. certificate.issue/
-    # rotate/revoke each carry a Released signature (Document 106 rows 137-139, QA Releaser, independent).
+    # secret.create/rotate/set_value / crypto_health.view have no Document 106 row -> RBAC only.
+    # certificate.issue/rotate/revoke each carry a Released signature (Document 106 rows 137-139, QA
+    # Releaser, independent). secret.create/set_value added WP-07/SG-126 pass (secret_value ON_PREM store).
+    ("secret.create", "create", "secret_metadata", "Register a new managed secret (Document 65, SG-126)"),
+    ("secret.set_value", "set_value", "secret_value", "Store an ON_PREM secret's encrypted value (Document 65, SG-126)"),
     ("secret.rotate", "rotate", "secret_metadata", "Rotate a managed secret's metadata/version (Document 65)"),
     ("certificate.issue", "issue", "certificate_metadata", "Issue a service/Edge/admin certificate (Document 65)"),
     ("certificate.rotate", "rotate", "certificate_metadata", "Rotate a certificate with overlap (Document 65)"),
@@ -857,8 +860,10 @@ ROLE_PERMISSIONS = {
         "service_identity.provision", "service_identity.revoke",
         # Document 64 (SPEC-SEC-004): outbound-destination / webhook-profile registration + API inventory.
         "outbound_destination.register", "webhook_profile.register", "api_inventory.view",
-        # Document 65 (SPEC-SEC-005): secret rotation, certificate lifecycle (QA Releaser signs), crypto health.
-        "secret.rotate", "certificate.issue", "certificate.rotate", "certificate.revoke", "crypto_health.view",
+        # Document 65 (SPEC-SEC-005): secret create/rotate/set_value, certificate lifecycle (QA Releaser
+        # signs), crypto health.
+        "secret.create", "secret.set_value", "secret.rotate",
+        "certificate.issue", "certificate.rotate", "certificate.revoke", "crypto_health.view",
         # Document 66 (SPEC-SEC-006): read the network-flow catalogue + deployment security profile.
         "network_flow.view", "deployment_security_profile.view",
         # Document 67 (SPEC-SEC-007): security-incident response operations (close is QA Releaser's).

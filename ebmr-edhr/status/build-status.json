@@ -3638,6 +3638,12 @@
      "at": "2026-08-29",
      "by": "Claude Code",
      "note": "WP-07 test-case execution pass (2026-08-29, later the same day): executed all 92 P1 test cases build-status.json tracked BLOCKED against the real, now-built code -- 62 PASS (real evidence, mapped to specific tests/test_erp_flow.py functions or direct structural verification), 30 remain BLOCKED with a precise, individual reason each (no case forced to pass, none silently dropped): 8 have a test-generation/reality mismatch (the auto-generated template assumes a signed action; WP-07 is unsigned by design, SG-122), 15 map to the 5 genuinely-deferred SG-126 capabilities (SAP-FR-018 OData $batch x3, MULTI-FR-015 file adapter x5, plus scenario variants), 5 are premise-inapplicable (a read-only/reporting endpoint or a non-stateful capability has no 'prohibited state transition' to test), 2 are real newly-found untested-robustness gaps (no API-version-drift detection in any adapter), and 2 tests were written this pass but not yet executed (DB ceded to a peer session's coordinated test runs at time of writing -- see full disposition in test-cases/TEST_CASE_LIBRARY.csv per test_case_id). One real defect found and fixed during execution: INT-FR-004's Retry-After header was accepted by reliability.compute_retry_decision() but never actually populated by any adapter or read by dispatch_erp_command() -- fixed (ERPProviderResponse.retry_after_seconds, adapters/base.py::extract_retry_after_seconds(), all 5 adapters, commands.py), verified by a new real test. One real gap found and disclosed, not fixed (out of this pass's scope): IntegrationBulkJob's FAILED status is declared but no code path ever sets it -- only COMPLETED/COMPLETED_WITH_ERRORS are reachable. Full test suite after all fixes: 54 passed, 0 failed (tests/test_erp_flow.py + test_erp_master_sync.py). rollup.py: 531/2965 requirements verified, 2166 test cases executed."
+    },
+    {
+     "at": "2026-09-12",
+     "by": "Claude Code",
+     "stage": "IN_DEVELOPMENT",
+     "note": "SG-126 gap-resolution pass (item 3, ON_PREM secret-manager half of ERP-ARC-028): build_adapter() now resolves auth_secret_ref through security.crypto.fetch_secret_value() when it names a secret actually registered in secret_metadata, instead of using the ref directly as the credential -- see SPEC-SEC-005's own stage_history for the new secret_value store this depends on. An unregistered ref (every pre-existing ErpInstance row) falls back unchanged -- purely additive. 2 new tests in tests/test_erp_flow.py prove both branches; full 58-test ERP suite (test_erp_flow.py + test_erp_master_sync.py) 58/58 passed."
     }
    ],
    "owner": "Claude Code",
@@ -4862,7 +4868,7 @@
    "requirements": 28,
    "requirements_state": {
     "KEY-FR-001": "IN_PROGRESS",
-    "KEY-FR-002": "IN_PROGRESS",
+    "KEY-FR-002": "VERIFIED",
     "KEY-FR-003": "VERIFIED",
     "KEY-FR-004": "VERIFIED",
     "KEY-FR-005": "VERIFIED",
@@ -4890,9 +4896,9 @@
     "KEY-FR-027": "IN_PROGRESS",
     "KEY-FR-028": "IN_PROGRESS"
    },
-   "entities": 3,
-   "apis": 5,
-   "events": 7,
+   "entities": 4,
+   "apis": 7,
+   "events": 9,
    "test_cases": 55,
    "stage": "CODE_COMPLETE",
    "stage_history": [
@@ -4907,12 +4913,18 @@
      "by": "Claude Code",
      "stage": "CODE_COMPLETE",
      "note": "Fix pass: resolve_secret() now emits a SecretAccessDenied security-telemetry event on every denial (own committed transaction), and GET /security/v1/crypto-health emits CryptoHealthFailed before the 503 -- both asserted (test_crypto_secrets_pki.py 10/10 passed -- telemetry assertions added). KeyAccessAnomaly remains contract-only (no KMS/HSM access feed in this build)."
+    },
+    {
+     "at": "2026-09-12",
+     "by": "Claude Code",
+     "stage": "CODE_COMPLETE",
+     "note": "SG-126 gap-resolution pass (WP-07 item 3, ON_PREM provider): new secret_value table (migration 0101, a4e9c2f6b1d8) holds only an AES-256-GCM envelope, never plaintext -- reuses the existing encrypt_sensitive_field/decrypt_sensitive_field primitives, no new dependency. New createSecret()/POST /security/v1/secrets (the missing create path for secret_metadata -- previously only rotateSecret() existed, which requires the row to pre-exist) and setSecretValue()/POST /security/v1/secrets/{id}/value (optimistic concurrency on the value's own version). New fetch_secret_value() in crypto.py: authorizes through the existing resolve_secret() then decrypts and returns the real value for provider=ON_PREM only; K8S_SECRET/AWS_SM/VAULT fail closed SECRET_PROVIDER_NOT_INTEGRATED (no live client, SG-126 remains open for those). app/modules/erp/commands.py::build_adapter() now resolves a registered secret through this path instead of using auth_secret_ref directly; an unregistered ref falls back unchanged (purely additive, no existing ErpInstance's behavior changes). RBAC: 2 new codes (secret.create, secret.set_value) on the existing Security Admin role, no new Document 106 row (same class as secret.rotate). Contract: contracts/openapi/spec-sec-005.yaml, 2 new operations, tooling/contracts/validate.py PASS. Tests: tests/test_crypto_secrets_pki.py grew from 10 to 18 tests, real run 18/18 passed; tests/test_erp_flow.py + test_erp_master_sync.py (58 tests, including 2 new proving both the managed-secret and legacy-fallback branches of build_adapter()) 58/58 passed. KEY-FR-002 moved IN_PROGRESS -> VERIFIED (secret manager abstraction is now centrally enforced for the ON_PREM profile, not just referenced)."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-31",
    "completed_at": null,
-   "test_pass": 25,
+   "test_pass": 26,
    "test_fail": 0,
    "test_blocked": 0,
    "open_defects": 0,
