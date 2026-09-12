@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import verify_password
 from app.modules.iam.models import Role, User
 from app.modules.policy.service import effective_role_names
+from app.modules.qms.change_models import ChangeControl
 from app.modules.qms.models import (
     ALLOWED_TRANSITIONS,
     DISPOSITION_CODES,
@@ -26,6 +27,7 @@ from app.modules.qms.models import (
     DeviationImpactLink,
     DeviationRecord,
 )
+from app.modules.qms.training_models import TrainingAssignment
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
     ContainmentRequiredError,
@@ -448,8 +450,10 @@ class DispositionCommand(CommandEnvelope):
     capa_rationale: str
     change_control_required: bool = False
     change_control_rationale: str | None = None
+    change_control_id: uuid.UUID | None = None  # SG-060: link to an existing qms.change_control row
     training_required: bool = False
     training_rationale: str | None = None
+    training_assignment_id: uuid.UUID | None = None  # SG-060: link to an existing qms.training_assignment row
     challenge_id: uuid.UUID | None = None
     reauth_password: str | None = None
 
@@ -475,6 +479,10 @@ async def disposition_deviation(session: AsyncSession, cmd: DispositionCommand, 
         raise ValidationFailedError("disposition_rationale is required")
     if not cmd.capa_rationale.strip():
         raise ValidationFailedError("capa_rationale is required")
+    if cmd.change_control_id is not None and await session.get(ChangeControl, cmd.change_control_id) is None:
+        raise NotFoundError("Change control record not found", change_control_id=str(cmd.change_control_id))
+    if cmd.training_assignment_id is not None and await session.get(TrainingAssignment, cmd.training_assignment_id) is None:
+        raise NotFoundError("Training assignment not found", training_assignment_id=str(cmd.training_assignment_id))
 
     signature_id = await _resolve_signature(
         session, action="disposition", actor_user_id=actor_user_id, deviation=deviation,
@@ -488,8 +496,10 @@ async def disposition_deviation(session: AsyncSession, cmd: DispositionCommand, 
     deviation.capa_rationale = cmd.capa_rationale
     deviation.change_control_required = cmd.change_control_required
     deviation.change_control_rationale = cmd.change_control_rationale
+    deviation.change_control_id = cmd.change_control_id
     deviation.training_required = cmd.training_required
     deviation.training_rationale = cmd.training_rationale
+    deviation.training_assignment_id = cmd.training_assignment_id
     deviation.state = "DISPOSITION"
     deviation.version += 1
 

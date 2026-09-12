@@ -2,7 +2,7 @@
 
 _Generated 2026-09-12 — do not hand-edit._
 
-**Overall:** 97/103 modules started · 0 released · 765/2965 requirements verified · 2517/9150 test cases executed
+**Overall:** 97/103 modules started · 0 released · 767/2965 requirements verified · 2519/9150 test cases executed
 
 ## Work packages
 
@@ -51,7 +51,7 @@ _Generated 2026-09-12 — do not hand-edit._
 | 23 | SPEC-QC-001 | WP-04 | H | 38 | 10 | 98 | 44 | 0 | 101 | IN_DEVELOPMENT | Claude Code |
 | 24 | SPEC-QC-002 | WP-04 | H | 34 | 10 | 106 | 64 | 0 | 63 | IN_DEVELOPMENT | Claude Code |
 | 25 | SPEC-QC-003 | WP-04 | H | 40 | 32 | 106 | 69 | 0 | 19 | IN_DEVELOPMENT | Claude Code |
-| 26 | SPEC-QMS-001 | WP-05 | H | 24 | 13 | 73 | 31 | 0 | 28 | IN_DEVELOPMENT | Claude Code |
+| 26 | SPEC-QMS-001 | WP-05 | H | 24 | 15 | 73 | 33 | 0 | 26 | IN_DEVELOPMENT | Claude Code |
 | 27 | SPEC-QMS-002 | WP-05 | H | 22 | 14 | 61 | 34 | 0 | 19 | IN_DEVELOPMENT | Claude Code |
 | 28 | SPEC-QMS-003 | WP-05 | H | 18 | 3 | 65 | 26 | 0 | 35 | IN_DEVELOPMENT | Claude Code |
 | 29 | SPEC-QMS-004 | WP-05 | H | 24 | 17 | 61 | 33 | 0 | 21 | IN_DEVELOPMENT | Claude Code |

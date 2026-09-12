@@ -121,12 +121,17 @@ class DeviationRecord(Base):
     disposition_rationale: Mapped[str | None] = mapped_column(Text)
     capa_required: Mapped[bool | None] = mapped_column()
     capa_rationale: Mapped[str | None] = mapped_column(Text)
-    # DEV-FR-014/015 -- SG-060: flag + rationale only, no FK; neither a Change Control nor a
-    # training/qualification-action entity exists anywhere in this codebase to link to.
+    # DEV-FR-014/015 -- SG-060 (WP-05 pass): the flag/rationale stay (a change/training need can be
+    # flagged before the linked record exists), and the actual link is now a real FK, filled in via
+    # DispositionCommand once the caller knows the id (or later, once one is created) -- both
+    # `qms.change_control` and `qms.training_assignment` exist now (they didn't when this flag was
+    # first built), the same follow-up SG-060 itself anticipated.
     change_control_required: Mapped[bool] = mapped_column(nullable=False, default=False)
     change_control_rationale: Mapped[str | None] = mapped_column(Text)
+    change_control_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.change_control.id"))
     training_required: Mapped[bool] = mapped_column(nullable=False, default=False)
     training_rationale: Mapped[str | None] = mapped_column(Text)
+    training_assignment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.training_assignment.id"))
     due_date: Mapped[datetime | None] = mapped_column()
     # DEV-FR-017: "old due date retained" -- append-only history, never overwritten.
     extension_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
