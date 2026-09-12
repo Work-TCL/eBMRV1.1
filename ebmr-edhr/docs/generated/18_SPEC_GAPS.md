@@ -3516,9 +3516,22 @@ completion. `disposition_deviation()` captures `change_control_required`/`change
 no FK to a real target record -- an honest data point ("this disposition determined a change/training
 action is needed and why"), not a functioning Change Control or training workflow.
 
+**Update (2026-09-12, Phase 4 WP-05 pass):** both entities named as missing now exist -- `qms.change_control`
+(Document 29) and `qms.training_assignment` (Document 31) were built in later WP-05 passes than this gap's
+original filing, and option (A) is now followed exactly as recorded: `deviation_record` gained real
+`change_control_id`/`training_assignment_id` FK columns (migration `0102_deviation_change_training_fk`),
+and `DispositionCommand` accepts them optionally, validated by existence check
+(`session.get(ChangeControl, ...)`/`session.get(TrainingAssignment, ...)`, `NotFoundError` otherwise) --
+the same shape as every other optional-FK-on-an-existing-command precedent in this codebase (e.g. SCAR's
+`supplier_id`). The flag+rationale fields are untouched. **Not done in this pass:** linking a Change
+Control/Training Assignment created *after* disposition already committed (no "link later" command was
+added -- only the one-shot disposition-time link); NCR/Complaint/Field Action's own `capa_required` flags
+have the identical shape and are not similarly linked to `qms.capa_record` in this pass, left as a
+same-shaped fast-follow, not silently assumed done.
+
 ```yaml
 spec_gap_id: SG-060
-title: "DEV-FR-014/015: Change Control and Training/Qualification-action are recorded as a flag + rationale only, no real entity exists to link to"
+title: "DEV-FR-014/015: Change Control and Training/Qualification-action are recorded as a flag + rationale only, no real entity exists to link to -- FK half PARTIALLY RESOLVED 2026-09-12"
 class: D
 description: >
   DEV-FR-014 requires linking Change Control for permanent process/spec/system/document changes; DEV-FR-015
@@ -3554,8 +3567,8 @@ options:
   - (B) Guess the schemas now (rejected -- the risk above).
 blocking: false
 owner: Data Architect + QMS module owner + Change Control module owner (WP-05, later document)
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "app/modules/qms/models.py DeviationRecord.change_control_id/training_assignment_id + app/modules/qms/commands.py disposition_deviation() FK validation, migration b8d3e6f1a2c9_0102; NCR/Complaint/Field Action capa_required->capa_record.id remains unresolved"
+status: PARTIALLY_RESOLVED
 ```
 
 ### SG-061 — DEV-FR-016's DRAFT->PREAPPROVED->ACTIVE planned-deviation lifecycle, DEV-FR-021's recurrence search and DEV-FR-024's export have no operation in Document 26's own 9-op API list
