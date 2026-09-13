@@ -4,12 +4,22 @@ in-process stand-in `outbox.py::publish_outbox_event()` documented as swappable 
 Owns the one process-wide NATS connection + JetStream context. `app/main.py`'s lifespan connects at
 startup and closes at shutdown. A connection failure here never blocks a regulated mutation from
 committing (AG-09: NATS is transport, not authoritative -- the outbox row is) -- it only delays
-`outbox_publisher_loop`'s next successful publish, which retries every iteration via nats-py's own
-infinite-reconnect client (`max_reconnect_attempts=-1`).
+`outbox_publisher_loop`'s next successful publish, which retries every iteration.
+
+`connect()` is deliberately bounded (`asyncio.wait_for(..., timeout=CONNECT_TIMEOUT_SECONDS)`), not
+nats-py's own `max_reconnect_attempts=-1`: that setting governs nats-py's *initial* connection attempt
+too, not just post-connect reconnection (verified against nats-py's own `Client.connect()` source -- on
+`NoServersError` with a negative `max_reconnect_attempts` it `continue`s its retry loop forever rather
+than raising). Left unbounded, a single unreachable broker would hang `connect()` -- and therefore
+`app/main.py`'s startup `await` of it -- indefinitely, which is a *worse* failure than the "logged, not
+fatal" behavior this module documents. The bound makes `connect()` fail fast and predictably instead;
+resilience against a later, temporary broker outage comes from `outbox_publisher_loop`'s own existing
+every-2-seconds retry calling `publish()`, not from an internal infinite reconnect loop.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import nats
@@ -19,6 +29,10 @@ from nats.js.client import JetStreamContext
 from app.core.config import settings
 
 logger = logging.getLogger("gxp_api.eventbus.jetstream")
+
+# Hard ceiling on the initial connection attempt -- see connect()'s own docstring for why this exists
+# instead of relying on nats-py's max_reconnect_attempts for the first connect.
+CONNECT_TIMEOUT_SECONDS = 5
 
 # EVT-FR-007: versioned subject namespace, environment.domain.event. One stream captures every
 # subject this service ever publishes under `gxp.v1.*` (outbox.py's own `_SUBJECT_PREFIX`).
@@ -43,15 +57,24 @@ async def _on_reconnected() -> None:
 
 async def connect() -> None:
     """Idempotent: a second call while already connected is a no-op. Declares the stream if it does
-    not exist yet (JetStream's own `add_stream` is idempotent against an identical config)."""
+    not exist yet (JetStream's own `add_stream` is idempotent against an identical config). Raises
+    `ConnectionError` (never hangs) if no broker is reachable within `CONNECT_TIMEOUT_SECONDS`."""
     global _nc, _js
     if _nc is not None and _nc.is_connected:
         return
-    _nc = await nats.connect(
-        settings.nats_url, reconnect_time_wait=2, max_reconnect_attempts=-1,
-        name="gxp-api-outbox-publisher",
-        error_cb=_on_error, disconnected_cb=_on_disconnected, reconnected_cb=_on_reconnected,
-    )
+    try:
+        _nc = await asyncio.wait_for(
+            nats.connect(
+                settings.nats_url, reconnect_time_wait=2, max_reconnect_attempts=5,
+                name="gxp-api-outbox-publisher",
+                error_cb=_on_error, disconnected_cb=_on_disconnected, reconnected_cb=_on_reconnected,
+            ),
+            timeout=CONNECT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise ConnectionError(
+            f"No NATS JetStream broker reachable at {settings.nats_url} within {CONNECT_TIMEOUT_SECONDS}s"
+        ) from exc
     _js = _nc.jetstream()
     await _js.add_stream(name=STREAM_NAME, subjects=STREAM_SUBJECTS)
     logger.info("connected to NATS JetStream at %s, stream=%s", settings.nats_url, STREAM_NAME)

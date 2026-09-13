@@ -25,8 +25,11 @@ async def _nats_reachable() -> bool:
         return False
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 async def _jetstream_connection():
+    """Module-scoped: the reachability probe (and its connect timeout if no broker exists) runs once
+    for this whole file, not once per test -- six independent ~5s connect-timeout cycles would otherwise
+    add up whenever no broker is reachable (e.g. CI, which has none configured)."""
     if not await _nats_reachable():
         pytest.skip(f"No live NATS JetStream broker reachable at {settings.nats_url} -- skipping, not faking")
     yield

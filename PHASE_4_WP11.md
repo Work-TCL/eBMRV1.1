@@ -32,8 +32,9 @@ JetStream context. `connect()` is idempotent and declares the `GXP_EVENTS` strea
 the broker's `PubAck`. `app/main.py`'s `lifespan()` connects at startup and closes at shutdown — a
 connection failure at startup is logged, **never fatal**: AG-09 makes NATS transport, not authoritative
 truth, so the API must keep accepting and committing regulated mutations even if the broker is
-temporarily unreachable (nats-py's own infinite-reconnect client, plus the publisher loop's existing
-retry-every-2s behavior, is what recovers once it comes back).
+temporarily unreachable. `connect()` is bounded (5s) rather than relying on nats-py's own infinite
+reconnect for the initial attempt — see §6 below for why that distinction turned out to matter; recovery
+from a later, temporary outage is the publisher loop's own existing retry-every-2s behavior.
 
 **`app/modules/eventbus/outbox.py::publish_outbox_event()`** (real transport, docstring always said this
 was swappable): builds the canonical EVT-FR-001 envelope directly from the outbox row (`_canonical_envelope()`)
@@ -84,7 +85,38 @@ the old stand-in always faked an ack. First full run: 1 failed, 1219 passed. Fix
 the new test file: connect to the real broker first, `pytest.skip()` (not a fabricated pass) if
 unreachable. Re-ran the full suite after the fix: **1220/1220 passed**.
 
-## 6. Bundled bookkeeping fix (WP-13, unrelated to NATS)
+## 6. A second, more serious bug found by a genuinely hung CI run
+
+After the first PR push, PR #18's CI `test` job hung for ~134 minutes (no prior run this session had
+exceeded 52 min), and a re-run hung again at ~177 minutes. Rather than assume flakiness a third time,
+the actual per-step timestamps in the job log were inspected: pytest progressed normally (5%→29% in ~9
+minutes) then produced **zero output for the following ~2h48m** until cancelled -- a real, deterministic
+hang, not slowness, landing exactly where the new NATS-dependent tests sit alphabetically.
+
+Root cause, confirmed by reading `nats-py`'s own `Client.connect()` source: `max_reconnect_attempts=-1`
+governs the **initial** connection attempt too, not just reconnection after a drop. On `NoServersError`
+(no broker reachable at all -- exactly CI's situation, which has no NATS service configured) it `continue`s
+its retry loop forever rather than raising. `jetstream.connect()`'s own `_nats_reachable()` probe (used by
+both test files to decide whether to skip) called this with no bound, so in an environment with no broker
+it never returned and never raised -- pytest just sat there.
+
+**This is a real production bug, not only a test problem**: `app/main.py`'s `lifespan()` awaits
+`eventbus_jetstream.connect()` directly. Had NATS been down at deployment startup, the entire API would
+have hung at boot forever, despite the `try/except` around that call and the module's own documented
+intent ("a connection failure here never blocks a regulated mutation") -- the `except` clause can only
+run if `connect()` ever raises, which it would not have.
+
+**Fix**: `connect()` now wraps the `nats.connect()` call in `asyncio.wait_for(..., timeout=5)` and raises
+a `ConnectionError` on timeout, with `max_reconnect_attempts` lowered from `-1` to `5` (bounded either
+way). Resilience against a *later*, temporary broker outage still comes from `outbox_publisher_loop`'s own
+pre-existing every-2-second retry, not from nats-py's internal infinite reconnect. Verified directly, not
+assumed: a raw `lifespan()` invocation with the broker stopped now completes in 5.1s (logs the failure,
+does not hang); `jetstream.connect()` against an unreachable port now raises in exactly 5.0s. Also made
+`test_eventbus_jetstream.py`'s reachability probe module-scoped (once per file, not once per test) so a
+broker-less environment like CI's now skips its 14 NATS-dependent tests in ~35s total instead of the
+~65s six independent probes would have cost.
+
+## 7. Bundled bookkeeping fix (WP-13, unrelated to NATS)
 
 While cross-checking `status/build-status.json` for stale entries during this session, found
 SPEC-AI-001's row still listed SG-167 as an active blocker and `test_pass: 4`, both stale: SG-167 was
