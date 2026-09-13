@@ -1,0 +1,110 @@
+openapi: 3.1.0
+info:
+  title: SPEC-DATA-006 — Temporal Durable Workflow Orchestration
+  version: 0.1.0
+  description: >
+    Document 113 contract for the WP-11 Stage 2 slice actually built
+    (`services/gxp-api/app/modules/workflowops/`): the first real Temporal workflow this codebase runs,
+    `StepStuckDetectionWorkflow` (BAT-FR-018/021's "stuck step" half only — see the module's own
+    docstrings for why the other 22 Document 11 requirements SG-048 lists as Temporal/other-module-blocked
+    are not touched here).
+
+
+    NOT A REGULATED MUTATION: starting or reading this workflow's status is not itself a GxP state
+    change (AG-10 — Temporal orchestrates, it is never regulatory truth). Neither operation carries a
+    Document 106 signature row, an idempotency_key, or an expected_version in the Document 03 sense — RBAC
+    only, matching the same unsigned-by-design posture as WP-07's `secret.rotate`. Starting the same
+    workflow twice for the same step is idempotent (TMP-FR-002): the second call recognizes the workflow
+    is already running and returns the same `workflow_id` without launching a second orchestration.
+tags:
+  - name: workflowops
+
+paths:
+  /workflowops/v1/step-stuck-detection:
+    post:
+      operationId: postStartStepStuckDetection
+      tags: [workflowops]
+      summary: Start the stuck-step-detection workflow for a batch step (BAT-FR-018/021, TMP-FR-002)
+      description: >
+        Requires the `step_stuck_detection.start` policy action. Fails closed `NOT_FOUND` if `step_id`
+        does not exist under `batch_id`. Sleeps for `threshold_seconds` (a Temporal durable timer, not a
+        database poll), then re-reads the step's authoritative current state; if it is still
+        `in_progress`, emits the `WorkflowStuckDetected` operational signal (Document 74 # 9) for a human
+        to act on — this workflow never holds, blocks, or auto-resolves the step itself.
+      x-requirement-ids: [BAT-FR-018, BAT-FR-021, TMP-FR-002, TMP-FR-006, TMP-FR-011, TMP-FR-024]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartStepStuckDetectionRequest' }
+      responses:
+        '200':
+          description: Started (or already running for this step — idempotent).
+          content: { application/json: { schema: { $ref: '#/components/schemas/StartStepStuckDetectionResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422':
+          description: VALIDATION_FAILED — threshold_seconds out of range (1-86400).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
+
+  /workflowops/v1/step-stuck-detection/{step_id}:
+    get:
+      operationId: getStepStuckDetectionStatus
+      tags: [workflowops]
+      summary: Read a stuck-step-detection workflow's status (Temporal orchestration bookkeeping, AG-10)
+      description: >
+        Requires `step_stuck_detection.view`. Never itself a source of a regulated batch/step decision —
+        this is Temporal's own run status plus the Activity result once the workflow completes.
+      x-requirement-ids: [TMP-FR-006]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: step_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200':
+          description: Status read.
+          content: { application/json: { schema: { $ref: '#/components/schemas/StepStuckDetectionStatus' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  schemas:
+    StartStepStuckDetectionRequest:
+      type: object
+      additionalProperties: false
+      required: [batch_id, step_id]
+      x-requirement-ids: [BAT-FR-018, BAT-FR-021]
+      properties:
+        batch_id: { type: string, format: uuid }
+        step_id: { type: string, format: uuid }
+        threshold_seconds: { type: integer, minimum: 1, maximum: 86400, default: 900 }
+
+    StartStepStuckDetectionResponse:
+      type: object
+      additionalProperties: false
+      required: [workflow_id]
+      x-requirement-ids: [TMP-FR-002]
+      properties:
+        workflow_id: { type: string, description: "TMP-FR-002 stable workflow id — {namespace}.{workflow_type}.{business_id}." }
+
+    StepStuckDetectionStatus:
+      type: object
+      additionalProperties: false
+      required: [workflow_id, status, result]
+      x-requirement-ids: [TMP-FR-006]
+      properties:
+        workflow_id: { type: string }
+        status: { type: string, enum: [RUNNING, COMPLETED, FAILED, CANCELED, TERMINATED, CONTINUED_AS_NEW, TIMED_OUT] }
+        result:
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required: [state, still_in_progress]
+              properties:
+                state: { type: string }
+                still_in_progress: { type: boolean }

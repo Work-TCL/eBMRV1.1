@@ -93,6 +93,9 @@ from app.modules.supplier_quality.router import router as supplier_quality_route
 from app.modules.validation.router import router as validation_router
 from app.modules.validation.router_wp14 import router as validation_wp14_router
 from app.modules.vault.router import router as vault_router
+from app.modules.workflowops import client as workflowops_client
+from app.modules.workflowops import worker as workflowops_worker
+from app.modules.workflowops.router import router as workflowops_router
 from app.modules.yield_reconciliation.router import router as yield_reconciliation_router
 from app.mutation.errors import DependencyUnavailableError, GxPError
 
@@ -134,9 +137,26 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 - startup must not fail closed over a transport dependency
         logger.exception("failed to connect to NATS JetStream at startup; publisher will retry")
     task = asyncio.create_task(outbox_publisher_loop())
+
+    # WP-11 Stage 2 (ADR-0011): connect to Temporal and start its worker, same fail-open posture as
+    # NATS above -- AG-10 makes Temporal orchestration, never regulatory truth, so its unavailability
+    # must not block the regulated API from starting or serving requests.
+    worker_stop_event = asyncio.Event()
+    worker_task: asyncio.Task | None = None
+    try:
+        await workflowops_client.connect()
+        worker_task = asyncio.create_task(workflowops_worker.run_worker(stop_event=worker_stop_event))
+    except Exception:  # noqa: BLE001 - startup must not fail closed over an orchestration dependency
+        logger.exception("failed to connect to Temporal at startup; workflows will not run this session")
+
     yield
+
     task.cancel()
     await eventbus_jetstream.close()
+    worker_stop_event.set()
+    if worker_task is not None:
+        await worker_task
+    await workflowops_client.close()
 
 
 app = FastAPI(title="eBMR GxP Core", version="0.1.0", lifespan=lifespan)
@@ -263,6 +283,7 @@ app.include_router(material_dispensing_v1_router)
 app.include_router(material_reconciliation_v1_router)
 app.include_router(audit_router)
 app.include_router(vault_router)
+app.include_router(workflowops_router)
 app.include_router(rules_router)
 app.include_router(product_master_router)
 app.include_router(material_specification_router)

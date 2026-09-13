@@ -1598,6 +1598,10 @@ async def seeded(db: AsyncSession) -> dict:
             ("dr.recovery_objective.manage", "manage", "recovery_objective_profile"),
             ("dr.backup.view", "view", "backup_inventory"),
             ("dr.restore_test.execute", "execute", "restore_test"),
+            # WP-11 Stage 2 (Document 74, SPEC-DATA-006, ADR-0011/SG-183) — same rows scripts/seed.py's
+            # PERMISSION_CATALOG adds. RBAC-only: AG-10, no Document 106 row for either action.
+            ("step_stuck_detection.start", "start", "workflow_orchestration"),
+            ("step_stuck_detection.view", "view", "workflow_orchestration"),
             # WP-13 (Document 105, SPEC-AI-001) — same rows scripts/seed.py's PERMISSION_CATALOG adds.
             # model.approve/tool.authorize/disposition.record/release_gate.evaluate/provider.switch are
             # signature-gated per Document 106 rows added for SG-167/168.
@@ -1793,6 +1797,7 @@ async def seeded(db: AsyncSession) -> dict:
                     "evidence.legal_hold", "evidence.integrity_check",
                     "search.query", "search.rebuild", "report.export",
                     "dr.recovery_objective.manage", "dr.backup.view", "dr.restore_test.execute",
+                    "step_stuck_detection.start", "step_stuck_detection.view",
                     "ai_governance.use_case.register", "ai_governance.use_case.assess_risk",
                     "ai_governance.model.approve", "ai_governance.context.build",
                     "ai_governance.advisory.execute", "ai_governance.tool.authorize",

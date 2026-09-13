@@ -31,6 +31,15 @@ dependencies = [
     # security-critical (transport only -- no crypto/auth primitives of its own; TLS is the underlying
     # `ssl` stdlib module). SBOM/licence scan: see docs/generated/40_SBOM_LICENSE_DEPENDENCY_REGISTER.md.
     "nats-py>=2.10",
+    # WP-11 Stage 2 (Document 74, ADR-0011): real Temporal workflow orchestration replacing the
+    # workflowops stand-in (derive_workflow_id/classify_retry/emit_workflow_signal were always written
+    # against this SDK's eventual real client). Document 104 justification: no approved dependency in
+    # this project already solves durable workflow orchestration; `temporalio` is the official Temporal
+    # Python SDK, MIT license, actively maintained by Temporal Technologies. Runtime-critical (executes
+    # workflow/activity code) but not crypto/auth-critical -- reviewed per DEP-FR-018 as a
+    # runtime-critical library. Uses a Rust extension (temporalio.bridge) for the SDK core, vendored
+    # binary wheels published by the same maintainer, no separate native build step required.
+    "temporalio>=1.8,<2.0",
 ]
 
 [dependency-groups]

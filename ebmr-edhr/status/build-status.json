@@ -1,6 +1,6 @@
 {
  "package": "eBMR / eDHR platform build status",
- "generated": "2026-09-12",
+ "generated": "2026-09-13",
  "baseline": "Documents 01-115",
  "stage_model": [
   "NOT_STARTED",
@@ -5507,16 +5507,16 @@
    "requirements": 30,
    "requirements_state": {
     "TMP-FR-001": "NOT_STARTED",
-    "TMP-FR-002": "NOT_STARTED",
+    "TMP-FR-002": "IN_PROGRESS",
     "TMP-FR-003": "NOT_STARTED",
     "TMP-FR-004": "NOT_STARTED",
     "TMP-FR-005": "NOT_STARTED",
-    "TMP-FR-006": "NOT_STARTED",
+    "TMP-FR-006": "IN_PROGRESS",
     "TMP-FR-007": "NOT_STARTED",
     "TMP-FR-008": "NOT_STARTED",
     "TMP-FR-009": "NOT_STARTED",
     "TMP-FR-010": "NOT_STARTED",
-    "TMP-FR-011": "NOT_STARTED",
+    "TMP-FR-011": "IN_PROGRESS",
     "TMP-FR-012": "NOT_STARTED",
     "TMP-FR-013": "NOT_STARTED",
     "TMP-FR-014": "NOT_STARTED",
@@ -5538,7 +5538,7 @@
     "TMP-FR-030": "NOT_STARTED"
    },
    "entities": 0,
-   "apis": 0,
+   "apis": 2,
    "events": 5,
    "test_cases": 69,
    "stage": "IN_DEVELOPMENT",
@@ -5548,12 +5548,24 @@
      "at": "2026-09-09",
      "by": "Claude Code",
      "note": "Phase 1 reconciliation: code exists at services/gxp-api/app/modules/workflowops (module + tests present) but was tracked as NOT_STARTED with code_location 'infrastructure'. Stage corrected to IN_DEVELOPMENT (code exists, tests not yet folded into TEST_CASE_LIBRARY). Requirement-level verification still pending test-case execution."
+    },
+    {
+     "at": "2026-09-12",
+     "by": "Claude Code",
+     "stage": "IN_DEVELOPMENT",
+     "note": "WP-11 Stage 2 (ADR-0011, SG-183): real Temporal dev-server provisioned (infra/README.md, PM2 process ebmr-new-temporal, embedded SQLite, headless, ~130MB RAM). app/modules/workflowops/client.py owns the connection lifecycle with a bounded asyncio.wait_for(timeout=5) around Client.connect() -- applied proactively after WP-11 Stage 1's NATS integration found nats-py's own max_reconnect_attempts=-1 could hang the initial connect forever with no bound. One real workflow built: StepStuckDetectionWorkflow (BAT-FR-018/021's stuck-step half only -- SG-048 shows the other 22 Document 11 Temporal-dependent requirements are entangled with other unbuilt modules, Material Service/Equipment master/Document 12/17/IAM qualification, so were deliberately not attempted). Sleeps via a durable Temporal timer, re-reads the step's authoritative state through batch_execution.service.get_step() (AG-10), emits WorkflowStuckDetected (Document 74 #9) through a second Activity if still in_progress. retry_policy.classify_retry() is now actually exercised inside the Activity (TMP-FR-011), converting a settled GxPError into a non-retryable ApplicationError. temporalio added (MIT, Document 104 justification, DEP-FR-018 runtime-critical review) plus 3 clean transitive deps. New REST surface contracts/openapi/spec-data-006.yaml (2 ops, RBAC-only, no Document 106 row -- AG-10). Tests: tests/test_workflowops_temporal.py, 6 tests against the live server (not mocked), 6/6 passed. Full repository regression run separately -- see PHASE_4_WP11_STAGE2.md for the exact count. Not done: batch-execution's actual recovery/escalation commands are not ported to Temporal; durable NATS consumer wiring (Stage 1's own remaining item) is untouched; Temporal's own deterministic-replay test harness (TEST-FR-010) was not exercised, only the live dev-server."
+    },
+    {
+     "at": "2026-09-13",
+     "by": "Claude Code",
+     "stage": "IN_DEVELOPMENT",
+     "note": "CI guardrail correctly caught a stale/incorrect status commit: requirements_state had TMP-FR-002/006/011/024 hardcoded VERIFIED, but tooling/status/rollup.py's own honest recomputation from TEST_CASE_LIBRARY.csv gives TMP-FR-002/006/011 only IN_PROGRESS (1 of each requirement's 3 pre-written test cases is PASS, the other 2 remain NOT_STARTED) and TMP-FR-024 NOT_STARTED (0 of 3 -- TC-074-024-01 was deliberately left NOT_STARTED, no DB-outage-during-retry scenario was ever staged). rollup.py has no code path to downgrade a manually-set VERIFIED when a requirement's test cases don't independently justify it, so the incorrect values from the prior commit persisted until caught here. Fixed: requirements_state and TRACEABILITY_MASTER.csv's verification_state for TR-02054/02058/02063 (TMP-FR-002/006/011) corrected VERIFIED -> IN_PROGRESS, TR-02076 (TMP-FR-024) corrected VERIFIED -> NOT_STARTED. No code change. rollup.py re-run twice to confirm the corrected state is stable (idempotent): 768/2965 requirements verified, 2524 test cases executed."
     }
    ],
    "owner": "Claude Code",
-   "started_at": null,
+   "started_at": "2026-09-12",
    "completed_at": null,
-   "test_pass": 0,
+   "test_pass": 3,
    "test_fail": 0,
    "test_blocked": 0,
    "open_defects": 0,
