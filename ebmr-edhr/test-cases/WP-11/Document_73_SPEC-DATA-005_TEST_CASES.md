@@ -132,7 +132,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `the module command handler` (or the owning command) exercising: Consumers assume duplicate delivery and must be idempotent. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Correct distributed model. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS  |  **Executed by:** claude-code (automated)  |  **Date:** 2026-09-13  |  **Actual result:** `readmodels-material-lot-projector` (`app/modules/readmodels/projector.py`), a real durable JetStream pull consumer wired through `run_pull_consumer()`, delivers a real published `material_lot` event end to end (fetch -> `consume_event_idempotently()` -> `handle_material_lot_event()` -> ack) against the live broker -- `tests/test_eventbus_consumer.py::test_projector_indexes_a_real_material_lot_event_end_to_end`, PASS.  |  **Defect:** none
 
 ### TC-073-006-01 — Consumer inbox/dedupe — required behaviour
 
@@ -144,7 +144,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `the module command handler` (or the owning command) exercising: Critical consumer maintains processed event IDs/result/version to prevent duplicate business effect. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Replay safe. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS  |  **Executed by:** claude-code (automated)  |  **Date:** 2026-09-13  |  **Actual result:** A second `consume_event_idempotently()` call for an `event_id` already recorded `PROCESSED` in `eventbus.consumer_inbox` returns the first call's stored result without invoking the handler a second time (asserted with a handler that raises `AssertionError` if called) -- `tests/test_eventbus_consumer.py::test_duplicate_event_id_does_not_rerun_the_handler`, PASS against the real database.  |  **Defect:** none
 
 ### TC-073-006-02 — Consumer inbox/dedupe — Prohibited path is rejected
 
@@ -236,7 +236,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `the module command handler` (or the owning command) exercising: Durable named consumers with explicit ack/retry/backoff for critical projections/integrations. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Recovery. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS  |  **Executed by:** claude-code (automated)  |  **Date:** 2026-09-13  |  **Actual result:** `jetstream.py::pull_subscribe()` creates a real durable named consumer (`ack_policy=EXPLICIT`, bounded `max_deliver`/`ack_wait`) against the live broker, idempotent to rebind -- `tests/test_eventbus_consumer.py::test_pull_subscribe_creates_a_real_durable_consumer`, PASS.  |  **Defect:** none
 
 ### TC-073-009-02 — Consumer durability — Replayed inbound message is detected
 
@@ -275,7 +275,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `the module command handler` (or the owning command) exercising: Poison events moved/recorded for manual review after bounded attempts without deleting original event. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** No loss. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS  |  **Executed by:** claude-code (automated)  |  **Date:** 2026-09-13  |  **Actual result:** A real handler failure (no matching audit event, not injected) is naked up to `max_deliver=2` real broker redeliveries (`num_delivered` incrementing for real), then `handle_poison_event()` records `consumer_inbox.result=DEAD_LETTERED` + emits a real `EventDeadLettered` outbox row and the message is `term()`-ed (confirmed no further redelivery); the original message is never deleted from the stream -- `tests/test_eventbus_consumer.py::test_failed_handler_naks_for_real_broker_redelivery_then_dead_letters`, PASS.  |  **Defect:** none
 
 ### TC-073-011-01 — Schema registry — required behaviour
 
@@ -351,7 +351,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `the module command handler` (or the owning command) exercising: Per aggregate version ordering validated; consumers handle late/out-of-order events and reject stale projections. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Consistency. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS  |  **Executed by:** claude-code (automated)  |  **Date:** 2026-09-13  |  **Actual result:** `readmodels/search.py::index_authoritative_projection()` gained an ordering guard: applying version 2 then a late version 1 for the same entity leaves the index at version 2 (`RELEASED`), not regressed to version 1's stale `QUARANTINED` -- `tests/test_eventbus_consumer.py::test_out_of_order_delivery_does_not_regress_the_index`, PASS.  |  **Defect:** none
 
 ### TC-073-014-02 — Ordering — Prohibited path is rejected
 
@@ -661,7 +661,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `the module command handler` (or the owning command) exercising: Business validation failure differs from transient dependency failure; poison event does not retry forever. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Stability. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS  |  **Executed by:** claude-code (automated)  |  **Date:** 2026-09-13  |  **Actual result:** `_process_one_message()` naks (not acks) on a `HandlerFailedError` below `max_deliver`, and dead-letters instead of retrying forever once `max_deliver` is reached -- same real-broker evidence as TC-073-010-01 (`tests/test_eventbus_consumer.py::test_failed_handler_naks_for_real_broker_redelivery_then_dead_letters`), PASS.  |  **Defect:** none
 
 ### TC-073-026-02 — Consumer failure policy — Prohibited path is rejected
 
@@ -687,7 +687,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `the module command handler` (or the owning command) exercising: Projection worker stores source aggregate/event version and ignores duplicate/stale event safely. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Correct projection. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS  |  **Executed by:** claude-code (automated)  |  **Date:** 2026-09-13  |  **Actual result:** `readmodels/projector.py::handle_material_lot_event()` stores `source_version` on `readmodels.projection_document_metadata` and, via the ordering guard, ignores a stale/duplicate event safely -- same evidence as TC-073-014-01/TC-073-005-01 (`tests/test_eventbus_consumer.py::test_out_of_order_delivery_does_not_regress_the_index` + `test_projector_indexes_a_real_material_lot_event_end_to_end`), PASS.  |  **Defect:** none
 
 ### TC-073-027-02 — Projection consumers — Concurrent writers on one aggregate
 

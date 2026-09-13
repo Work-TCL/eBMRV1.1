@@ -12391,9 +12391,54 @@ not mocked: `tests/test_workflowops_temporal.py`, 6/6 passed (stuck-signal emiss
 completed-in-time, idempotent double-start, REST start+query, NOT_FOUND fail-closed, unauthorized
 rejection).
 
+**Update (2026-09-13, WP-11 Stage 3):** the NATS half gains its first real **consumer**, closing the
+"durable consumer wiring" item Stage 1 left open -- for projections; integrations (ERP/LIMS/Edge) remain
+open, deliberately, same narrow-scoping discipline Stage 2 used for Temporal (see below).
+`app/modules/eventbus/jetstream.py::pull_subscribe()` adds the durable pull-consumer primitive
+(EVT-FR-009: `ack_policy=EXPLICIT`, `deliver_policy=ALL`, bounded `max_deliver`/`ack_wait`, and the same
+bounded-`asyncio.wait_for` discipline `connect()` already used, applied here to consumer creation too).
+`app/modules/eventbus/consumer.py::run_pull_consumer()` is the first real driver of the
+`consume_event_idempotently()` (EVT-FR-005/006) and `dead_letter.py::handle_poison_event()`
+(EVT-FR-010/026) primitives Stage 1 built but nothing called -- confirmed by grep before building: zero
+call sites outside their own docstrings. Per message: one DB transaction runs
+`consume_event_idempotently()` around the handler (so the `consumer_inbox` dedupe row and the handler's
+own write commit atomically), acks only after that commits, naks below `max_deliver` for real broker
+redelivery, and dead-letters (+ `msg.term()`, which stops redelivery without deleting the message --
+`GXP_EVENTS` uses limits retention, not work-queue) once exhausted.
+
+First real consumer wired end to end: `app/modules/readmodels/projector.py`, `material_lot` events into
+the Postgres-backed search index. Confirmed before building (per this stage's own scoping question):
+`readmodels` was genuinely disconnected from the bus -- its three commands
+(`rebuild_search_index`/`refresh_read_model`/`generate_async_export`) are explicit, operator-triggered
+REST calls that rescan the audit ledger, nothing subscribed to live events. `material_lot` was chosen
+deliberately over `gxp_batch` for what it does *not* invent: it is both the real `aggregate_type`
+`material/commands.py` publishes under and the `index_type` `readmodels/router.py`'s own
+`_ALLOWED_FILTERS` already carries a reviewed `{"state"}` allowlist for -- reused verbatim, no new
+aggregate_type-to-index_type mapping and no new field-exposure decision made in this pass (`gxp_batch`
+would have needed the former, since its outbox events publish as `aggregate_type="batch"`, not
+`"gxp_batch"` -- set aside, not attempted). `index_authoritative_projection()` gained an EVT-FR-014/027
+ordering guard (an incoming `source_version` no greater than what is already indexed is a safe no-op) --
+the pre-existing full-rebuild caller is unaffected (it always computes the true per-aggregate max from
+the audit ledger) but a live incremental consumer needs it, since at-least-once delivery gives no
+total-order guarantee across redeliveries.
+
+Proven against the live broker and a real Postgres database, not mocked:
+`tests/test_eventbus_consumer.py`, 5/5 passed -- a real end-to-end publish-fetch-project round trip;
+duplicate `event_id` does not rerun the handler (`consume_event_idempotently`'s DB dedupe, asserted
+directly since forcing a live broker to redeliver an already-acked message is not a deterministic event
+to wait for); a real handler failure (no matching audit event, not injected) naks for real broker
+redelivery (`num_delivered` incrementing for real across fetches) and is dead-lettered
+(`consumer_inbox.result=DEAD_LETTERED` + a real `EventDeadLettered` outbox row) with no further
+redelivery after `max_deliver`; an out-of-order redelivery (version 2 applied, then a late version 1)
+does not regress the index. AsyncAPI contract updated
+(`contracts/events/asyncapi-data-005-transport.yaml`) with the consumer operation and its
+`x-requirement-ids`. **Still open:** integration consumers (ERP/LIMS/Edge) -- the other half of this
+closure item -- and cross-service/multi-consumer contract tests (TEST-FR-007) beyond this one consumer;
+all of Document 11's remaining Temporal scope (Stage 2's own open item, untouched by this pass).
+
 ```yaml
 spec_gap_id: SG-183
-title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use -- NATS producer side PARTIALLY RESOLVED 2026-09-12; Temporal: one real workflow built 2026-09-12 (Stage 2), rest of Doc 11's Temporal scope + NATS consumers remain open"
+title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use -- NATS producer side PARTIALLY RESOLVED 2026-09-12; Temporal: one real workflow built 2026-09-12 (Stage 2); NATS projection consumer PARTIALLY RESOLVED 2026-09-13 (Stage 3) -- integration consumers + rest of Doc 11's Temporal scope remain open"
 class: E  # engineering build-out of specified infrastructure; no regulated behaviour to decide (ADR-0011 already set direction)
 description: >
   ADR-0011 commits to building NATS/JetStream and Temporal in WP-11 (NATS first, then Temporal),
@@ -12410,6 +12455,13 @@ source_requirement_ids:
   - EVT-FR-002
   - EVT-FR-003
   - EVT-FR-004
+  - EVT-FR-005
+  - EVT-FR-006
+  - EVT-FR-009
+  - EVT-FR-010
+  - EVT-FR-014
+  - EVT-FR-026
+  - EVT-FR-027
   - DATA-FR-014
   - TMP-FR-001
   - TMP-FR-002
@@ -12419,10 +12471,14 @@ source_requirement_ids:
 affected_modules:
   - SPEC-DATA-005
   - SPEC-DATA-006
+  - SPEC-DATA-007  # readmodels -- the first live-wired NATS consumer (Stage 3)
   - SPEC-EBMR-002  # batch-execution recovery/restart clauses name Temporal
 affected_functions:
   - services/gxp-api/app/main.py::outbox_publisher_loop
   - services/gxp-api/app/modules/eventbus/outbox.py
+  - services/gxp-api/app/modules/eventbus/jetstream.py::pull_subscribe
+  - services/gxp-api/app/modules/eventbus/consumer.py::run_pull_consumer
+  - services/gxp-api/app/modules/readmodels/projector.py
   - services/gxp-api/app/modules/workflowops/*
 why_material: >
   AG-09/AG-10 are architecture non-negotiables. Recording the stand-ins as an interim state (not an
@@ -12437,21 +12493,28 @@ options:
 closure_criteria:
   - "[DONE 2026-09-12] JetStream producer replaces the stand-in publisher; publish-ack before
     mark_outbox_published; subject convention per Document 73."
-  - "[OPEN] at-least-once consumers for projections + integrations; EVT/TEST contract tests (duplicate,
-    replay by event_id, out-of-order, poison event) green beyond the producer-side duplicate test built
-    this pass."
+  - "[PARTIAL 2026-09-13, Stage 3] at-least-once consumer for projections: one real durable pull consumer
+    (readmodels-material-lot-projector) wired end to end through consume_event_idempotently() +
+    handle_poison_event(), proven against the live broker (duplicate no-op, failed-handler nak +
+    redelivery, dead-letter after max_deliver, out-of-order no-op -- tests/test_eventbus_consumer.py,
+    5/5 passed). [OPEN] integration consumers (ERP/LIMS/Edge -- the other half of this item, not
+    attempted); a second/third projection consumer beyond material_lot; cross-consumer/multi-service
+    contract tests (TEST-FR-007) beyond this one durable consumer."
   - "[PARTIAL 2026-09-12, Stage 2] Temporal runtime deployed (real dev-server); one real workflow built
     (StepStuckDetectionWorkflow, BAT-FR-018/021 stuck-step half) on real workflows/activities;
     authoritative state re-read from owning service (AG-10). [OPEN] the other Document 11 Temporal-
     dependent requirements SG-048 lists (batch-execution recovery/escalation beyond the stuck-step case);
     deterministic replay + time-skip tests (TEST-FR-010) using Temporal's own test environment (this
     pass's tests ran against the live dev-server directly, not the replay-test harness)."
-  - "[PARTIAL] AsyncAPI subject/stream contracts committed (contracts/events/asyncapi-data-005-transport.yaml,
-    producer side only) -- also unblocks the non-QMS event half of SG-013 once the consumer side lands.
-    Temporal REST surface contracted: contracts/openapi/spec-data-006.yaml."
+  - "[PARTIAL 2026-09-13] AsyncAPI subject/stream contracts committed
+    (contracts/events/asyncapi-data-005-transport.yaml) -- now covers both the producer and the one real
+    consumer operation (consumeMaterialLotEvents) with EVT-FR-005/006/009/010/014/026/027
+    x-requirement-ids. Temporal REST surface contracted: contracts/openapi/spec-data-006.yaml.
+    SG-013's non-QMS event half still separately tracks whether every event_type has a contract; this
+    bullet is about the transport/consumer conventions, not that inventory."
 blocking: false  # does not block the M1 core build; blocks EVT-FR/TMP-FR verification and the SG-013 event half
 owner: Platform Architect + SRE Lead
-resolution_document: "WP-11 Stage 1 (2026-09-12): app/modules/eventbus/jetstream.py -- real single-node NATS JetStream (infra/nats-server.conf, container ebmr-new-nats, tight resource limits given shared-host disk headroom), outbox.py::publish_outbox_event() publishes the canonical EVT-FR-001 envelope with Nats-Msg-Id=event_id for broker-level dedup, app/main.py lifespan connects/closes it (a connection failure at startup is logged, not fatal -- AG-09 transport, not authoritative). nats-py added (Apache-2.0, zero transitive deps, Document 104 justification in pyproject.toml). Tests: tests/test_eventbus_jetstream.py, 5 real tests against the live local broker, 5/5 passed, none mocked. WP-11 Stage 2 (2026-09-12): app/modules/workflowops/{client,activities,workflows,worker,commands,router}.py -- real Temporal dev-server (infra/README.md, PM2 ebmr-new-temporal), one real workflow (StepStuckDetectionWorkflow) proving the pattern end to end; temporalio added (MIT, Document 104 justification). Tests: tests/test_workflowops_temporal.py, 6 real tests against the live server, 6/6 passed, none mocked. Durable NATS consumer wiring and the rest of Document 11's Temporal scope (SG-048) remain open, future stages."
+resolution_document: "WP-11 Stage 1 (2026-09-12): app/modules/eventbus/jetstream.py -- real single-node NATS JetStream (infra/nats-server.conf, container ebmr-new-nats, tight resource limits given shared-host disk headroom), outbox.py::publish_outbox_event() publishes the canonical EVT-FR-001 envelope with Nats-Msg-Id=event_id for broker-level dedup, app/main.py lifespan connects/closes it (a connection failure at startup is logged, not fatal -- AG-09 transport, not authoritative). nats-py added (Apache-2.0, zero transitive deps, Document 104 justification in pyproject.toml). Tests: tests/test_eventbus_jetstream.py, 5 real tests against the live local broker, 5/5 passed, none mocked. WP-11 Stage 2 (2026-09-12): app/modules/workflowops/{client,activities,workflows,worker,commands,router}.py -- real Temporal dev-server (infra/README.md, PM2 ebmr-new-temporal), one real workflow (StepStuckDetectionWorkflow) proving the pattern end to end; temporalio added (MIT, Document 104 justification). Tests: tests/test_workflowops_temporal.py, 6 real tests against the live server, 6/6 passed, none mocked. WP-11 Stage 3 (2026-09-13): app/modules/eventbus/jetstream.py::pull_subscribe() (durable pull consumer primitive) + consumer.py::run_pull_consumer()/_process_one_message()/_dead_letter_message() (the first real driver of consume_event_idempotently()/handle_poison_event()) + app/modules/readmodels/projector.py (material_lot -> Postgres search index, reusing router.py's existing {\"state\"} allowlist verbatim) + an EVT-FR-014/027 ordering guard added to readmodels/search.py::index_authoritative_projection(). Wired into app/main.py's lifespan next to the outbox publisher/Temporal worker. Tests: tests/test_eventbus_consumer.py, 5 real tests against the live broker + real Postgres, 5/5 passed, none mocked. Integration consumers (ERP/LIMS/Edge) and the rest of Document 11's Temporal scope (SG-048) remain open, future stages."
 status: PARTIALLY_RESOLVED
 ```
 

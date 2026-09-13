@@ -2,7 +2,7 @@
 
 _Generated 2026-09-13 — do not hand-edit._
 
-**Overall:** 97/103 modules started · 0 released · 768/2965 requirements verified · 2524/9150 test cases executed
+**Overall:** 97/103 modules started · 0 released · 770/2965 requirements verified · 2531/9150 test cases executed
 
 ## Work packages
 
@@ -98,7 +98,7 @@ _Generated 2026-09-13 — do not hand-edit._
 | 70 | SPEC-DATA-002 | WP-11 | H | 34 | 0 | 69 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 | 71 | SPEC-DATA-003 | WP-11 | H | 28 | 0 | 55 | 0 | 0 | 0 | NOT_STARTED | — |
 | 72 | SPEC-DATA-004 | WP-11 | H | 30 | 0 | 62 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
-| 73 | SPEC-DATA-005 | WP-11 | H | 30 | 1 | 63 | 2 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 73 | SPEC-DATA-005 | WP-11 | H | 30 | 3 | 63 | 9 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 | 74 | SPEC-DATA-006 | WP-11 | H | 30 | 0 | 69 | 3 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 | 75 | SPEC-DATA-007 | WP-11 | H | 30 | 0 | 55 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 | 76 | SPEC-DATA-008 | WP-11 | H | 32 | 0 | 53 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
