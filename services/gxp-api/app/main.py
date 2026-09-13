@@ -31,6 +31,7 @@ from app.modules.equipment.router import router as equipment_router
 from app.modules.equipment.sterilization_router import cip_sip_router, filtration_router
 from app.modules.equipment.sterilization_router import router as sterilization_router
 from app.modules.erp.router import router as erp_router
+from app.modules.eventbus import jetstream as eventbus_jetstream
 from app.modules.eventbus import outbox as eventbus_outbox
 from app.modules.evidence.router import router as evidence_router
 from app.modules.genealogy.router import router as genealogy_router
@@ -123,9 +124,19 @@ async def outbox_publisher_loop() -> None:
 async def lifespan(app: FastAPI):
     async with SessionLocal() as session:
         await assert_single_organization(session)
+    # WP-11 (ADR-0011): connect to NATS JetStream before the publisher loop starts. A connection
+    # failure here is logged, not fatal -- AG-09 makes NATS transport, not authoritative, so the API
+    # must still accept and commit regulated mutations even if the broker is temporarily unreachable;
+    # the publisher loop's own retry-every-iteration behavior (and nats-py's infinite reconnect) is
+    # what recovers once it comes back.
+    try:
+        await eventbus_jetstream.connect()
+    except Exception:  # noqa: BLE001 - startup must not fail closed over a transport dependency
+        logger.exception("failed to connect to NATS JetStream at startup; publisher will retry")
     task = asyncio.create_task(outbox_publisher_loop())
     yield
     task.cancel()
+    await eventbus_jetstream.close()
 
 
 app = FastAPI(title="eBMR GxP Core", version="0.1.0", lifespan=lifespan)

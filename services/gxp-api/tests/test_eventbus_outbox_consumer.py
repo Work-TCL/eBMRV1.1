@@ -10,8 +10,9 @@ import uuid
 import pytest
 from sqlalchemy import select, text
 
+from app.core.config import settings
 from app.core.db import SessionLocal
-from app.modules.eventbus import dead_letter, replay
+from app.modules.eventbus import dead_letter, jetstream, replay
 from app.modules.eventbus.consumer import consume_event_idempotently
 from app.modules.eventbus.models import ConsumerInbox
 from app.modules.eventbus.outbox import (
@@ -63,6 +64,15 @@ async def test_outbox_event_carries_schema_version(db, seeded):
 
 
 async def test_claim_publish_mark_and_reject_double_mark(db, seeded):
+    """WP-11: publish_outbox_event() now publishes for real to NATS JetStream (see
+    tests/test_eventbus_jetstream.py for the dedicated transport tests) -- this test needs a live
+    connection to exercise the claim/publish/mark mechanics end to end, and skips rather than fakes a
+    pass if no broker is reachable."""
+    try:
+        await jetstream.connect()
+    except Exception:  # noqa: BLE001 - genuinely "not reachable", not a test failure
+        pytest.skip(f"No live NATS JetStream broker reachable at {settings.nats_url} -- skipping, not faking")
+
     async with SessionLocal() as s:
         async with s.begin():
             ev = await _write_event(s, event_type="ClaimProbe")

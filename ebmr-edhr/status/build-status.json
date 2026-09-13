@@ -5437,8 +5437,8 @@
    "requirements_state": {
     "EVT-FR-001": "NOT_STARTED",
     "EVT-FR-002": "NOT_STARTED",
-    "EVT-FR-003": "NOT_STARTED",
-    "EVT-FR-004": "NOT_STARTED",
+    "EVT-FR-003": "VERIFIED",
+    "EVT-FR-004": "IN_PROGRESS",
     "EVT-FR-005": "NOT_STARTED",
     "EVT-FR-006": "NOT_STARTED",
     "EVT-FR-007": "NOT_STARTED",
@@ -5477,12 +5477,18 @@
      "at": "2026-09-09",
      "by": "Claude Code",
      "note": "Phase 1 reconciliation: code exists at services/gxp-api/app/modules/eventbus (module + tests present) but was tracked as NOT_STARTED with code_location 'infrastructure'. Stage corrected to IN_DEVELOPMENT (code exists, tests not yet folded into TEST_CASE_LIBRARY). Requirement-level verification still pending test-case execution."
+    },
+    {
+     "at": "2026-09-12",
+     "by": "Claude Code",
+     "stage": "IN_DEVELOPMENT",
+     "note": "WP-11 Stage 1 (ADR-0011, SG-183): real single-node NATS JetStream broker provisioned (infra/nats-server.conf, container ebmr-new-nats, tight memory/disk limits given this host's shared-tenant capacity). app/modules/eventbus/jetstream.py owns the connection lifecycle (connect/close from app/main.py's lifespan; a connect failure at startup is logged, never fatal -- AG-09 makes this transport, not authoritative). outbox.py::publish_outbox_event() now publishes the real EVT-FR-001 canonical envelope with Nats-Msg-Id=event_id, giving JetStream's own dedup window the exact crash-between-publish-and-mark-published protection EVT-FR-004 calls for. nats-py added (Apache-2.0, zero transitive deps, Document 104 justification in pyproject.toml). AsyncAPI transport contract: contracts/events/asyncapi-data-005-transport.yaml (producer side only). Tests: tests/test_eventbus_jetstream.py, 5 tests against the live broker (round trip, exact envelope shape, republish-recognized-as-duplicate, not-connected raises, connect is idempotent), 5/5 passed, none mocked. Full repository regression: see PHASE_4_WP11.md for the exact run. Not done: durable consumer wiring (projections/integrations actually subscribing), offline-buffer-then-reconnect proof (TC-073-004-02), and all of Document 74/Temporal (SPEC-DATA-006, untouched, still 0 started -- separate future stage)."
     }
    ],
    "owner": "Claude Code",
-   "started_at": null,
+   "started_at": "2026-09-12",
    "completed_at": null,
-   "test_pass": 0,
+   "test_pass": 2,
    "test_fail": 0,
    "test_blocked": 0,
    "open_defects": 0,
@@ -7523,6 +7529,12 @@
      "at": "2026-09-01",
      "by": "Claude Code",
      "note": "This row was stale (NOT_STARTED, services/ai-gateway, 0 apis/events) despite the module's commands.py/models.py (13 functions, 12 tables) already being built and tested in a prior session -- likely lost to a build-status-race or the 2026-09-01 git-filter-repo incident. This session added the missing app/modules/ai_governance/router.py (24 routes: 13 command endpoints, 5 signature-challenge endpoints, 6 GET reads), wired it into main.py (0 -> 24 live /ai-governance/v1/* paths, confirmed via openapi()), fixed a real defect in _apply_signature() (content_challenge_hash() now excludes challenge_id/reauth_password/idempotency_key from the consumed-challenge hash -- the prior binding was structurally unsatisfiable, see SG-167), and passed stand-in model_client/evaluator callables that fail closed (DependencyUnavailableError) since no live AI provider is configured. tests/test_ai_governance.py: 23/24 passed (the 1 failure is a pre-existing unrelated test-data gap, not a regression -- see SG-167). Not set to CODE_COMPLETE: the 5 signed functions remain unsatisfiable pending Document 106 (SG-167, blocking), and this session did not re-verify all 56 AI-FR requirements individually."
+    },
+    {
+     "at": "2026-09-12",
+     "by": "Claude Code",
+     "stage": "IN_DEVELOPMENT",
+     "note": "Bookkeeping reconciliation only, no new code this pass: this row was stale. SG-167 (the blocker this row listed -- zero Document 106 signature policy rows for SPEC-AI-001) was already fully resolved 2026-09-11 on branch wp15-phase3-deferred-decisions, per PHASE_3_DEFERRED_DECISIONS.md item C (all 5 signed AI-governance function pairs given a policy authored from the closest Document 106 section 8 family). test_pass was also stale (4) against the real, re-run count: tests/test_ai_governance.py is 24/24 passed as of this pass's own verification run. Not re-verified this pass: all 56 individual AI-FR requirement states (most still show NOT_STARTED from the original build) -- left alone rather than blanket-upgraded without a real per-requirement check; stage stays IN_DEVELOPMENT for the same reason."
     }
    ],
    "owner": "Claude Code",
@@ -7532,9 +7544,7 @@
    "test_fail": 0,
    "test_blocked": 0,
    "open_defects": 0,
-   "blockers": [
-    "SG-167: Document 106 has zero SPEC-AI-001 signature policy rows -- 5 signed functions unsatisfiable"
-   ],
+   "blockers": [],
    "prompt": "prompts/WP-13/105_SPEC-AI-001.md",
    "test_case_book": "test-cases/WP-13/Document_105_SPEC-AI-001_TEST_CASES.md",
    "evidence": "validation/evidence/oq/SPEC-AI-001/"

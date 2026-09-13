@@ -12346,9 +12346,24 @@ transactional-outbox *pattern* (event written in the domain transaction, publish
 implemented correctly; the transport (Document 73, EVT-FR-001..030) and the durable-workflow engine
 (Document 74, TMP-FR-001..030) are not.
 
+**Update (2026-09-12, WP-11 Stage 1):** the NATS/JetStream half is now real, producer-side. A single-node
+JetStream broker runs locally (`infra/nats-server.conf`, container `ebmr-new-nats`, tight memory/disk
+limits given this host's own headroom), `app/modules/eventbus/jetstream.py` owns the connection lifecycle
+(connected/closed from `app/main.py`'s lifespan; a connect failure at startup is logged, never fatal --
+AG-09 makes this transport, not authoritative truth), and `outbox.py::publish_outbox_event()` now
+publishes the real EVT-FR-001 envelope with `Nats-Msg-Id` set to the event's own id, giving JetStream's
+own dedup window the exact crash-recovery property EVT-FR-004 calls for (a republish of an
+already-acknowledged event is recognized as a duplicate, never delivered twice). `nats-py` added with a
+Document 104 justification (Apache-2.0, zero transitive dependencies). Proven against the live broker,
+not mocked: `tests/test_eventbus_jetstream.py`, 5/5 passed. **Still open:** durable consumer wiring on
+the receiving side (projections/integrations actually subscribing and applying events idempotently --
+this pass only proves the producer publishes and dedups correctly, not that anything downstream consumes
+yet), and all of Temporal (Document 74) -- workflowops and batch-execution recovery/escalation still run
+on the pre-existing stand-in, untouched by this pass.
+
 ```yaml
 spec_gap_id: SG-183
-title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use"
+title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use -- NATS producer side PARTIALLY RESOLVED 2026-09-12 (Temporal + consumers remain open)"
 class: E  # engineering build-out of specified infrastructure; no regulated behaviour to decide (ADR-0011 already set direction)
 description: >
   ADR-0011 commits to building NATS/JetStream and Temporal in WP-11 (NATS first, then Temporal),
@@ -12386,17 +12401,20 @@ options:
   - (A) Build NATS/JetStream then Temporal in WP-11, contract-first, per ADR-0011 — chosen.
   - (B) Descope both for single-customer deployment (rejected by the project owner 2026-09-09).
 closure_criteria:
-  - JetStream producer replaces the stand-in publisher; publish-ack before mark_outbox_published; subject
-    convention per Document 73; at-least-once consumers for projections + integrations; EVT/TEST contract
-    tests (duplicate, replay by event_id, out-of-order, poison event) green.
-  - Temporal runtime deployed; workflowops + batch-execution recovery/escalation paths on Temporal
+  - "[DONE 2026-09-12] JetStream producer replaces the stand-in publisher; publish-ack before
+    mark_outbox_published; subject convention per Document 73."
+  - "[OPEN] at-least-once consumers for projections + integrations; EVT/TEST contract tests (duplicate,
+    replay by event_id, out-of-order, poison event) green beyond the producer-side duplicate test built
+    this pass."
+  - "[OPEN] Temporal runtime deployed; workflowops + batch-execution recovery/escalation paths on Temporal
     workflows/activities; deterministic replay + time-skip tests (TEST-FR-010) green; authoritative state
-    re-read from owning service (AG-10).
-  - AsyncAPI subject/stream contracts committed (also unblocks the non-QMS event half of SG-013).
+    re-read from owning service (AG-10)."
+  - "[PARTIAL] AsyncAPI subject/stream contracts committed (contracts/events/asyncapi-data-005-transport.yaml,
+    producer side only) -- also unblocks the non-QMS event half of SG-013 once the consumer side lands."
 blocking: false  # does not block the M1 core build; blocks EVT-FR/TMP-FR verification and the SG-013 event half
 owner: Platform Architect + SRE Lead
-resolution_document: "— (open; WP-11 build task per ADR-0011)"
-status: OPEN
+resolution_document: "WP-11 Stage 1 (2026-09-12): app/modules/eventbus/jetstream.py -- real single-node NATS JetStream (infra/nats-server.conf, container ebmr-new-nats, tight resource limits given shared-host disk headroom), outbox.py::publish_outbox_event() publishes the canonical EVT-FR-001 envelope with Nats-Msg-Id=event_id for broker-level dedup, app/main.py lifespan connects/closes it (a connection failure at startup is logged, not fatal -- AG-09 transport, not authoritative). nats-py added (Apache-2.0, zero transitive deps, Document 104 justification in pyproject.toml). Tests: tests/test_eventbus_jetstream.py, 5 real tests against the live local broker (round trip, exact envelope shape, republish-recognized-as-duplicate, not-connected raises, connect is idempotent), 5/5 passed, none mocked. Temporal (Document 74) and consumer-side wiring are separate, not-yet-started future stages of this same gap."
+status: PARTIALLY_RESOLVED
 ```
 
 ```yaml
