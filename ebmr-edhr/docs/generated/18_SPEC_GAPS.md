@@ -12361,9 +12361,39 @@ this pass only proves the producer publishes and dedups correctly, not that anyt
 yet), and all of Temporal (Document 74) -- workflowops and batch-execution recovery/escalation still run
 on the pre-existing stand-in, untouched by this pass.
 
+**Update (2026-09-12, WP-11 Stage 2):** the Temporal half is now also real, narrowly. A real Temporal
+dev-server runs locally (`infra/README.md`, PM2 process `ebmr-new-temporal`, embedded SQLite, headless,
+~130MB RAM), `app/modules/workflowops/client.py` owns the connection lifecycle with the exact same
+bounded-`asyncio.wait_for` discipline WP-11 Stage 1's NATS integration learned the hard way (nats-py's
+`max_reconnect_attempts=-1` was found to hang the *initial* connect forever with no bound; applied to
+Temporal's client from the start this time rather than discovered by a second incident). One real
+workflow now runs: `StepStuckDetectionWorkflow` (`workflows.py`) -- BAT-FR-018/021's "stuck step" half
+only, deliberately narrow (see below). It sleeps via a durable Temporal timer, re-reads the step's
+authoritative state through `batch_execution.service.get_step()` (never caches or guesses it, AG-10),
+and emits `WorkflowStuckDetected` (Document 74 # 9) through a second Activity if the step is still
+`in_progress` -- the workflow itself never decides or writes a regulated batch/step state transition.
+`retry_policy.classify_retry()` is now actually exercised inside the Activity (TMP-FR-011), converting a
+settled `GxPError` (e.g. `NOT_FOUND`) into a non-retryable `ApplicationError` rather than letting
+Temporal's retry policy spin on it forever. `temporalio` added with a Document 104 justification (MIT,
+runtime-critical per DEP-FR-018) plus 3 transitive deps (`nexus-rpc` MIT, `protobuf` BSD-3-Clause,
+`types-protobuf` Apache-2.0, all clean). New REST surface `contracts/openapi/spec-data-006.yaml`
+(`POST`/`GET /workflowops/v1/step-stuck-detection...`, RBAC-only per AG-10, no Document 106 row).
+
+**What this deliberately does NOT do:** port batch-execution's actual recovery/escalation commands onto
+Temporal, or touch any of the other 22 Document 11 requirements SG-048 lists as blocked on Temporal
+*and other unbuilt modules simultaneously* (Material Service, Equipment master, Document 12/17, IAM
+qualification schema) -- attempting those would mean guessing those modules' own shape, the exact
+AG-15 violation SG-048 already declined. This pass proves the real workflow+activity+worker+client
+pattern end to end on the one Document 11 sub-requirement (BAT-FR-018/021's stuck-step half) that has
+no such entangled dependency. Durable consumer wiring for NATS (Stage 1's own remaining item) and the
+rest of Document 11's Temporal scope both remain open, future stages. Proven against the live server,
+not mocked: `tests/test_workflowops_temporal.py`, 6/6 passed (stuck-signal emission, no-signal-if-
+completed-in-time, idempotent double-start, REST start+query, NOT_FOUND fail-closed, unauthorized
+rejection).
+
 ```yaml
 spec_gap_id: SG-183
-title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use -- NATS producer side PARTIALLY RESOLVED 2026-09-12 (Temporal + consumers remain open)"
+title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use -- NATS producer side PARTIALLY RESOLVED 2026-09-12; Temporal: one real workflow built 2026-09-12 (Stage 2), rest of Doc 11's Temporal scope + NATS consumers remain open"
 class: E  # engineering build-out of specified infrastructure; no regulated behaviour to decide (ADR-0011 already set direction)
 description: >
   ADR-0011 commits to building NATS/JetStream and Temporal in WP-11 (NATS first, then Temporal),
@@ -12382,6 +12412,10 @@ source_requirement_ids:
   - EVT-FR-004
   - DATA-FR-014
   - TMP-FR-001
+  - TMP-FR-002
+  - TMP-FR-006
+  - TMP-FR-011
+  - TMP-FR-024
 affected_modules:
   - SPEC-DATA-005
   - SPEC-DATA-006
@@ -12406,14 +12440,18 @@ closure_criteria:
   - "[OPEN] at-least-once consumers for projections + integrations; EVT/TEST contract tests (duplicate,
     replay by event_id, out-of-order, poison event) green beyond the producer-side duplicate test built
     this pass."
-  - "[OPEN] Temporal runtime deployed; workflowops + batch-execution recovery/escalation paths on Temporal
-    workflows/activities; deterministic replay + time-skip tests (TEST-FR-010) green; authoritative state
-    re-read from owning service (AG-10)."
+  - "[PARTIAL 2026-09-12, Stage 2] Temporal runtime deployed (real dev-server); one real workflow built
+    (StepStuckDetectionWorkflow, BAT-FR-018/021 stuck-step half) on real workflows/activities;
+    authoritative state re-read from owning service (AG-10). [OPEN] the other Document 11 Temporal-
+    dependent requirements SG-048 lists (batch-execution recovery/escalation beyond the stuck-step case);
+    deterministic replay + time-skip tests (TEST-FR-010) using Temporal's own test environment (this
+    pass's tests ran against the live dev-server directly, not the replay-test harness)."
   - "[PARTIAL] AsyncAPI subject/stream contracts committed (contracts/events/asyncapi-data-005-transport.yaml,
-    producer side only) -- also unblocks the non-QMS event half of SG-013 once the consumer side lands."
+    producer side only) -- also unblocks the non-QMS event half of SG-013 once the consumer side lands.
+    Temporal REST surface contracted: contracts/openapi/spec-data-006.yaml."
 blocking: false  # does not block the M1 core build; blocks EVT-FR/TMP-FR verification and the SG-013 event half
 owner: Platform Architect + SRE Lead
-resolution_document: "WP-11 Stage 1 (2026-09-12): app/modules/eventbus/jetstream.py -- real single-node NATS JetStream (infra/nats-server.conf, container ebmr-new-nats, tight resource limits given shared-host disk headroom), outbox.py::publish_outbox_event() publishes the canonical EVT-FR-001 envelope with Nats-Msg-Id=event_id for broker-level dedup, app/main.py lifespan connects/closes it (a connection failure at startup is logged, not fatal -- AG-09 transport, not authoritative). nats-py added (Apache-2.0, zero transitive deps, Document 104 justification in pyproject.toml). Tests: tests/test_eventbus_jetstream.py, 5 real tests against the live local broker (round trip, exact envelope shape, republish-recognized-as-duplicate, not-connected raises, connect is idempotent), 5/5 passed, none mocked. Temporal (Document 74) and consumer-side wiring are separate, not-yet-started future stages of this same gap."
+resolution_document: "WP-11 Stage 1 (2026-09-12): app/modules/eventbus/jetstream.py -- real single-node NATS JetStream (infra/nats-server.conf, container ebmr-new-nats, tight resource limits given shared-host disk headroom), outbox.py::publish_outbox_event() publishes the canonical EVT-FR-001 envelope with Nats-Msg-Id=event_id for broker-level dedup, app/main.py lifespan connects/closes it (a connection failure at startup is logged, not fatal -- AG-09 transport, not authoritative). nats-py added (Apache-2.0, zero transitive deps, Document 104 justification in pyproject.toml). Tests: tests/test_eventbus_jetstream.py, 5 real tests against the live local broker, 5/5 passed, none mocked. WP-11 Stage 2 (2026-09-12): app/modules/workflowops/{client,activities,workflows,worker,commands,router}.py -- real Temporal dev-server (infra/README.md, PM2 ebmr-new-temporal), one real workflow (StepStuckDetectionWorkflow) proving the pattern end to end; temporalio added (MIT, Document 104 justification). Tests: tests/test_workflowops_temporal.py, 6 real tests against the live server, 6/6 passed, none mocked. Durable NATS consumer wiring and the rest of Document 11's Temporal scope (SG-048) remain open, future stages."
 status: PARTIALLY_RESOLVED
 ```
 

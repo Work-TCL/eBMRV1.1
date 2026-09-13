@@ -516,6 +516,11 @@ PERMISSION_CATALOG = [
     ("dr.recovery_objective.manage", "manage", "recovery_objective_profile", "Set/update a component's RPO/RTO recovery tier (Document 76)"),
     ("dr.backup.view", "view", "backup_inventory", "Read backup freshness / RPO-at-risk status (Document 76)"),
     ("dr.restore_test.execute", "execute", "restore_test", "Record an executed restore/PITR drill (Document 76)"),
+    # WP-11 Stage 2 (Document 74, SPEC-DATA-006, ADR-0011/SG-183) — same rows tests/conftest.py's own
+    # independent copy adds. RBAC-only: starting/reading a Temporal workflow's own orchestration status
+    # is not itself a regulated GxP decision (AG-10), no Document 106 row exists for either action.
+    ("step_stuck_detection.start", "start", "workflow_orchestration", "Start the stuck-step-detection workflow for a batch step (Document 74)"),
+    ("step_stuck_detection.view", "view", "workflow_orchestration", "Read a stuck-step-detection workflow's status (Document 74)"),
     # WP-13 (Document 105, SPEC-AI-001) — the 13 FN-1005..FN-1017 functions. No existing role maps
     # cleanly to "AI governance operator/reviewer" (§2 of every other new-module block above uses the
     # same test); granted to Admin + QA Reviewer below with that reasoning, not a spec mapping.
@@ -716,6 +721,8 @@ ROLE_PERMISSIONS = {
         "evidence.integrity_check",
         "search.query", "search.rebuild", "report.export",
         "dr.recovery_objective.manage", "dr.backup.view", "dr.restore_test.execute",
+        # WP-11 Stage 2 (Document 74, SPEC-DATA-006, ADR-0011/SG-183).
+        "step_stuck_detection.start", "step_stuck_detection.view",
         # WP-13 (Document 105, SPEC-AI-001).
         "ai_governance.use_case.register", "ai_governance.use_case.assess_risk", "ai_governance.model.approve",
         "ai_governance.context.build", "ai_governance.advisory.execute", "ai_governance.tool.authorize",

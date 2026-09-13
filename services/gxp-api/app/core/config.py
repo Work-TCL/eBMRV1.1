@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # WP-11 (Document 73, ADR-0011): NATS JetStream transport for the transactional outbox. Bound to
     # localhost by default (see infra/nats-server.conf) -- never exposed beyond this deployment.
     nats_url: str = "nats://127.0.0.1:4222"
+    # WP-11 Stage 2 (Document 74, ADR-0011): Temporal dev-server (infra/README.md), bound to localhost.
+    temporal_target: str = "127.0.0.1:7233"
+    temporal_namespace: str = "default"
 
 
 settings = Settings()
