@@ -38,5 +38,6 @@ config/*.pid
 /.claude/
 config.bat
 
-# --- WP-11 local infra runtime data (rebuildable, never authoritative -- AG-09) ---
+# --- WP-11 local infra runtime data (rebuildable, never authoritative -- AG-09/AG-10) ---
 infra/nats-data/
+infra/temporal-data/

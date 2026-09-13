@@ -36,7 +36,43 @@ Check health: `curl http://127.0.0.1:8222/varz`. Check resource use: `docker sta
 broker. The app starts even if it is unreachable (transport dependency, not authoritative — MUT-FR-022
 still requires the *authoritative* DB to be up, not the transport).
 
-## Temporal — not yet provisioned
+## Temporal (WP-11 Stage 2, ADR-0011 / SG-183)
 
-SG-183's other half. Not built in the WP-11 Stage 1 pass that added NATS; a future stage will add it
-here following the same tight-resource-limit discipline.
+Real Temporal dev-server (embedded SQLite persistence — no separate Postgres/Elasticsearch container,
+matching the tight-resource-limit discipline the NATS provisioning above already established). Not a
+Docker container this time: the `temporal` CLI is a single self-contained binary
+(`/usr/local/bin/temporal`, MIT license, installed from the official `temporalio/cli` GitHub release),
+managed the same way `ebmr-new-api`/`ebmr-new-frontend` already are — PM2, process name
+`ebmr-new-temporal`, so it survives session boundaries and host reboots (`pm2 save` was run after
+adding it; PM2 itself is already `systemd`-enabled).
+
+- Bound to `127.0.0.1:7233` (gRPC) / `127.0.0.1:7243` (HTTP) only — never exposed beyond this host.
+  `--headless` (no Web UI) to keep the footprint minimal — measured at ~130MB RAM.
+- Persistence: `temporal-data/temporal.db` (gitignored) — safe to delete when the process is stopped;
+  it only holds workflow *execution history* (Temporal's own bookkeeping), never regulated GxP state
+  (AG-10: Temporal orchestrates, it is never regulatory truth — the outcome any workflow here cares
+  about is re-read from the owning GxP service, not from this file).
+
+Recreate if the PM2 process is ever removed:
+
+```bash
+pm2 start /usr/local/bin/temporal --name ebmr-new-temporal -- \
+  server start-dev --headless --ip 127.0.0.1 --port 7233 --http-port 7243 \
+  --db-filename /home/hepin/mydata/eBMR-new/infra/temporal-data/temporal.db
+pm2 save
+```
+
+(Run as the `frappe` user, matching every other PM2-managed process on this host:
+`su -s /bin/bash frappe -c "..."`.)
+
+Check health: `temporal operator namespace list --address 127.0.0.1:7233`. Check resource use:
+`pm2 list` (or `pm2 monit`).
+
+`GXP_TEMPORAL_TARGET` (default `127.0.0.1:7233`) points `app/modules/workflowops/client.py` at this
+server. The app starts even if it is unreachable (orchestration dependency, not authoritative — same
+fail-open posture as NATS, and for the same reason: AG-10 makes Temporal never regulatory truth).
+
+**Scope built so far**: one real workflow, `StepStuckDetectionWorkflow` (`app/modules/workflowops/
+workflows.py`) — see `PHASE_4_WP11_STAGE2.md` for exactly what it does and does not cover. The rest of
+Document 11's Temporal-dependent scope (SG-048) remains on the pre-existing `workflowops` stand-in
+functions, untouched by this pass.

@@ -17,7 +17,7 @@ The frozen Document 02 §6.1 ADRs, with the supersessions recorded in `docs/adr/
 | Frappe operational DB | MariaDB | not deployed (no projection tier — SG-182) | ADR-0002 → ADR-0010 |
 | GxP authoritative DB | PostgreSQL 14 | unchanged | ADR-0003 |
 | Identity | Keycloak-compatible / customer SSO | unchanged (local password fallback in dev) | ADR-0004 |
-| Durable workflow | Temporal | **interim `workflowops` stand-in; real Temporal committed** | ADR-0006 → **ADR-0011** |
+| Durable workflow | Temporal | **real Temporal dev-server, `app/modules/workflowops/*` (WP-11 Stage 2) — one real workflow (StepStuckDetectionWorkflow) built; the rest of Document 11's Temporal-dependent scope remains on the stand-in** | ADR-0006 → **ADR-0011** |
 | Event bus | NATS-compatible | **real NATS JetStream, single-node, `app/modules/eventbus/jetstream.py` (WP-11 Stage 1)** | ADR-0008 → **ADR-0011** |
 | Object storage | S3-compatible | `LocalEvidenceStore` in dev; S3 adapter is the target | ADR-0009 |
 | GxP service language | TypeScript/Node.js LTS | **Python 3.12 + FastAPI + async SQLAlchemy 2.0 + Alembic** | ADR-010 → **ADR-0007** |
@@ -75,6 +75,10 @@ PROHIBITED, zero strong-copyleft (GPL / AGPL / SSPL).** Source: `uv.lock` (pinne
 | reportlab | 5.0.1 | BSD (BSD-3-Clause family) | APPROVED | PDF export for WP-12/WP-14 validation reports | **SG-169** (approved; re-pinned) |
 | pillow | 12.3.0 | MIT-CMU | APPROVED | reportlab image support (transitive) | via reportlab |
 | nats-py | 2.15.0 | Apache-2.0 | APPROVED | real NATS JetStream transport for the outbox publisher (WP-11, ADR-0011 / SG-183) — official `nats-io` client, pure-Python, zero transitive dependencies | `pyproject.toml` (Document 104 justification, WP-11) |
+| temporalio | 1.32.0 | MIT | **APPROVED — RUNTIME-CRITICAL (DEP-FR-018)** | real Temporal workflow orchestration (WP-11 Stage 2, ADR-0011 / SG-183) — official Temporal Python SDK; executes workflow/activity code | `pyproject.toml` (Document 104 justification, WP-11 Stage 2) |
+| nexus-rpc | 1.4.0 | MIT | APPROVED | temporalio transitive dependency | via temporalio |
+| protobuf | 7.36.1 | BSD-3-Clause | APPROVED | temporalio transitive dependency (workflow/activity payload serialization) | via temporalio |
+| types-protobuf | 7.35.1.20260906 | Apache-2.0 | APPROVED | typeshed stub-only package, dev-time only | via temporalio |
 
 ### Dev / CI dependencies (`[dependency-groups].dev` — not in any runtime artefact)
 
