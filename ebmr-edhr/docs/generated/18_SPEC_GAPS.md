@@ -2741,8 +2741,25 @@ options:
   - (B) Build speculative versions now against guessed dependency shapes (rejected — the risk above).
 blocking: false
 owner: Platform Architect
-resolution_document: "2026-09-09, project-owner-directed, PARTIAL: two of the 24 requirements resolved. #020 (batch hold, step scope) -- see SG-047's further-partial resolution note (StepHold, migration a6d525b2d585_0093, signed hold/resume per Document 106 row 14/17's shapes). #026 (production completion, steps-completeness sub-clause only) -- gxp_batch.state gains 'production_complete', reachable once every gxp_batch_step is 'complete' (the yield/reconciliation sub-clause still needs Document 17, not checked); signed per Document 106 row 16 (new SIGNATURE_POLICY_FLOOR row batch/production_complete), POST /batches/v1/{id}/production-complete + /signature-challenges, error PRODUCTION_NOT_COMPLETE added matching Document 11 §7's own vocabulary. #012/#013 (material consume / equipment eligibility at step start) were considered and explicitly NOT built this pass -- both require RecipeStep to declare which material/equipment a step needs, and that declaration is itself SG-045's still-open, unresolved schema question (recipe_material_requirement/recipe_equipment_requirement -- 'tolerance rule', 'alternative policy', 'consume mode', 'calibration/qualification/cleaning policies' are policy concepts, not typed columns); building #012/#013 without SG-045 first would mean guessing that schema too, the exact risk this entry already names. The other 20 requirements remain fully open, same reasoning as before. Verified: tests/test_batch_execution.py 25/25 (2 new tests for hold/resume, 2 for production-complete) plus test_batch_flow.py/test_release.py/test_qa_review.py as an untouched-module control, 34/34."
-status: PARTIALLY RESOLVED (2 of 24 -- #020, #026; #012/#013 explicitly deferred, blocked on SG-045; 20 remain open)
+resolution_document: "2026-09-09, project-owner-directed, PARTIAL: two of the 24 requirements resolved. #020 (batch hold, step scope) -- see SG-047's further-partial resolution note (StepHold, migration a6d525b2d585_0093, signed hold/resume per Document 106 row 14/17's shapes). #026 (production completion, steps-completeness sub-clause only) -- gxp_batch.state gains 'production_complete', reachable once every gxp_batch_step is 'complete' (the yield/reconciliation sub-clause still needs Document 17, not checked); signed per Document 106 row 16 (new SIGNATURE_POLICY_FLOOR row batch/production_complete), POST /batches/v1/{id}/production-complete + /signature-challenges, error PRODUCTION_NOT_COMPLETE added matching Document 11 §7's own vocabulary. #012/#013 (material consume / equipment eligibility at step start) were considered and explicitly NOT built this pass -- both require RecipeStep to declare which material/equipment a step needs, and that declaration is itself SG-045's still-open, unresolved schema question (recipe_material_requirement/recipe_equipment_requirement -- 'tolerance rule', 'alternative policy', 'consume mode', 'calibration/qualification/cleaning policies' are policy concepts, not typed columns); building #012/#013 without SG-045 first would mean guessing that schema too, the exact risk this entry already names. The other 20 requirements remain fully open, same reasoning as before. Verified: tests/test_batch_execution.py 25/25 (2 new tests for hold/resume, 2 for production-complete) plus test_batch_flow.py/test_release.py/test_qa_review.py as an untouched-module control, 34/34.
+
+  2026-09-12, WP-11 Stage 2 (ADR-0011, SG-183): #018 (timer/duration enforcement + exception generation,
+  'stuck step' half only) resolved narrowly -- real Temporal dev-server, StepStuckDetectionWorkflow.
+  This SG-048 entry itself was not updated at the time; corrected here rather than left stale.
+
+  2026-09-14, WP-11 Stage 5 (ADR-0011, SG-183): #029 (restart/recovery) resolved for that same one
+  workflow -- worker stopped while durably asleep (simulated app restart), a completely independent
+  fresh worker resumes it, exactly one WorkflowStuckDetected signal (not lost, not duplicated); a second
+  test proves the resumed run re-reads live authoritative state (AG-10), not anything stale from before
+  the restart. tests/test_workflowops_restart_recovery.py, 2/2 passed. LIMS/Edge were investigated as a
+  path toward #030 (integration outage rules) and found to need a whole new outbound adapter layer first
+  (no HTTP provider exists in either module) -- #030 remains open, not attempted.
+
+  Running tally: 4 of 24 resolved (#018, #020, #026, #029 -- all narrowly scoped to the one entity/
+  workflow each already has, not the requirement's full generality). #012/#013 remain explicitly deferred,
+  blocked on SG-045. The other 18 requirements (#009/010/011/014/015/016/017/021/022/023/024/025/027/
+  028/030/032/033/034) remain fully open, same reasoning as before."
+status: PARTIALLY RESOLVED (4 of 24 -- #018, #020, #026, #029; #012/#013 explicitly deferred, blocked on SG-045; 18 remain open)
 ```
 
 ### SG-049 — `device_component_usage`/`device_test_result`/`device_defect`/`device_evidence_inheritance` (Document 12) are prose-only field-name lists, not DDL-ready
@@ -12494,9 +12511,32 @@ reconciliation) are untouched, still open. **Still open:** LIMS/Edge integration
 Dynamics consumption posting (needs their own verified payload mappings); warehouse mapping for the
 ERPNext payload; all of Document 11's remaining Temporal scope.
 
+**Update (2026-09-14, WP-11 Stage 5):** LIMS and Edge were investigated as the next integration-consumer
+candidates and found to have no outbound-to-external-system machinery at all -- confirmed by inspection:
+no HTTP adapter/provider layer in either module, unlike ERP's 4 real vendor adapters. Both are purely
+reactive/inbound (LIMS/edge devices call this platform; this platform never calls them). Building a NATS
+integration consumer for either would mean inventing a whole new outbound adapter layer first, a much
+larger and more speculative undertaking than reusing an already-built path the way Stage 4 did for ERP --
+set aside, confirmed with the project owner, in favor of a well-scoped Temporal item instead: **BAT-FR-029
+(restart/recovery)**, one of the two SG-048 items not entangled with another unbuilt module (the other,
+BAT-FR-018, Stage 2 already resolved narrowly). Proven against the real local Temporal server for the one
+real workflow this codebase runs (`StepStuckDetectionWorkflow`, Stage 2): a real `Worker` instance starts
+the workflow and is stopped while it is durably asleep with zero worker connected (simulating the app
+process being killed); a completely independent fresh `Worker` instance then resumes it, completing
+correctly with exactly one `WorkflowStuckDetected` signal -- not lost, not duplicated. A second test
+proves the resumed run re-reads live authoritative state (AG-10) rather than anything stale from before
+the restart: the step is completed for real during the simulated outage, and the resumed workflow
+correctly emits no signal. Tests: `tests/test_workflowops_restart_recovery.py`, 2/2 passed, none mocked.
+`TC-011-029-01` moved `BLOCKED` -> `PASS`. Temporal's own server process (PM2 `ebmr-new-temporal`) was
+never faulted in this pass -- that is infrastructure availability, a different concern from this
+requirement's "worker/application restart." **Still open:** LIMS/Edge integration consumers (need a new
+outbound adapter layer first); SAP/Oracle/Dynamics ERP posting; the other 19 SG-048 items (each
+entangled with a different unbuilt module); TEST-FR-010's deterministic replay/time-skip harness using
+`temporalio.testing` (this pass's tests ran against the live dev-server directly, same as Stage 2's).
+
 ```yaml
 spec_gap_id: SG-183
-title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use -- NATS producer side PARTIALLY RESOLVED 2026-09-12; Temporal: one real workflow built 2026-09-12 (Stage 2); NATS projection consumer PARTIALLY RESOLVED 2026-09-13 (Stage 3); NATS ERP integration consumer PARTIALLY RESOLVED 2026-09-14 (Stage 4) -- LIMS/Edge consumers + rest of Doc 11's Temporal scope remain open"
+title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use -- NATS producer side PARTIALLY RESOLVED 2026-09-12; Temporal: one real workflow built 2026-09-12 (Stage 2), BAT-FR-029 restart/recovery PARTIALLY RESOLVED 2026-09-14 (Stage 5); NATS projection consumer PARTIALLY RESOLVED 2026-09-13 (Stage 3); NATS ERP integration consumer PARTIALLY RESOLVED 2026-09-14 (Stage 4) -- LIMS/Edge consumers (need a new outbound adapter layer) + the other 19 SG-048 Temporal items remain open"
 class: E  # engineering build-out of specified infrastructure; no regulated behaviour to decide (ADR-0011 already set direction)
 description: >
   ADR-0011 commits to building NATS/JetStream and Temporal in WP-11 (NATS first, then Temporal),
@@ -12527,13 +12567,14 @@ source_requirement_ids:
   - TMP-FR-006
   - TMP-FR-011
   - TMP-FR-024
+  - BAT-FR-029
 affected_modules:
   - SPEC-DATA-005
   - SPEC-DATA-006
   - SPEC-DATA-007  # readmodels -- the first live-wired NATS consumer (Stage 3)
   - SPEC-MAT-002D  # material consumption -- CON-FR-025 ERP posting, first live integration consumer (Stage 4)
   - SPEC-ERP-006   # queue_erp_command() now has a real automated caller
-  - SPEC-EBMR-002  # batch-execution recovery/restart clauses name Temporal
+  - SPEC-EBMR-002  # batch-execution recovery/restart clauses name Temporal -- BAT-FR-029 proven (Stage 5)
 affected_functions:
   - services/gxp-api/app/main.py::outbox_publisher_loop
   - services/gxp-api/app/modules/eventbus/outbox.py
@@ -12574,10 +12615,18 @@ closure_criteria:
     consumers."
   - "[PARTIAL 2026-09-12, Stage 2] Temporal runtime deployed (real dev-server); one real workflow built
     (StepStuckDetectionWorkflow, BAT-FR-018/021 stuck-step half) on real workflows/activities;
-    authoritative state re-read from owning service (AG-10). [OPEN] the other Document 11 Temporal-
-    dependent requirements SG-048 lists (batch-execution recovery/escalation beyond the stuck-step case);
-    deterministic replay + time-skip tests (TEST-FR-010) using Temporal's own test environment (this
-    pass's tests ran against the live dev-server directly, not the replay-test harness)."
+    authoritative state re-read from owning service (AG-10)."
+  - "[PARTIAL 2026-09-14, Stage 5] BAT-FR-029 restart/recovery proven for that one workflow: worker
+    stopped while durably asleep (simulated app restart), a completely independent fresh worker resumes
+    it, exactly one WorkflowStuckDetected signal (not lost, not duplicated); a second test proves the
+    resumed run re-reads live authoritative state (AG-10), not anything stale from before the restart --
+    tests/test_workflowops_restart_recovery.py, 2/2 passed. LIMS/Edge investigated as integration-consumer
+    candidates and found to need a whole new outbound adapter layer first (no HTTP provider exists in
+    either module, unlike ERP's 4 real adapters) -- set aside for this pass. [OPEN] the other 19 SG-048
+    items (each entangled with a different unbuilt module); deterministic replay + time-skip tests
+    (TEST-FR-010) using Temporal's own test environment (every pass's tests so far ran against the live
+    dev-server directly, not the replay-test harness); LIMS/Edge integration consumers; SAP/Oracle/
+    Dynamics ERP posting."
   - "[PARTIAL 2026-09-13] AsyncAPI subject/stream contracts committed
     (contracts/events/asyncapi-data-005-transport.yaml) -- now covers both the producer and the one real
     consumer operation (consumeMaterialLotEvents) with EVT-FR-005/006/009/010/014/026/027
@@ -12586,7 +12635,7 @@ closure_criteria:
     bullet is about the transport/consumer conventions, not that inventory."
 blocking: false  # does not block the M1 core build; blocks EVT-FR/TMP-FR verification and the SG-013 event half
 owner: Platform Architect + SRE Lead
-resolution_document: "WP-11 Stage 1 (2026-09-12): app/modules/eventbus/jetstream.py -- real single-node NATS JetStream (infra/nats-server.conf, container ebmr-new-nats, tight resource limits given shared-host disk headroom), outbox.py::publish_outbox_event() publishes the canonical EVT-FR-001 envelope with Nats-Msg-Id=event_id for broker-level dedup, app/main.py lifespan connects/closes it (a connection failure at startup is logged, not fatal -- AG-09 transport, not authoritative). nats-py added (Apache-2.0, zero transitive deps, Document 104 justification in pyproject.toml). Tests: tests/test_eventbus_jetstream.py, 5 real tests against the live local broker, 5/5 passed, none mocked. WP-11 Stage 2 (2026-09-12): app/modules/workflowops/{client,activities,workflows,worker,commands,router}.py -- real Temporal dev-server (infra/README.md, PM2 ebmr-new-temporal), one real workflow (StepStuckDetectionWorkflow) proving the pattern end to end; temporalio added (MIT, Document 104 justification). Tests: tests/test_workflowops_temporal.py, 6 real tests against the live server, 6/6 passed, none mocked. WP-11 Stage 3 (2026-09-13): app/modules/eventbus/jetstream.py::pull_subscribe() (durable pull consumer primitive) + consumer.py::run_pull_consumer()/_process_one_message()/_dead_letter_message() (the first real driver of consume_event_idempotently()/handle_poison_event()) + app/modules/readmodels/projector.py (material_lot -> Postgres search index, reusing router.py's existing {\"state\"} allowlist verbatim) + an EVT-FR-014/027 ordering guard added to readmodels/search.py::index_authoritative_projection(). Wired into app/main.py's lifespan next to the outbox publisher/Temporal worker. Tests: tests/test_eventbus_consumer.py, 5 real tests against the live broker + real Postgres, 5/5 passed, none mocked. WP-11 Stage 4 (2026-09-14): app/modules/erp/consumer.py (new) -- subscribes to MaterialConsumed, resolves the site's ACTIVE ERPNext instance + the consumed material's ACTIVE ErpExternalMapping, calls the pre-existing queue_erp_command(POST_CONSUMPTION); migration 0103 adds ErpInstance.service_actor_user_id (mirrors lims_instance.service_actor_user_id, SG-070 -- corrected from lims_instance.py's own wrong "SG-067" NCR-gap citation) since a background consumer has no human actor to attribute queue_erp_command()'s audit row to; scoped to ERPNext only (no vendor-neutral payload mapping exists for SAP/Oracle/Dynamics anywhere in this codebase). Wired into app/main.py's lifespan next to the readmodels consumer. Tests: tests/test_erp_consumer.py, 3 real tests against the live broker + real Postgres through the real dispense-to-consume REST flow, 3/3 passed, none mocked. Closes SG-098's CON-FR-025 required-behaviour bullet. LIMS/Edge integration consumers, SAP/Oracle/Dynamics posting, warehouse mapping, and the rest of Document 11's Temporal scope (SG-048) remain open, future stages."
+resolution_document: "WP-11 Stage 1 (2026-09-12): app/modules/eventbus/jetstream.py -- real single-node NATS JetStream (infra/nats-server.conf, container ebmr-new-nats, tight resource limits given shared-host disk headroom), outbox.py::publish_outbox_event() publishes the canonical EVT-FR-001 envelope with Nats-Msg-Id=event_id for broker-level dedup, app/main.py lifespan connects/closes it (a connection failure at startup is logged, not fatal -- AG-09 transport, not authoritative). nats-py added (Apache-2.0, zero transitive deps, Document 104 justification in pyproject.toml). Tests: tests/test_eventbus_jetstream.py, 5 real tests against the live local broker, 5/5 passed, none mocked. WP-11 Stage 2 (2026-09-12): app/modules/workflowops/{client,activities,workflows,worker,commands,router}.py -- real Temporal dev-server (infra/README.md, PM2 ebmr-new-temporal), one real workflow (StepStuckDetectionWorkflow) proving the pattern end to end; temporalio added (MIT, Document 104 justification). Tests: tests/test_workflowops_temporal.py, 6 real tests against the live server, 6/6 passed, none mocked. WP-11 Stage 3 (2026-09-13): app/modules/eventbus/jetstream.py::pull_subscribe() (durable pull consumer primitive) + consumer.py::run_pull_consumer()/_process_one_message()/_dead_letter_message() (the first real driver of consume_event_idempotently()/handle_poison_event()) + app/modules/readmodels/projector.py (material_lot -> Postgres search index, reusing router.py's existing {\"state\"} allowlist verbatim) + an EVT-FR-014/027 ordering guard added to readmodels/search.py::index_authoritative_projection(). Wired into app/main.py's lifespan next to the outbox publisher/Temporal worker. Tests: tests/test_eventbus_consumer.py, 5 real tests against the live broker + real Postgres, 5/5 passed, none mocked. WP-11 Stage 4 (2026-09-14): app/modules/erp/consumer.py (new) -- subscribes to MaterialConsumed, resolves the site's ACTIVE ERPNext instance + the consumed material's ACTIVE ErpExternalMapping, calls the pre-existing queue_erp_command(POST_CONSUMPTION); migration 0103 adds ErpInstance.service_actor_user_id (mirrors lims_instance.service_actor_user_id, SG-070 -- corrected from lims_instance.py's own wrong SG-067 NCR-gap citation) since a background consumer has no human actor to attribute queue_erp_command()'s audit row to; scoped to ERPNext only (no vendor-neutral payload mapping exists for SAP/Oracle/Dynamics anywhere in this codebase). Wired into app/main.py's lifespan next to the readmodels consumer. Tests: tests/test_erp_consumer.py, 3 real tests against the live broker + real Postgres through the real dispense-to-consume REST flow, 3/3 passed, none mocked. Closes SG-098's CON-FR-025 required-behaviour bullet. WP-11 Stage 5 (2026-09-14): tests/test_workflowops_restart_recovery.py (new) -- BAT-FR-029 restart/recovery proven for StepStuckDetectionWorkflow (Stage 2): a worker is stopped while the workflow is durably asleep (simulated app restart) and a completely independent fresh worker resumes it correctly, exactly one WorkflowStuckDetected signal (not lost, not duplicated); a second test proves the resumed run re-reads live authoritative state (AG-10), not anything stale from before the restart. 2 real tests against the live Temporal server, 2/2 passed, none mocked. LIMS/Edge investigated as integration-consumer candidates and found to need a whole new outbound adapter layer first (no HTTP provider exists in either module) -- set aside. LIMS/Edge integration consumers, SAP/Oracle/Dynamics posting, warehouse mapping, the other 19 SG-048 items, and TEST-FR-010's replay/time-skip harness remain open, future stages."
 status: PARTIALLY_RESOLVED
 ```
 
