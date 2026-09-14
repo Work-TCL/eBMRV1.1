@@ -901,7 +901,7 @@
     "BAT-FR-026": "IN_PROGRESS",
     "BAT-FR-027": "BLOCKED",
     "BAT-FR-028": "BLOCKED",
-    "BAT-FR-029": "BLOCKED",
+    "BAT-FR-029": "IN_PROGRESS",
     "BAT-FR-030": "BLOCKED",
     "BAT-FR-031": "IN_PROGRESS",
     "BAT-FR-032": "BLOCKED",
@@ -939,14 +939,20 @@
      "at": "2026-09-11",
      "by": "Claude Code",
      "note": "Phase 4 (wp16-phase4-wp02-recipe-batch-sync, SG-047 remainder): gxp_step_evidence_link built (migration 2e0dcac852aa), reusing vault.gxp_vault_evidence's exact shape per this gap's own requirement to agree with Document 06's manifest shape. New unsigned POST /batches/v1/{id}/steps/{id}/evidence-links (evidence attachment is a capture, not a signed release/disposition decision -- no Document 106 policy row exists for it). Verified: tests/test_batch_execution.py 30/30 passed (3 new)."
+    },
+    {
+     "at": "2026-09-14",
+     "by": "Claude Code",
+     "stage": "IN_DEVELOPMENT",
+     "note": "WP-11 Stage 5 (ADR-0011, SG-183/SG-048): BAT-FR-029 restart/recovery proven for the one real workflow this codebase runs (StepStuckDetectionWorkflow, Stage 2) -- a real Worker instance starts the workflow and is stopped while it is durably asleep with zero worker connected (simulated app restart); a completely independent fresh Worker instance then resumes it, completing correctly with exactly one WorkflowStuckDetected signal (not lost, not duplicated). A second test proves the resumed run re-reads live authoritative state (AG-10) rather than anything stale from before the restart -- the step is completed during the simulated outage and the resumed workflow correctly emits no signal. Tests: tests/test_workflowops_restart_recovery.py, 2 real tests against the live Temporal server, 2/2 passed, none mocked. TC-011-029-01 moved BLOCKED -> PASS. Scope: the one real workflow only -- the other 19 still-open SG-048 items (each entangled with a different unbuilt module) remain untouched."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-24",
    "completed_at": null,
-   "test_pass": 32,
+   "test_pass": 33,
    "test_fail": 0,
-   "test_blocked": 99,
+   "test_blocked": 98,
    "open_defects": 0,
    "blockers": [],
    "prompt": "prompts/WP-02/11_SPEC-EBMR-002.md",
