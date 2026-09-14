@@ -84,7 +84,12 @@ CIRCUIT_STATES = ("CLOSED", "OPEN", "HALF_OPEN")
 class ErpInstance(Base):
     """ERP-ARC-002/003/028/030. `site_id=NULL` means an org-wide instance serving multiple sites.
     `auth_secret_ref` is an opaque reference into the platform secret manager (ERP-ARC-028) -- never a
-    raw credential."""
+    raw credential.
+
+    `service_actor_user_id` (WP-11 Stage 4, migration 0103) mirrors `lims_instance.service_actor_user_id`
+    exactly -- a stand-in for a dedicated machine-identity model, which does not exist anywhere in this
+    codebase (SG-067 / LIMS-FR-013). Nullable: an instance with no value is simply not eligible for the
+    automated event-driven consumer path (`app/modules/erp/consumer.py`) yet."""
 
     __tablename__ = "erp_instances"
     __table_args__ = {"schema": "erp"}
@@ -108,6 +113,7 @@ class ErpInstance(Base):
     validated: Mapped[bool] = mapped_column(nullable=False, default=False)
     validated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     validated_at: Mapped[datetime | None] = mapped_column()
+    service_actor_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

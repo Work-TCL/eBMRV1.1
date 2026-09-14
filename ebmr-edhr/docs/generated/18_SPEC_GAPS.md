@@ -5700,9 +5700,23 @@ CON-FR-025/026 require ERP posting/discrepancy reconciliation after each committ
 integration exists (WP-07 not built, same root cause as SG-077/082) -- `get_material_reconciliation`
 reports a fixed `erp_posting_status: "not_integrated"`.
 
+**Update (2026-09-14, WP-11 Stage 4):** this text predates WP-07 landing -- `app/modules/erp/` is now
+real and substantial (see SG-183's own Stage 4 update for the full finding). CON-FR-025's "required
+behaviour" clause (post consumption after GxP commit, idempotent retries) is now PARTIALLY RESOLVED:
+`app/modules/erp/consumer.py` (new) automatically posts each real `MaterialConsumed` event to a real
+`queue_erp_command(POST_CONSUMPTION)` call, scoped to ERPNext only (no vendor-neutral payload mapping
+exists for SAP/Oracle/Dynamics, confirmed with the project owner rather than guessed) -- proven end to
+end against the live broker + real Postgres, `tests/test_erp_consumer.py`, 3/3 passed.
+`get_material_reconciliation`'s `erp_posting_status` field is still unread by this new consumer (still
+reports `"not_integrated"` -- reading real `IntegrationCommand` state into that reporting field is a
+separate, not-yet-attempted piece). CON-FR-025-02/03 (inbound replay/timeout-uncertain lookup for this
+specific posting) and all of CON-FR-026 (discrepancy reconciliation, comparing external vs. GxP ledger)
+remain fully open. CON-FR-003/021/022/028 (automatic-consumption source, tolerance rule, deviation
+severity/owner derivation, batch-completion gate) are entirely untouched by this pass.
+
 ```yaml
 spec_gap_id: SG-098
-title: "Document 22 requirements needing infrastructure this codebase does not have yet: automatic-consumption integration, released reconciliation-tolerance rule, batch-completion gate, and ERP posting"
+title: "Document 22 requirements needing infrastructure this codebase does not have yet: automatic-consumption integration, released reconciliation-tolerance rule, batch-completion gate -- ERP posting (CON-FR-025 required-behaviour only) PARTIALLY RESOLVED 2026-09-14 (WP-11 Stage 4)"
 class: D
 description: >
   Document 22 (SPEC-MAT-002D) declares four capabilities this codebase has no infrastructure for yet:
@@ -5733,6 +5747,7 @@ affected_functions:
     qms.commands.create_deviation but batch production_complete is not gated on the outcome
   - app/modules/material/commands.py get_material_reconciliation -- erp_posting_status always "not_integrated"
   - app/modules/batch/commands.py -- production_complete transition unaware of material reconciliation
+  - app/modules/erp/consumer.py -- WP-11 Stage 4: CON-FR-025 required-behaviour half now real (ERPNext only)
 why_material: >
   A guessed automatic-consumption integration, tolerance-rule derivation, deviation-severity default, or
   ERP posting mechanism would each independently invent regulated behaviour this project's own precedent
@@ -5753,8 +5768,8 @@ options:
   - (B) Guess any of the four now (rejected -- the risks above).
 blocking: false
 owner: Platform Architect + Materials module owner + Batch module owner + Rules Engine owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "WP-11 Stage 4 (2026-09-14): app/modules/erp/consumer.py -- real durable NATS JetStream consumer, MaterialConsumed -> queue_erp_command(POST_CONSUMPTION), ERPNext only (SAP/Oracle/Dynamics need their own verified payload mapping, not attempted); migration 0103 adds ErpInstance.service_actor_user_id (mirrors lims_instance's own SG-067 stand-in) for the audit actor a background consumer otherwise has none of. Tests: tests/test_erp_consumer.py, 3 real tests against the live broker + real Postgres through the real dispense-to-consume REST flow, 3/3 passed, none mocked. Resolves CON-FR-025's required-behaviour clause only -- CON-FR-025-02/03, CON-FR-026, and CON-FR-003/021/022/028 remain fully open, see SG-183's own Stage 4 update for the full write-up."
+status: PARTIALLY_RESOLVED_2026-09-14
 ```
 
 ```yaml
@@ -12436,9 +12451,50 @@ does not regress the index. AsyncAPI contract updated
 closure item -- and cross-service/multi-consumer contract tests (TEST-FR-007) beyond this one consumer;
 all of Document 11's remaining Temporal scope (Stage 2's own open item, untouched by this pass).
 
+**Update (2026-09-14, WP-11 Stage 4):** the first real **integration** consumer -- closing the other half
+of Stage 3's remaining item, for ERP specifically. Deep verification before building found
+`app/modules/erp/` already far more built than this gap's own earlier text claimed (that text predates
+WP-07 landing): a real vendor-neutral `ERPProvider` interface, `queue_erp_command()`/`dispatch_erp_command()`
+(full queue -> dispatch -> retry -> compensate -> reconcile lifecycle), and 4 real adapters
+(ERPNext/SAP/Oracle Fusion/Dynamics 365) with `POST_CONSUMPTION` already mapped in every one -- but every
+one of these was REST/operator-triggered only, confirmed by grep: nothing in `material/`/`batch/`/`qc/`
+ever called `queue_erp_command()` automatically. `app/modules/erp/consumer.py` (new) closes that: subscribes
+to `MaterialConsumed`, resolves the site's ACTIVE ERPNext instance and the consumed material's ACTIVE
+`ErpExternalMapping`, and calls the real `queue_erp_command(POST_CONSUMPTION)` -- the same real dispatch
+pipeline `tests/test_erp_flow.py` already exercises end to end, untouched by this pass.
+
+**Two real blockers surfaced and were resolved before building, not guessed past:** (1) every adapter
+forwards its payload to the vendor verbatim with zero transformation layer -- no vendor-neutral consumption
+payload mapping exists anywhere in this codebase (ERPNext wants Stock Entry fields, SAP wants OData
+`A_MaterialDocumentHeader` composition, Oracle wants `inventoryTransactions`, Dynamics wants
+`InventJournalTrans` + `dataAreaId`) -- confirmed with the project owner to scope this consumer to ERPNext
+only, same disclosed-caveat class the adapters' own SG-125 caveats already use, not a new SPEC_GAP.
+(2) `queue_erp_command()` writes a real audit row needing a human `iam.users.id`, but a background consumer
+has none -- resolved by mirroring `lims_instance.service_actor_user_id` (already documented there as a
+stand-in for a real machine-identity model, SG-067/LIMS-FR-013) onto `ErpInstance` (migration 0103,
+nullable/additive, MIG-FR-004), rather than inventing a new pattern.
+
+Also confirmed with the project owner: this consumer's durable, like Stage 3's, binds with
+`deliver_policy=ALL` (EVT-FR-009) -- on first deployment it will replay every `MaterialConsumed` event
+already retained on `GXP_EVENTS` and post the whole backlog to ERPNext at once. Deliberate, not an
+oversight: every one of those events genuinely happened, and no live ERPNext tenant is integrated in this
+environment yet, so there is no near-term double-posting risk; documented in `consumer.py`'s own docstring
+as a known first-activation consideration for whoever connects a real tenant later.
+
+Proven against the live broker and a real Postgres database, not mocked, through the real dispense ->
+consume REST flow (not hand-built fixtures): `tests/test_erp_consumer.py`, 3/3 passed -- a mapped material
+is queued end to end with the correct ERPNext payload; a site with no eligible ERPNext instance is skipped
+(acked, not dead-lettered -- ERP integration is optional per AG-13); an unmapped material naks for real
+broker redelivery and is dead-lettered after `max_deliver`, same mechanism Stage 3 built. Closes SG-098's
+CON-FR-025 "required behaviour" bullet (`TC-022-025-01` NOT_STARTED/BLOCKED -> PASS); SG-098's
+CON-FR-025-02/03 (inbound replay/timeout-uncertain lookup) and all of CON-FR-026 (discrepancy
+reconciliation) are untouched, still open. **Still open:** LIMS/Edge integration consumers; SAP/Oracle/
+Dynamics consumption posting (needs their own verified payload mappings); warehouse mapping for the
+ERPNext payload; all of Document 11's remaining Temporal scope.
+
 ```yaml
 spec_gap_id: SG-183
-title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use -- NATS producer side PARTIALLY RESOLVED 2026-09-12; Temporal: one real workflow built 2026-09-12 (Stage 2); NATS projection consumer PARTIALLY RESOLVED 2026-09-13 (Stage 3) -- integration consumers + rest of Doc 11's Temporal scope remain open"
+title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use -- NATS producer side PARTIALLY RESOLVED 2026-09-12; Temporal: one real workflow built 2026-09-12 (Stage 2); NATS projection consumer PARTIALLY RESOLVED 2026-09-13 (Stage 3); NATS ERP integration consumer PARTIALLY RESOLVED 2026-09-14 (Stage 4) -- LIMS/Edge consumers + rest of Doc 11's Temporal scope remain open"
 class: E  # engineering build-out of specified infrastructure; no regulated behaviour to decide (ADR-0011 already set direction)
 description: >
   ADR-0011 commits to building NATS/JetStream and Temporal in WP-11 (NATS first, then Temporal),
@@ -12463,6 +12519,7 @@ source_requirement_ids:
   - EVT-FR-026
   - EVT-FR-027
   - DATA-FR-014
+  - CON-FR-025
   - TMP-FR-001
   - TMP-FR-002
   - TMP-FR-006
@@ -12472,6 +12529,8 @@ affected_modules:
   - SPEC-DATA-005
   - SPEC-DATA-006
   - SPEC-DATA-007  # readmodels -- the first live-wired NATS consumer (Stage 3)
+  - SPEC-MAT-002D  # material consumption -- CON-FR-025 ERP posting, first live integration consumer (Stage 4)
+  - SPEC-ERP-006   # queue_erp_command() now has a real automated caller
   - SPEC-EBMR-002  # batch-execution recovery/restart clauses name Temporal
 affected_functions:
   - services/gxp-api/app/main.py::outbox_publisher_loop
@@ -12479,6 +12538,8 @@ affected_functions:
   - services/gxp-api/app/modules/eventbus/jetstream.py::pull_subscribe
   - services/gxp-api/app/modules/eventbus/consumer.py::run_pull_consumer
   - services/gxp-api/app/modules/readmodels/projector.py
+  - services/gxp-api/app/modules/erp/consumer.py
+  - services/gxp-api/app/modules/erp/models.py::ErpInstance.service_actor_user_id (migration 0103)
   - services/gxp-api/app/modules/workflowops/*
 why_material: >
   AG-09/AG-10 are architecture non-negotiables. Recording the stand-ins as an interim state (not an
@@ -12497,9 +12558,18 @@ closure_criteria:
     (readmodels-material-lot-projector) wired end to end through consume_event_idempotently() +
     handle_poison_event(), proven against the live broker (duplicate no-op, failed-handler nak +
     redelivery, dead-letter after max_deliver, out-of-order no-op -- tests/test_eventbus_consumer.py,
-    5/5 passed). [OPEN] integration consumers (ERP/LIMS/Edge -- the other half of this item, not
-    attempted); a second/third projection consumer beyond material_lot; cross-consumer/multi-service
-    contract tests (TEST-FR-007) beyond this one durable consumer."
+    5/5 passed)."
+  - "[PARTIAL 2026-09-14, Stage 4] at-least-once consumer for integrations: one real durable pull consumer
+    (erp-material-consumption-poster) wired end to end through the same consume_event_idempotently() +
+    handle_poison_event() machinery into the pre-existing, real queue_erp_command()/dispatch_erp_command()
+    ERP pipeline -- proven against the live broker + real Postgres via the real dispense-to-consume REST
+    flow (mapped material queued with the correct ERPNext payload; unconfigured site skipped, not
+    dead-lettered; unmapped material naks + dead-letters -- tests/test_erp_consumer.py, 3/3 passed).
+    Closes SG-098's CON-FR-025 'required behaviour' bullet. [OPEN] LIMS/Edge integration consumers;
+    SAP/Oracle/Dynamics consumption posting (no verified vendor-neutral payload mapping exists);
+    warehouse mapping for the ERPNext payload; a second/third integration event type beyond
+    MaterialConsumed; cross-consumer/multi-service contract tests (TEST-FR-007) beyond these two durable
+    consumers."
   - "[PARTIAL 2026-09-12, Stage 2] Temporal runtime deployed (real dev-server); one real workflow built
     (StepStuckDetectionWorkflow, BAT-FR-018/021 stuck-step half) on real workflows/activities;
     authoritative state re-read from owning service (AG-10). [OPEN] the other Document 11 Temporal-
@@ -12514,7 +12584,7 @@ closure_criteria:
     bullet is about the transport/consumer conventions, not that inventory."
 blocking: false  # does not block the M1 core build; blocks EVT-FR/TMP-FR verification and the SG-013 event half
 owner: Platform Architect + SRE Lead
-resolution_document: "WP-11 Stage 1 (2026-09-12): app/modules/eventbus/jetstream.py -- real single-node NATS JetStream (infra/nats-server.conf, container ebmr-new-nats, tight resource limits given shared-host disk headroom), outbox.py::publish_outbox_event() publishes the canonical EVT-FR-001 envelope with Nats-Msg-Id=event_id for broker-level dedup, app/main.py lifespan connects/closes it (a connection failure at startup is logged, not fatal -- AG-09 transport, not authoritative). nats-py added (Apache-2.0, zero transitive deps, Document 104 justification in pyproject.toml). Tests: tests/test_eventbus_jetstream.py, 5 real tests against the live local broker, 5/5 passed, none mocked. WP-11 Stage 2 (2026-09-12): app/modules/workflowops/{client,activities,workflows,worker,commands,router}.py -- real Temporal dev-server (infra/README.md, PM2 ebmr-new-temporal), one real workflow (StepStuckDetectionWorkflow) proving the pattern end to end; temporalio added (MIT, Document 104 justification). Tests: tests/test_workflowops_temporal.py, 6 real tests against the live server, 6/6 passed, none mocked. WP-11 Stage 3 (2026-09-13): app/modules/eventbus/jetstream.py::pull_subscribe() (durable pull consumer primitive) + consumer.py::run_pull_consumer()/_process_one_message()/_dead_letter_message() (the first real driver of consume_event_idempotently()/handle_poison_event()) + app/modules/readmodels/projector.py (material_lot -> Postgres search index, reusing router.py's existing {\"state\"} allowlist verbatim) + an EVT-FR-014/027 ordering guard added to readmodels/search.py::index_authoritative_projection(). Wired into app/main.py's lifespan next to the outbox publisher/Temporal worker. Tests: tests/test_eventbus_consumer.py, 5 real tests against the live broker + real Postgres, 5/5 passed, none mocked. Integration consumers (ERP/LIMS/Edge) and the rest of Document 11's Temporal scope (SG-048) remain open, future stages."
+resolution_document: "WP-11 Stage 1 (2026-09-12): app/modules/eventbus/jetstream.py -- real single-node NATS JetStream (infra/nats-server.conf, container ebmr-new-nats, tight resource limits given shared-host disk headroom), outbox.py::publish_outbox_event() publishes the canonical EVT-FR-001 envelope with Nats-Msg-Id=event_id for broker-level dedup, app/main.py lifespan connects/closes it (a connection failure at startup is logged, not fatal -- AG-09 transport, not authoritative). nats-py added (Apache-2.0, zero transitive deps, Document 104 justification in pyproject.toml). Tests: tests/test_eventbus_jetstream.py, 5 real tests against the live local broker, 5/5 passed, none mocked. WP-11 Stage 2 (2026-09-12): app/modules/workflowops/{client,activities,workflows,worker,commands,router}.py -- real Temporal dev-server (infra/README.md, PM2 ebmr-new-temporal), one real workflow (StepStuckDetectionWorkflow) proving the pattern end to end; temporalio added (MIT, Document 104 justification). Tests: tests/test_workflowops_temporal.py, 6 real tests against the live server, 6/6 passed, none mocked. WP-11 Stage 3 (2026-09-13): app/modules/eventbus/jetstream.py::pull_subscribe() (durable pull consumer primitive) + consumer.py::run_pull_consumer()/_process_one_message()/_dead_letter_message() (the first real driver of consume_event_idempotently()/handle_poison_event()) + app/modules/readmodels/projector.py (material_lot -> Postgres search index, reusing router.py's existing {\"state\"} allowlist verbatim) + an EVT-FR-014/027 ordering guard added to readmodels/search.py::index_authoritative_projection(). Wired into app/main.py's lifespan next to the outbox publisher/Temporal worker. Tests: tests/test_eventbus_consumer.py, 5 real tests against the live broker + real Postgres, 5/5 passed, none mocked. WP-11 Stage 4 (2026-09-14): app/modules/erp/consumer.py (new) -- subscribes to MaterialConsumed, resolves the site's ACTIVE ERPNext instance + the consumed material's ACTIVE ErpExternalMapping, calls the pre-existing queue_erp_command(POST_CONSUMPTION); migration 0103 adds ErpInstance.service_actor_user_id (mirrors lims_instance.service_actor_user_id, SG-067) since a background consumer has no human actor to attribute queue_erp_command()'s audit row to; scoped to ERPNext only (no vendor-neutral payload mapping exists for SAP/Oracle/Dynamics anywhere in this codebase). Wired into app/main.py's lifespan next to the readmodels consumer. Tests: tests/test_erp_consumer.py, 3 real tests against the live broker + real Postgres through the real dispense-to-consume REST flow, 3/3 passed, none mocked. Closes SG-098's CON-FR-025 required-behaviour bullet. LIMS/Edge integration consumers, SAP/Oracle/Dynamics posting, warehouse mapping, and the rest of Document 11's Temporal scope (SG-048) remain open, future stages."
 status: PARTIALLY_RESOLVED
 ```
 

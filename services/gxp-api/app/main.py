@@ -30,6 +30,7 @@ from app.modules.equipment.em_router import router as em_router
 from app.modules.equipment.router import router as equipment_router
 from app.modules.equipment.sterilization_router import cip_sip_router, filtration_router
 from app.modules.equipment.sterilization_router import router as sterilization_router
+from app.modules.erp import consumer as erp_consumer
 from app.modules.erp.router import router as erp_router
 from app.modules.eventbus import jetstream as eventbus_jetstream
 from app.modules.eventbus import outbox as eventbus_outbox
@@ -146,6 +147,11 @@ async def lifespan(app: FastAPI):
     readmodels_consumer_stop = asyncio.Event()
     readmodels_consumer_task = asyncio.create_task(readmodels_projector.run(stop_event=readmodels_consumer_stop))
 
+    # WP-11 Stage 4 (ADR-0011, SG-183 / SG-098): the second real at-least-once consumer -- automated
+    # ERPNext consumption posting. Same fail-open posture as the readmodels consumer above.
+    erp_consumer_stop = asyncio.Event()
+    erp_consumer_task = asyncio.create_task(erp_consumer.run(stop_event=erp_consumer_stop))
+
     # WP-11 Stage 2 (ADR-0011): connect to Temporal and start its worker, same fail-open posture as
     # NATS above -- AG-10 makes Temporal orchestration, never regulatory truth, so its unavailability
     # must not block the regulated API from starting or serving requests.
@@ -162,6 +168,8 @@ async def lifespan(app: FastAPI):
     task.cancel()
     readmodels_consumer_stop.set()
     await readmodels_consumer_task
+    erp_consumer_stop.set()
+    await erp_consumer_task
     await eventbus_jetstream.close()
     worker_stop_event.set()
     if worker_task is not None:

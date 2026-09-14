@@ -1596,20 +1596,19 @@ async def seed() -> None:
             # Document 48 (SPEC-ERP-001) -- registerERPInstance() has no seed-time uniqueness concern
             # (instance_name is globally unique, not per-org), same "seed-only demo fixture" treatment as
             # DEMO_EDGE_BOOTSTRAP_TOKEN above.
-            session.add(
-                ErpInstance(
-                    site_id=site.id, instance_name=DEMO_ERP_INSTANCE["instance_name"], vendor=DEMO_ERP_INSTANCE["vendor"],
-                    environment=DEMO_ERP_INSTANCE["environment"], base_url=DEMO_ERP_INSTANCE["base_url"],
-                    auth_method=DEMO_ERP_INSTANCE["auth_method"], auth_secret_ref=DEMO_ERP_INSTANCE["auth_secret_ref"],
-                    contract_version=DEMO_ERP_INSTANCE["contract_version"],
-                    capabilities={"supported_operations": [
-                        "SYNC_MATERIAL_ITEM", "SYNC_SUPPLIER", "SYNC_WAREHOUSE_LOCATION", "SYNC_UOM",
-                        "POST_GOODS_RECEIPT", "POST_CONSUMPTION", "POST_RETURN", "POST_SCRAP_DESTRUCTION",
-                        "POST_FINISHED_GOODS_RECEIPT", "POST_QUALITY_STATUS", "GET_PRODUCTION_ORDER_REFERENCE",
-                        "FETCH_MASTER_DATA_CHANGES",
-                    ]}, status="ACTIVE",
-                )
+            erp_instance = ErpInstance(
+                site_id=site.id, instance_name=DEMO_ERP_INSTANCE["instance_name"], vendor=DEMO_ERP_INSTANCE["vendor"],
+                environment=DEMO_ERP_INSTANCE["environment"], base_url=DEMO_ERP_INSTANCE["base_url"],
+                auth_method=DEMO_ERP_INSTANCE["auth_method"], auth_secret_ref=DEMO_ERP_INSTANCE["auth_secret_ref"],
+                contract_version=DEMO_ERP_INSTANCE["contract_version"],
+                capabilities={"supported_operations": [
+                    "SYNC_MATERIAL_ITEM", "SYNC_SUPPLIER", "SYNC_WAREHOUSE_LOCATION", "SYNC_UOM",
+                    "POST_GOODS_RECEIPT", "POST_CONSUMPTION", "POST_RETURN", "POST_SCRAP_DESTRUCTION",
+                    "POST_FINISHED_GOODS_RECEIPT", "POST_QUALITY_STATUS", "GET_PRODUCTION_ORDER_REFERENCE",
+                    "FETCH_MASTER_DATA_CHANGES",
+                ]}, status="ACTIVE",
             )
+            session.add(erp_instance)
 
             # Document 17 (SPEC-EBMR-008) -- the *only* formula the spec gives literally (§3:
             # "yield_percent = actual_yield / theoretical_yield x 100"), seeded as a released Document 08
@@ -1648,6 +1647,7 @@ async def seed() -> None:
                 roles[name] = role
             await session.flush()
 
+            integration_admin_user = None
             for username, email, full_name, role_name in DEMO_USERS:
                 user = User(
                     username=username,
@@ -1659,6 +1659,15 @@ async def seed() -> None:
                 session.add(user)
                 await session.flush()
                 session.add(UserSiteRole(user_id=user.id, site_id=site.id, role_id=roles[role_name].id))
+                if username == "integration.admin":
+                    integration_admin_user = user
+
+            # WP-11 Stage 4 (migration 0103): assigned here since it must reference a real iam.users row
+            # and DEMO_USERS is only created at this point -- same identity that already owns every other
+            # ERP write in this demo fixture.
+            if integration_admin_user is not None:
+                erp_instance.service_actor_user_id = integration_admin_user.id
+                await session.flush()
 
             for record_type, action, meaning, role_name, independent, sig_required, reason_required in SIGNATURE_POLICY_FLOOR:
                 existing_policy = (

@@ -1,6 +1,6 @@
 {
  "package": "eBMR / eDHR platform build status",
- "generated": "2026-09-13",
+ "generated": "2026-09-14",
  "baseline": "Documents 01-115",
  "stage_model": [
   "NOT_STARTED",
@@ -1665,7 +1665,7 @@
     "CON-FR-022": "BLOCKED",
     "CON-FR-023": "VERIFIED",
     "CON-FR-024": "VERIFIED",
-    "CON-FR-025": "BLOCKED",
+    "CON-FR-025": "IN_PROGRESS",
     "CON-FR-026": "BLOCKED",
     "CON-FR-027": "VERIFIED",
     "CON-FR-028": "BLOCKED",
@@ -1685,14 +1685,20 @@
      "by": "Claude Code",
      "note": "WP-04 Document 22 (SPEC-MAT-002D) built extending the materials module Document 20/21 already established. Added material_consumptions/material_returns/inventory_adjustment_requests/destruction_records/material_reconciliations entities (migration 0031) plus dispensed_containers.remaining_quantity (Document 21's DispensedContainer never tracked post-dispense balance -- CON-FR-004 is the first consumer; complete_dispensing corrected to initialize it). Built and tested: record_consumption (unsigned, cross-batch-guarded CON-FR-031) -> record_return (unsigned, quarantine routing CON-FR-006) -> record_material_loss (unsigned, one function for SAMPLE/REJECT/SPILL/APPROVED_LOSS) -> create/approve_inventory_adjustment_request (approve signed, Document 106 row 55, independent-of-requester CON-FR-014) -> create/execute_destruction_request (execute signed, Document 106 row 56, vendor/manifest/witness fields for third-party destruction) -> evaluate/get_material_reconciliation (unsigned, Document 110 CC-4 rounding, superseding-correction pattern CON-FR-023, first cross-module owning-command call in this codebase into qms.commands.create_deviation on variance). 29 new integration tests in test_material_consumption_flow.py, all passing; existing material-module regression suite re-run clean. One new SPEC_GAP (SG-098, bundling automatic-consumption integration/released-tolerance-rule/batch-completion-gate/ERP-posting -- same class as SG-077/082/094). All 109 pre-written P1 test cases resolved with real, non-fabricated results (fill script: scripts/fill_document_22_test_cases.py).",
      "stage": "CODE_COMPLETE"
+    },
+    {
+     "at": "2026-09-14",
+     "by": "Claude Code",
+     "stage": "CODE_COMPLETE",
+     "note": "WP-11 Stage 4 (ADR-0011, SG-183/SG-098): CON-FR-025's required-behaviour clause (post consumption after GxP commit, idempotent retries) is now real -- app/modules/erp/consumer.py subscribes to MaterialConsumed and calls the pre-existing queue_erp_command(POST_CONSUMPTION), scoped to ERPNext only (no vendor-neutral payload mapping exists for SAP/Oracle/Dynamics anywhere in this codebase). Migration 0103 adds ErpInstance.service_actor_user_id (mirrors lims_instance's own SG-067 stand-in) for the audit actor a background consumer otherwise has none of. Tests: tests/test_erp_consumer.py, 3 real tests against the live broker + real Postgres through the real dispense-to-consume REST flow, 3/3 passed, none mocked. TC-022-025-01 moved BLOCKED -> PASS. CON-FR-025-02/03 (inbound replay/timeout-uncertain lookup) and all of CON-FR-026 (discrepancy reconciliation) remain open, SG-098 stays PARTIALLY_RESOLVED for those pieces."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-25",
    "completed_at": null,
-   "test_pass": 67,
+   "test_pass": 68,
    "test_fail": 0,
-   "test_blocked": 22,
+   "test_blocked": 21,
    "open_defects": 0,
    "blockers": [],
    "prompt": "prompts/WP-04/22_SPEC-MAT-002D.md",

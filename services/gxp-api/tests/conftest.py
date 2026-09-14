@@ -551,6 +551,13 @@ async def seeded(db: AsyncSession) -> dict:
             db.add(UserSiteRole(user_id=user.id, site_id=site.id, role_id=roles[role_name].id))
             users[username] = user
 
+        # WP-11 Stage 4 (migration 0103): the demo ERP instance's service_actor_user_id, assigned here
+        # since it must reference a real iam.users row and users aren't created until this point in the
+        # fixture -- same "Integration Administrator" identity that already owns every other ERP write in
+        # this fixture's tests.
+        erp_instance.service_actor_user_id = users["integration.admin"].id
+        await db.flush()
+
         # Document 21 (SPEC-MAT-002C) DSP-FR-005: operator1's current dispensing_operator qualification --
         # `iam.Qualification` exists but was enforced by zero commands until this document's session wired
         # it up for real (see app/modules/material/commands.py::_check_dispensing_qualification).
