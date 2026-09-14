@@ -88,7 +88,9 @@ class ErpInstance(Base):
 
     `service_actor_user_id` (WP-11 Stage 4, migration 0103) mirrors `lims_instance.service_actor_user_id`
     exactly -- a stand-in for a dedicated machine-identity model, which does not exist anywhere in this
-    codebase (SG-067 / LIMS-FR-013). Nullable: an instance with no value is simply not eligible for the
+    codebase (SG-070 / LIMS-FR-013 -- `lims_instance.py`'s own docstring cites this as "SG-067", which is
+    actually a different, unrelated NCR gap; SG-070 is the correct number). Nullable: an instance with
+    no value is simply not eligible for the
     automated event-driven consumer path (`app/modules/erp/consumer.py`) yet."""
 
     __tablename__ = "erp_instances"

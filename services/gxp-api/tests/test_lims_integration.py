@@ -3,8 +3,8 @@
 qc.commands.receive_sample), ingest a result (calls qc.commands.record_raw_data + record_result, reusing
 its acceptance-rule PASS/OOS classification and append-only versioning unmodified), cancel a sample
 (signed, 2 independent actors), and reconcile. Only ownership_mode='gxp_managed' is built this pass
-(SG-067); LIMS-FR-013 real source authentication and LIMS-FR-016/020 (Document 25 OOS linkage) are
-deferred (SG-067/SG-066)."""
+(SG-070); LIMS-FR-013 real source authentication and LIMS-FR-016/020 (Document 25 OOS linkage) are
+deferred (SG-070/SG-066)."""
 
 from sqlalchemy import select
 

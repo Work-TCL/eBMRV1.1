@@ -28,7 +28,9 @@ as real risk. Confirmed with the project owner: scope to ERPNext only.
 **Fork 3 — no actor identity for a background consumer.** `queue_erp_command()` writes a real audit row
 needing a human `iam.users.id`; a background NATS consumer has none. Found the LIMS module had already
 solved this exact problem: `lims_instance.service_actor_user_id`, explicitly documented as "a stand-in for
-a dedicated machine-identity model, which does not exist anywhere in this codebase" (SG-067/LIMS-FR-013).
+a dedicated machine-identity model, which does not exist anywhere in this codebase" (SG-070/LIMS-FR-013 —
+`lims_instance.py`'s own docstring cites this as "SG-067", an unrelated NCR gap; SG-070 is the correct
+number, verified against `docs/generated/18_SPEC_GAPS.md` directly, not trusted from that citation).
 Confirmed with the project owner: mirror that pattern onto `ErpInstance` rather than inventing a new one.
 
 **Fork 4 — first-deploy backlog.** `jetstream.pull_subscribe()` always binds with `deliver_policy=ALL`
