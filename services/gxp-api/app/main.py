@@ -75,6 +75,7 @@ from app.modules.qms.risk_router import risk_router
 from app.modules.qms.router import router as qms_router
 from app.modules.qms.scar_router import scar_router, supplier_case_router
 from app.modules.qms.training_router import training_router
+from app.modules.readmodels import projector as readmodels_projector
 from app.modules.readmodels.router import platform_router as readmodels_platform_router
 from app.modules.readmodels.router import reports_router, search_router
 from app.modules.recipe.router import router as recipe_router
@@ -138,6 +139,13 @@ async def lifespan(app: FastAPI):
         logger.exception("failed to connect to NATS JetStream at startup; publisher will retry")
     task = asyncio.create_task(outbox_publisher_loop())
 
+    # WP-11 Stage 3 (ADR-0011, SG-183): the first real at-least-once consumer. Same fail-open posture as
+    # the publisher above -- if `connect()` above failed, `run_pull_consumer` logs and returns without
+    # running rather than blocking startup; it is not retried within this process session (a future stage
+    # can add that if operational experience calls for it -- restarting the process already recovers it).
+    readmodels_consumer_stop = asyncio.Event()
+    readmodels_consumer_task = asyncio.create_task(readmodels_projector.run(stop_event=readmodels_consumer_stop))
+
     # WP-11 Stage 2 (ADR-0011): connect to Temporal and start its worker, same fail-open posture as
     # NATS above -- AG-10 makes Temporal orchestration, never regulatory truth, so its unavailability
     # must not block the regulated API from starting or serving requests.
@@ -152,6 +160,8 @@ async def lifespan(app: FastAPI):
     yield
 
     task.cancel()
+    readmodels_consumer_stop.set()
+    await readmodels_consumer_task
     await eventbus_jetstream.close()
     worker_stop_event.set()
     if worker_task is not None:

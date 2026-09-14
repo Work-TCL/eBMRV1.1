@@ -52,6 +52,16 @@ async def index_authoritative_projection(
         )
         session.add(row)
     else:
+        # EVT-FR-014/027 (WP-11 Stage 3): a live at-least-once consumer has no total-order guarantee
+        # across redeliveries -- an older event for this same entity can arrive after a newer one already
+        # landed here. Applying it would regress the index to stale data, exactly what these requirements
+        # forbid ("reject stale projections" / "ignores duplicate/stale event safely"). The full-rebuild
+        # caller (`rebuild_search_index`) is unaffected: it always computes `source_version` as the true
+        # per-aggregate max from the audit ledger, so it never passes a version <= what's already stored
+        # for a value that genuinely changed; a repeat rebuild with nothing new to apply now correctly
+        # no-ops instead of bumping `version`/re-emitting a signal for identical data.
+        if source_version <= row.source_version:
+            return row
         row.source_version = source_version
         row.indexed_fields = indexed
         row.state = "LIVE"

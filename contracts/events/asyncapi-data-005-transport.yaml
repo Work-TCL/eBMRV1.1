@@ -10,10 +10,13 @@ info:
     file is the transport layer around it, not a second envelope definition.
 
 
-    STAGE 1 OF SG-183: this contracts the real JetStream **producer** side only (stream, subject
-    convention, dedup). Durable consumer wiring for projections/integrations (the other half of
-    EVT-FR-003's "at-least-once, consumer-side idempotent apply") is a later WP-11 stage, not built yet
-    — do not read this file as claiming a consumer exists.
+    STAGE 1 OF SG-183 contracted the real JetStream **producer** side only (stream, subject convention,
+    dedup). STAGE 3 adds the first real **consumer**: a durable pull consumer (EVT-FR-009) applying
+    `material_lot` events into the `readmodels` search projection
+    (`app/modules/readmodels/projector.py`) through `consume_event_idempotently()`
+    (`consumer.py`) and `handle_poison_event()` (`dead_letter.py`) — at-least-once delivery,
+    idempotent apply, bounded redelivery, dead-letter after exhaustion. Integration consumers
+    (ERP/LIMS/Edge) remain open, a future stage — do not read this file as claiming those exist.
 defaultContentType: application/json
 
 servers:
@@ -58,6 +61,32 @@ operations:
     messages:
       - $ref: '#/components/messages/gxpEvent'
 
+  consumeMaterialLotEvents:
+    action: receive
+    channel:
+      $ref: '#/channels/gxpEvents'
+    summary: >
+      `readmodels-material-lot-projector` — a durable JetStream pull consumer (EVT-FR-009,
+      `app/modules/eventbus/jetstream.py::pull_subscribe`, `max_deliver=6`, `ack_wait=30s`) filtered to
+      `gxp.v1.material_lot.>`, applying each event into the Postgres-backed search index
+      (`readmodels.projection_document_metadata`, index_type=`material_lot`) through
+      `consume_event_idempotently()` (EVT-FR-005/006: the `eventbus.consumer_inbox` row and the
+      projection write commit in one transaction, so a redelivery of an already-processed `event_id`
+      short-circuits without reapplying it).
+    description: >
+      Failure handling (EVT-FR-010/026): a handler failure below `max_deliver` naks the message for
+      broker redelivery; at `max_deliver` it is dead-lettered (`handle_poison_event()` writes
+      `eventbus.consumer_inbox.result=DEAD_LETTERED` and emits `EventDeadLettered`) and `term()`-ed so
+      the broker stops redelivering it — the original event is never deleted from the stream (limits
+      retention, not work-queue). Ordering (EVT-FR-014/027):
+      `index_authoritative_projection()` ignores an incoming `aggregate_version` that is not strictly
+      greater than what is already indexed for that entity, so an out-of-order redelivery cannot regress
+      the index to stale data. Field selection reuses `readmodels/router.py`'s already-committed
+      `material_lot: {"state"}` allowlist verbatim (READ-FR-009) — this consumer does not make a new
+      field-exposure decision.
+    messages:
+      - $ref: '#/components/messages/gxpEvent'
+
 components:
   messages:
     gxpEvent:
@@ -74,4 +103,6 @@ components:
             description: Set to event_id — JetStream's dedup key for this message.
       payload:
         $ref: '../../contracts/events/event-data-005.json#/$defs/EventEnvelope'
-      x-requirement-ids: [EVT-FR-001, EVT-FR-002, EVT-FR-003, EVT-FR-004, EVT-FR-007]
+      x-requirement-ids:
+        [EVT-FR-001, EVT-FR-002, EVT-FR-003, EVT-FR-004, EVT-FR-005, EVT-FR-006, EVT-FR-007,
+         EVT-FR-009, EVT-FR-010, EVT-FR-014, EVT-FR-026, EVT-FR-027]
