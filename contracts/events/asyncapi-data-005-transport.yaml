@@ -11,12 +11,15 @@ info:
 
 
     STAGE 1 OF SG-183 contracted the real JetStream **producer** side only (stream, subject convention,
-    dedup). STAGE 3 adds the first real **consumer**: a durable pull consumer (EVT-FR-009) applying
-    `material_lot` events into the `readmodels` search projection
+    dedup). STAGE 3 adds the first real projection **consumer**: a durable pull consumer (EVT-FR-009)
+    applying `material_lot` events into the `readmodels` search projection
     (`app/modules/readmodels/projector.py`) through `consume_event_idempotently()`
     (`consumer.py`) and `handle_poison_event()` (`dead_letter.py`) — at-least-once delivery,
-    idempotent apply, bounded redelivery, dead-letter after exhaustion. Integration consumers
-    (ERP/LIMS/Edge) remain open, a future stage — do not read this file as claiming those exist.
+    idempotent apply, bounded redelivery, dead-letter after exhaustion. STAGE 4 adds the first real
+    **integration** consumer: `material_consumption` events drive `app/modules/erp/consumer.py`, which
+    calls the pre-existing `queue_erp_command(POST_CONSUMPTION)` pipeline automatically (ERPNext only —
+    no vendor-neutral payload mapping exists for SAP/Oracle/Dynamics). LIMS/Edge integration consumers
+    remain open, a future stage — do not read this file as claiming those exist.
 defaultContentType: application/json
 
 servers:
@@ -84,6 +87,30 @@ operations:
       the index to stale data. Field selection reuses `readmodels/router.py`'s already-committed
       `material_lot: {"state"}` allowlist verbatim (READ-FR-009) — this consumer does not make a new
       field-exposure decision.
+    messages:
+      - $ref: '#/components/messages/gxpEvent'
+
+  consumeMaterialConsumedEvents:
+    action: receive
+    channel:
+      $ref: '#/channels/gxpEvents'
+    summary: >
+      `erp-material-consumption-poster` — a durable JetStream pull consumer (EVT-FR-009) filtered to
+      `gxp.v1.material_consumption.MaterialConsumed`, resolving the event's site's ACTIVE ERPNext
+      `ErpInstance` and the consumed material's ACTIVE `ErpExternalMapping`, then calling the pre-existing
+      `queue_erp_command(POST_CONSUMPTION)` (`app/modules/erp/commands.py`) through
+      `consume_event_idempotently()` — the `eventbus.consumer_inbox` row and the queued
+      `erp.integration_commands` row commit in one transaction.
+    description: >
+      Scope (CON-FR-025, SG-098): ERPNext only — every adapter forwards its payload to the vendor
+      verbatim with no transformation layer, so a single generic payload cannot be correct for more than
+      one vendor; SAP/Oracle/Dynamics need their own verified mapping, not attempted here. A site with no
+      eligible ACTIVE ERPNext instance (`ErpInstance.service_actor_user_id` unset counts as ineligible —
+      migration 0103) is skipped, not an error — ERP integration is optional per AG-13. An unmapped
+      material is a handler failure (EVT-FR-026): naks below `max_deliver`, dead-letters at the limit
+      (`handle_poison_event()`), same mechanism `consumeMaterialLotEvents` uses. First deployment replays
+      the full retained `MaterialConsumed` backlog (`deliver_policy=ALL`, EVT-FR-009) — confirmed,
+      deliberate, not an oversight; see `erp/consumer.py`'s own docstring.
     messages:
       - $ref: '#/components/messages/gxpEvent'
 
