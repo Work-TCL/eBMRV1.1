@@ -202,7 +202,7 @@ jobs:
         run: uv run --with pip-audit pip-audit --strict || true   # report-only until a triage owner is assigned
 
       - name: gitleaks (secret scan)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
