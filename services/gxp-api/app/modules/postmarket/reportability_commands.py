@@ -291,8 +291,7 @@ async def decide_reportability(
     if not cmd.rationale:
         raise ValidationFailedError("rationale is required for a reportability decision (REG-FR-004)")
 
-    # REG-FR-004: no Document 106 row exists for this action (see module docstring, SG-157) -- correctly
-    # fails closed with SIGNATURE_POLICY_UNRESOLVED until one is supplied.
+    # REG-FR-004 (SG-157 RESOLVED_APPROVED 2026-09-14): "Postmarket Regulatory Affairs" signs.
     signature_id = await _resolve_signature(
         session, record_type="reportability_track", action="decide", actor_user_id=actor_user_id,
         record_version=track.version, record_hash=_track_hash(track), challenge_id=cmd.challenge_id,
@@ -411,8 +410,8 @@ async def approve_regulatory_report(
     if report.state != "DRAFT":
         raise InvalidTransitionError(f"Cannot approve a report in state {report.state}", current_state=report.state)
 
-    # Document 106 row 124 names "Module approver role (QA Manager / Head of Quality per record class)"
-    # with no dispatch table for "per record class" -- correctly fails closed (SG-157).
+    # SG-157 RESOLVED_APPROVED 2026-09-14: "QA Releaser" signs (closest existing real role to Document
+    # 106 row 124's "QA Manager / Head of Quality per record class" text).
     signature_id = await _resolve_signature(
         session, record_type="regulatory_report", action="approve", actor_user_id=actor_user_id,
         record_version=report.report_version, record_hash=sha256_hex(report.content), challenge_id=cmd.challenge_id,

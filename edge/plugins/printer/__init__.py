@@ -1,0 +1,1 @@
+"""Document 46 (SPEC-EDGE-004) controlled label printer peripheral plugin -- PER-FR-011/012/013/025."""

@@ -51,7 +51,6 @@ export default function LoginPage() {
 
         <Card pad>
           <h1 className="fs-6 font-bold mb-1">Sign in</h1>
-          <p className="fs-3 text-muted mb-4">Unique identity required by Part 11 — no shared logins.</p>
 
           <form onSubmit={onSubmit}>
             <Field label="Username" required>
@@ -78,10 +77,6 @@ export default function LoginPage() {
             Multi-factor verification and session policy are configured per organization.
           </p>
         </Card>
-
-        <p className="fs-2 text-muted mt-4">
-          Demo users: operator1, qa.reviewer, qa.releaser — password ChangeMe123!
-        </p>
       </div>
     </div>
   );

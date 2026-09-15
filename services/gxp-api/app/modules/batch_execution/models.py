@@ -12,9 +12,17 @@ Document 110 policy -- see that migration's docstring. A narrow, step-scoped sli
 also now built (`StepHold` below, migration <pending>_0093) -- BAT-FR-020's "signature" field resolved by
 reusing Document 106 row 14's own signature shape (nearest analogous action), not a new invented policy;
 the entity's full generality (arbitrary scope, quality-event linkage the real gxp_batch_hold prose also
-names) stays open. `gxp_step_evidence_link` remains open in full. The other absent infrastructure SG-048
-lists (Temporal, Material Service consumption/reservation, Equipment master eligibility wiring,
-qualification schema, exception/rework/branch entities) is still not built.
+names) stays open. `gxp_step_evidence_link` (`StepEvidenceLink` below) was since built in full (migration
+2e0dcac852aa_0098) -- this paragraph's "remains open in full" was stale, corrected here rather than left
+uncorrected (same class of drift SG-048/SG-098's own text had before an earlier session caught it). The
+other absent infrastructure SG-048 lists (Temporal, Material Service consumption/reservation, Equipment
+master eligibility wiring, qualification schema, exception/rework/branch entities) is still not built.
+
+SG-048 #015/#023 (2026-09-14): `complete_step` (commands.py) now also gates on every declared
+`gxp_recipe_evidence_requirement.required_count` being met by linked `StepEvidenceLink` rows, closing
+BAT-FR-015's evidence half (the parameter half was already gated). `supersedes_result_id` below plus the
+new `StepResultCorrection` entity close BAT-FR-023's correction-chain gap this file's SG-047 paragraph and
+migration db47f27cf18b_0092's docstring both flagged as not built.
 
 Lifecycle: BAT-FR-004 names a fuller state list (Planned, Created/Snapshot Locked, Issued, Ready, In
 Execution, On Hold, Exception Pending, Production Complete, QA Review, Released/Rejected, Closed) than
@@ -115,6 +123,13 @@ class BatchStep(Base):
     # reason. Nullable — a step the recipe left unrestricted carries NULL and is startable by any
     # batch_execution.execute holder, as before.
     required_role_code: Mapped[str | None] = mapped_column(String(80))
+    # BAT-FR-014, SG-048 #014 partial resolution (2026-09-14, migration 0f714e883102_0105): frozen at
+    # issue from RecipeStep.required_qualification_code, same "frozen at issue" precedent as
+    # required_role_code above. Enforced in commands.py::_enforce_step_qualification against
+    # iam.qualifications (not qms.QualificationRecord -- SG-086 documents this codebase has two competing
+    # qualification stores; this reuses material/commands.py's already-production _check_dispensing_
+    # qualification precedent instead of picking the other store).
+    required_qualification_code: Mapped[str | None] = mapped_column(String(100))
     scope_type: Mapped[str] = mapped_column(String(40), nullable=False, default="batch")
     scope_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="pending")
@@ -133,9 +148,14 @@ class BatchStep(Base):
 
 class StepResult(Base):
     """BAT-FR-009/010 (SG-047 partial resolution). Append-only -- no UPDATE grant (migration
-    db47f27cf18b_0092); a correction chain (BAT-FR-023, supersedes_result_id) is not built this pass.
-    `data_type` is copied from the `gxp_recipe_parameter` row the value is captured against, so a result
-    row is self-describing without rejoining to a recipe version that may since have been superseded.
+    db47f27cf18b_0092); `data_type` is copied from the `gxp_recipe_parameter` row the value is captured
+    against, so a result row is self-describing without rejoining to a recipe version that may since have
+    been superseded.
+
+    `supersedes_result_id` (BAT-FR-023, SG-048 #023 partial resolution, migration <pending>_0104): set
+    only on the new row a correction produces (`commands.approve_step_result_correction`); NULL on every
+    ordinarily-recorded result. The original row is never edited or deleted -- same append-only-supersede
+    shape as `genealogy.correct_edge()` and `qc.QcResultCorrection`/`QcResult.supersedes_result_id`.
     """
 
     __tablename__ = "gxp_step_result"
@@ -153,13 +173,62 @@ class StepResult(Base):
     value_text: Mapped[str | None] = mapped_column(String(2000))
     value_bool: Mapped[bool | None] = mapped_column()
     uom: Mapped[str | None] = mapped_column(String(40))
-    # BAT-FR-010: fixed 'manual' this pass -- device/edge sourcing (BAT-FR-011) is SG-048 #011, not built.
+    # BAT-FR-011, SG-048 #011 partial resolution (2026-09-14): a human transcribing a device/instrument
+    # reading may tag it 'device_transcribed' -- still a human-entered value (no registered-device
+    # source-identity/sequence/mapping-version verification exists, so true automated ingestion stays
+    # SG-048 #011 open), but the source is now honestly distinguishable from an operator's own observation.
     source_type: Mapped[str] = mapped_column(String(40), nullable=False, default="manual")
     source_timestamp: Mapped[datetime | None] = mapped_column()
+    # BAT-FR-009, SG-048 #009 partial resolution (2026-09-14): "quality status" half of "Capture typed
+    # value, UOM, source, source timestamp, receive time, actor/device, quality status and applicable
+    # rule result" -- computed from the recipe parameter's own already-DDL-ready min_value/max_value,
+    # informational only (never blocks the command; BAT-FR-021 exception generation, the mechanism that
+    # would act on an out-of-range result, is not built -- SG-048 #021). "Applicable rule result" (a real
+    # rules-engine evaluation against RecipeParameter.rule_id/rule_version) is a materially deeper capability
+    # than a computed column and stays open, not attempted this pass.
+    quality_status: Mapped[str | None] = mapped_column(String(40))
     received_at: Mapped[datetime] = mapped_column(server_default=func.now())
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
     signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("signature.signatures.id"))
+    supersedes_result_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ebmr.gxp_step_result.id")
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class StepResultCorrection(Base):
+    """BAT-FR-023, SG-048 #023 partial resolution. The pending state between the 2-signature
+    `POST /batches/{id}/steps/{stepId}/correct` ceremony's two steps (Document 106 row 20: "Authorized
+    corrector + independent approver", 2 signatures, corrector and approver MUST differ, mandatory
+    reason-for-change). Not one of Document 11's own catalogued entities -- same class of additive
+    staging table as `qc.QcResultCorrection` (Document 106 row 57's identical 2-signature shape), whose
+    request/approve command pair this module's `request_step_result_correction`/
+    `approve_step_result_correction` deliberately mirror rather than inventing a new correction-ceremony
+    shape.
+    """
+
+    __tablename__ = "gxp_step_result_correction"
+    __table_args__ = (
+        Index("ix_gxp_step_result_correction_original_result_id", "original_result_id"),
+        {"schema": "ebmr"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    original_result_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ebmr.gxp_step_result.id"), nullable=False
+    )
+    reason_text: Mapped[str] = mapped_column(String(2000), nullable=False)
+    corrected_value_numeric: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
+    corrected_value_text: Mapped[str | None] = mapped_column(String(2000))
+    corrected_value_bool: Mapped[bool | None] = mapped_column()
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="requested")
+    requested_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
+    requested_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("signature.signatures.id"))
+    approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
+    approved_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("signature.signatures.id"))
+    resulting_result_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_step_result.id"))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column()
 
 
 class StepHold(Base):
@@ -212,4 +281,48 @@ class StepEvidenceLink(Base):
     media_type: Mapped[str | None] = mapped_column(String(120))
     requirement_code: Mapped[str | None] = mapped_column(String(80))
     linked_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class StepComment(Base):
+    """BAT-FR-034, SG-048 #034 partial resolution (2026-09-14, migration <pending>_0107). "Structured
+    comments/notes may be added with author/time" -- built. "Corrections to comments preserve history if
+    regulated" -- not built this pass; comments are append-only (no UPDATE grant, AG-08) but there is no
+    correction chain for a comment itself, the same narrower-than-full-generality scoping SG-047's
+    StepEvidenceLink already accepted (no correction chain there either)."""
+
+    __tablename__ = "gxp_step_comment"
+    __table_args__ = (
+        Index("ix_gxp_step_comment_step_id", "step_id"),
+        {"schema": "ebmr"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    step_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch_step.id"), nullable=False)
+    comment_text: Mapped[str] = mapped_column(String(2000), nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class StepHandover(Base):
+    """BAT-FR-025, SG-048 #025 partial resolution (2026-09-14, migration <pending>_0108,
+    project-owner-directed: build unsigned/RBAC-gated only, same interim-scope precedent StepEvidenceLink
+    already established -- Document 106 has no policy row for this action, and a real signature-policy
+    decision for it is a human call this pass does not make). Records who an in-progress step's working
+    assignment transferred from/to and when, without rewriting `gxp_batch_step.started_at` or the original
+    StepStarted audit event -- "without changing prior attribution" is satisfied by history (this row +
+    its own audit event), not by leaving `assigned_subject_id` stale."""
+
+    __tablename__ = "gxp_step_handover"
+    __table_args__ = (
+        Index("ix_gxp_step_handover_step_id", "step_id"),
+        {"schema": "ebmr"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    step_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch_step.id"), nullable=False)
+    from_subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
+    to_subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(2000))
+    handed_over_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

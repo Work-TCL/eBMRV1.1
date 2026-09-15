@@ -2755,11 +2755,139 @@ resolution_document: "2026-09-09, project-owner-directed, PARTIAL: two of the 24
   path toward #030 (integration outage rules) and found to need a whole new outbound adapter layer first
   (no HTTP provider exists in either module) -- #030 remains open, not attempted.
 
-  Running tally: 4 of 24 resolved (#018, #020, #026, #029 -- all narrowly scoped to the one entity/
-  workflow each already has, not the requirement's full generality). #012/#013 remain explicitly deferred,
-  blocked on SG-045. The other 18 requirements (#009/010/011/014/015/016/017/021/022/023/024/025/027/
-  028/030/032/033/034) remain fully open, same reasoning as before."
-status: PARTIALLY RESOLVED (4 of 24 -- #018, #020, #026, #029; #012/#013 explicitly deferred, blocked on SG-045; 18 remain open)
+  Running tally (superseded below): 4 of 24 resolved (#018, #020, #026, #029 -- all narrowly scoped to the
+  one entity/workflow each already has, not the requirement's full generality). #012/#013 remain explicitly
+  deferred, blocked on SG-045. The other 18 requirements (#009/010/011/014/015/016/017/021/022/023/024/025/
+  027/028/030/032/033/034) remain fully open, same reasoning as before.
+
+  2026-09-14 (verification pass before further build, project-owner-directed: re-checked all 18 still-open
+  items against the real current code, since this entry's own text had already been shown stale once for
+  #018/#026/#029 above): #016 (step signature) was in fact already substantially built (Document 106 rows
+  19/21 ceremony bound to (id, version) hash, `commands.py::record_step_results`/`complete_step`/
+  `hold_step`/`resume_step`) -- this entry's "remains fully open" listing above was itself stale for #016
+  and is corrected here. #028 (Temporal orchestration) plumbing is real end-to-end (client/worker/workflow/
+  activity/retry, restart-proven) but still serves only the one narrow stuck-step use case -- general
+  adoption stays open, not re-counted as resolved. Of the remaining 16, seven were found buildable now with
+  no new cross-module dependency and no guessed regulated-behaviour shape: #009 (add quality_status/
+  rule_result to StepResult), #011 (device-source tagging, bounded by machine_integration's own deliberate
+  no-auto-write boundary), #014 (qualification gate reusing the already-built `qms.training_service.
+  has_active_qualification()` + `RecipeStep.qualification_policy_id`, mirroring the proven SG-178
+  enforcement shape), #015 (evidence-count completion gate), #023 (step-result correction chain), #025
+  (shift handover, blocked behind a new Document 106 signature-policy decision so lower priority), #034
+  (structured execution comments). The other nine (#010, #017, #021, #022, #024, #027, #030, #032, #033)
+  remain genuinely blocked on a real missing dependency (no rule-execution engine anywhere in this
+  codebase for #021/#022; no released rework-route entity for #024; no second-verifier schema for #017; no
+  QA-review production-input lock wiring for #027; no synchronous ERP/LIMS/Edge call site in
+  batch_execution at all for #030 to ever hit; no step-level scope declaration or fan-out logic for #032;
+  no lateness concept anywhere for #033; #010's manual_fallback_policy is captured but unenforced, same
+  "declared not gated" class as several sibling columns elsewhere in this codebase).
+
+  Of the seven buildable items, #015 and #023 (the two most self-contained -- ranked highest for zero
+  schema-shape ambiguity and an exact reusable precedent) were built this pass:
+
+  - **#015 (BAT-FR-015 evidence half)**: `commands.py::complete_step` now also gates on every declared
+    `gxp_recipe_evidence_requirement.required_count` being met by linked `gxp_step_evidence_link` rows
+    (`requirement_code` matched against the recipe's own `evidence_type`, the same naming symmetry
+    `parameter_code` already uses for the sibling parameter-completeness check). No schema change. No named
+    error code exists in Document 11 Section 7's own vocabulary for this failure mode (only
+    `PARAMETER_REQUIRED` is named) -- reuses the generic `ValidationFailedError`, the same class
+    `link_step_evidence` already uses for its own "at least one link required" check, rather than inventing
+    a new named code. Verified: `tests/test_batch_execution.py::
+    test_complete_step_blocked_without_required_evidence_then_succeeds_after_linking`, 1/1 passed.
+  - **#023 (BAT-FR-023 correction chain)**: new `StepResultCorrection` staging entity plus
+    `StepResult.supersedes_result_id` (migration 12233c9ad8df_0104 -- the exact column
+    db47f27cf18b_0092's own docstring named and deferred). `POST /batches/{id}/steps/{stepId}/correct`
+    (request) + `POST /batches/{id}/steps/{stepId}/corrections/{correctionId}/approve` (approve)
+    deliberately mirror `qc.commands.request_result_correction`/`approve_result_correction` (Document 106
+    row 57's identical 2-signature shape) rather than inventing a new correction-ceremony pattern: 2
+    signatures per Document 106 row 20 ("Authorized corrector + independent approver"), SoD enforced in
+    code (`actor_user_id == correction.requested_by_user_id` -> `INVALID_TRANSITION`), mandatory
+    `reason_text`, original result never edited (AG-08) -- approval appends a new `gxp_step_result` row
+    with `result_version + 1`. Scoped to the literal requirement text ("Completed step data correction"):
+    only a step already in state `complete` can have a result corrected. New permission `batch_step.correct`
+    granted to Admin + Supervisor (Document 106 names no fixed role, same "no fixed role" precedent as the
+    sibling batch_step signature rows; Supervisor chosen over Operator as the RBAC-scoping decision, matching
+    QC's own precedent of restricting `qc_result.correct` to QC Reviewer + Admin, not its base Operator-class
+    role). Verified: `tests/test_batch_execution.py::test_step_result_correction_two_signature_flow` (happy
+    path + same-actor SoD rejection) and `::test_request_step_result_correction_rejected_before_step_is_complete`,
+    2/2 passed, plus the full pre-existing `test_batch_execution.py` suite as an in-module regression check
+    (33/33) and `test_recipe_master.py`/`test_qc.py` as an untouched-module control (26/26).
+
+  Known limitation from this note, now closed (2026-09-14, same-day follow-up): `contracts/events/
+  event-ebmr-002.json` now commits all 17 events `batch_execution/commands.py` emits (the 6 batch-level
+  transitions, 8 pre-existing step-level events, and `StepResultCorrected`/`StepCommentAdded`/
+  `StepHandedOver` added this session) -- `tooling/events/validate.py` confirms zero new findings (the 2
+  pre-existing SG-174 collisions are the only ones left, unchanged).
+
+  2026-09-14, same-day follow-up (user-directed: "fix the known limitations and unresolved gaps as well").
+  Live demo DB caught up from migration `34927659a971` through `12233c9ad8df` (9 pending migrations,
+  pg_dump backup taken first) and further to `164abb1a20dc` as this follow-up's own migrations landed;
+  `alembic check` clean at every step; `pm2 restart ebmr-new-api` confirmed healthy (200 on `/docs`) each
+  time. `scripts.sync_permissions`/`scripts.sync_signature_policies` (idempotent, re-runnable variants of
+  `scripts/seed.py` for an already-seeded deployment) applied the new `batch_step.correct` permission and
+  `batch_step_result`/`correct` policy row to the live DB. TC-011-023-03 ("signature bound to a superseded
+  version") is marked N/A, not left NOT_STARTED: `gxp_step_result` is append-only, so the record a
+  correction's challenge is bound to can never change after the challenge is created -- the scenario
+  cannot occur by construction, the same property QC's identical Document 106 row 57 flow has and never
+  tested either. (This follow-up also found and fixed a real mismatch bug from this session's earlier
+  pass: TC-011-023-02's and TC-011-023-03's `TEST_CASE_LIBRARY.csv` rows had been swapped by an
+  off-by-one anchor in a text-based edit -- row 02 was still showing stale `BLOCKED` text and row 03 had
+  row 02's `MISSING_SIGNATURE` result; the markdown test-case book was unaffected. Lesson for next time:
+  prefer line-indexed CSV edits over text-anchored ones when adjacent rows share boilerplate tails.)
+
+  Of the five items confirmed buildable-now, all five were built this follow-up:
+
+  - **#009 (BAT-FR-009 quality-status half)**: `StepResult.quality_status` (migration
+    fbed8e7ccb3e_0106), computed from `gxp_recipe_parameter.min_value/max_value`, informational only
+    (never blocks the command -- BAT-FR-021 exception generation, the mechanism that would act on an
+    out-of-range result, is not built). "Applicable rule result" (a real rules-engine evaluation) stays
+    open, a materially deeper capability than a computed column.
+  - **#011 (BAT-FR-011 narrow slice)**: `source_type` additionally accepts `device_transcribed` (no
+    schema change -- already a String column) for a human explicitly tagging a value read off a
+    device/instrument, distinct from their own direct observation. Still human-entered; true automated
+    device/edge ingestion stays blocked on `machine_integration`'s own deliberate no-auto-write boundary
+    (MAP-FR-016), untouched this pass.
+  - **#014 (BAT-FR-014 qualification gate)**: user-directed design fork resolved before building --
+    `RecipeStep.required_qualification_code` (migration 0f714e883102_0105) is a *new* column mirroring
+    `required_role_code`'s exact shape/precedent (SG-178), not an attempt to resolve the pre-existing
+    `qualification_policy_id` (which has no backing entity anywhere in this codebase and stays exactly as
+    unresolved as before). Enforced at both start and complete against `iam.qualifications` via
+    `material/commands.py::_check_dispensing_qualification`'s already-production pattern and its two named
+    error codes (`QUALIFICATION_MISSING`/`QUALIFICATION_EXPIRED`), not `qms.QualificationRecord` +
+    `training_service.has_active_qualification()` -- SG-086's dual-qualification-store question stays
+    open, this is an ordinary engineering pick between two existing precedents, not a new invention.
+  - **#025 (BAT-FR-025 shift handover)**: user-directed scope fork resolved before building -- built
+    unsigned/RBAC-gated interim only (new `gxp_step_handover` table, migration 164abb1a20dc_0108), same
+    precedent `StepEvidenceLink` already established, rather than guessing a signature-policy shape
+    Document 106 doesn't name. TC-011-025-02/03 (which assume a required signature) do not apply to this
+    interim scope and are not exercised; a real Document 106 addendum is still needed to close them.
+  - **#034 (BAT-FR-034 execution comments)**: new append-only `gxp_step_comment` table (migration
+    c5ab6dc91f35_0107), same shape as `gxp_step_result`/`gxp_step_evidence_link`. Comment corrections
+    ("preserve history if regulated") are not built -- no correction chain for a comment itself, the same
+    narrower-than-full-generality scope `StepEvidenceLink` already accepted.
+
+  New OpenAPI contract entries added for all new/changed operations (`postAddStepComment`,
+  `postHandoverStep`, `postStepResultSignatureChallenge`'s neighbors already covered; `postStartStep`/
+  `postCompleteStepV1` descriptions updated for the new qualification/evidence error paths; a stale
+  "no step-completion endpoint" sentence on `postStartStep`, itself already wrong before this session
+  touched it, corrected in passing). `tooling/contracts/validate.py` confirms the baseline 17 pre-existing
+  `CTRC-FR-001` findings, unchanged -- every new operation is contracted.
+
+  No new permission or signature-policy row was needed for #009/#011/#014/#025/#034 -- all five are
+  RBAC-gated by the pre-existing `batch_execution.execute` permission (`batch_step.correct`, added earlier
+  this session for the #023 correction flow, is unrelated to these five).
+
+  Verified: `tests/test_batch_execution.py` full suite 42/42 (8 new tests this follow-up: qualification
+  gate x2, quality_status/device_transcribed x2, comments x2, handover x2), plus `test_recipe_master.py`
+  and `test_material_flow.py` as untouched-module controls, all green. `alembic check` clean on both test
+  and live DBs after all four new migrations (0105-0108).
+
+  Running tally: 12 of 24 resolved (#009, #011, #014, #015, #016, #018, #020, #023, #025, #026, #029,
+  #034). #012/#013 remain explicitly deferred, blocked on SG-045. The other ten (#010, #017, #021, #022,
+  #024, #027, #028, #030, #032, #033) remain genuinely blocked on a real missing dependency or narrow to
+  the one plumbing use-case already built (#028), detailed above -- none of them can be built without
+  inventing a schema/engine shape this pass has no authority to decide."
+status: PARTIALLY RESOLVED (12 of 24 -- #009, #011, #014, #015, #016 [corrected], #018, #020, #023, #025, #026, #029, #034; #012/#013 explicitly deferred, blocked on SG-045; 10 remain genuinely blocked on a real missing dependency)
 ```
 
 ### SG-049 — `device_component_usage`/`device_test_result`/`device_defect`/`device_evidence_inheritance` (Document 12) are prose-only field-name lists, not DDL-ready
@@ -8545,8 +8673,29 @@ options:
   - (C) Build all seven as declared (rejected — the signature endpoints cannot be built safely).
 blocking: false  # the platform works; the catalogue and 113 §6 are wrong about it
 owner: Platform Architect + Contract Owner
-resolution_document: "Document 113 §6 amendment + 06_API_CATALOGUE.yaml correction"
-status: OPEN
+resolution_document: "docs/generated/06_API_CATALOGUE.yaml header note + this entry's own resolution narrative"
+status: RESOLVED_APPROVED_2026-09-14
+
+RESOLVED (2026-09-14, project-owner-directed, option A). Half of this was already done and undated in
+this entry: `06_API_CATALOGUE.yaml`'s own header note (dated 2026-08-27) already marks all seven
+operations `implementation_status: NOT_IMPLEMENTED` with the identical "raised as SG-139" explanation
+this gap describes -- that half of option (A) was complete, just never reflected in this entry's own
+`status:` field. The remaining half -- "amend Document 113 §6" -- cannot literally happen: Documents
+106-115 have no active amendment mechanism in this repository (`specs/Documents_106_115/` is the frozen
+baseline; `gap-resolution/addenda/` is a byte-identical, unmaintained mirror, confirmed by diff), and no
+prior resolution in this entire file has ever edited either copy -- every one of them (SG-035's
+signature_order, SG-178's required_role_code, etc.) recorded its resolution in code/docstrings and this
+SPEC_GAPS.md file instead. This entry itself is therefore the authoritative record of the exposure-
+boundary decision Document 113 §6 would otherwise state: **SPEC-GXP-001 (Mutation Gateway) and
+SPEC-GXP-002 (Signature Service) are realised as in-process kernels called from inside every owning
+module's own command handler and its own per-module `POST .../signature-challenges` endpoint,
+respectively -- neither has an independent API surface of its own, and none should ever be built (a
+generic `POST /gxp/v1/commands/{commandType}` or `POST /signature/v1/challenges` accepting a
+client-asserted signature target would violate AG-07).** `tooling/contracts/validate.py` reads `contracts/openapi/*.yaml` directly, not
+`06_API_CATALOGUE.yaml` -- and `spec-gxp-001.yaml`/`spec-gxp-002.yaml` are already components-only
+(no `paths:` entries for any of the seven), so none of the seven were ever counted as "committed
+operations" needing a corresponding implementation in the first place. Verified by re-running the tool:
+17-finding CTRC-FR-001 baseline unchanged.
 ```
 
 ### SG-140 — Three source documents give three different canonical error envelopes
@@ -8615,8 +8764,29 @@ options:
     registry has no single shape to check against).
 blocking: false
 owner: Contract Owner (API) + Platform Architect
-resolution_document: "Document 101 §5 / Document 113 §2 reconciliation"
-status: OPEN
+resolution_document: "app/main.py (correlation_id_middleware, all 3 exception handlers), contracts/openapi/spec-gxp-001.yaml#/components/schemas/ErrorResponse"
+status: RESOLVED_APPROVED_2026-09-14
+
+RESOLVED (2026-09-14, project-owner-directed, option A). Built flat {code, message, details} shape
+ratified as canonical -- unchanged, additive-only. New `correlation_id_middleware` (app/main.py) assigns
+a request-scoped id before any route or command runs (`request.state.correlation_id`), echoed on the
+`X-Correlation-Id` response header. All three exception handlers (`gxp_error_handler`,
+`request_validation_error_handler`, `unhandled_exception_handler`) now include it as a new top-level
+`correlation_id` field -- including the two paths (validation failure, most GxPError rejections) that
+previously had no correlation_id available at all, since a rejected command usually fails before it ever
+reaches the point in its own transaction where it would mint an audit/outbox correlation_id.
+`unhandled_exception_handler` now uses the same request-scoped id instead of minting its own, for a
+single canonical id per request across every error path; `details.correlation_id` is kept there too for
+backward compatibility with anything already reading it from that nested location.
+`retryable` deliberately stays out, per the recommended option -- the `code` itself already carries
+retryability information. `contracts/openapi/spec-gxp-001.yaml#/components/schemas/ErrorResponse` updated
+to require the new field and documents the resolution; Document 101 §5/Document 113 §2's own reconciliation
+text is not separately amended (same "no active amendment mechanism for Documents 101/106-115 prose" finding
+SG-139 records -- this entry is the authoritative resolution record). Verified: `tests/test_batch_execution.py`
+(42/42), `tests/test_appsec_secure_runtime.py` (unaffected -- exercises a distinct pure function,
+`appsec.map_safe_error_response()`, not these handlers), `tests/test_release.py`/`test_qa_review.py`/
+`test_security_threat_model.py`/`test_qc.py` (40/40) as regression controls, no test asserted an exact
+error-response key set that this additive field would break.
 ```
 
 ### SG-141 — The signature meaning `Disposition` is in production use but is not in Document 04's controlled catalogue
@@ -8752,9 +8922,36 @@ options:
     AUD-FR-005 unverifiable).
 blocking: false
 owner: Audit module owner + Platform Architect
-resolution_document: "Document 05 AUD-FR-005 action registry"
-status: OPEN
+resolution_document: "services/gxp-api/app/mutation/audit_actions.py, app/mutation/gateway.py::write_audit_event()"
+status: PARTIALLY_RESOLVED_2026-09-14
 ```
+
+PARTIALLY RESOLVED, phase 1 of option A (2026-09-14, project-owner-directed: "build the registry +
+warn-only logging now"). New `app/mutation/audit_actions.py::KNOWN_AUDIT_ACTIONS` is the registry;
+`write_audit_event()` (`app/mutation/gateway.py`) now logs a warning for any action not in it but still
+commits the write either way -- no rejection, no runtime-rollback risk, matching the recommended
+expand/migrate/contract shape exactly. Phase 2 (closing the enum to actually reject an unregistered
+value, once a release or more has passed with none observed) is a separate, later decision, not
+attempted this pass.
+
+This entry's own 20-value snapshot was re-verified rather than trusted, and found already stale by 8
+values: static re-extraction over `app/` (matching literal `action="..."` arguments actually passed to
+`write_audit_event()`, not the broader superset of unrelated `action=` kwargs used elsewhere for RBAC/
+signature-policy lookups) found 26 real, currently-used values, adding `AdvisoryUnavailable`, `Allowed`,
+`ContextBuilt`, `Denied`, `GovernancePackageGenerated`, `Performed`, `Retired` (all pre-existing,
+`app/modules/ai_governance/commands.py`/`app/modules/validation/`) and **`Signed`** -- the one value
+AUD-FR-005's own text names explicitly but which no code path had actually written before this same
+day's own SG-048/SG-160 chain-signature work started using it for a chain ceremony's intermediate
+positions. `contracts/openapi/spec-gxp-003.yaml#/components/schemas/AuditAction` updated to the full
+26-value list and the phase-1/phase-2 framing; the field stays a non-enum string (phase 2, not this pass).
+
+Verified: `tests/test_audit_action_registry.py` (2 new tests: a known action produces no warning and
+commits normally; an unregistered action logs the expected warning and still commits, proving fail-open
+by design), plus a broad regression sweep across `test_batch_execution.py`, `test_postmarket_flow.py`,
+`test_qc.py`, `test_release.py`, `test_qa_review.py`, `test_material_flow.py`, `test_ai_governance.py`,
+`test_validation_wp12_part1.py` (125/125) confirming the new registry check does not reject or alter any
+existing audit write. `tooling/guardrails/validate.py`/`tooling/contracts/validate.py`/
+`tooling/events/validate.py` confirm their pre-existing baselines unchanged.
 
 ### SG-143 — The rules evaluator does not apply the unit, precision or rounding policies it stores and releases
 
@@ -9874,10 +10071,17 @@ options:
   - (B) Guess a reasonable-sounding checksum/manifest/replay shape now (rejected -- exactly the invented-
     behaviour risk AG-15 exists to prevent; no dependency has even been approved to transport such files yet
     either, see SG-153).
-blocking: true
+  - (C) PARTIALLY RESOLVED 2026-09-14 (project-owner-directed, "build the rule shape now, defer the
+    dependency"): the manifest/checksum/file-identity/acknowledgement/replay RULE SHAPE is now real, pure
+    Python with no transport dependency -- `services/gxp-api/app/modules/erp/file_manifest.py`
+    (`FileManifest`, `build_manifest`/`verify_manifest`/`is_replay`/`acknowledgement_receipt`), checksum
+    algorithm SHA-256 (this codebase's existing standard hash, not a new choice). Verified by real pytest,
+    `services/gxp-api/tests/test_erp_file_manifest.py`, 8/8 PASS. SG-153 (the transport dependency itself)
+    remains fully open and unresolved -- this module has no SFTP/SOAP client to call it from yet.
+blocking: false
 owner: Platform Architect + Document 51/109 owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "services/gxp-api/app/modules/erp/file_manifest.py (rule shape only; full resolution pending SG-153's transport dependency)"
+status: PARTIALLY_RESOLVED_2026-09-14
 ```
 
 ---
@@ -10023,10 +10227,21 @@ options:
   - (A) Leave both unresolved; Mutation Gateway fails closed until Document 106 is amended — recommended
     (chosen this pass; verified by test).
   - (B) Guess a role/meaning now (rejected — direct SIG-FR-004/CLAUDE.md §4 violation).
-blocking: true
+  - (C) RESOLVED_APPROVED 2026-09-14 (project-owner-directed): `decide` -> "Postmarket Regulatory Affairs"
+    (this module's existing "Regulatory Affairs authorized submitter" signer class, reused verbatim per
+    this codebase's own established precedent for that phrase). `approve`'s "per record class" resolved to
+    a single fixed role since no dispatch table exists to vary it: "QA Releaser" -- the closest existing
+    real role to Document 106's "Head of Quality" text (this codebase's actual highest quality-release-
+    authority role, used for batch/recipe/product release), not an invented new role. No independence
+    requirement specified for either. Real signature ceremony now required
+    (`services/gxp-api/scripts/seed.py` SIGNATURE_POLICY_FLOOR). Verified by real pytest,
+    `services/gxp-api/tests/test_reportability_flow.py`, 12/12 PASS (including a rewritten
+    `test_decide_reportability_requires_a_real_signature_then_signed_not_reportable` proving
+    `MissingSignatureError` without a real challenge).
+blocking: false
 owner: Head of Quality + Regulatory Affairs + Product Owner (Document 106 approvers of record)
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "services/gxp-api/scripts/seed.py SIGNATURE_POLICY_FLOOR (reportability_track.decide, regulatory_report.approve) + tests/conftest.py mirror"
+status: RESOLVED_APPROVED_2026-09-14
 ```
 
 ### SG-158 — No approved federal holiday calendar for WORK_DAY/WORKING_DAY regulatory deadlines
@@ -10175,11 +10390,82 @@ options:
   - (A) Leave unresolved; Mutation Gateway fails closed until Document 106 supplies a resolution AND a
     multi-signature ceremony mechanism is built — recommended (chosen this pass, verified by test).
   - (B) Approximate with one signature now (rejected — misrepresents actual control strength).
-blocking: true
-owner: Head of Quality + Regulatory Affairs + Product Owner (Document 106 approvers) + Platform Architect (multi-signature mechanism)
-resolution_document: "— (open)"
-status: OPEN
+blocking: false  # rows 129/130 resolved this pass; row 131 + the ~9 no-row actions stay blocking
+owner: Head of Quality + Regulatory Affairs + Product Owner (Document 106 approvers, row 131 + the ~9 no-row actions only)
+resolution_document: "services/gxp-api/app/modules/postmarket/obligation_commands.py (rows 129/130), scripts/seed.py SIGNATURE_POLICY_CHAIN_FLOOR"
+status: PARTIALLY_RESOLVED_2026-09-14
 ```
+
+RESOLVED for rows 129/130 (2026-09-14, project-owner-directed: "Yes, build it" after being shown the
+stale claim below). **This entry's own central claim -- "no multi-signature ceremony mechanism exists
+anywhere in this codebase" -- was already false when written.**
+`app/modules/vault/commands.py::complete_correction()` (SG-035 pair 4, RESOLVED 2026-09-11, i.e. BEFORE
+this entry's most recent edit) already implements a real, tested, resubmit-per-position chain-signature
+mechanism (`signature_service.enforce_chain_signer_policy()` + `chain_signatures_so_far()`) for the
+identical "Authorized corrector + independent approver" language, at Document 106's own row 1 (the vault
+correction ceremony) -- proven end to end by `tests/test_vault.py::
+test_correction_two_signature_chain_succeeds`. This session's own earlier work (SG-048 #023, same day)
+independently rediscovered the same need and built a second working precedent
+(`batch_step_result`/`correct`) before this gap was revisited, at which point the duplication became
+obvious enough to fix here directly rather than write a third bespoke pattern.
+
+Rows 129/130 now reuse `enforce_chain_signer_policy()`/`chain_signatures_so_far()` verbatim:
+- **Row 130** (`POST /field-actions/{id}/correction-removal-assessment`,
+  `create_correction_removal_assessment()`): unsigned by itself (state ->
+  `PENDING_ASSESSMENT_APPROVAL`) -- a signature challenge must bind to an existing `record_id`
+  (SIG-FR-005/010) and none exists before this call creates one, the same reason
+  `vault.request_correction()` is unsigned. A new `approve_correction_removal_assessment()`, resubmitted
+  once per chain position (corrector, then an independent approver; new `POST
+  /correction-removal/{id}/assessment-signatures` + `.../assessment-signature-challenges`), carries the
+  actual ceremony and opens the record (state -> `OPEN`) only once both have signed.
+- **Row 129** (`POST /correction-removal/{id}/decision`, `decide_correction_removal_reportability()`):
+  the `record_id` already exists by this point (created via row 130's flow), so this call itself carries
+  chain position 1 (a challenge can be requested against the record before calling it, unlike row 130).
+  A new `approve_correction_removal_decision()` (`POST /correction-removal/{id}/decision-signatures` +
+  `.../decision-signature-challenges`) carries position 2 and applies the decision (due_at/regime/state
+  -> `DECIDED`) only once both have signed; the first call only stages the content.
+- Deliberately **not** mirroring `record_correction`/`complete`'s own `signature_order: [None, "QA
+  Releaser"]` (which pins position 2 to a specific role): Document 60's own text for rows 129/130 names
+  no role for either position ("Authorized corrector + independent approver", nothing more specific),
+  unlike Document 106 row 1's text (also just "independent approver" verbatim) which `vault`'s own
+  implementation chose to interpret more strictly. `[None, None]` follows Document 60's literal text
+  exactly -- RBAC-gated by the pre-existing `correction_removal.create`/`correction_removal.decide`
+  permissions, independence enforced by identity ("corrector and approver MUST differ"), not role.
+- New migration `fc212b616386_0109_correction_removal_chain_signatures` adds
+  `assessment_approval_signatures`/`decision_approval_signatures` (mirroring
+  `vault.RecordCorrection.approved_by_signatures`'s shape). New `SIGNATURE_POLICY_CHAIN_FLOOR` rows:
+  `("correction_removal_assessment", "sign", "Approved", 2, [None, None], True)` and
+  `("correction_removal_regulatory_record", "sign", "Approved", 2, [None, None], True)`.
+
+**Still open** (row 131 + the ~9 no-Document-106-row actions): `apply_regulatory_deadline_override()`'s
+"Elevated authority defined by the record class" (row 131) has no dispatch table to resolve it into an
+actual role, the identical shape SG-157's row 124 and SG-161's row 133 have -- not attempted this pass,
+still fails closed with `SIGNATURE_POLICY_UNRESOLVED`. Applicant-relationship configuration, Part 4
+sharing evaluation/package creation, field-alert/BPDR creation and decision, periodic-cycle
+generation/freeze, FDA-request creation, retention calculation and legal hold still have no Document 106
+row at all. These genuinely need a human policy decision (a real Document 106 addendum naming actual
+roles/dispatch rules) that this pass does not have authority to invent.
+
+Verified: `tests/test_postmarket_flow.py::
+test_correction_removal_assessment_and_decision_two_signature_chains` (unsigned-rejected, position-1
+signs without applying, same-actor SoD rejection, position-2 signs and applies both the assessment-open
+and the reportability-decision chains end to end; due_at/regime computed only on the final signature),
+plus the full `test_postmarket_flow.py` suite (16/16) and `test_vault.py` (11/12 -- the one failure,
+`test_concurrent_release_same_business_id_raises_clean_conflict`, is a pre-existing race-condition
+flake confirmed to fail in isolation on an unrelated vault concurrency test this session never touched,
+not a regression) as regression controls. `tooling/contracts/validate.py`/`tooling/events/validate.py`
+confirm their pre-existing 17/2-finding baselines unchanged after adding the new
+`postApproveCorrectionRemovalAssessment`/`postApproveCorrectionRemovalDecision`/two challenge operations
+and the `CorrectionRemovalAssessmentRequested`/`AssessmentSigned`/`ReportabilitySigned` events.
+
+A real test-authoring bug was found and fixed along the way, worth recording for next time: this test
+needed to mutate through the HTTP `client` fixture (to exercise the real router/challenge endpoints) and
+then read back through the `db` fixture's own separate session. `app/core/db.py::SessionLocal` sets
+`expire_on_commit=False`, so `db`'s identity-map cache never learns about `client`'s commits on its own --
+the first fix attempt (`db.expire_all()` inside the shared `_get()` helper) silently broke five unrelated
+tests elsewhere in the same file with a `MissingGreenlet` error. The working fix is a *local* helper
+(`_get_fresh`, this test file only) using `session.get(model, id, populate_existing=True)`, scoped to one
+query instead of the whole session -- `_get()` itself was left untouched.
 
 ### SG-154 — `postmarket_source` field-set conflict between Document 58 and Document 112
 
@@ -10330,10 +10616,19 @@ options:
   - (A) Leave the three actions unresolved; Mutation Gateway fails closed until Document 106 is amended
     with a real resolution — recommended (chosen this pass, no behaviour change needed to adopt a fix).
   - (B) Guess a role/meaning now (rejected — direct SIG-FR-004/CLAUDE.md §4 violation).
-blocking: true
+  - (C) RESOLVED_APPROVED 2026-09-14 (project-owner-directed): "per policy lookup" resolved to RBAC-grant-
+    gated signer classes using roles this codebase had already seeded anticipating exactly this gap --
+    `open`/`assess` -> "Postmarket Safety Reviewer" (kept the pre-existing RBAC split rather than
+    overriding it once found), `escalate` -> "Postmarket Regulatory Affairs". No independence requirement
+    (a progression of one signal, not a second person reviewing another's work). Real signature ceremony
+    now required (`services/gxp-api/scripts/seed.py` SIGNATURE_POLICY_FLOOR, `signature_required=True`,
+    `required_role_id=None` since RBAC alone gates the role). Verified by real pytest,
+    `services/gxp-api/tests/test_postmarket_flow.py`, 16/16 PASS (including a rewritten
+    `test_open_signal_requires_a_real_signature` proving `MissingSignatureError` without a real challenge).
+blocking: false
 owner: Head of Quality + Regulatory Affairs + Product Owner (Document 106 approvers of record)
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "services/gxp-api/scripts/seed.py SIGNATURE_POLICY_FLOOR (safety_signal rows) + tests/conftest.py mirror"
+status: RESOLVED_APPROVED_2026-09-14
 ```
 
 ### SG-161 — Document 61 (SPEC-SEC-001) has two signature-shaped endpoints with no usable Document 106 resolution
@@ -10374,7 +10669,8 @@ affected_modules:
   - SPEC-SEC-001
 affected_functions:
   - services/gxp-api/app/modules/security/commands.py::accept_residual_security_risk
-  - services/gxp-api/app/modules/security/commands.py::open_security_exception
+  - services/gxp-api/app/modules/security/commands.py::request_security_exception (was open_security_exception)
+  - services/gxp-api/app/modules/security/commands.py::approve_security_exception (new, RESOLVED_APPROVED 2026-09-14)
 why_material: >
   Residual-risk acceptance and security-exception approval are both regulated authorization decisions
   Document 61 itself requires independent/elevated sign-off for (SEC-THR-015, SEC-THR-023); guessing a
@@ -10390,10 +10686,29 @@ options:
     (a concrete signer role/dispatch rule for "elevated authority defined by the record class", and a new
     row for risk acceptance) — recommended (chosen this pass, verified by test).
   - (B) Guess a role now (rejected — direct SIG-FR-004/CLAUDE.md §4 violation, same reasoning as SG-160).
-blocking: true
+  - (C) RESOLVED_APPROVED 2026-09-14 (project-owner-directed, two-part decision): both resolve to
+    "Security Risk Approver" -- a role this codebase had already seeded anticipating exactly this gap --
+    independent of whoever's judgment is being approved. `accept_residual_security_risk` checks
+    independence against `residual_risk["calculated_by"]` (SEC-THR-014's own risk-scoring actor, already
+    recorded there; no new column needed). `open_security_exception` hit a real modelling problem:
+    independence has no meaning in a one-step create+sign command (the signer and the record's only
+    stored actor are the same person by construction) -- resolved (project-owner selected this over
+    "ship the gate, document independence as a known limitation") by splitting it into an unsigned
+    `request_security_exception()` (records the requester as `opened_by`, state PENDING_APPROVAL, same
+    2-command shape as SG-160's correction-removal fix earlier this session) and a new, signed
+    `approve_security_exception()` checked for independence against that requester, moving the record to
+    OPEN. New endpoints: `POST /security/v1/exceptions/{id}/approve` +
+    `POST /security/v1/risks/{id}/accept-signature-challenges` +
+    `POST /security/v1/exceptions/{id}/approval-signature-challenges`. Verified by real pytest,
+    `services/gxp-api/tests/test_security_threat_model.py`, 14/14 PASS, including two new tests that prove
+    the independence violation is actually rejected (not merely stated):
+    `test_accept_residual_risk_rejects_the_calculator_as_signer` and
+    `test_approve_security_exception_rejects_the_requester_as_approver`, both asserting
+    `SodIndependenceRequiredError`.
+blocking: false
 owner: Head of Quality + Security Owner + Product Owner (Document 106 approvers of record)
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "services/gxp-api/app/modules/security/commands.py (request/approve split) + scripts/seed.py SIGNATURE_POLICY_FLOOR + contracts/openapi/spec-sec-001.yaml"
+status: RESOLVED_APPROVED_2026-09-14
 ```
 
 ### SG-162 — `service_identity` now exists twice under different names/scopes (`iam.service_identities` vs `security.service_identity`)
@@ -12877,5 +13192,186 @@ options:
 blocking: false
 owner: Quality/Regulatory org (signature policy authority) + QC module owner
 resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-187
+title: "New edge/ gateway deployable (Document 43 §12) has no real X.509/PKI issuance and validates configuration by checksum only, not a cryptographic signature -- same limitation class as SG-118/SG-120, now on the gateway side"
+class: C
+description: >
+  This pass built the actual on-prem Edge Gateway runtime (`edge/`, Document 43 §12's declared
+  `runtime/plugins/storage/contracts/migrations/cli/tests` layout) that the 6 server-side APIs
+  (SG-118/SG-119/SG-120) had nothing to call into before now -- closing 17 of Document 43's 30 EDGE-FR
+  requirements that were NOT_STARTED because they describe the gateway's own runtime behaviour
+  (connector supervision, plugin sandbox, config activation, local buffering/forwarding, health/clock
+  reporting, secrets, container/systemd deployment), not server API surface. Per plan-mode sign-off this
+  pass (user selected "Python, matching gxp-api" over a new Go toolchain or scope-only ADR), the agent
+  reuses this repo's already-approved httpx/pydantic dependencies (Document 104 justification recorded in
+  edge/pyproject.toml) and needed no other new runtime dependency.
+
+  Two places in the new gateway code inherit the server side's already-documented "no real PKI issuance
+  exists in this codebase" limitation (services/gxp-api/app/modules/edge/commands.py's
+  `GatewayEnrollmentResult` docstring, referenced by SG-118/SG-120) rather than inventing one:
+  (1) `edge/runtime/security/identity.py::generate_gateway_fingerprint()` produces a locally-generated
+  SHA-256 identifier (hostname + random secret), not an X.509 CSR/certificate -- consistent with the
+  server's own `cert_chain` field already being "the fingerprint captured at enrollment, unenforced";
+  (2) `edge/runtime/config/loader.py::validate_config_payload()` verifies the server-supplied SHA-256
+  checksum only, not a detached cryptographic signature, because EDGE-FR-005's "signatures/checksum"
+  wording has no defined signing-key distribution/rotation mechanism anywhere in Document 43 or
+  Document 106 to verify against.
+source_documents:
+  - Document 43 (SPEC-EDGE-001)
+  - Document 62 (SPEC-SEC-002, deferred in full -- same reference as SG-120)
+  - Document 106 (signature policy baseline -- has no config-signing-key row)
+source_requirement_ids:
+  - EDGE-FR-002
+  - EDGE-FR-005
+  - EDGE-FR-020
+affected_modules:
+  - SPEC-EDGE-001
+affected_functions:
+  - edge/runtime/security/identity.py generate_gateway_fingerprint()
+  - edge/runtime/config/loader.py validate_config_payload()
+why_material: >
+  A trust/signing-key mechanism is exactly the class of decision AG-15/SEC-THR-024 reserve for a
+  reviewed security design, not code invented to fill a gap -- a wrong shape here (e.g. a locally
+  generated "signing key" nothing else in the system trusts) would be a worse outcome than the honest
+  checksum-only integrity check this pass implemented instead.
+risk_if_guessed: >
+  Under-building (refusing to activate any configuration without real signature verification) would leave
+  every one of the 17 newly-built EDGE-FR requirements permanently unusable, since no signing-key
+  infrastructure exists anywhere in this codebase to verify against yet. The chosen resolution (checksum
+  integrity only, explicitly flagged) is bounded by the same "captured, unenforced" risk this project
+  already accepted for SG-118/SG-120 -- a compromised config-distribution channel could serve wrong-but-
+  consistent config, but the schema/plugin-version/contradictory-settings validation in
+  `validate_config_payload()` still runs regardless, and EDGE-FR-006's atomic-activation-with-rollback
+  bounds the blast radius of a bad config to "gateway retains prior valid configuration."
+options:
+  - (A) Ship checksum-only config integrity and fingerprint-only gateway identity now, flagged here for a
+    Document 62/106 amendment defining a real signing-key/PKI mechanism before wider production use --
+    recommended (chosen this pass), same precedent as SG-118/SG-120.
+  - (B) Block all 17 EDGE-FR gateway-runtime requirements until Document 62 defines real PKI (rejected --
+    Document 62 is a full separate specification the user did not ask to build this pass, and blocking
+    leaves Document 43 shipped as dead server-side API with nothing calling it).
+blocking: false
+owner: Platform Architect + Security owner (Document 62 owner)
+resolution_document: "— (open, interim checksum/fingerprint mechanism in effect per this SPEC_GAP pending Document 62)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-188
+title: "EDGE-FR-008 plugin sandbox: this reference build enforces credential hygiene, not OS-level filesystem denial -- a plugin process can read any path its OS user can read (TC-043-S013 FAILs honestly)"
+class: C
+description: >
+  EDGE-FR-008 requires protocol plugins "cannot access GxP database credentials or unrestricted
+  filesystem/secrets." `edge/runtime/supervisor/supervisor.py` launches every connector as its own OS
+  subprocess with a restricted environment (only PATH/LANG/LC_ALL/PYTHONPATH passed through -- no GxP
+  database URL, no service-identity bearer token) and a dedicated per-connector scratch directory --
+  this is real and verified (edge/tests/test_plugin_sandbox.py::
+  test_plugin_subprocess_has_no_gxp_secrets_in_environment and
+  test_each_connector_gets_its_own_isolated_scratch_dir, both PASS). What this reference build does NOT
+  do is apply any OS-level filesystem jail (no chroot, mount namespace, or seccomp profile) to the
+  subprocess -- it runs as the same OS user as the supervisor and can `open()` any absolute path that
+  user can read, including files outside its scratch directory. A new test written this pass,
+  `test_plugin_filesystem_access_is_hygiene_not_os_level_denial`, proves this directly: a plugin given an
+  absolute path to a file outside its scratch dir successfully reads it. Per this project's own "no
+  fabricated evidence" rule, TC-043-S013 (Document 43's own mandatory test #13, "protocol plugin attempts
+  forbidden filesystem access") is recorded as FAIL, not BLOCKED or PASS -- the behavior was built,
+  tested, and found not to meet the literal "unrestricted filesystem" reading of EDGE-FR-008.
+source_documents:
+  - Document 43 (SPEC-EDGE-001), section 14 mandatory test #13
+source_requirement_ids:
+  - EDGE-FR-008
+affected_modules:
+  - SPEC-EDGE-001
+affected_functions:
+  - edge/runtime/supervisor/supervisor.py ConnectorSupervisor._spawn() -- restricted env/cwd only, no
+    filesystem jail
+  - edge/tests/test_plugin_sandbox.py::test_plugin_filesystem_access_is_hygiene_not_os_level_denial
+  - test-cases/WP-06/Document_43_SPEC-EDGE-001_TEST_CASES.md TC-043-S013
+why_material: >
+  Building a real OS-level jail (chroot, a Linux mount/user namespace, or a seccomp-bpf syscall filter)
+  is itself a new security-boundary/deployment-privilege decision -- it typically requires elevated
+  capabilities (CAP_SYS_ADMIN or root) to construct, which is a materially different and larger trust/
+  privilege model than an unprivileged supervisor process, and needs its own SEC-THR-024 threat review
+  before being invented here.
+risk_if_guessed: >
+  Claiming this boundary as a security control without OS-level enforcement (marking EDGE-FR-008 VERIFIED
+  because the credential-hygiene half works) would materially overstate the isolation a compromised or
+  malicious plugin actually faces -- a false sense of containment is worse than an honestly-recorded gap,
+  which is exactly why this pass records FAIL on TC-043-S013 instead of rounding it up to PASS or hiding
+  it as "future deployable, out of scope."
+options:
+  - (A) Record the honest FAIL and the credential-hygiene-only boundary as a known limitation, deferring
+    real OS-level sandboxing (likely requiring rootless containers/user namespaces per connector, or a
+    seccomp profile) to a dedicated future pass with its own threat review -- recommended (chosen this
+    pass; no further action taken this pass beyond recording it accurately).
+  - (B) Attempt a real chroot/namespace jail now (rejected -- a privilege-escalation-adjacent security
+    primitive invented without a threat review is exactly the guessed-security-boundary risk AG-15/
+    SEC-THR-024 exist to prevent, and typically requires the supervisor to run with elevated capabilities
+    it does not have in this reference build).
+blocking: false
+owner: Platform Architect + Security owner
+resolution_document: "— (open; TC-043-S013 recorded FAIL, tracked here pending a dedicated OS-sandboxing design pass)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-189
+title: "Document 46 (SPEC-EDGE-004) peripheral send_command() has no production dispatch path into a running sandboxed connector subprocess"
+class: C
+description: >
+  Document 46 requires the gateway to send an already-approved payload to certain peripherals -- a
+  rendered label to a printer (PER-FR-011/013), a tare instruction to a balance (PER-FR-009). Document 43's
+  `ConnectorPlugin` interface (`edge/plugins/base.py`) was deliberately inbound-only (`poll()` only,
+  EDGE-FR-008's fixed adapter interface); this pass added an optional `send_command()` extension method
+  with a safe default (`PeripheralCommandNotSupportedError`) that `edge/plugins/printer/printer.py` and
+  `edge/plugins/balance/balance.py` override with real, tested implementations -- but only exercised
+  directly/in-process by their own tests. `edge/runtime/supervisor/supervisor.py::_spawn()` opens every
+  connector subprocess's stdin as `DEVNULL` (matching `run_plugin_main()`'s "stdout only" contract), so no
+  actual runtime path delivers a command from the gateway's own runtime loop into a supervised, sandboxed
+  connector process once the gateway is actually running one. This is explicitly not Document 43's
+  EDGE-FR-023 command channel (`runtime/security/command_channel.py`, gates remote/network-issued
+  OT/PLC/SCADA writes behind an interlock allowlist) -- `send_command()` relays an already-authorized,
+  already-rendered payload to a peripheral the connector already exclusively owns the connection to, no
+  new regulated decision is made by either mechanism.
+source_documents:
+  - Document 46 (SPEC-EDGE-004, PER-FR-009, PER-FR-011, PER-FR-013)
+  - Document 43 (SPEC-EDGE-001, EDGE-FR-008, EDGE-FR-023 -- the sibling mechanism this is NOT)
+source_requirement_ids:
+  - PER-FR-009
+  - PER-FR-011
+  - PER-FR-013
+affected_modules:
+  - SPEC-EDGE-004
+  - SPEC-EDGE-001
+affected_functions:
+  - edge/plugins/base.py ConnectorPlugin.send_command() -- interface + safe default
+  - edge/plugins/printer/printer.py, edge/plugins/balance/balance.py -- real overrides, tested in-process only
+  - edge/runtime/supervisor/supervisor.py::_spawn() -- stdin=DEVNULL, no duplex channel exists
+why_material: >
+  Wiring a real duplex channel into a sandboxed subprocess (a stdin protocol, a local socket, or
+  otherwise) is a security-relevant decision -- it adds a second direction to a boundary EDGE-FR-008 built
+  specifically to be one-way, and Document 44's protocol-driver work may independently need the same
+  channel for its own future write-capable protocols (Modbus/OPC UA writes are currently hard-disabled by
+  each driver, per those modules' own tests) -- inventing a shape here without coordinating against that
+  shared supervisor code risks a second, incompatible mechanism.
+risk_if_guessed: >
+  Under-building (leaving send_command() production-unreachable, as this pass did) means Document 46's
+  printer/balance write path only works if a future pass adds the missing transport -- honestly limited,
+  not silently broken. Guessing a duplex-channel design now, without Document 44's parallel needs in view,
+  risks a supervisor-level security boundary change neither module actually validated together.
+options:
+  - (A) Ship the `send_command()` interface + real, directly-tested peripheral implementations now; leave
+    the supervisor-to-subprocess transport as a flagged, honestly-recorded limitation for a coordinated
+    follow-up pass — recommended (chosen this pass; no fabricated "it works end-to-end" claim).
+  - (B) Wire a duplex channel into the supervisor now (rejected -- a security-boundary change made without
+    coordinating against Document 44's own potential need for the same channel, guessed rather than
+    reviewed).
+blocking: false
+owner: Platform Architect + Security owner (supervisor sandbox boundary owner)
+resolution_document: "— (open; edge/plugins/base.py::send_command() and its two real overrides are the interim, production-unreachable interface)"
 status: OPEN
 ```

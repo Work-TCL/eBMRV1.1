@@ -365,7 +365,7 @@ function ActionModal({
             <Field label="Decision" required>
               <Select value={decision} onChange={(e) => setDecision(e.target.value)}>
                 <option value="accepted">accepted</option>
-                <option value="rejected">rejected — supplier must respond again</option>
+                <option value="rejected">rejected - supplier must respond again</option>
               </Select>
             </Field>
             <Field label="Rationale" required>

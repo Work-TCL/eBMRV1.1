@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import {
   api,
-  ApiError,
   holdsAnyRole,
   listAll,
   listBatchesForSite,
@@ -26,6 +25,9 @@ import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { FormConsole } from "@/components/shared/FormConsole";
+import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 
 interface DispensingOrder {
   id: string;
@@ -42,11 +44,12 @@ interface DispensingOrder {
 
 // Every step past creation is a signed act (Document 21 / Document 106) — the challenge action name
 // matches the backend's _DISPENSING_CHALLENGE_MEANINGS keys.
-type Step = "select_source" | "start" | "manual_reading" | "verify" | "complete" | "cancel";
+type Step = "select_source" | "start" | "readings" | "manual_reading" | "verify" | "complete" | "cancel";
 
 const STEP_LABEL: Record<Step, string> = {
   select_source: "Select source",
   start: "Start weighing",
+  readings: "Record reading",
   manual_reading: "Record manual reading",
   verify: "Independent verify",
   complete: "Complete",
@@ -57,7 +60,7 @@ const STEP_LABEL: Record<Step, string> = {
 const ALLOWED_FROM: Record<string, Step[]> = {
   created: ["select_source", "cancel"],
   source_selected: ["start", "cancel"],
-  weighing: ["manual_reading", "verify", "cancel"],
+  weighing: ["readings", "manual_reading", "verify", "cancel"],
   weighed: ["verify", "complete", "cancel"],
   verified: ["complete", "cancel"],
 };
@@ -118,7 +121,7 @@ export default function DispensingPage() {
       />
 
       <p className="hint mb-4">
-        Every step after creation is a signed act — each opens a signature ceremony bound to the order&apos;s
+        Every step after creation is a signed act - each opens a signature ceremony bound to the order&apos;s
         current version.
       </p>
 
@@ -136,6 +139,94 @@ export default function DispensingPage() {
           onRowClick={(o) => setSelected(o.id)}
         />
       </Card>
+
+      <FormConsole
+      title="Material transaction operations"
+        subtitle="What happens to a dispensed quantity afterward - consumed, returned, lost, or requested for destruction."
+        root="/materials/v1"
+        ops={[
+          {
+            path: "consumptions",
+            label: "Record a consumption",
+            fields: [
+              { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
+              { name: "step_id", label: "Step ID", hint: "Optional - the batch step this consumption belongs to." },
+              { name: "dispensed_container_id", label: "Dispensed container ID", required: true },
+              { name: "material_lot_id", label: "Material lot ID", hint: "Optional, if not derivable from the container." },
+              { name: "quantity", label: "Quantity", required: true },
+              { name: "uom", label: "Unit of measure", required: true },
+              { name: "source_type", label: "Source type", default: "manual", placeholder: "e.g. manual, machine" },
+              { name: "source_id", label: "Source ID", hint: "Optional - e.g. a machine evidence reference." },
+            ],
+          },
+          {
+            path: "returns",
+            label: "Record a return",
+            fields: [
+              { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
+              { name: "dispensed_container_id", label: "Dispensed container ID", required: true },
+              { name: "material_lot_id", label: "Material lot ID", hint: "Optional, if not derivable from the container." },
+              { name: "quantity", label: "Quantity", required: true },
+              { name: "uom", label: "Unit of measure", required: true },
+              { name: "container_condition", label: "Container condition", required: true },
+              { name: "condition_acceptable", label: "Condition acceptable", type: "bool", required: true },
+              { name: "storage_exposure_evidence", label: "Storage exposure evidence", type: "kv" },
+              { name: "target_location_id", label: "Target location ID", required: true },
+            ],
+          },
+          {
+            path: "losses",
+            label: "Record a loss / spill / sample",
+            about: "One command covers sample, reject, spill and approved-loss transaction types.",
+            fields: [
+              { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
+              { name: "dispensed_container_id", label: "Dispensed container ID", required: true },
+              { name: "loss_type", label: "Loss type", required: true, placeholder: "e.g. SAMPLE, REJECT, SPILL, APPROVED_LOSS" },
+              { name: "quantity", label: "Quantity", required: true },
+              { name: "uom", label: "Unit of measure", required: true },
+              { name: "reason", label: "Reason", type: "textarea", required: true },
+              { name: "location_id", label: "Location ID", hint: "Optional." },
+              { name: "evidence", label: "Evidence", type: "kv" },
+            ],
+          },
+          {
+            path: "destructions",
+            label: "Request a destruction",
+            about: "Set exactly one of material lot, container, or dispensed container as the destruction's scope.",
+            fields: [
+              { name: "material_lot_id", label: "Material lot ID", hint: "One of the three scope fields." },
+              { name: "container_id", label: "Container ID", hint: "One of the three scope fields." },
+              { name: "dispensed_container_id", label: "Dispensed container ID", hint: "One of the three scope fields." },
+              { name: "quantity", label: "Quantity", required: true },
+              { name: "uom", label: "Unit of measure", required: true },
+              { name: "reason", label: "Reason", type: "textarea", required: true },
+              { name: "method", label: "Method", hint: "Optional - e.g. incineration, chemical treatment." },
+              { name: "vendor_name", label: "Vendor name", hint: "Optional - for third-party destruction." },
+              { name: "manifest_reference", label: "Manifest reference", hint: "Optional." },
+              { name: "certificate_vault_object_id", label: "Certificate vault object ID", hint: "Optional - a certificate of destruction already in the vault." },
+              { name: "witnesses", label: "Witnesses", type: "kv" },
+            ],
+          },
+        ]}
+      />
+
+      <SignedJsonForm
+        title="Execute a destruction - signed"
+        subtitle="Only a requested destruction can be executed."
+        root="/materials/v1"
+        ops={[
+          {
+            postPath: "destructions/{destruction_id}/execute",
+            challengePath: "destructions/{destruction_id}/signature-challenges",
+            action: "execute",
+            label: "Execute a destruction",
+            fields: [
+              { name: "destruction_id", label: "Destruction record ID", required: true },
+              { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+            ],
+          },
+        ]}
+      />
 
       {createOpen && (
         <CreateOrderModal
@@ -226,7 +317,7 @@ function CreateOrderModal({
  <option value="">Select a batch</option>
               {batches.map((b) => (
                 <option key={b.id} value={b.id}>
-                    {b.batch_number} — {b.product_name} ({b.product_code})
+                    {b.batch_number} - {b.product_name} ({b.product_code})
                 </option>
               ))}
             </Select>
@@ -239,7 +330,7 @@ function CreateOrderModal({
             <option value="">Select a material…</option>
             {materials.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.code} — {m.name}
+                {m.code} - {m.name}
               </option>
             ))}
           </Select>
@@ -375,244 +466,239 @@ function StepModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { busy, error, setError, run } = useCommand(onDone);
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [meaning, setMeaning] = useState("");
-  const [password, setPassword] = useState("");
-
   const [lotId, setLotId] = useState("");
   const [containerId, setContainerId] = useState("");
   const [quantity, setQuantity] = useState("");
   const [tareValue, setTareValue] = useState("");
   const [readingValue, setReadingValue] = useState("");
   const [stable, setStable] = useState(true);
+  const [deviceId, setDeviceId] = useState("");
   const [manualReason, setManualReason] = useState("");
   const [containerCode, setContainerCode] = useState("");
   const [takenQuantity, setTakenQuantity] = useState("");
   const [sourceId, setSourceId] = useState("");
   const [reason, setReason] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .post<{ challenge_id: string; meaning: string }>(
-        `/dispensing/v1/orders/${order.id}/signature-challenges`,
-        { action: step }
-      )
-      .then((c) => {
-        if (cancelled) return;
-        setChallengeId(c.challenge_id);
-        setMeaning(c.meaning);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not request a signature challenge");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [order.id, step, setError]);
-
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const base = {
-      idempotency_key: newIdempotencyKey(),
-      expected_version: order.version,
-      challenge_id: challengeId,
-      reauth_password: password,
-    };
-    const path = `/dispensing/v1/orders/${order.id}`;
-    run(() => {
-      switch (step) {
-        case "select_source":
-          return api.post(`${path}/select-source`, {
-            ...base,
-            material_lot_id: lotId || null,
-            container_id: containerId || null,
-            quantity,
-          });
-        case "start":
-          return api.post(`${path}/start`, {
-            ...base,
-            tare_method: tareValue ? "manual" : null,
-            tare_value: tareValue || null,
-          });
-        case "manual_reading":
-          return api.post(`${path}/manual-reading`, {
-            ...base,
-            reading_value: readingValue,
-            uom: order.target_uom,
-            stable,
-            manual_reason: manualReason,
-          });
-        case "verify":
-          return api.post(`${path}/verify`, base);
-        case "complete":
-          return api.post(`${path}/complete`, {
-            ...base,
-            actual_taken_quantities: { [sourceId]: takenQuantity },
-            container_code: containerCode,
-          });
-        case "cancel":
-          return api.post(`${path}/cancel`, { ...base, reason });
-      }
-    });
-  }
+  const missingRequired =
+    (step === "select_source" && !quantity) ||
+    (step === "readings" && !readingValue) ||
+    (step === "manual_reading" && (!readingValue || !manualReason)) ||
+    (step === "complete" && (!sourceId || !takenQuantity || !containerCode)) ||
+    (step === "cancel" && !reason);
 
   const withinTolerance =
     readingValue &&
     Number(readingValue) >= Number(order.target_qty) - Number(order.tolerance_low) &&
     Number(readingValue) <= Number(order.target_qty) + Number(order.tolerance_high);
 
+  const extraFields = (
+    <>
+      {step === "select_source" && (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Material lot ID">
+              <Input value={lotId} onChange={(e) => setLotId(e.target.value)} autoFocus />
+            </Field>
+            <Field label="Container ID">
+              <Input value={containerId} onChange={(e) => setContainerId(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Quantity to take" required>
+            <Input type="number" step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+          </Field>
+        </>
+      )}
+
+      {step === "start" && (
+        <Field label="Tare value" hint="Leave blank if the balance tares itself.">
+          <Input type="number" step="any" value={tareValue} onChange={(e) => setTareValue(e.target.value)} />
+        </Field>
+      )}
+
+      {step === "readings" && (
+        <>
+          <Field
+            label={`Reading (${order.target_uom})`}
+            required
+            hint={`Target ${order.target_qty} −${order.tolerance_low} / +${order.tolerance_high}`}
+          >
+            <Input type="number" step="any" value={readingValue} onChange={(e) => setReadingValue(e.target.value)} required autoFocus />
+          </Field>
+          {readingValue && (
+            <p className="mb-3">
+              {withinTolerance ? (
+                <StatePill state="accepted" icon="check-circle">
+                  Within tolerance
+                </StatePill>
+              ) : (
+                <StatePill state="failed" icon="alert-triangle">
+                  Out of tolerance
+                </StatePill>
+              )}
+            </p>
+          )}
+          <label className="flex items-center gap-2 fs-2 mb-3">
+            <input type="checkbox" checked={stable} onChange={(e) => setStable(e.target.checked)} />
+            Balance reading was stable
+          </label>
+          <Field label="Device ID" hint="Optional - which connected balance/device reported this reading.">
+            <Input value={deviceId} onChange={(e) => setDeviceId(e.target.value)} />
+          </Field>
+        </>
+      )}
+
+      {step === "manual_reading" && (
+        <>
+          <Banner tone="warn" title="Manual reading">
+            A manual reading bypasses the connected balance, so it needs a stated reason and is recorded
+            as manual in the batch record.
+          </Banner>
+          <Field
+            label={`Reading (${order.target_uom})`}
+            required
+            hint={`Target ${order.target_qty} −${order.tolerance_low} / +${order.tolerance_high}`}
+          >
+            <Input
+              type="number"
+              step="any"
+              value={readingValue}
+              onChange={(e) => setReadingValue(e.target.value)}
+              required
+              autoFocus
+            />
+          </Field>
+          {readingValue && (
+            <p className="mb-3">
+              {withinTolerance ? (
+                <StatePill state="accepted" icon="check-circle">
+                  Within tolerance
+                </StatePill>
+              ) : (
+                <StatePill state="failed" icon="alert-triangle">
+                  Out of tolerance
+                </StatePill>
+              )}
+            </p>
+          )}
+          <label className="flex items-center gap-2 fs-2 mb-3">
+            <input type="checkbox" checked={stable} onChange={(e) => setStable(e.target.checked)} />
+            Balance reading was stable
+          </label>
+          <Field label="Reason for manual entry" required>
+            <textarea
+              className="input"
+              rows={2}
+              value={manualReason}
+              onChange={(e) => setManualReason(e.target.value)}
+              required
+            />
+          </Field>
+        </>
+      )}
+
+      {step === "verify" && (
+        <p className="fs-3 mb-3">
+          Independent verification confirms the dispensed quantity and identity. It must not be performed
+          by the person who weighed (SOD-011) - the backend enforces this.
+        </p>
+      )}
+
+      {step === "complete" && (
+        <>
+          <Field label="Dispensing source ID" required hint="The source selected earlier for this order.">
+            <Input value={sourceId} onChange={(e) => setSourceId(e.target.value)} required autoFocus />
+          </Field>
+          <Field label="Quantity actually taken" required>
+            <Input
+              type="number"
+              step="any"
+              value={takenQuantity}
+              onChange={(e) => setTakenQuantity(e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Dispensed container code" required hint="The label applied to the dispensed container.">
+            <Input value={containerCode} onChange={(e) => setContainerCode(e.target.value)} required />
+          </Field>
+        </>
+      )}
+
+      {step === "cancel" && (
+        <Field label="Reason" required>
+          <textarea className="input" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} required />
+        </Field>
+      )}
+    </>
+  );
+
   return (
-    <Modal
+    <SignatureCeremony
       open
       onClose={onClose}
+      onDone={onDone}
+      challengePath={`/dispensing/v1/orders/${order.id}/signature-challenges`}
+      action={step}
       title={
         <span className="flex items-center gap-2">
           <Icon name="pen" /> {STEP_LABEL[step]}
         </span>
       }
-    >
-      <form onSubmit={submit}>
-        {meaning && (
-          <p className="fs-3 mb-2">
-            Meaning: <span className="font-semibold">{meaning}</span>
-          </p>
-        )}
-        <div className="sig-hint mb-3">
-          Fresh authentication required — re-enter your password to sign (Part 11 step-up).
-        </div>
-
-        {step === "select_source" && (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Material lot ID">
-                <Input value={lotId} onChange={(e) => setLotId(e.target.value)} autoFocus />
-              </Field>
-              <Field label="Container ID">
-                <Input value={containerId} onChange={(e) => setContainerId(e.target.value)} />
-              </Field>
-            </div>
-            <Field label="Quantity to take" required>
-              <Input type="number" step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
-            </Field>
-          </>
-        )}
-
-        {step === "start" && (
-          <Field label="Tare value" hint="Leave blank if the balance tares itself.">
-            <Input type="number" step="any" value={tareValue} onChange={(e) => setTareValue(e.target.value)} />
-          </Field>
-        )}
-
-        {step === "manual_reading" && (
-          <>
-            <Banner tone="warn" title="Manual reading">
-              A manual reading bypasses the connected balance, so it needs a stated reason and is recorded
-              as manual in the batch record.
-            </Banner>
-            <Field
-              label={`Reading (${order.target_uom})`}
-              required
-              hint={`Target ${order.target_qty} −${order.tolerance_low} / +${order.tolerance_high}`}
-            >
-              <Input
-                type="number"
-                step="any"
-                value={readingValue}
-                onChange={(e) => setReadingValue(e.target.value)}
-                required
-                autoFocus
-              />
-            </Field>
-            {readingValue && (
-              <p className="mb-3">
-                {withinTolerance ? (
-                  <StatePill state="accepted" icon="check-circle">
-                    Within tolerance
-                  </StatePill>
-                ) : (
-                  <StatePill state="failed" icon="alert-triangle">
-                    Out of tolerance
-                  </StatePill>
-                )}
-              </p>
-            )}
-            <label className="flex items-center gap-2 fs-2 mb-3">
-              <input type="checkbox" checked={stable} onChange={(e) => setStable(e.target.checked)} />
-              Balance reading was stable
-            </label>
-            <Field label="Reason for manual entry" required>
-              <textarea
-                className="input"
-                rows={2}
-                value={manualReason}
-                onChange={(e) => setManualReason(e.target.value)}
-                required
-              />
-            </Field>
-          </>
-        )}
-
-        {step === "verify" && (
-          <p className="fs-3 mb-3">
-            Independent verification confirms the dispensed quantity and identity. It must not be performed
-            by the person who weighed (SOD-011) — the backend enforces this.
-          </p>
-        )}
-
-        {step === "complete" && (
-          <>
-            <Field label="Dispensing source ID" required hint="The source selected earlier for this order.">
-              <Input value={sourceId} onChange={(e) => setSourceId(e.target.value)} required autoFocus />
-            </Field>
-            <Field label="Quantity actually taken" required>
-              <Input
-                type="number"
-                step="any"
-                value={takenQuantity}
-                onChange={(e) => setTakenQuantity(e.target.value)}
-                required
-              />
-            </Field>
-            <Field label="Dispensed container code" required hint="The label applied to the dispensed container.">
-              <Input value={containerCode} onChange={(e) => setContainerCode(e.target.value)} required />
-            </Field>
-          </>
-        )}
-
-        {step === "cancel" && (
-          <Field label="Reason" required>
-            <textarea className="input" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} required />
-          </Field>
-        )}
-
-        <Field label="Password" required>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
-        </Field>
-
-        {error && <p className="error-text mb-2">{error}</p>}
-        <div className="flex justify-between gap-3 mt-3">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant={step === "cancel" ? "danger" : "primary"}
-            disabled={busy || !challengeId || !password}
-          >
-            <Icon name="badge-check" /> {busy ? "Signing…" : STEP_LABEL[step]}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+      summary={`Fresh authentication is required to sign this step - ${STEP_LABEL[step].toLowerCase()}.`}
+      submitLabel={STEP_LABEL[step]}
+      submitVariant={step === "cancel" ? "danger" : "primary"}
+      reason="none"
+      extraFields={extraFields}
+      disabled={missingRequired}
+      onSign={(p) => {
+        const base = {
+          idempotency_key: p.idempotency_key,
+          expected_version: order.version,
+          challenge_id: p.challenge_id,
+          reauth_password: p.reauth_password,
+        };
+        const path = `/dispensing/v1/orders/${order.id}`;
+        switch (step) {
+          case "select_source":
+            return api.post(`${path}/select-source`, {
+              ...base,
+              material_lot_id: lotId || null,
+              container_id: containerId || null,
+              quantity,
+            });
+          case "start":
+            return api.post(`${path}/start`, {
+              ...base,
+              tare_method: tareValue ? "manual" : null,
+              tare_value: tareValue || null,
+            });
+          case "readings":
+            return api.post(`${path}/readings`, {
+              ...base,
+              reading_value: readingValue,
+              uom: order.target_uom,
+              stable,
+              device_id: deviceId || null,
+            });
+          case "manual_reading":
+            return api.post(`${path}/manual-reading`, {
+              ...base,
+              reading_value: readingValue,
+              uom: order.target_uom,
+              stable,
+              manual_reason: manualReason,
+            });
+          case "verify":
+            return api.post(`${path}/verify`, base);
+          case "complete":
+            return api.post(`${path}/complete`, {
+              ...base,
+              actual_taken_quantities: { [sourceId]: takenQuantity },
+              container_code: containerCode,
+            });
+          case "cancel":
+            return api.post(`${path}/cancel`, { ...base, reason });
+        }
+      }}
+    />
   );
 }

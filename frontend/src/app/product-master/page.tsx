@@ -77,7 +77,7 @@ interface SterileProfile {
 }
 
 function sterileProfileLabel(p: SterileProfile): string {
-  return `${p.profile_number} v${p.version_no}${p.required_area_classification ? ` — ${p.required_area_classification}` : ""}`;
+  return `${p.profile_number} v${p.version_no}${p.required_area_classification ? ` - ${p.required_area_classification}` : ""}`;
 }
 
 // Matches app/modules/product_master/router.py::get_business_ids — one row per distinct
@@ -93,7 +93,7 @@ interface BusinessIdOption {
 }
 
 function businessIdOptionLabel(o: BusinessIdOption): string {
-  return `${o.product_business_id} — ${o.name} (latest v${o.version_no}, ${o.lifecycle_state})`;
+  return `${o.product_business_id} - ${o.name} (latest v${o.version_no}, ${o.lifecycle_state})`;
 }
 
 const MANUFACTURING_PROFILES = ["pharma", "device", "injectable_ddcp", "inhalation_ddcp", "drug_eluting_device"];
@@ -111,7 +111,7 @@ interface ConstituentDraft {
   role_code: string;
   constituent_business_id: string;
   constituent_version_id: string;
-  constituent_label: string; // display only — "<name> v<version_no> (<lifecycle_state>)"
+  constituent_label: string; // display only - "<name> v<version_no> (<lifecycle_state>)"
   source_site_id: string;
   tracking_strategy: string;
   sequence_no: string;
@@ -205,19 +205,19 @@ export default function ProductMasterPage() {
       />
 
       <p className="hint mb-4">
-        This is the current product master — separate from the legacy Products page, which still feeds
+        This is the current product master - separate from the legacy Products page, which still feeds
         batch creation until the two are unified.
       </p>
 
       <Card className="mb-4">
-        <CardHeader title="Products" meta="One row per Business ID, its latest version — click Versions for the full history." />
+        <CardHeader title="Products" meta="One row per Business ID, its latest version - click Versions for the full history." />
         <DataTable
           columns={productColumns}
           fetchPage={fetchProducts}
           rowKey={(p) => p.product_business_id}
           searchPlaceholder="Search by business ID or name…"
           emptyIcon="package"
-          emptyMessage={<>No products drafted yet — use &quot;New draft&quot; above to create one.</>}
+          emptyMessage={<>No products drafted yet - use &quot;New draft&quot; above to create one.</>}
           defaultSort={{ by: "product_business_id", dir: "asc" }}
           reloadToken={reloadToken}
         />
@@ -226,7 +226,7 @@ export default function ProductMasterPage() {
       {historyBusinessId && (
         <Card>
           <CardHeader
-            title={`Versions — ${historyBusinessId}`}
+            title={`Versions - ${historyBusinessId}`}
             meta={
               <Button size="sm" variant="ghost" onClick={() => setHistoryBusinessId(null)}>
                 Close
@@ -391,7 +391,7 @@ function ConstituentEditor({
     <div className="mb-3">
       <p className="fact-k mb-1">Constituents</p>
       <p className="hint mb-2">
-        Each constituent references another Product Master record by its own Business ID — the drug
+        Each constituent references another Product Master record by its own Business ID - the drug
         substance and the device component are themselves Product Master versions.
       </p>
 
@@ -451,7 +451,7 @@ function ConstituentEditor({
         <div className="flex flex-wrap items-start gap-3 mb-2">
           <Field
             label="Constituent's Business ID"
-            hint="Picked from existing Product Master records — the drug/device must already have its own draft."
+            hint="Picked from existing Product Master records - the drug/device must already have its own draft."
           >
             <Select
               value={lookupId}
@@ -490,7 +490,7 @@ function ConstituentEditor({
                 variant={picked?.product_version_id === v.product_version_id ? "primary" : "secondary"}
                 onClick={() => setPicked(v)}
               >
-                  v{v.version_no} — {v.name} ({v.lifecycle_state})
+                  v{v.version_no} - {v.name} ({v.lifecycle_state})
               </Button>
             ))}
           </div>
@@ -647,7 +647,7 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
               !siteId
                 ? "Select a site first."
                 : STERILE_REQUIRED_PROFILES.includes(profile)
-                ? "Required at Release for this profile (PRD-FR-010) — picked from the site's released sterile process profiles."
+                ?"Required at Release for this profile - picked from the site's released sterile process profiles."
                   : "Not required for this profile."
             }
           >
@@ -660,7 +660,7 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
               ))}
             </Select>
           </Field>
-          <Field label="Device model code" hint="Required at Release if UDI applicable is checked (PRD-FR-012)">
+          <Field label="Device model code" hint="Required at Release if UDI applicable is checked">
             <Input value={deviceModelCode} onChange={(e) => setDeviceModelCode(e.target.value)} />
           </Field>
         </div>
@@ -696,7 +696,7 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
         </div>
         {combinationProductType && constituents.length === 0 && (
           <p className="hint mb-2">
-            A combination product needs at least one constituent, or Release will block (PRD-FR-004/006).
+          A combination product needs at least one constituent, or Release will block.
           </p>
         )}
 
@@ -790,10 +790,10 @@ function EditDraftModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={`Edit draft — ${version.product_business_id} v${version.version_no}`} large>
+    <Modal open onClose={onClose} title={`Edit draft - ${version.product_business_id} v${version.version_no}`} large>
       <form onSubmit={onSubmit}>
         <p className="hint mb-3">
-        Business ID, Product code, Version no. and Site are fixed once a draft exists — everything else
+        Business ID, Product code, Version no. and Site are fixed once a draft exists - everything else
           can change while the record is still in draft state.
         </p>
         <Field label="Name" required>
@@ -813,7 +813,7 @@ function EditDraftModal({
             label="Sterile process profile"
             hint={
               STERILE_REQUIRED_PROFILES.includes(profile)
-              ? "Required at Release for this profile (PRD-FR-010) — picked from the site's released sterile process profiles."
+              ?"Required at Release for this profile - picked from the site's released sterile process profiles."
                 : "Not required for this profile."
             }
           >
@@ -825,13 +825,13 @@ function EditDraftModal({
                 </option>
               ))}
               {sterileProfileId && !(sterileProfiles ?? []).some((p) => p.id === sterileProfileId) && (
-                <option value={sterileProfileId}>{sterileProfileId} (not a valid sterile process profile — reselect)</option>
+                <option value={sterileProfileId}>{sterileProfileId} (not a valid sterile process profile - reselect)</option>
               )}
             </Select>
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Device model code" hint="Required at Release if UDI applicable is checked (PRD-FR-012)">
+        <Field label="Device model code" hint="Required at Release if UDI applicable is checked">
             <Input value={deviceModelCode} onChange={(e) => setDeviceModelCode(e.target.value)} />
           </Field>
           <label className="flex items-center gap-2 fs-2" style={{ marginTop: 28 }}>
@@ -867,7 +867,7 @@ function EditDraftModal({
         </div>
         {combinationProductType && constituents.length === 0 && (
           <p className="hint mb-2">
-            A combination product needs at least one constituent, or Release will block (PRD-FR-004/006).
+          A combination product needs at least one constituent, or Release will block.
           </p>
         )}
 
@@ -1001,7 +1001,7 @@ function VersionDetailModal({
   const findings = (eligibility?.checks.completeness_findings as string[] | undefined) ?? [];
 
   return (
-    <Modal open onClose={onClose} title={`${version.name} — v${version.version_no}`} large>
+    <Modal open onClose={onClose} title={`${version.name} - v${version.version_no}`} large>
       <div className="mb-4">
         {(
           [
@@ -1107,7 +1107,7 @@ function VersionDetailModal({
             <ul className="fs-2" style={{ paddingLeft: "1.2em" }}>
               {!(eligibility.checks.lifecycle_ok as boolean) && (
                 <li>
-                  Lifecycle state is &quot;{eligibility.checks.lifecycle_state as string}&quot; — must be
+                  Lifecycle state is &quot;{eligibility.checks.lifecycle_state as string}&quot; - must be
                   &quot;released&quot; to issue.
                 </li>
               )}
@@ -1195,7 +1195,7 @@ function VersionDetailModal({
           submitVariant="success"
           summary={
             <>
-            This releases <strong>{version.product_business_id}</strong> v{version.version_no} — once released its content is locked; a further change needs a new version. Signed by a QA
+            This releases <strong>{version.product_business_id}</strong> v{version.version_no} - once released its content is locked; a further change needs a new version. Signed by a QA
               once released its content is locked; a further change needs a new version. Signed by a QA
               Releaser who is <strong>not</strong> the version&apos;s author (author ≠ releaser).
             </>

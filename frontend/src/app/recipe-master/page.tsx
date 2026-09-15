@@ -251,7 +251,7 @@ function useRoleAndRuleOptions() {
   }, []);
   const { data: releasedRules } = useApiResource<ReleasedRuleOption[]>("/rules/v1");
   const ruleOptions = useMemo(
-    () => (releasedRules ?? []).map((r) => ({ value: r.rule_id, label: `${r.rule_id} — ${r.rule_type} v${r.semantic_version}` })),
+    () => (releasedRules ?? []).map((r) => ({ value: r.rule_id, label: `${r.rule_id} - ${r.rule_type} v${r.semantic_version}` })),
     [releasedRules]
   );
   return { roleOptions, ruleOptions };
@@ -371,14 +371,14 @@ export default function RecipeMasterPage() {
       />
 
       <Card className="mb-4">
-        <CardHeader title="Recipes" meta="One row per recipe family, its latest version — click Versions for the full history." />
+        <CardHeader title="Recipes" meta="One row per recipe family, its latest version - click Versions for the full history." />
         <DataTable
           columns={familyColumns}
           fetchPage={fetchFamilies}
           rowKey={(f) => f.recipe_family_id}
           searchPlaceholder="Search by recipe code or product…"
           emptyIcon="database"
-          emptyMessage={<>No recipes drafted yet — use &quot;New draft&quot; above to create one.</>}
+          emptyMessage={<>No recipes drafted yet - use &quot;New draft&quot; above to create one.</>}
           defaultSort={{ by: "recipe_code", dir: "asc" }}
           reloadToken={reloadToken}
         />
@@ -387,7 +387,7 @@ export default function RecipeMasterPage() {
       {openFamily && (
         <Card>
           <CardHeader
-            title={`Versions — ${openFamily.recipe_code}`}
+            title={`Versions - ${openFamily.recipe_code}`}
             meta={
               <Button
                 size="sm"
@@ -570,11 +570,11 @@ function RecipeGraphEditor({
       </div>
       <p className="hint mb-2">
         Build the recipe as one block: add a section, add its steps underneath, and for any step that must
-        wait on another, add it under that step&apos;s &quot;Depends on&quot; list — no separate list to keep in
+        wait on another, add it under that step&apos;s &quot;Depends on&quot; list - no separate list to keep in
         sync by step code.
       </p>
 
-      {sections.length === 0 && <p className="hint mb-2">No sections yet — add the first one below.</p>}
+      {sections.length === 0 && <p className="hint mb-2">No sections yet - add the first one below.</p>}
 
       {sections.map((section, sIndex) => {
         const isCollapsed = collapsedSections.has(section.key);
@@ -719,7 +719,7 @@ function StepBlock({
       </div>
       <div className="grid grid-cols-2 gap-3 mb-2">
         <Select value={step.required_role_code} onChange={(e) => onChange({ required_role_code: e.target.value })}>
-          <option value="">Required role — any</option>
+          <option value="">Required role - any</option>
           {roleOptions.map((r) => (
             <option key={r.value} value={r.value}>
               {r.label}
@@ -734,7 +734,7 @@ function StepBlock({
 
       <div className="mb-2">
         <p className="hint mb-1">Depends on (must complete first)</p>
-        {step.depends_on.length === 0 && <p className="hint mb-1">No dependency — this step is ready as soon as its section allows.</p>}
+        {step.depends_on.length === 0 && <p className="hint mb-1">No dependency - this step is ready as soon as its section allows.</p>}
         {step.depends_on.map((dep) => (
           <div key={dep.key} className="flex flex-wrap items-center gap-2 mb-2">
             <Select
@@ -754,7 +754,7 @@ function StepBlock({
               onChange={(e) => onUpdateDependency(dep.key, { condition_rule_id: e.target.value })}
               style={{ minWidth: 200 }}
             >
-              <option value="">Condition rule — none (always required)</option>
+              <option value="">Condition rule - none (always required)</option>
               {ruleOptions.map((r) => (
                 <option key={r.value} value={r.value}>
                   {r.label}
@@ -879,7 +879,7 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (recipeF
               <option value="">Select a product…</option>
               {(businessIdOptions ?? []).map((o) => (
                 <option key={o.product_business_id} value={o.product_business_id}>
-                  {o.product_business_id} — {o.name}
+                  {o.product_business_id} - {o.name}
                 </option>
               ))}
             </Select>
@@ -899,7 +899,7 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (recipeF
               !productBusinessId
                 ? "Pick a product first"
                 : pickedVersion && pickedVersion.lifecycle_state !== "released"
-                  ? "⚠ not released — a batch can only be created from a released product version"
+                  ? "⚠ not released - a batch can only be created from a released product version"
                   : "The released product spec this recipe is authored against"
             }
           >
@@ -907,7 +907,7 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (recipeF
               <option value="">{productBusinessId ? "Select a version…" : "—"}</option>
               {productVersions.map((v) => (
                 <option key={v.product_version_id} value={v.product_version_id}>
-                  v{v.version_no} — {v.name} ({v.lifecycle_state})
+                  v{v.version_no} - {v.name} ({v.lifecycle_state})
                 </option>
               ))}
             </Select>
@@ -1002,10 +1002,10 @@ function EditGraphModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={`Edit draft — v${version.version_no}`} large>
+    <Modal open onClose={onClose} title={`Edit draft - v${version.version_no}`} large>
       <form onSubmit={onSubmit}>
         <p className="hint mb-3">
-          Product, recipe code, version and site are fixed once a draft exists — sections, steps and
+          Product, recipe code, version and site are fixed once a draft exists - sections, steps and
           dependencies can still change while it stays a draft.
         </p>
         {error && <p className="error-text mb-2">{error}</p>}
@@ -1229,7 +1229,7 @@ function VersionDetailModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={`${version.recipe_family_id.slice(0, 8)}… — v${version.version_no}`} large>
+    <Modal open onClose={onClose} title={`${version.recipe_family_id.slice(0, 8)}… - v${version.version_no}`} large>
       <div className="mb-4">
         {(
           [
@@ -1270,7 +1270,7 @@ function VersionDetailModal({
           {simResult && (
             <p className="fs-2 mt-2">
               {simResult.complete ? (
-                "Graph is complete — ready to submit/release."
+                "Graph is complete - ready to submit/release."
               ) : (
                 <>
                   Findings:
@@ -1299,7 +1299,7 @@ function VersionDetailModal({
         <p className="fs-1 text-muted mb-1">Compare with another version</p>
         <div className="flex flex-wrap items-end gap-3">
           <Select value={compareTo} onChange={(e) => setCompareTo(e.target.value)} style={{ minWidth: 200, maxWidth: 220, width: "100%" }}>
-            <option value="">— pick a version —</option>
+            <option value="">- pick a version -</option>
             {allVersions
               .filter((v) => v.recipe_version_id !== recipeVersionId)
               .map((v) => (
@@ -1329,17 +1329,17 @@ function VersionDetailModal({
                     <ul className="fs-2" style={{ paddingLeft: "1.2em" }}>
                       {d.added.map((c) => (
                         <li key={`a-${c}`}>
-                          <span className="tabular">{c}</span> — added
+                          <span className="tabular">{c}</span> - added
                         </li>
                       ))}
                       {d.removed.map((c) => (
                         <li key={`r-${c}`}>
-                          <span className="tabular">{c}</span> — removed
+                          <span className="tabular">{c}</span> - removed
                         </li>
                       ))}
                       {d.changed.map((c) => (
                         <li key={`c-${c.code}`}>
-                          <span className="tabular">{c.code}</span> —{" "}
+                          <span className="tabular">{c.code}</span> -{" "}
                           {Object.entries(c.changes)
                             .map(([f, { from, to }]) => `${f}: ${from} → ${to}`)
                             .join("; ")}
@@ -1404,10 +1404,10 @@ function VersionDetailModal({
           action="release"
           submitVariant="success"
           submitLabel="Sign & release"
-          title={`Release recipe — v${version.version_no}`}
+          title={`Release recipe - v${version.version_no}`}
           summary={
             <>
-              This releases recipe version <strong>v{version.version_no}</strong> — once released its
+              This releases recipe version <strong>v{version.version_no}</strong> - once released its
               graph is locked; a change needs a new version. Signed by a QA Releaser who is{" "}
               <strong>not</strong> the recipe&apos;s author (author ≠ releaser).
             </>

@@ -122,6 +122,13 @@ class RecipeStep(Base):
     instruction_text: Mapped[str | None] = mapped_column(String(4000))
     sequence_hint: Mapped[int] = mapped_column(Integer, nullable=False)
     required_role_code: Mapped[str | None] = mapped_column(String(80))
+    # BAT-FR-014, SG-048 #014 partial resolution (2026-09-14, migration 0f714e883102_0105): distinct from
+    # `qualification_policy_id` below, which stays exactly as unresolved as before -- that UUID has no
+    # backing entity anywhere in this codebase. This new column matches `iam.qualifications.
+    # qualification_code`'s own string shape, the same one `material/commands.py::
+    # _check_dispensing_qualification` already uses; frozen onto BatchStep at issue, same precedent as
+    # `required_role_code`/SG-178.
+    required_qualification_code: Mapped[str | None] = mapped_column(String(100))
     qualification_policy_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     signature_policy_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     exception_policy_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))

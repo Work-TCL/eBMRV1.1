@@ -98,6 +98,7 @@ ROLE_NAMES = [
 PERMISSION_CATALOG = [
     ("batch_step.start", "execute", "batch_step", "Start a batch step"),
     ("batch_step.role_override", "role_override", "batch_step", "Start a batch step whose recipe-declared required role the actor does not hold, with a documented reason (SG-178, Documents 10/11)"),
+    ("batch_step.correct", "correct", "batch_step_result", "Request or approve a 2-signature completed-step-result correction (BAT-FR-023, Document 106 row 20)"),
     ("batch.review", "review", "batch", "QA review of a completed batch"),
     ("batch.release", "release", "batch", "QA release of a reviewed batch"),
     ("material_lot.disposition", "approve", "material_lot", "QC disposition of a material lot"),
@@ -407,10 +408,10 @@ PERMISSION_CATALOG = [
     # WP-09 (Document 59, SPEC-PM-002) -- Regulatory Reportability Assessment & Electronic Safety Submission.
     ("reportability_track.create", "create", "reportability_track", "Create reportability tracks for a safety case (Document 59)"),
     ("reportability_track.calculate_deadline", "calculate_deadline", "reportability_track", "Calculate a reportability track's regulatory deadline (Document 59)"),
-    ("reportability_track.decide", "decide", "reportability_track", "Decide a track REPORTABLE/NOT_REPORTABLE (Document 59, SG-157)"),
+    ("reportability_track.decide", "decide", "reportability_track", "Decide a track REPORTABLE/NOT_REPORTABLE (Document 59, SG-157 RESOLVED_APPROVED 2026-09-14: Postmarket Regulatory Affairs)"),
     ("reportability_track.view", "view", "reportability_track", "Read reportability tracks, dedupe evaluations and audit packages (Document 59)"),
     ("regulatory_report.create", "create", "regulatory_report", "Build a regulatory report draft (Document 59)"),
-    ("regulatory_report.approve", "approve", "regulatory_report", "Approve a regulatory report (Document 59, SG-157)"),
+    ("regulatory_report.approve", "approve", "regulatory_report", "Approve a regulatory report (Document 59, SG-157 RESOLVED_APPROVED 2026-09-14: QA Releaser, the closest existing real role to Document 106's 'Head of Quality' text)"),
     ("regulatory_report.generate_payload", "generate_payload", "regulatory_report", "Generate an eMDR/AEMS submission payload (Document 59)"),
     ("regulatory_report.submit", "submit", "regulatory_report", "Submit a regulatory report (Document 59)"),
     ("regulatory_report.followup", "followup", "regulatory_report", "Create a follow-up report task (Document 59)"),
@@ -437,8 +438,12 @@ PERMISSION_CATALOG = [
     ("security_threat.register", "register", "security_threat", "Register a threat (Document 61)"),
     ("security_threat.map_control", "map_control", "security_threat", "Map a preventive/detective/recovery control to a threat (Document 61)"),
     ("security_threat.calculate_risk", "calculate_risk", "security_threat", "Calculate inherent/residual security risk (Document 61)"),
-    ("security_threat.accept_risk", "accept_risk", "security_threat", "Accept residual security risk (Document 61, SG-161)"),
-    ("security_exception.open", "open", "security_exception", "Open a time-bounded security exception (Document 61, SG-161)"),
+    ("security_threat.accept_risk", "accept_risk", "security_threat", "Accept residual security risk, independent of whoever calculated it (Document 61, SG-161 RESOLVED_APPROVED 2026-09-14: Security Risk Approver)"),
+    # SG-161 RESOLVED_APPROVED 2026-09-14: split from the single "security_exception.open" permission --
+    # independence has no meaning in a one-step create+sign command (see app/modules/security/commands.py
+    # module docstring), so opening is now request (unsigned) + approve (signed, independent of requester).
+    ("security_exception.request", "request", "security_exception", "Request a time-bounded security exception (Document 61, SG-161)"),
+    ("security_exception.approve", "approve", "security_exception", "Approve a requested security exception, independent of the requester (Document 61, SG-161)"),
     ("security_exception.view", "view", "security_exception", "Read a security exception (Document 61)"),
     # WP-10 (Document 62, SPEC-SEC-002) — same rows tests/conftest.py's own independent copy adds.
     ("identity_provider.create", "create", "identity_provider_config", "Register an identity provider config (Document 62)"),
@@ -652,7 +657,7 @@ ROLE_PERMISSIONS = {
         "material_spec.author", "material_spec.release", "material_spec.view",
         "recipe.author", "recipe.release", "recipe.view",
         "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view",
-        "batch_step.role_override",
+        "batch_step.role_override", "batch_step.correct",
         "device.create", "device.execute", "device.view", "genealogy.view",
         "qa_review.create", "qa_review.execute", "qa_review.view",
         "release.evaluate", "release.release", "release.hold", "release.reject", "release.view",
@@ -708,7 +713,7 @@ ROLE_PERMISSIONS = {
         "regulatory_obligation.view", "periodic_reporting_cycle.generate", "periodic_reporting_cycle.freeze",
         "security_threat_model.create", "security_threat_model.trigger_review", "security_control_matrix.view",
         "security_threat.register", "security_threat.map_control", "security_threat.calculate_risk",
-        "security_threat.accept_risk", "security_exception.open", "security_exception.view",
+        "security_threat.accept_risk", "security_exception.request", "security_exception.approve", "security_exception.view",
         "identity_provider.create", "identity_provider.map_identity", "identity_provider.validate_token",
         "application_session.view", "application_session.revoke",
         "service_identity.provision", "service_identity.revoke",
@@ -754,13 +759,17 @@ ROLE_PERMISSIONS = {
     ],
     # `validation.pq.manage` deliberately NOT here (found + fixed 2026-09-10, SG-172 gap-fixing pass): Document 85's own function catalogue names `createPQScenario()` as "Validation/Process SME" and `assignPQParticipants()` as "Validation Admin", never Operator/"Representative users" -- only `executePQScenario()` is "Representative users", matching `validation.pq.execute` below. The rest of this role's `validation.*` block (test_execution.complete, iq.complete, etc. -- genuine "qualified performer" actions) is unrelated and unaudited by this pass.
     "Operator": ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.execute", "batch_execution.view", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "equipment_asset.hold", "cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "ncr.create", "complaint.create", "training.assignment.complete", "validation.plan.manage", "validation.gate.view", "validation.package.view", "validation.intended_use.manage", "validation.function_risk.manage", "validation.function_risk.view", "validation.requirement.manage", "validation.trace_link.manage", "validation.baseline.manage", "validation.traceability.view", "validation.test_definition.manage", "validation.test_execution.manage", "validation.test_execution.complete", "validation.iq.manage", "validation.iq.complete", "validation.oq.manage", "validation.oq.view", "validation.infrastructure.manage", "validation.part11.manage", "validation.data_integrity.manage", "validation.interface.manage", "validation.dr.manage", "validation.security.manage", "validation.security.view", "validation.performance.manage", "validation.performance.view", "validation.exception.view", "validation.change_impact.manage", "validation.periodic_review.manage", "validation.periodic_review.decide", "validation.state_baseline.decommission", "validation.pq.execute", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"],
-    "Supervisor": ["batch_step.start", "batch_step.role_override", "rules.evaluate", "product.view", "recipe.view", "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view", "device.create", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "warehouse_location.create", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
+    "Supervisor": ["batch_step.start", "batch_step.role_override", "batch_step.correct", "rules.evaluate", "product.view", "recipe.view", "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view", "device.create", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "warehouse_location.create", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
     "QA Reviewer": ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation", "equipment_asset.hold", "equipment_asset.return_to_service", "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify", "em_sample.review", "em_excursion.impact", "process_cycle.create", "process_cycle.start", "process_cycle.review", "reconciliation.verify", "machine_evidence.review_view", "evidence.upload", "evidence.download", "evidence.manifest", "evidence.legal_hold", "evidence.integrity_check", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "qms_deviation.investigate", "qms_deviation.impact", "qms_deviation.extend", "capa.create", "capa.plan", "capa.action.add", "capa.action.complete", "capa.extend", "ncr.create", "ncr.segregate", "ncr.evaluate", "ncr.verify", "change.create", "change.impact", "change.task.add", "change.implement", "change.verify", "document.create", "document.submit", "complaint.create", "complaint.triage", "complaint.investigation_decision", "complaint.investigate", "risk.create", "risk.assessment.add", "risk.controls.add", "risk.review", "scar.case.create", "scar.issue", "scar.response", "scar.review", "internal_audit.create", "internal_audit.start", "internal_audit.finding.add", "internal_audit.finding.response", "field_action.create", "field_action.scope", "field_action.communications", "field_action.reconcile", "quality_metric.calculate",
         # SG-138 (2026-09-10, project-owner-directed): Document 106 section 9 row 107's "QA Reviewer"
         # signer class for `quality_metric_snapshot/management_review` -> this role holds it.
         "quality_metric.management_review",
         "effectiveness_check.create", "ai_governance.use_case.register", "ai_governance.use_case.assess_risk", "ai_governance.context.build", "ai_governance.advisory.execute", "ai_governance.disposition.record", "ai_governance.evaluation.run", "ai_governance.release_gate.evaluate", "ai_governance.injection.detect", "validation.gate.view", "validation.package.view", "validation.function_risk.approve", "validation.function_risk.view", "validation.traceability.view", "validation.oq.view", "validation.security.view", "validation.performance.view", "validation.exception.view", "validation.periodic_review.decide", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"],
-    "QA Releaser": ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "rules.release", "product.view", "product.release", "material_spec.view", "material_spec.release", "recipe.view", "recipe.release", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.effectiveness", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close", "quality_metric.definition.create", "quality_metric.definition.release", "quality_metric.management_review", "effectiveness_check.evaluate", "privileged_access.approve", "privileged_session.close", "privileged_session.review", "security_incident.close", "validation.exception.create", "validation.exception.triage", "validation.exception.retest_plan", "validation.exception.disposition", "validation.plan.release", "validation.function_risk.approve", "validation.test_definition.approve", "validation.iq.approve", "validation.oq.approve", "validation.infrastructure.approve", "validation.part11.approve", "validation.data_integrity.approve", "validation.interface.approve", "validation.dr.approve", "validation.security.approve", "validation.pq.approve", "validation.migration.approve", "validation.vsr.approve", "validation.release_auth.authorize", "validation.release_auth.deployment_check", "validation.post_go_live.record"],
+    "QA Releaser": ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "rules.release", "product.view", "product.release", "material_spec.view", "material_spec.release", "recipe.view", "recipe.release", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.effectiveness", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
+    # SG-157 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): closest existing real role to Document
+    # 106's "QA Manager/Head of Quality per record class" text for regulatory_report.approve -- QA Releaser
+    # is this codebase's actual highest quality-release-authority role (batch/recipe/product release).
+    "regulatory_report.approve", "quality_metric.definition.create", "quality_metric.definition.release", "quality_metric.management_review", "effectiveness_check.evaluate", "privileged_access.approve", "privileged_session.close", "privileged_session.review", "security_incident.close", "validation.exception.create", "validation.exception.triage", "validation.exception.retest_plan", "validation.exception.disposition", "validation.plan.release", "validation.function_risk.approve", "validation.test_definition.approve", "validation.iq.approve", "validation.oq.approve", "validation.infrastructure.approve", "validation.part11.approve", "validation.data_integrity.approve", "validation.interface.approve", "validation.dr.approve", "validation.security.approve", "validation.pq.approve", "validation.migration.approve", "validation.vsr.approve", "validation.release_auth.authorize", "validation.release_auth.deployment_check", "validation.post_go_live.record"],
     "QC Reviewer": ["material_lot.disposition", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.view", "qc_method.author", "qc_method.view", "qc_result.correct", "material_lot.collect_sample", "material_lot.retest", "dispensing_order.verify", "cleaning_execution.verify", "em_sample.review", "process_cycle.review", *QMS_VIEW_CODES, "qms_deviation.create", "ncr.create", "ncr.evaluate", "ncr.verify", "capa.action.complete"],
     # Document 38 (SPEC-EQP-001) actor-specific roles — grants scoped to exactly the operation each actor
     # performs (§2), no broader platform access.
@@ -833,6 +842,10 @@ ROLE_PERMISSIONS = {
         # Document 106 rows 123/125/126/127/128's "Regulatory Affairs authorized submitter" signer class
         # (Document 59) -- this role is the operationalization of that signer class into an actual role.
         "reportability_track.create", "reportability_track.calculate_deadline", "reportability_track.view",
+        # SG-157 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): the REPORTABLE/NOT_REPORTABLE
+        # decision itself -- same "Regulatory Affairs authorized submitter" signer class as the rest of
+        # this role's Document 59 grants above.
+        "reportability_track.decide",
         "regulatory_report.create", "regulatory_report.generate_payload", "regulatory_report.submit",
         "regulatory_report.followup", "regulatory_submission.acknowledge",
         # Document 60's own actor -- "Regulatory Admin"/"Regulatory user"/"Regulatory reviewer" in its
@@ -846,15 +859,20 @@ ROLE_PERMISSIONS = {
     # architecture/threat/control-mapping/risk-calculation/review-trigger work Document 61 # 2 assigns to
     # "Security Architect"/"Security Engineer"/"System Architect" (combined: no Document 106 row or
     # Document 61 text splits these three into distinct signed steps); Security Risk Approver holds the
-    # risk-acceptance and exception-opening actions Document 61 assigns to "Security/Quality/Business
-    # approver"/"Security owner" -- both endpoints fail closed regardless of role per SG-161 (no Document
-    # 106 resolution exists for either), so this role only gates who may *attempt* them.
+    # risk-acceptance and exception-approval actions Document 61 assigns to "Security/Quality/Business
+    # approver"/"Security owner". SG-161 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): both now
+    # resolve to real Document 106 policy and are independence-checked in code (see
+    # app/modules/security/commands.py module docstring) -- Security Architect can *request* an exception
+    # (they are the ones who would identify the need) but only Security Risk Approver can accept a risk or
+    # approve a requested exception, and never their own request (enforced, not merely role-gated).
     "Security Architect": [
         "security_threat_model.create", "security_threat_model.trigger_review", "security_control_matrix.view",
         "security_threat.register", "security_threat.map_control", "security_threat.calculate_risk",
+        "security_exception.request",
     ],
     "Security Risk Approver": [
-        "security_control_matrix.view", "security_threat.accept_risk", "security_exception.open", "security_exception.view",
+        "security_control_matrix.view", "security_threat.accept_risk",
+        "security_exception.request", "security_exception.approve", "security_exception.view",
         # Document 68 (SPEC-SEC-008): the RBAC gate for vulnerability-exception approval (which itself
         # fails closed at the signature step -- SG-165). Same "risk-acceptance / exception" actor.
         "vulnerability.exception",
@@ -995,6 +1013,14 @@ SIGNATURE_POLICY_FLOOR = [
     # authority that owns the hold reason -> no fixed role either (same precedent), reason not required.
     ("batch_step", "hold", "Performed", None, False, True, True),
     ("batch_step", "resume", "Approved", None, False, True, False),
+    # BAT-FR-023, SG-048 #023 partial resolution, 2026-09-14. Document 106 row 20: "Approved", "Authorized
+    # corrector + independent approver", 2 signatures, corrector and approver MUST differ, mandatory
+    # reason. No fixed role named (same "no fixed role" precedent as the sibling batch_step rows above) --
+    # required_role_name=None; RBAC-gated by the new batch_step.correct permission instead.
+    # signature_count stays 1 here (SIGNATURE_POLICY_FLOOR's own 7-tuple shape assumes count=1) --
+    # independence is enforced in code between the two separate commands' actors, the identical precedent
+    # qc_result/correct below already establishes for its own identically-shaped Document 106 row 57.
+    ("batch_step_result", "correct", "Approved", None, True, True, True),
     # BAT-FR-026, steps-completeness sub-clause only -- SG-048 #026 partial resolution, 2026-09-09,
     # project-owner-directed (the other of the three gaps chosen). Document 106 row 16: "Performed",
     # "Qualified performer for the task" (no fixed role -- dynamic per action, same treatment as every
@@ -1142,10 +1168,10 @@ SIGNATURE_POLICY_FLOOR = [
     ("regulatory_report", "submit", "Approved", "Postmarket Regulatory Affairs", False, True, True),
     # WP-09 (Document 60, SPEC-PM-002) -- Document 106 row 132 ("Qualified performer for the task", "None
     # required unless flagged critical", reason=no) -- same resolved shape as cleaning_execution.complete/
-    # line_clearance.complete above. Rows 129/130 (correction_removal create/decide) require TWO
-    # signatures ("Authorized corrector + independent approver") which no mechanism in this codebase
-    # implements, and row 131 (deadline override) names "Elevated authority defined by the record class"
-    # with no dispatch table -- all three deliberately left unresolved (SG-160).
+    # line_clearance.complete above. Rows 129/130 (correction_removal create/decide, "Authorized corrector
+    # + independent approver") are now seeded in SIGNATURE_POLICY_CHAIN_FLOOR below (SG-160 partial
+    # resolution, 2026-09-14). Row 131 (deadline override) names "Elevated authority defined by the record
+    # class" with no dispatch table -- still deliberately left unresolved (SG-160 remainder).
     ("constituent_information_share", "record_sent", "Performed", None, False, True, False),
     # WP-10 (Document 61, SPEC-SEC-001) -- Document 106 has zero usable rows for this module's two
     # signature-shaped endpoints. `POST /security/v1/risks/{id}/accept` has no Document 106 row at all
@@ -1422,6 +1448,37 @@ SIGNATURE_POLICY_FLOOR = [
     ("ai_disposition", "record", "Performed", None, False, True, False),
     ("ai_release_gate", "evaluate", "Released", "QA Releaser", True, True, True),
     ("ai_provider_switch", "switch", "Approved", "QA Releaser", True, True, True),
+    # SG-156 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): Document 106 rows for
+    # safety_signal.open/assess/escalate named the signer as "per policy lookup" with nothing to look up.
+    # RBAC already grants open/assess to "Postmarket Safety Reviewer" and escalate to "Postmarket
+    # Regulatory Affairs" (the pre-existing role split, kept as-is rather than overridden) -- role
+    # enforcement here is via that RBAC grant alone (required_role_name=None), same "RBAC-gated, no fixed
+    # role enforced in code" pattern as batch_step.complete_step above; no independence requirement (these
+    # are a progression of the same signal, not one person reviewing another's work).
+    ("safety_signal", "open", "Approved", None, False, True, False),
+    ("safety_signal", "assess", "Approved", None, False, True, False),
+    ("safety_signal", "escalate", "Approved", None, False, True, False),
+    # SG-157 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): reportability_track.decide had no
+    # Document 106 row at all; regulatory_report.approve named "QA Manager/Head of Quality per record
+    # class" with no dispatch table. decide -> Postmarket Regulatory Affairs (RBAC-granted above, same
+    # signer class as this module's other Document 59 rows); approve -> QA Releaser (RBAC-granted above,
+    # the closest existing real role to "Head of Quality" -- see app/modules/postmarket/reportability_
+    # commands.py). No independence requirement was specified for either.
+    ("reportability_track", "decide", "Approved", None, False, True, False),
+    ("regulatory_report", "approve", "Approved", None, False, True, False),
+    # SG-161 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): accept_residual_security_risk had no
+    # Document 106 row at all; security_exception's row named "elevated authority defined by the record
+    # class" with no dispatch table. Both resolve to "Security Risk Approver" (RBAC-granted above),
+    # independent of the record's own stored actor -- residual_risk["calculated_by"] for risk acceptance,
+    # opened_by for exception approval (see app/modules/security/commands.py module docstring for why
+    # security_exception was split into an unsigned request + this signed approval to make the
+    # independence check meaningful). "security_exception.request" is deliberately signature_required=False
+    # (explicit "no signature here" data, same SG-119 pattern -- meaning/reason_required follow that
+    # pattern's own "Performed"/False convention for every other unsigned row in this table) since it is
+    # the unsigned request half; `RequestSecurityExceptionCommand.reason` is still a mandatory schema field.
+    ("security_threat", "accept_risk", "Approved", "Security Risk Approver", True, True, True),
+    ("security_exception", "request", "Performed", None, False, False, False),
+    ("security_exception", "approve", "Approved", "Security Risk Approver", True, True, True),
 ]
 
 # SG-035 pair 4 (`record_correction/complete`), RESOLVED 2026-09-11, project-owner-directed
@@ -1441,6 +1498,16 @@ SIGNATURE_POLICY_FLOOR = [
 SIGNATURE_POLICY_CHAIN_FLOOR = [
     # (record_type, action, meaning, signature_count, signature_order, reason_required)
     ("record_correction", "complete", "Approved", 2, [None, "QA Releaser"], True),  # Doc 106 section 9 row 1
+    # Document 60 (SPEC-PM-003) rows 129/130 -- SG-160 partial resolution, 2026-09-14,
+    # project-owner-directed. Both name "Authorized corrector + independent approver" with no actual role
+    # for either position (unlike row 1 above, which this codebase's own vault implementation already
+    # chose to pin position 2 to "QA Releaser" -- a stricter reading than Document 106's own text gives
+    # either row). Deliberately NOT mirrored here: [None, None] follows Document 60's literal text exactly
+    # (no fixed role named), RBAC-gated by the existing correction_removal.create/decide permissions;
+    # independence is "corrector and approver MUST differ" (identity, not role), enforced by
+    # `enforce_chain_signer_policy()` regardless of the `signature_order` value at each position.
+    ("correction_removal_assessment", "sign", "Approved", 2, [None, None], True),
+    ("correction_removal_regulatory_record", "sign", "Approved", 2, [None, None], True),
 ]
 
 # Document 20 (SPEC-MAT-002B) INV-FR-001/002: warehouse_location has no CRUD operation anywhere in

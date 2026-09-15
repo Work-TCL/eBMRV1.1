@@ -9,18 +9,21 @@ named functions/UI surfaces in Document 60's own contract catalogue but are miss
 import uuid
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy
 from app.modules.postmarket import obligation_commands as commands
+from app.modules.postmarket.obligation_commands import _decision_content_hash, _field_action_reference_hash
 from app.modules.postmarket.obligation_models import (
     ConstituentInformationShare,
     CorrectionRemovalRegulatoryRecord,
     PeriodicReportingCycle,
     RegulatoryObligation,
 )
+from app.modules.signature.service import chain_signatures_so_far, create_challenge, resolve_signature_requirement
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
@@ -89,6 +92,92 @@ async def post_create_correction_removal_assessment(
         return await commands.create_correction_removal_assessment(session, cmd, actor.user_id)
 
 
+async def _create_chain_challenge(session: AsyncSession, *, record_type: str, record_id, content_hash: str, actor_user_id) -> dict:
+    """SG-160 partial resolution (2026-09-14). Same shape as
+    `vault/router.py::post_correction_signature_challenge()` -- chain position is derived from how many
+    valid signatures this record already carries for `(record_type, record_id)`, never accepted from the
+    caller (Document 106 section 13 test #5's "signature 2 issued before signature 1 exists" case)."""
+    policy = await resolve_signature_requirement(session, record_type=record_type, action="sign")
+    prior_signatures = await chain_signatures_so_far(session, record_type=record_type, record_id=record_id, record_version=1)
+    position = len(prior_signatures) + 1
+    if position > policy.signature_count:
+        raise ValidationFailedError("This record has already collected every required signature", signature_count=policy.signature_count)
+    if prior_signatures and content_hash != prior_signatures[0].record_hash:
+        raise ValidationFailedError("Content must match what the earlier signer(s) in this chain approved")
+    challenge = await create_challenge(
+        session, user_id=actor_user_id, record_type=record_type, record_id=record_id,
+        record_version=1, record_hash=content_hash, meaning=policy.meaning,
+    )
+    return {
+        "challenge_id": str(challenge.id), "meaning": challenge.meaning,
+        "chain_position": position, "signature_count": policy.signature_count,
+        "expires_at": challenge.expires_at.isoformat(),
+    }
+
+
+class CorrectionRemovalAssessmentSignatureChallengeRequest(BaseModel):
+    field_action_reference: dict
+
+
+@router.post("/correction-removal/{record_id}/assessment-signature-challenges")
+async def post_correction_removal_assessment_signature_challenge(
+    record_id: uuid.UUID, body: CorrectionRemovalAssessmentSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        record = await session.get(CorrectionRemovalRegulatoryRecord, record_id)
+        if record is None:
+            raise NotFoundError("Correction/removal regulatory record not found")
+        if record.state not in ("PENDING_ASSESSMENT_APPROVAL",):
+            raise ValidationFailedError("Assessment is not awaiting a signature", current_state=record.state)
+        return await _create_chain_challenge(
+            session, record_type="correction_removal_assessment", record_id=record.id,
+            content_hash=_field_action_reference_hash(body.field_action_reference), actor_user_id=actor.user_id,
+        )
+
+
+class CorrectionRemovalDecisionSignatureChallengeRequest(BaseModel):
+    reportable: bool
+    rationale: str
+    calendar_version: str | None = None
+    required_facts: dict = {}
+
+
+@router.post("/correction-removal/{record_id}/decision-signature-challenges")
+async def post_correction_removal_decision_signature_challenge(
+    record_id: uuid.UUID, body: CorrectionRemovalDecisionSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        record = await session.get(CorrectionRemovalRegulatoryRecord, record_id)
+        if record is None:
+            raise NotFoundError("Correction/removal regulatory record not found")
+        if record.state not in ("OPEN", "PENDING_DECISION_APPROVAL"):
+            raise ValidationFailedError("Reportability decision is not awaiting a signature", current_state=record.state)
+        return await _create_chain_challenge(
+            session, record_type="correction_removal_regulatory_record", record_id=record.id,
+            content_hash=_decision_content_hash(body), actor_user_id=actor.user_id,
+        )
+
+
+@router.post("/correction-removal/{record_id}/assessment-signatures", response_model=MutationReceipt)
+async def post_approve_correction_removal_assessment(
+    record_id: uuid.UUID, cmd: commands.ApproveCorrectionRemovalAssessmentCommand, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    """SG-160 partial resolution (2026-09-14): Document 106 row 130's independent-approver half. Not
+    named in Document 60's own API list -- same "obvious continuation endpoint" precedent as
+    `postApproveResultCorrection`/`postApproveStepResultCorrection` and `vault.complete_correction`."""
+    if cmd.record_id != record_id:
+        raise ValidationFailedError("record_id in path and body must match")
+    async with session.begin():
+        record = await session.get(CorrectionRemovalRegulatoryRecord, record_id)
+        if record is None:
+            raise NotFoundError("Correction/removal regulatory record not found")
+        await evaluate_policy(session, actor.user_id, action="correction_removal.create", site_id=record.site_id)
+        return await commands.approve_correction_removal_assessment(session, cmd, actor.user_id)
+
+
 @router.post("/correction-removal/{record_id}/decision", response_model=MutationReceipt)
 async def post_decide_correction_removal(
     record_id: uuid.UUID, cmd: commands.DecideCorrectionRemovalReportabilityCommand, session: AsyncSession = Depends(get_session),
@@ -102,6 +191,22 @@ async def post_decide_correction_removal(
             raise NotFoundError("Correction/removal regulatory record not found")
         await evaluate_policy(session, actor.user_id, action="correction_removal.decide", site_id=record.site_id)
         return await commands.decide_correction_removal_reportability(session, cmd, actor.user_id)
+
+
+@router.post("/correction-removal/{record_id}/decision-signatures", response_model=MutationReceipt)
+async def post_approve_correction_removal_decision(
+    record_id: uuid.UUID, cmd: commands.ApproveCorrectionRemovalDecisionCommand, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    """SG-160 partial resolution (2026-09-14): Document 106 row 129's independent-approver half."""
+    if cmd.record_id != record_id:
+        raise ValidationFailedError("record_id in path and body must match")
+    async with session.begin():
+        record = await session.get(CorrectionRemovalRegulatoryRecord, record_id)
+        if record is None:
+            raise NotFoundError("Correction/removal regulatory record not found")
+        await evaluate_policy(session, actor.user_id, action="correction_removal.decide", site_id=record.site_id)
+        return await commands.approve_correction_removal_decision(session, cmd, actor.user_id)
 
 
 @router.post("/correction-removal/{record_id}/scope-amendments", response_model=MutationReceipt)

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ebmr.internal/contracts/events/event-pm-003.json",
-  "title": "SPEC-PM-003 — Combination-Product Postmarket Regulatory Coordination Events",
-  "description": "Document 113 event contract for 14 of the 15 event types Document 60 # 13 declares. `PeriodicDatasetFrozen` is not emitted as a distinct outbox event: freezePeriodicReportDataset() calls Document 58's buildPeriodicSafetyDataset() internally, which -- like Document 58's own calculateSurveillanceMetric() -- is a Vault-release read/write, not a Mutation Gateway command, and neither emits an outbox event (see event-pm-001.json's own description for the same pattern). Recorded here rather than silently fabricating a PeriodicDatasetFrozen outbox row that the code never actually produces.",
+  "title": "SPEC-PM-003 \u2014 Combination-Product Postmarket Regulatory Coordination Events",
+  "description": "Document 113 event contract for 14 of the 15 event types Document 60 # 13 declares. `PeriodicDatasetFrozen` is not emitted as a distinct outbox event: freezePeriodicReportDataset() calls Document 58's buildPeriodicSafetyDataset() internally, which -- like Document 58's own calculateSurveillanceMetric() -- is a Vault-release read/write, not a Mutation Gateway command, and neither emits an outbox event (see event-pm-001.json's own description for the same pattern). Recorded here rather than silently fabricating a PeriodicDatasetFrozen outbox row that the code never actually produces. Updated 2026-09-14 (SG-160): added CorrectionRemovalAssessmentRequested/Signed and CorrectionRemovalReportabilitySigned for the new 2-signature chain ceremony (Document 106 rows 129/130).",
   "x-requirement-ids": [
     "PMO-FR-001",
     "PMO-FR-004",
@@ -25,144 +25,351 @@
     "ApplicantRelationshipConfiguredPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["relationship_id", "applicant_role"],
+      "required": [
+        "relationship_id",
+        "applicant_role"
+      ],
       "properties": {
-        "relationship_id": { "type": "string", "format": "uuid" },
-        "applicant_role": { "type": "string" }
+        "relationship_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "applicant_role": {
+          "type": "string"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-001"]
+      "x-requirement-ids": [
+        "PMO-FR-001"
+      ]
     },
     "Part4SharingAssessmentCreatedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["share_id", "safety_case_id", "due_at"],
+      "required": [
+        "share_id",
+        "safety_case_id",
+        "due_at"
+      ],
       "properties": {
-        "share_id": { "type": "string", "format": "uuid" },
-        "safety_case_id": { "type": "string", "format": "uuid" },
-        "due_at": { "type": "string", "format": "date-time" }
+        "share_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "safety_case_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "due_at": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-003", "PMO-FR-004"]
+      "x-requirement-ids": [
+        "PMO-FR-003",
+        "PMO-FR-004"
+      ]
     },
     "ConstituentSharingPackageCreatedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["share_id", "package_version", "package_digest"],
+      "required": [
+        "share_id",
+        "package_version",
+        "package_digest"
+      ],
       "properties": {
-        "share_id": { "type": "string", "format": "uuid" },
-        "package_version": { "type": "integer" },
-        "package_digest": { "type": "string" }
+        "share_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "package_version": {
+          "type": "integer"
+        },
+        "package_digest": {
+          "type": "string"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-005"]
+      "x-requirement-ids": [
+        "PMO-FR-005"
+      ]
     },
     "ConstituentInformationSharedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["share_id", "channel"],
+      "required": [
+        "share_id",
+        "channel"
+      ],
       "properties": {
-        "share_id": { "type": "string", "format": "uuid" },
-        "channel": { "type": "string" }
+        "share_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "channel": {
+          "type": "string"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-006", "PMO-FR-007"]
+      "x-requirement-ids": [
+        "PMO-FR-006",
+        "PMO-FR-007"
+      ]
     },
     "CorrectionRemovalAssessmentOpenedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["record_id"],
+      "required": [
+        "record_id"
+      ],
       "properties": {
-        "record_id": { "type": "string", "format": "uuid" },
-        "amendment": { "type": "object" }
+        "record_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "amendment": {
+          "type": "object"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-009", "PMO-FR-012"]
+      "x-requirement-ids": [
+        "PMO-FR-009",
+        "PMO-FR-012"
+      ]
     },
     "CorrectionRemovalReportabilityDecidedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["record_id", "reportable"],
+      "required": [
+        "record_id",
+        "reportable"
+      ],
       "properties": {
-        "record_id": { "type": "string", "format": "uuid" },
-        "reportable": { "type": "boolean" }
+        "record_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "reportable": {
+          "type": "boolean"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-010", "PMO-FR-011"]
+      "x-requirement-ids": [
+        "PMO-FR-010",
+        "PMO-FR-011"
+      ]
     },
     "FieldAlertAssessmentOpenedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["obligation_id", "due_at"],
+      "required": [
+        "obligation_id",
+        "due_at"
+      ],
       "properties": {
-        "obligation_id": { "type": "string", "format": "uuid" },
-        "due_at": { "type": "string", "format": "date-time" }
+        "obligation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "due_at": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-013", "PMO-FR-014"]
+      "x-requirement-ids": [
+        "PMO-FR-013",
+        "PMO-FR-014"
+      ]
     },
     "FieldAlertDecisionRecordedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["obligation_id", "decision"],
+      "required": [
+        "obligation_id",
+        "decision"
+      ],
       "properties": {
-        "obligation_id": { "type": "string", "format": "uuid" },
-        "decision": { "type": "string", "enum": ["REPORTABLE", "NOT_REPORTABLE"] }
+        "obligation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "REPORTABLE",
+            "NOT_REPORTABLE"
+          ]
+        }
       },
-      "x-requirement-ids": ["PMO-FR-013"]
+      "x-requirement-ids": [
+        "PMO-FR-013"
+      ]
     },
     "BPDRTrackCreatedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["obligation_id"],
+      "required": [
+        "obligation_id"
+      ],
       "properties": {
-        "obligation_id": { "type": "string", "format": "uuid" }
+        "obligation_id": {
+          "type": "string",
+          "format": "uuid"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-016"]
+      "x-requirement-ids": [
+        "PMO-FR-016"
+      ]
     },
     "PeriodicSafetyScheduleGeneratedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["cycle_id", "cycle_type"],
+      "required": [
+        "cycle_id",
+        "cycle_type"
+      ],
       "properties": {
-        "cycle_id": { "type": "string", "format": "uuid" },
-        "cycle_type": { "type": "string" }
+        "cycle_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "cycle_type": {
+          "type": "string"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-017"]
+      "x-requirement-ids": [
+        "PMO-FR-017"
+      ]
     },
     "FDAInformationRequestOpenedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["obligation_id", "due_at"],
+      "required": [
+        "obligation_id",
+        "due_at"
+      ],
       "properties": {
-        "obligation_id": { "type": "string", "format": "uuid" },
-        "due_at": { "type": "string", "format": "date-time" }
+        "obligation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "due_at": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-020", "PMO-FR-021"]
+      "x-requirement-ids": [
+        "PMO-FR-020",
+        "PMO-FR-021"
+      ]
     },
     "RegulatoryDeadlineOverriddenPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["obligation_id", "new_due_at"],
+      "required": [
+        "obligation_id",
+        "new_due_at"
+      ],
       "properties": {
-        "obligation_id": { "type": "string", "format": "uuid" },
-        "new_due_at": { "type": "string", "format": "date-time" },
-        "original_due_at": { "type": ["string", "null"], "format": "date-time" }
+        "obligation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "new_due_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "original_due_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-023", "PMO-FR-024"]
+      "x-requirement-ids": [
+        "PMO-FR-023",
+        "PMO-FR-024"
+      ]
     },
     "PostmarketRetentionPolicyCalculatedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["obligation_id", "selected_longest_days"],
+      "required": [
+        "obligation_id",
+        "selected_longest_days"
+      ],
       "properties": {
-        "obligation_id": { "type": "string", "format": "uuid" },
-        "selected_longest_days": { "type": "integer" }
+        "obligation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "selected_longest_days": {
+          "type": "integer"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-025", "PMO-FR-026", "PMO-FR-027"]
+      "x-requirement-ids": [
+        "PMO-FR-025",
+        "PMO-FR-026",
+        "PMO-FR-027"
+      ]
     },
     "PostmarketLegalHoldPlacedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["obligation_id", "authority"],
+      "required": [
+        "obligation_id",
+        "authority"
+      ],
       "properties": {
-        "obligation_id": { "type": "string", "format": "uuid" },
-        "authority": { "type": "string" }
+        "obligation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "authority": {
+          "type": "string"
+        }
       },
-      "x-requirement-ids": ["PMO-FR-028"]
+      "x-requirement-ids": [
+        "PMO-FR-028"
+      ]
+    },
+    "CorrectionRemovalAssessmentRequestedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_id"
+      ],
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "x-requirement-ids": [
+        "PMO-FR-009"
+      ]
+    },
+    "CorrectionRemovalChainSignedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_id",
+        "chain_position",
+        "signature_count"
+      ],
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "chain_position": {
+          "type": "integer"
+        },
+        "signature_count": {
+          "type": "integer"
+        }
+      },
+      "x-requirement-ids": [
+        "PMO-FR-009",
+        "PMO-FR-010"
+      ]
     }
   },
   "events": [
@@ -171,112 +378,213 @@
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "applicant_relationship",
-      "payload": { "$ref": "#/$defs/ApplicantRelationshipConfiguredPayload" },
-      "x-requirement-ids": ["PMO-FR-001"]
+      "payload": {
+        "$ref": "#/$defs/ApplicantRelationshipConfiguredPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-001"
+      ]
     },
     {
       "event_type": "Part4SharingAssessmentCreated",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "constituent_information_share",
-      "payload": { "$ref": "#/$defs/Part4SharingAssessmentCreatedPayload" },
-      "x-requirement-ids": ["PMO-FR-003", "PMO-FR-004"]
+      "payload": {
+        "$ref": "#/$defs/Part4SharingAssessmentCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-003",
+        "PMO-FR-004"
+      ]
     },
     {
       "event_type": "ConstituentSharingPackageCreated",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "constituent_information_share",
-      "payload": { "$ref": "#/$defs/ConstituentSharingPackageCreatedPayload" },
-      "x-requirement-ids": ["PMO-FR-005"]
+      "payload": {
+        "$ref": "#/$defs/ConstituentSharingPackageCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-005"
+      ]
     },
     {
       "event_type": "ConstituentInformationShared",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "constituent_information_share",
-      "payload": { "$ref": "#/$defs/ConstituentInformationSharedPayload" },
-      "x-requirement-ids": ["PMO-FR-006", "PMO-FR-007"]
+      "payload": {
+        "$ref": "#/$defs/ConstituentInformationSharedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-006",
+        "PMO-FR-007"
+      ]
+    },
+    {
+      "event_type": "CorrectionRemovalAssessmentRequested",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-003",
+      "aggregate_type": "correction_removal_regulatory_record",
+      "payload": {
+        "$ref": "#/$defs/CorrectionRemovalAssessmentRequestedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-009"
+      ]
     },
     {
       "event_type": "CorrectionRemovalAssessmentOpened",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "correction_removal_regulatory_record",
-      "payload": { "$ref": "#/$defs/CorrectionRemovalAssessmentOpenedPayload" },
-      "x-requirement-ids": ["PMO-FR-009", "PMO-FR-012"]
+      "payload": {
+        "$ref": "#/$defs/CorrectionRemovalAssessmentOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-009",
+        "PMO-FR-012"
+      ]
+    },
+    {
+      "event_type": "CorrectionRemovalAssessmentSigned",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-003",
+      "aggregate_type": "correction_removal_regulatory_record",
+      "payload": {
+        "$ref": "#/$defs/CorrectionRemovalChainSignedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-009"
+      ]
+    },
+    {
+      "event_type": "CorrectionRemovalReportabilitySigned",
+      "schema_version": "1.0",
+      "producer": "SPEC-PM-003",
+      "aggregate_type": "correction_removal_regulatory_record",
+      "payload": {
+        "$ref": "#/$defs/CorrectionRemovalChainSignedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-010"
+      ]
     },
     {
       "event_type": "CorrectionRemovalReportabilityDecided",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "correction_removal_regulatory_record",
-      "payload": { "$ref": "#/$defs/CorrectionRemovalReportabilityDecidedPayload" },
-      "x-requirement-ids": ["PMO-FR-010", "PMO-FR-011"]
+      "payload": {
+        "$ref": "#/$defs/CorrectionRemovalReportabilityDecidedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-010",
+        "PMO-FR-011"
+      ]
     },
     {
       "event_type": "FieldAlertAssessmentOpened",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "regulatory_obligation",
-      "payload": { "$ref": "#/$defs/FieldAlertAssessmentOpenedPayload" },
-      "x-requirement-ids": ["PMO-FR-013", "PMO-FR-014"]
+      "payload": {
+        "$ref": "#/$defs/FieldAlertAssessmentOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-013",
+        "PMO-FR-014"
+      ]
     },
     {
       "event_type": "FieldAlertDecisionRecorded",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "regulatory_obligation",
-      "payload": { "$ref": "#/$defs/FieldAlertDecisionRecordedPayload" },
-      "x-requirement-ids": ["PMO-FR-013"]
+      "payload": {
+        "$ref": "#/$defs/FieldAlertDecisionRecordedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-013"
+      ]
     },
     {
       "event_type": "BPDRTrackCreated",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "regulatory_obligation",
-      "payload": { "$ref": "#/$defs/BPDRTrackCreatedPayload" },
-      "x-requirement-ids": ["PMO-FR-016"]
+      "payload": {
+        "$ref": "#/$defs/BPDRTrackCreatedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-016"
+      ]
     },
     {
       "event_type": "PeriodicSafetyScheduleGenerated",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "periodic_reporting_cycle",
-      "payload": { "$ref": "#/$defs/PeriodicSafetyScheduleGeneratedPayload" },
-      "x-requirement-ids": ["PMO-FR-017"]
+      "payload": {
+        "$ref": "#/$defs/PeriodicSafetyScheduleGeneratedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-017"
+      ]
     },
     {
       "event_type": "FDAInformationRequestOpened",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "regulatory_obligation",
-      "payload": { "$ref": "#/$defs/FDAInformationRequestOpenedPayload" },
-      "x-requirement-ids": ["PMO-FR-020", "PMO-FR-021"]
+      "payload": {
+        "$ref": "#/$defs/FDAInformationRequestOpenedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-020",
+        "PMO-FR-021"
+      ]
     },
     {
       "event_type": "RegulatoryDeadlineOverridden",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "regulatory_obligation",
-      "payload": { "$ref": "#/$defs/RegulatoryDeadlineOverriddenPayload" },
-      "x-requirement-ids": ["PMO-FR-023", "PMO-FR-024"]
+      "payload": {
+        "$ref": "#/$defs/RegulatoryDeadlineOverriddenPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-023",
+        "PMO-FR-024"
+      ]
     },
     {
       "event_type": "PostmarketRetentionPolicyCalculated",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "regulatory_obligation",
-      "payload": { "$ref": "#/$defs/PostmarketRetentionPolicyCalculatedPayload" },
-      "x-requirement-ids": ["PMO-FR-025", "PMO-FR-026", "PMO-FR-027"]
+      "payload": {
+        "$ref": "#/$defs/PostmarketRetentionPolicyCalculatedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-025",
+        "PMO-FR-026",
+        "PMO-FR-027"
+      ]
     },
     {
       "event_type": "PostmarketLegalHoldPlaced",
       "schema_version": "1.0",
       "producer": "SPEC-PM-003",
       "aggregate_type": "regulatory_obligation",
-      "payload": { "$ref": "#/$defs/PostmarketLegalHoldPlacedPayload" },
-      "x-requirement-ids": ["PMO-FR-028"]
+      "payload": {
+        "$ref": "#/$defs/PostmarketLegalHoldPlacedPayload"
+      },
+      "x-requirement-ids": [
+        "PMO-FR-028"
+      ]
     }
   ]
 }

@@ -114,17 +114,17 @@ export default function AiGovernancePage() {
         subtitle="The advisory-only AI boundary and its operations console."
       />
 
-      <Banner tone="info" title="AI is advisory only (AG-14 / AI-FR-003)">
+        <Banner tone="info" title="AI is advisory only">
         No AI capability may sign, release, disposition, approve, close a quality record or submit a
         report. AI proposes; a qualified human executes through the normal authorization / signature /
-        mutation path. AI unavailability never blocks a regulated workflow (AI-FR-040).
+        mutation path. AI unavailability never blocks a regulated workflow.
       </Banner>
 
       <Banner tone="warn" title="5 actions below need a signature policy that hasn't been configured yet">
         Approving an AI model deployment, authorizing an AI tool call, recording a human disposition of AI
         output, evaluating the AI release gate, and switching the AI provider profile all require an
         electronic signature. None of them have a signature policy configured in this deployment yet, so
-        each will be correctly refused until Head of Quality and Regulatory Affairs define one — this is
+        each will be correctly refused until Head of Quality and Regulatory Affairs define one - this is
         the same fail-closed behavior every signed action in this system uses when its policy is missing,
         not a defect. Running an AI advisory request or an AI evaluation suite will also fail, because no
         live AI model provider or evaluation harness is connected in this environment.
@@ -211,7 +211,7 @@ export default function AiGovernancePage() {
           {
             path: "advisories",
             label: "Execute an advisory",
-            about: "Will fail closed (no result inserted) — no live AI model provider is configured in this environment.",
+            about: "Will fail closed (no result inserted) - no live AI model provider is configured in this environment.",
             fields: [
               { name: "use_case_id", label: "Use case ID", required: true },
               { name: "model_deployment_id", label: "Model deployment ID", required: true },
@@ -224,7 +224,7 @@ export default function AiGovernancePage() {
           {
             path: "evaluation-reports",
             label: "Run an evaluation suite",
-            about: "Will fail (no live evaluation harness configured) — see module docstring.",
+            about: "Will fail (no live evaluation harness configured) - see module docstring.",
             fields: [
               { name: "use_case_id", label: "Use case ID", required: true },
               { name: "dataset_ref", label: "Dataset ref", required: true },

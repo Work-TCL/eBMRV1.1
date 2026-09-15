@@ -135,7 +135,7 @@ export default function ReleasePage() {
       />
 
       <p className="hint mb-4">
-        DDCP constituent and compatibility detail is not yet included in the release package evaluation —
+        DDCP constituent and compatibility detail is not yet included in the release package evaluation -
         blockers and the decision record are the parts available today.
       </p>
 
@@ -161,7 +161,7 @@ export default function ReleasePage() {
             </option>
             {batchOptions.map((b) => (
               <option key={b.batch_id} value={b.batch_id}>
-                {b.batch_number} — {b.product_name ? `${b.product_name} (${b.product_code})` : b.batch_id} · {b.state}
+                {b.batch_number} - {b.product_name ? `${b.product_name} (${b.product_code})` : b.batch_id} · {b.state}
               </option>
             ))}
           </Select>
@@ -187,25 +187,25 @@ export default function ReleasePage() {
 
       {scope && (
         <>
-          {/* Explains why no decision buttons render below for a terminal/held scope — otherwise "the
+          {/* Explains why no decision buttons render below for a terminal/held scope - otherwise "the
              Release button is missing" reads as a bug rather than the correct, final outcome it is. */}
           {scope.state === "released" && (
             <Banner tone="ok" title="Already released" icon="check-circle">
               This batch was released{scope.decision_at ? ` on ${formatDateTime(scope.decision_at)}` : ""}. That
-              decision is final and cannot be repeated — see the decision record below for who signed it.
+              decision is final and cannot be repeated - see the decision record below for who signed it.
               Only Hold (a post-release recall) remains available.
             </Banner>
           )}
           {scope.state === "rejected" && (
             <Banner tone="critical" title="Already rejected" icon="x">
               This batch was rejected{scope.decision_at ? ` on ${formatDateTime(scope.decision_at)}` : ""}. That
-              decision is final — see the decision record below for who signed it and why.
+              decision is final - see the decision record below for who signed it and why.
             </Banner>
           )}
           {scope.state === "hold" && (
             <Banner tone="warn" title="On hold" icon="lock">
-              This scope is on hold and cannot be released, held again, or rejected from here — Document
-              15&rsquo;s model has no resume-from-hold transition in this pass.
+              This scope is on hold and cannot be released, held again, or rejected from here - there is no
+              resume-from-hold transition in this pass.
             </Banner>
           )}
           {scope.state !== "released" && scope.state !== "rejected" && scope.state !== "hold" && evaluation?.eligible ? (
@@ -250,7 +250,7 @@ export default function ReleasePage() {
 
             {/* release/models.py::ALLOWED_TRANSITIONS is lowercase ("released"/"rejected"/…) and per-action
                ("released" only from "eligible"; "rejected" only from "eligible"/"blocked"; "hold" from
-               anything except "hold"/"rejected", including post-release per REL-FR-031) — a single
+               anything except"hold"/"rejected", including post-release per REL-FR-031) - a single
                uppercase-cased guard around all three (as this used to be) never actually hid anything,
                since scope.state is never "RELEASED"/"REJECTED" literally, and offering an action the
                backend will refuse is exactly the class of bug the live INVALID_TRANSITION report on
@@ -406,7 +406,7 @@ function DecisionModal({
       action={decision}
       title={
         <span className="flex items-center gap-2">
-          <Icon name="pen" /> {title} — {scope.scope_type} scope
+          <Icon name="pen" /> {title} - {scope.scope_type} scope
         </span>
       }
       summary="Records the final release decision for this scope. Signer must be independent of the QA Reviewer who completed this batch's review."

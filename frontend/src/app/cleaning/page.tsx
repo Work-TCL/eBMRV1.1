@@ -36,7 +36,7 @@ const config: OpsRecordConfig<CleaningExecution> = {
       { name: "procedure_version_id", label: "Cleaning procedure version ID", required: true },
       { name: "equipment_id", label: "Equipment", type: "equipmentSelect", hint: "Or leave blank and set an area." },
       { name: "area_id", label: "Area", type: "areaSelect" },
-      { name: "batch_context", label: "Batch context", type: "kv", hint: "Optional — what batch/product this cleaning relates to." },
+      { name: "batch_context", label: "Batch context", type: "kv", hint: "Optional - what batch/product this cleaning relates to." },
     ],
     buildBody: (v, siteId) => ({
       site_id: siteId,
@@ -116,7 +116,7 @@ const config: OpsRecordConfig<CleaningExecution> = {
       challengeAction: "verify",
       variant: "success",
       can: canVerify,
-      summary: "Independent verification of the cleaning result (SoD — the verifier is not the performer).",
+      summary: "Independent verification of the cleaning result (SoD - the verifier is not the performer).",
       fields: [
         {
           name: "result", label: "Result", required: true, type: "select",

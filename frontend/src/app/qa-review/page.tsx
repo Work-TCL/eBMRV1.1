@@ -248,7 +248,7 @@ function CreatePackageModal({
             </option>
             {batches.map((b) => (
               <option key={b.batch_id} value={b.batch_id}>
-                {b.batch_number} — {b.product_name ? `${b.product_name} (${b.product_code})` : b.batch_id} · {b.state}
+                {b.batch_number} - {b.product_name ? `${b.product_name} (${b.product_code})` : b.batch_id} · {b.state}
               </option>
             ))}
           </Select>
@@ -354,8 +354,8 @@ function PackageModal({
         </Button>
         <div className="flex gap-2">
           {/* reindex_review_package() works from any state (models.py QA_REVIEW_STATES: READY_FOR_REVIEW/
-             REVIEW_COMPLETE/REOPENED — there is no "COMPLETE") — including REVIEW_COMPLETE, where a
-             changed batch reopens it (RBE-FR-024). Never state-gated on the backend, so not gated here. */}
+             REVIEW_COMPLETE/REOPENED - there is no "COMPLETE") - including REVIEW_COMPLETE, where a
+             changed batch reopens it. Never state-gated on the backend, so not gated here. */}
           {canAct && (
             <Button
               variant="secondary"
@@ -373,7 +373,7 @@ function PackageModal({
               <Icon name="refresh" /> Reindex
             </Button>
           )}
-          {/* Only READY_FOR_REVIEW/REOPENED allow completing (ALLOWED_TRANSITIONS) — offering this once
+          {/* Only READY_FOR_REVIEW/REOPENED allow completing (ALLOWED_TRANSITIONS) - offering this once
              already REVIEW_COMPLETE is exactly what produced the live INVALID_TRANSITION report: the old
              `p.state !== "COMPLETE"` check compared against a state string this module never uses. */}
           {canAct && p.state !== "REVIEW_COMPLETE" && (
@@ -396,7 +396,7 @@ function PackageModal({
           }}
           challengePath={`/qa-review/v1/packages/${p.package_id}/signature-challenges`}
           action="complete"
-          title={`Complete review — batch ${p.batch_id}`}
+          title={`Complete review - batch ${p.batch_id}`}
           summary="Marks this batch's QA review package complete. Requires your signature."
           submitLabel="Sign & complete review"
           onSign={(sig) =>

@@ -16,6 +16,7 @@ import { JsonPanel } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { WorkflowActionButton } from "@/components/shared/WorkflowActionButton";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { FormConsole } from "@/components/shared/FormConsole";
 
 const ROOT = "/integration/v1";
 
@@ -38,7 +39,7 @@ function useErpInstances(refreshToken: number): { options: EntityOption[]; statu
     listAll<ErpInstanceSummary>(`${ROOT}/instances`)
       .then((rows) => {
         if (cancelled) return;
-      setOptions(rows.map((r) => ({ value: r.id, label: `${r.instance_name} — ${r.vendor}/${r.environment} (${r.status})` })));
+      setOptions(rows.map((r) => ({ value: r.id, label: `${r.instance_name} - ${r.vendor}/${r.environment} (${r.status})` })));
         setStatus(rows.length ? "ready" : "empty");
       })
       .catch(() => {
@@ -100,7 +101,186 @@ export default function ErpIntegrationPage() {
       <CommandCard canAdmin={isAdmin} />
       {isAdmin && <MappingCard instanceListVersion={instanceListVersion} />}
       {isAdmin && <ReconciliationCard instanceListVersion={instanceListVersion} />}
+      {isAdmin && <MoreOpsConsole />}
     </div>
+  );
+}
+
+/** The remaining `/integration/v1` operations that don't yet have a bespoke card above — mapping
+ * approval/external-change/conflict-resolution, sync checkpoints, the command correct/reconcile-
+ * uncertain/compensate lifecycle, bulk jobs, migration-package provenance, inbound event ingest, and
+ * the rest of reconciliation (record a difference, resolve one, complete a run). All unsigned: the two
+ * commands with an optional `challenge_id` (mapping approve, conflict resolve) both resolve
+ * `signature_required=False` from policy today (SG-122, see `erp/commands.py`), same "policy resolves
+ * not required" shape as every other unsigned-by-policy op elsewhere in this app. */
+function MoreOpsConsole() {
+  return (
+    <FormConsole
+      title="More integration operations"
+      root={ROOT}
+      ops={[
+        {
+          path: "mappings/{mapping_id}/approve",
+          label: "Approve a master-data mapping",
+          fields: [
+            { name: "mapping_id", label: "Mapping ID", required: true },
+            { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+          ],
+        },
+        {
+          path: "mappings/{mapping_id}/external-change",
+          label: "Apply an external mapping change",
+          about: "Sync-processor trigger, not typically human-initiated - exposed here for support/replay use.",
+          fields: [
+            { name: "mapping_id", label: "Mapping ID", required: true },
+            { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+            { name: "field_name", label: "Field name", required: true },
+            { name: "proposed_value", label: "Proposed value", type: "kv", required: true },
+          ],
+        },
+        {
+          path: "mapping-conflicts/{conflict_id}/resolve",
+          label: "Resolve a master-data conflict",
+          fields: [
+            { name: "conflict_id", label: "Conflict ID", required: true },
+            { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+            { name: "resolution", label: "Resolution", type: "select", required: true, options: [
+              { value: "ACCEPT_PROPOSED", label: "Accept proposed" }, { value: "KEEP_CURRENT", label: "Keep current" }, { value: "REJECT", label: "Reject" }] },
+            { name: "resolution_reason", label: "Resolution reason", type: "textarea", required: true },
+          ],
+        },
+        {
+          path: "sync-checkpoints",
+          label: "Advance a sync checkpoint",
+          fields: [
+            { name: "erp_instance_id", label: "ERP instance ID", required: true },
+            { name: "entity_type", label: "Entity type", required: true },
+            { name: "cursor_value", label: "Cursor value", required: true },
+            { name: "last_batch_id", label: "Last batch ID", hint: "Optional - the idempotent-resume handle." },
+          ],
+        },
+        {
+          path: "commands/{original_command_id}/correct",
+          label: "Correct a failed command",
+          about: "Creates a brand-new corrected command linked to the original - the original's payload is never mutated.",
+          fields: [
+            { name: "original_command_id", label: "Original command ID", required: true },
+            { name: "corrected_payload", label: "Corrected payload", type: "kv", required: true },
+            { name: "reason", label: "Reason", type: "textarea", required: true },
+          ],
+        },
+        {
+          path: "commands/{command_id}/reconcile-uncertain",
+          label: "Reconcile an uncertain-outcome command",
+          about: "Only a command stuck DISPATCHED past a crash can be reconciled - always routes to RETRY_WAIT pending a human external-system lookup.",
+          fields: [{ name: "command_id", label: "Command ID", required: true, pathOnly: true }],
+        },
+        {
+          path: "commands/{original_command_id}/compensate",
+          label: "Compensate a succeeded command",
+          about: "Reverses an operation that already succeeded externally - always a new command, tied to the authorizing GxP decision.",
+          fields: [
+            { name: "original_command_id", label: "Original command ID", required: true },
+            { name: "compensating_command_type", label: "Compensating command type", required: true },
+            { name: "compensating_payload", label: "Compensating payload", type: "kv", required: true },
+            { name: "gxp_authorization_reference", label: "GxP authorization reference", type: "kv", required: true, hint: "The GxP record/decision that justifies reversing this." },
+            { name: "reason", label: "Reason", type: "textarea", required: true },
+          ],
+        },
+        {
+          path: "bulk-jobs",
+          label: "Start a bulk job",
+          fields: [
+            { name: "erp_instance_id", label: "ERP instance ID", required: true },
+            { name: "job_type", label: "Job type", required: true },
+            { name: "entity_type", label: "Entity type", required: true },
+            { name: "total_records", label: "Total records", type: "number", hint: "Optional, if known up front." },
+          ],
+        },
+        {
+          path: "bulk-jobs/{job_id}/progress",
+          label: "Record bulk job progress",
+          fields: [
+            { name: "job_id", label: "Bulk job ID", required: true },
+            { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+            { name: "succeeded_delta", label: "Succeeded this chunk", type: "number", default: "0" },
+            {
+              name: "newly_failed_records", label: "Newly failed records this chunk", type: "repeat", itemLabel: "Failed record",
+              subFields: [{ name: "record_ref", label: "Record reference" }, { name: "reason", label: "Reason" }],
+            },
+            { name: "resume_cursor", label: "Resume cursor", hint: "Optional - where to continue after a crash." },
+          ],
+        },
+        {
+          path: "bulk-jobs/{job_id}/complete",
+          label: "Complete a bulk job",
+          fields: [
+            { name: "job_id", label: "Bulk job ID", required: true },
+            { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+          ],
+        },
+        {
+          path: "migration-packages",
+          label: "Record a migration package",
+          about: "A provenance record, not a workflow.",
+          fields: [
+            { name: "erp_instance_id", label: "ERP instance ID", hint: "Optional." },
+            { name: "site_id", label: "Site ID", hint: "Optional." },
+            { name: "package_name", label: "Package name", required: true },
+            { name: "source_checksum", label: "Source checksum", required: true },
+            { name: "entity_types", label: "Entity types", type: "stringList", itemLabel: "Entity type" },
+            { name: "approval_reference", label: "Approval reference", hint: "Set only when this package was already approved elsewhere." },
+          ],
+        },
+        {
+          path: "events",
+          label: "Ingest an inbound ERP event",
+          fields: [
+            { name: "erp_instance_id", label: "ERP instance ID", required: true },
+            { name: "external_event_id", label: "External event ID", required: true },
+            { name: "entity_type", label: "Entity type" },
+            { name: "external_entity_id", label: "External entity ID", hint: "Required for staleness detection." },
+            { name: "source_version", label: "Source version" },
+            { name: "payload", label: "Payload", type: "kv", required: true },
+          ],
+        },
+        {
+          path: "reconciliation-runs/{run_id}/differences",
+          label: "Record a reconciliation difference",
+          fields: [
+            { name: "run_id", label: "Reconciliation run ID", required: true },
+            { name: "difference_type", label: "Difference type", required: true },
+            { name: "internal_ref", label: "Internal reference", type: "kv" },
+            { name: "external_ref", label: "External reference", type: "kv" },
+            { name: "field_name", label: "Field name" },
+            { name: "internal_value", label: "Internal value", type: "kv" },
+            { name: "external_value", label: "External value", type: "kv" },
+            { name: "requires_qa_hold", label: "Requires QA hold", type: "bool", default: "false" },
+          ],
+        },
+        {
+          path: "reconciliation-differences/{difference_id}/resolve",
+          label: "Resolve a reconciliation difference",
+          fields: [
+            { name: "difference_id", label: "Difference ID", required: true },
+            { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+            { name: "resolution_status", label: "Resolution status", type: "select", required: true, options: [
+              { value: "RESOLVED", label: "Resolved" }, { value: "ESCALATED", label: "Escalated" }] },
+            { name: "resolution_reason", label: "Resolution reason", type: "textarea", required: true },
+          ],
+        },
+        {
+          path: "reconciliation-runs/{run_id}/complete",
+          label: "Complete a reconciliation run",
+          fields: [
+            { name: "run_id", label: "Reconciliation run ID", required: true },
+            { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+            { name: "status", label: "Status", type: "select", required: true, options: [
+              { value: "COMPLETED", label: "Completed" }, { value: "FAILED", label: "Failed" }] },
+          ],
+        },
+      ]}
+    />
   );
 }
 
@@ -270,8 +450,8 @@ function InstanceCard({ canAdmin, instanceListVersion }: { canAdmin: boolean; in
             <div className="mt-3">
               <WorkflowActionButton
                 label="Validate connector"
-                title={`Validate — ${instance.instance_name}`}
-                summary="Certifies a custom connector against an acceptance profile before it may post any write (MULTI-FR-024)."
+                title={`Validate - ${instance.instance_name}`}
+                summary="Certifies a custom connector against an acceptance profile before it may post any write."
                 confirmLabel="Validate"
                 variant="primary"
                 onDone={() => load()}
@@ -360,7 +540,7 @@ function CommandCard({ canAdmin }: { canAdmin: boolean }) {
             <div className="flex flex-wrap gap-2 mt-3">
               <WorkflowActionButton
                 label="Dispatch"
-                title={`Dispatch — ${cmd.command_type}`}
+                title={`Dispatch - ${cmd.command_type}`}
                 summary="Sends the queued command to the ERP now."
                 confirmLabel="Dispatch"
                 variant="primary"
@@ -374,7 +554,7 @@ function CommandCard({ canAdmin }: { canAdmin: boolean }) {
               />
               <WorkflowActionButton
                 label="Retry"
-                title={`Retry — ${cmd.command_type}`}
+                title={`Retry - ${cmd.command_type}`}
                 summary="Replays the exact original payload. Only state and next-attempt time change."
                 confirmLabel="Retry"
                 reason="required"
@@ -389,7 +569,7 @@ function CommandCard({ canAdmin }: { canAdmin: boolean }) {
               />
               <WorkflowActionButton
                 label="Cancel"
-                title={`Cancel — ${cmd.command_type}`}
+                title={`Cancel - ${cmd.command_type}`}
                 summary="Cancels a pending command. Dispatched or succeeded commands can never be cancelled."
                 confirmLabel="Cancel command"
                 variant="danger"
@@ -467,7 +647,7 @@ function MappingCard({ instanceListVersion }: { instanceListVersion: number }) {
           {error && <p className="error-text mb-2">{error}</p>}
           {mappingId && (
             <Banner tone="ok" title="Mapping proposed">
-              Mapping ID <span className="tabular">{mappingId}</span> — awaiting approval.
+              Mapping ID <span className="tabular">{mappingId}</span> - awaiting approval.
             </Banner>
           )}
           <Button type="submit" variant="secondary" disabled={busy || !erpInstanceId.trim() || !externalId.trim()}>

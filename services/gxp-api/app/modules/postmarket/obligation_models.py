@@ -26,13 +26,17 @@ in the baseline) -- `retention_basis` records the applicable regimes/rule versio
 selected-longest-rule structure Document 60 itself demands be transparent, without this module inventing
 what those durations actually are.
 
-**No Document 106 signature resolution exists for most of this module's actions.** Rows 129/130/132 name
-signer classes; rows for applicant-relationship configuration, Part 4 sharing evaluation/package creation,
-field-alert/BPDR creation, periodic-cycle generation/freeze, FDA-request creation and retention
-calculation have no row at all. Row 129/130 additionally require **two** signatures ("Authorized corrector
-+ independent approver", count=2) -- no multi-signature ceremony mechanism exists anywhere in this
-codebase (every other module's `_resolve_signature()` helper handles exactly one). See
-docs/generated/18_SPEC_GAPS.md SG-160 for the full list and the multi-signature limitation.
+**No Document 106 signature resolution exists for most of this module's actions.** Rows for
+applicant-relationship configuration, Part 4 sharing evaluation/package creation, field-alert/BPDR
+creation, periodic-cycle generation/freeze, FDA-request creation and retention calculation have no row at
+all -- these stay open (SG-160). Rows 129/130 ("Authorized corrector + independent approver", count=2)
+ARE built (2026-09-14, project-owner-directed): `assessment_approval_signatures`/
+`decision_approval_signatures` below back a 2-signature chain reusing
+`vault/commands.py::complete_correction()`'s own already-reviewed mechanism
+(`signature_service.enforce_chain_signer_policy()`) -- SG-160's original claim that no multi-signature
+mechanism existed anywhere in this codebase was already false when written. Row 131 ("Elevated authority
+defined by the record class") remains open -- no dispatch table exists to resolve that phrase into an
+actual role. See docs/generated/18_SPEC_GAPS.md SG-160 for the full remaining list.
 """
 
 import uuid
@@ -176,7 +180,18 @@ class CorrectionRemovalRegulatoryRecord(Base):
     decision_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     scope_amendments: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     retention_class_code: Mapped[str] = mapped_column(String(40), nullable=False, default="RC-806")
-    state: Mapped[str] = mapped_column(String(40), nullable=False, default="OPEN")
+    # SG-160 partial resolution (2026-09-14): Document 106 rows 129/130 each require a 2-signature chain
+    # ("Authorized corrector + independent approver") -- one for assessment creation (row 130), a separate
+    # one for the reportability decision (row 129), tracked independently since they happen at different
+    # points in this record's life. Same shape as vault.RecordCorrection.approved_by_signatures.
+    assessment_approval_signatures: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    decision_approval_signatures: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # State machine: PENDING_ASSESSMENT_APPROVAL (create_correction_removal_assessment() has consumed
+    # chain position 1; the record exists but is not yet usable) -> OPEN (assessment fully signed --
+    # same meaning "OPEN" always had: assessment exists, no decision yet) -> PENDING_DECISION_APPROVAL
+    # (decide_correction_removal_reportability() has consumed decision-chain position 1) -> DECIDED
+    # (decision fully signed and applied: due_at computed, regime set).
+    state: Mapped[str] = mapped_column(String(40), nullable=False, default="PENDING_ASSESSMENT_APPROVAL")
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 

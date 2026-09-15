@@ -152,7 +152,7 @@ export default function MaterialsPage() {
           rowKey={(m) => m.id}
           searchPlaceholder="Search by code or name…"
           emptyIcon="scale"
-          emptyMessage="No materials yet — create one to get started."
+          emptyMessage="No materials yet - create one to get started."
           defaultSort={{ by: "created_at", dir: "desc" }}
           reloadToken={reloadToken}
         />

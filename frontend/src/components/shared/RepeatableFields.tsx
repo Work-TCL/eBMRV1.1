@@ -27,7 +27,10 @@ export interface RepeatSubField {
    * `EntityPickerField`, compacted to fit this component's dense row layout — used by a load item's
    * "Item reference" (Document 42), which is most often a material lot, but stays free text for
    * non-lot loads (garments, filters, …) via the fallback. */
-  type?: "text" | "number" | "select" | "bool" | "materialLotSelect";
+  /** "userSelect" renders a user dropdown with the same manual-ID fallback as "materialLotSelect" —
+   * used by a row's user-id field (e.g. a PQ participant) so the operator picks a real user instead of
+   * pasting a raw user ID. */
+  type?: "text" | "number" | "select" | "bool" | "materialLotSelect" | "userSelect";
   required?: boolean;
   placeholder?: string;
   options?: { value: string; label: string }[];
@@ -45,6 +48,8 @@ function SubFieldControl({
   onChange,
   materialLotOptions,
   materialLotOptionsStatus,
+  userOptions,
+  userOptionsStatus,
 }: {
   field: RepeatSubField;
   value: string;
@@ -52,6 +57,9 @@ function SubFieldControl({
   /** Backs "materialLotSelect" — omitted for every other sub-field type. */
   materialLotOptions?: EntityOption[];
   materialLotOptionsStatus?: EntityOptionsStatus;
+  /** Backs "userSelect" — omitted for every other sub-field type. */
+  userOptions?: EntityOption[];
+  userOptionsStatus?: EntityOptionsStatus;
 }) {
   const [manual, setManual] = useState(false);
   const labelRow = (
@@ -59,18 +67,25 @@ function SubFieldControl({
       {field.label} {field.required && <span style={{ color: "var(--status-critical-solid)" }}>*</span>}
     </label>
   );
-  if (field.type === "materialLotSelect") {
-    const status = materialLotOptionsStatus ?? "empty";
-    const options = materialLotOptions ?? [];
+  if (field.type === "materialLotSelect" || field.type === "userSelect") {
+    const isUser = field.type === "userSelect";
+    const status = (isUser ? userOptionsStatus : materialLotOptionsStatus) ?? "empty";
+    const options = (isUser ? userOptions : materialLotOptions) ?? [];
+    const noun = isUser ? "user" : "lot";
     const useManual = manual || status === "error" || status === "empty";
     if (useManual) {
       return (
         <div>
           {labelRow}
-          <Input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder={field.placeholder ?? "e.g. LOT-DEV-2601, or a garment/filter reference"} />
+          <Input
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={field.placeholder ?? (isUser ? "User ID" : "e.g. LOT-DEV-2601, or a garment/filter reference")}
+          />
           {status === "ready" && (
             <button type="button" style={{ ...linkBtnStyle, marginTop: 4, fontSize: "var(--fs-1)" }} onClick={() => setManual(false)}>
-              Choose a lot instead
+              Choose a {noun} instead
             </button>
           )}
         </div>
@@ -81,7 +96,7 @@ function SubFieldControl({
         <div>
           {labelRow}
           <Select disabled>
-            <option>Loading material lots…</option>
+            <option>Loading {isUser ? "users" : "material lots"}…</option>
           </Select>
         </div>
       );
@@ -90,7 +105,7 @@ function SubFieldControl({
       <div>
         {labelRow}
         <Select value={value} onChange={(e) => onChange(e.target.value)}>
- <option value="">Select a material lot</option>
+ <option value="">{isUser ? "Select a user" : "Select a material lot"}</option>
           {options.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
@@ -98,7 +113,7 @@ function SubFieldControl({
           ))}
         </Select>
         <button type="button" style={{ ...linkBtnStyle, marginTop: 4, fontSize: "var(--fs-1)" }} onClick={() => setManual(true)}>
-          Not a lot? Enter reference manually
+          {isUser ? "Not listed? Enter user ID manually" : "Not a lot? Enter reference manually"}
         </button>
       </div>
     );
@@ -151,6 +166,8 @@ export function RepeatableRows({
   onChange,
   materialLotOptions,
   materialLotOptionsStatus,
+  userOptions,
+  userOptionsStatus,
 }: {
   label: string;
   required?: boolean;
@@ -162,6 +179,9 @@ export function RepeatableRows({
   /** Backs any "materialLotSelect" sub-field — omitted when no sub-field uses that type. */
   materialLotOptions?: EntityOption[];
   materialLotOptionsStatus?: EntityOptionsStatus;
+  /** Backs any "userSelect" sub-field — omitted when no sub-field uses that type. */
+  userOptions?: EntityOption[];
+  userOptionsStatus?: EntityOptionsStatus;
 }) {
   const rows = value ?? [];
   const item = itemLabel ?? label;
@@ -199,6 +219,7 @@ export function RepeatableRows({
               <SubFieldControl
                 key={sf.name} field={sf} value={row[sf.name] ?? ""} onChange={(v) => updateRow(i, sf.name, v)}
                 materialLotOptions={materialLotOptions} materialLotOptionsStatus={materialLotOptionsStatus}
+                userOptions={userOptions} userOptionsStatus={userOptionsStatus}
               />
             ))}
           </div>

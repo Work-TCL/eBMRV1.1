@@ -144,6 +144,7 @@ class StepInput(BaseModel):
     instruction_text: str | None = None
     sequence_hint: int
     required_role_code: str | None = None
+    required_qualification_code: str | None = None
     qualification_policy_id: uuid.UUID | None = None
     signature_policy_id: uuid.UUID | None = None
     exception_policy_id: uuid.UUID | None = None
@@ -243,6 +244,7 @@ async def _replace_graph(
             instruction_text=st.instruction_text,
             sequence_hint=st.sequence_hint,
             required_role_code=st.required_role_code,
+            required_qualification_code=st.required_qualification_code,
             qualification_policy_id=st.qualification_policy_id,
             signature_policy_id=st.signature_policy_id,
             exception_policy_id=st.exception_policy_id,

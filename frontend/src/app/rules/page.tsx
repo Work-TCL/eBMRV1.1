@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { JsonPanel, summarizeJson } from "@/components/ui/JsonPanel";
 import {
   ExprNodeEditor,
@@ -74,7 +75,7 @@ export default function RulesPage() {
     <div>
       <PageHead
         title="Rules"
-        subtitle="Calculation and eligibility rules — draft, validate, simulate against test inputs, and release."
+        subtitle="Calculation and eligibility rules - draft, validate, simulate against test inputs, and release."
         action={
           <Button variant="primary" onClick={() => setDraftOpen(true)}>
             <Icon name="plus" /> New draft
@@ -168,6 +169,9 @@ export default function RulesPage() {
       <div className="mt-6">
         <UomSection />
       </div>
+      <div className="mt-6">
+        <UomConversionSection />
+      </div>
     </div>
   );
 }
@@ -193,6 +197,7 @@ function UomSection() {
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [draftOpen, setDraftOpen] = useState(false);
+  const [releasingUom, setReleasingUom] = useState<Uom | null>(null);
 
   async function lookup() {
     if (!code.trim()) return;
@@ -262,6 +267,7 @@ function UomSection() {
                     <th>Factor</th>
                     <th>Offset</th>
                     <th>Precision</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -274,10 +280,23 @@ function UomSection() {
                       <td className="tabular">{u.factor}</td>
                       <td className="tabular">{u.offset}</td>
                       <td className="tabular">{u.precision_dp}</td>
+                      <td style={{ textAlign: "right" }}>
+                        {u.status === "draft" && (
+                          <Button size="sm" variant="success" onClick={() => setReleasingUom(u)}>
+                            <Icon name="pen" /> Release
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </Table>
+            )}
+            {versions.some((u) => u.status === "draft") && (
+              <p className="hint mt-2">
+                No signature policy is configured yet for releasing a unit of measure - the challenge below
+                is real, but the release itself will correctly fail closed until one is added.
+              </p>
             )}
           </div>
         )}
@@ -291,6 +310,31 @@ function UomSection() {
             setCode(newCode);
             setVersions(null);
           }}
+        />
+      )}
+
+      {releasingUom && (
+        <SignatureCeremony
+          open
+          onClose={() => setReleasingUom(null)}
+          onDone={() => {
+            setReleasingUom(null);
+            lookup();
+          }}
+          challengePath={`/rules/v1/uom/${releasingUom.uom_id}/signature-challenges`}
+          action="release"
+          title={`Release UOM - ${code}`}
+          summary={`You are about to release ${code} v${releasingUom.version}.`}
+          submitVariant="success"
+          reason="none"
+          onSign={(p) =>
+            api.post(`/rules/v1/uom/${releasingUom.uom_id}/release`, {
+              idempotency_key: p.idempotency_key,
+              uom_id: releasingUom.uom_id,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
         />
       )}
     </Card>
@@ -330,7 +374,7 @@ function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: (code
   }
 
   return (
-    <Modal open onClose={onClose} title="New unit of measure — draft">
+    <Modal open onClose={onClose} title="New unit of measure - draft">
       <form onSubmit={onSubmit}>
         <div className="grid grid-cols-3 gap-4">
           <Field label="Code" required>
@@ -354,7 +398,7 @@ function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: (code
         </div>
         {error && <p className="error-text mt-2">{error}</p>}
         <p className="hint mt-2 mb-3">
-          Releasing a UOM needs a signature policy — this deployment hasn&apos;t defined yet — the draft is
+          Releasing a UOM needs a signature policy - this deployment hasn&apos;t defined yet - the draft is
           stored; release will correctly fail closed until one exists.
         </p>
         <div className="flex justify-between gap-3 mt-2">
@@ -362,6 +406,157 @@ function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: (code
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={busy || !code.trim()}>
+            {busy ? "Creating…" : "Create draft"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** No `GET /uom-conversions` list/detail endpoint exists (verified against `rules/router.py` — only
+ * `drafts` create and `{id}/release`), so this is create-only, same shape as other create-only
+ * capabilities elsewhere (OOT, sampling orders) — the receipt's id is the only way to ever see one
+ * again. Release also has no signature-challenge endpoint at all (not just an unseeded policy row, an
+ * actual missing route — see `UomSection`'s own note above), so it isn't offered here either. */
+function UomConversionSection() {
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [lastCreated, setLastCreated] = useState<{ id: string; version: number } | null>(null);
+  const [releasing, setReleasing] = useState(false);
+
+  return (
+    <Card>
+      <CardHeader
+        title="UOM conversions"
+        meta={
+          <Button size="sm" variant="secondary" onClick={() => setDraftOpen(true)}>
+            <Icon name="plus" /> New UOM conversion draft
+          </Button>
+        }
+      />
+      <div style={{ padding: "var(--space-3) var(--space-4)" }}>
+        <p className="hint">
+ No lookup exists for a UOM conversion - the id
+          below is the only record of what you just created, so release is only offered right after
+          creation.
+        </p>
+        {lastCreated && (
+          <div className="flex items-center gap-3 mt-2">
+            <p className="fs-2">
+              Last created: <span className="tabular">{lastCreated.id}</span> (v{lastCreated.version})
+            </p>
+            <Button size="sm" variant="success" onClick={() => setReleasing(true)}>
+              <Icon name="pen" /> Release
+            </Button>
+          </div>
+        )}
+        <p className="hint mt-2">
+          No signature policy is configured yet for releasing a UOM conversion - the challenge is real, but
+          release will correctly fail closed until one is added.
+        </p>
+      </div>
+
+      {draftOpen && (
+        <UomConversionDraftModal
+          onClose={() => setDraftOpen(false)}
+          onDone={(record) => {
+            setDraftOpen(false);
+            setLastCreated(record);
+          }}
+        />
+      )}
+
+      {releasing && lastCreated && (
+        <SignatureCeremony
+          open
+          onClose={() => setReleasing(false)}
+          onDone={() => setReleasing(false)}
+          challengePath={`/rules/v1/uom-conversions/${lastCreated.id}/signature-challenges`}
+          action="release"
+          title="Release UOM conversion"
+          summary={`You are about to release conversion ${lastCreated.id} v${lastCreated.version}.`}
+          submitVariant="success"
+          reason="none"
+          onSign={(p) =>
+            api.post(`/rules/v1/uom-conversions/${lastCreated.id}/release`, {
+              idempotency_key: p.idempotency_key,
+              conversion_id: lastCreated.id,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+    </Card>
+  );
+}
+
+function UomConversionDraftModal({
+  onClose,
+  onDone,
+}: {
+  onClose: () => void;
+  onDone: (record: { id: string; version: number }) => void;
+}) {
+  const [fromCode, setFromCode] = useState("");
+  const [toCode, setToCode] = useState("");
+  const [factor, setFactor] = useState("");
+  const [roundingStage, setRoundingStage] = useState("");
+  const [effectiveFrom, setEffectiveFrom] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const receipt = await api.post<{ aggregate_id: string; resulting_version: number }>("/rules/v1/uom-conversions/drafts", {
+        idempotency_key: newIdempotencyKey(),
+        from_code: fromCode.trim(),
+        to_code: toCode.trim(),
+        factor: factor.trim(),
+        rounding_stage: roundingStage.trim(),
+        effective_from: new Date(effectiveFrom).toISOString(),
+      });
+      onDone({ id: receipt.aggregate_id, version: receipt.resulting_version });
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed to create UOM conversion draft");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="New UOM conversion - draft">
+      <form onSubmit={onSubmit}>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="From code" required>
+            <Input value={fromCode} onChange={(e) => setFromCode(e.target.value)} required autoFocus />
+          </Field>
+          <Field label="To code" required>
+            <Input value={toCode} onChange={(e) => setToCode(e.target.value)} required />
+          </Field>
+          <Field label="Factor" required hint="Positive decimal - multiplier from the source unit to the target unit.">
+            <Input value={factor} onChange={(e) => setFactor(e.target.value)} required />
+          </Field>
+          <Field label="Rounding stage" required hint="How partial units round at this conversion step.">
+            <Input value={roundingStage} onChange={(e) => setRoundingStage(e.target.value)} required />
+          </Field>
+          <Field label="Effective from" required hint="Release computes its canonical hash from this field unconditionally - a conversion drafted without one can never be released.">
+            <Input type="datetime-local" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} required />
+          </Field>
+        </div>
+        {error && <p className="error-text mt-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={busy || !fromCode.trim() || !toCode.trim() || !factor.trim() || !roundingStage.trim() || !effectiveFrom.trim()}
+          >
             {busy ? "Creating…" : "Create draft"}
           </Button>
         </div>
@@ -386,16 +581,16 @@ const CONTRACT_TYPE_SUGGESTIONS = ["decimal", "integer", "boolean", "string", "d
 // class governs a rule is an authoring decision the operator makes, not a default this editor picks
 // for them (AG-15 — "no regulated behavior guessed").
 const CALCULATION_CLASSES = [
-  { value: "CC-1", label: "CC-1 — Mass / weight capture (raw, instrument resolution)" },
-  { value: "CC-2", label: "CC-2 — Volume capture (raw, as captured)" },
-  { value: "CC-3", label: "CC-3 — Tolerance evaluation" },
-  { value: "CC-4", label: "CC-4 — Yield / reconciliation" },
-  { value: "CC-5", label: "CC-5 — Concentration / potency (needs reported decimal places)" },
-  { value: "CC-6", label: "CC-6 — Count / units (exact equality)" },
-  { value: "CC-7", label: "CC-7 — Time / duration" },
-  { value: "CC-8", label: "CC-8 — Environmental" },
-  { value: "CC-9", label: "CC-9 — Statistical / trending (advisory only, never a release decision by itself)" },
-  { value: "CC-10", label: "CC-10 — Financial / commercial (not a GxP decision)" },
+  { value: "CC-1", label: "CC-1 - Mass / weight capture (raw, instrument resolution)" },
+  { value: "CC-2", label: "CC-2 - Volume capture (raw, as captured)" },
+  { value: "CC-3", label: "CC-3 - Tolerance evaluation" },
+  { value: "CC-4", label: "CC-4 - Yield / reconciliation" },
+  { value: "CC-5", label: "CC-5 - Concentration / potency (needs reported decimal places)" },
+  { value: "CC-6", label: "CC-6 - Count / units (exact equality)" },
+  { value: "CC-7", label: "CC-7 - Time / duration" },
+  { value: "CC-8", label: "CC-8 - Environmental" },
+  { value: "CC-9", label: "CC-9 - Statistical / trending (advisory only, never a release decision by itself)" },
+  { value: "CC-10", label: "CC-10 - Financial / commercial (not a GxP decision)" },
 ];
 
 function buildContract(rows: ContractRow[]): Record<string, { type: string }> {
@@ -535,7 +730,7 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (ruleId:
 
         <div className="mt-4">
           <label className="label">Expression</label>
-          <p className="hint mb-2">The condition this rule evaluates — built from input variables, fixed values, comparisons and AND/OR groups.</p>
+          <p className="hint mb-2">The condition this rule evaluates - built from input variables, fixed values, comparisons and AND/OR groups.</p>
           <div style={{ ...exprBoxStyle, background: "var(--surface-sunken)" }}>
             <ExprNodeEditor node={expr} onChange={setExpr} />
           </div>
@@ -548,11 +743,11 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (ruleId:
 
         <div className="grid grid-cols-2 gap-4 mt-4">
           <ContractRows label="Input variables" itemLabel="Input" value={inputRows} onChange={setInputRows} hint="Every variable the expression above refers to." />
-          <ContractRows label="Output" itemLabel="Output" hint="At least one — what this rule produces." value={outputRows} onChange={setOutputRows} />
+          <ContractRows label="Output" itemLabel="Output" hint="At least one - what this rule produces." value={outputRows} onChange={setOutputRows} />
         </div>
 
         <div className="grid grid-cols-3 gap-4 mt-4">
-          <KeyValueRows label="Unit policy" hint="Optional — leave empty if this rule has no unit conversion." value={unitRows} onChange={setUnitRows} />
+          <KeyValueRows label="Unit policy" hint="Optional - leave empty if this rule has no unit conversion." value={unitRows} onChange={setUnitRows} />
           <Field
             label="Calculation class"
             required
@@ -676,7 +871,7 @@ function RuleDetailModal({
         <div className="mt-4">
           <KeyValueRows
  label="Simulate test inputs"
-            hint="The values to test this rule with. Never writes regulated state (RUL-FR-023)."
+ hint="The values to test this rule with. Never writes regulated state."
             value={testInputs}
             onChange={setTestInputs}
           />

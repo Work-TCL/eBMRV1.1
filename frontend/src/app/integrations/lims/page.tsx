@@ -43,7 +43,7 @@ function useLimsInstances(): { options: EntityOption[]; status: EntityOptionsSta
     listAll<LimsInstanceSummary>("/integrations/lims")
       .then((rows) => {
         if (cancelled) return;
-      setOptions(rows.map((r) => ({ value: r.id, label: `${r.instance_code} — ${r.provider_type} (${r.status})` })));
+      setOptions(rows.map((r) => ({ value: r.id, label: `${r.instance_code} - ${r.provider_type} (${r.status})` })));
         setStatus(rows.length ? "ready" : "empty");
       })
       .catch(() => {

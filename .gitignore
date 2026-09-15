@@ -2,6 +2,8 @@
 /env/
 services/gxp-api/.venv/
 services/*/.venv/
+edge/.venv/
+edge/*.egg-info/
 
 
 # --- Node ---

@@ -63,7 +63,7 @@ const PQ_OPS: FormOp[] = [
       {
         name: "participants", label: "Participants", type: "repeat", required: true, itemLabel: "Participant",
         subFields: [
-          { name: "user_id", label: "User ID", required: true },
+          { name: "user_id", label: "User", type: "userSelect", required: true },
           { name: "role", label: "Role", required: true },
           { name: "trained", label: "Trained", type: "bool" },
         ],
@@ -145,7 +145,7 @@ const MIGRATION_OPS: FormOp[] = [
       },
       {
         name: "reconciliation_rules", label: "Reconciliation rules", type: "repeat", required: true, itemLabel: "Rule",
-        hint: "No default tolerance ships with the platform — every migrated data class needs an explicit rule (MIGV-FR-009/020).",
+        hint: "No default tolerance ships with the platform - every migrated data class needs an explicit rule.",
         subFields: [
           { name: "data_class", label: "Data class", required: true },
           { name: "count_tolerance", label: "Count tolerance", type: "number" },
@@ -153,7 +153,7 @@ const MIGRATION_OPS: FormOp[] = [
           { name: "critical_fields", label: "Critical fields", placeholder: "comma-separated" },
         ],
       },
-      { name: "source_profile", label: "Source profile (optional)", type: "kv", hint: "Row counts, duplicates, orphans, invalid values — leave blank if not yet profiled." },
+      { name: "source_profile", label: "Source profile (optional)", type: "kv", hint: "Row counts, duplicates, orphans, invalid values - leave blank if not yet profiled." },
     ],
   },
   {
@@ -248,7 +248,7 @@ const SUMMARY_OPS: FormOp[] = [
       },
       {
         name: "known_limitations", label: "Known limitations", type: "repeat", required: true, itemLabel: "Limitation",
-        hint: 'Never omitted (VSR-FR-013) — add a single row with "none" if there truly are none.',
+        hint: 'Never omitted - add a single row with"none" if there truly are none.',
         subFields: [{ name: "limitation", label: "Limitation", required: true }, { name: "notes", label: "Notes" }],
       },
       {
@@ -280,7 +280,7 @@ const SUMMARY_OPS: FormOp[] = [
           { name: "notes", label: "Notes" },
         ],
       },
-      { name: "rollback_ref", label: "Rollback reference", hint: "A FAIL outcome must reference a rollback, incident, or change (VSR-FR-024)." },
+      { name: "rollback_ref", label: "Rollback reference", hint: "A FAIL outcome must reference a rollback, incident, or change." },
       { name: "incident_ref", label: "Incident reference" },
       { name: "change_ref", label: "Change reference" },
       { name: "notes", label: "Notes", type: "textarea" },
@@ -380,7 +380,7 @@ const GO_LIVE_SIGNED_OPS: SignedJsonOp[] = [
     template:
       '{\n  "authorization_number": "",\n  "environment": "",\n  "config_fingerprint": "",\n  "release_identity": {\n    "image_digest": "",\n    "code_commit": "",\n    "sbom_ref": "",\n    "schema_version": "",\n    "migration_head": "",\n    "config_version": ""\n  },\n  "artifact_digests": {},\n  "decision": "APPROVED",\n  "go_live_gates": {},\n  "reason": "",\n  "conditions": [],\n  "production_performer_user_ids": []\n}',
     about:
-        "This signature is bound to the exact payload below — decision is APPROVED | CONDITIONAL | REJECTED. Do not edit the payload after requesting the challenge.",
+        "This signature is bound to the exact payload below - decision is APPROVED | CONDITIONAL | REJECTED. Do not edit the payload after requesting the challenge.",
   },
   {
     label: "Record a deployment check",

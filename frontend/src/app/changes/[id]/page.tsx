@@ -150,7 +150,7 @@ export default function ChangeDetailPage({ params }: { params: Promise<{ id: str
       {data && (
         <>
           {data.emergency && !data.retrospective_review_completed && (
-            <Banner tone="warn" title="Emergency change — retrospective review outstanding">
+            <Banner tone="warn" title="Emergency change - retrospective review outstanding">
               {data.emergency_reason ?? "No emergency justification recorded."}
             </Banner>
           )}
@@ -369,7 +369,7 @@ function TransitionModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={`${LABEL[transition]} — ${change.change_number}`} large={transition === "impact"}>
+    <Modal open onClose={onClose} title={`${LABEL[transition]} - ${change.change_number}`} large={transition === "impact"}>
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(transition) && (
           <Banner tone="warn" title="This transition requires an electronic signature">
@@ -391,14 +391,14 @@ function TransitionModal({
             </Field>
             <label className="flex items-center gap-2 fs-2 mb-3">
               <input type="checkbox" checked={validationRequired} onChange={(e) => setValidationRequired(e.target.checked)} />
-              Revalidation required — verification evidence will be mandatory
+              Revalidation required - verification evidence will be mandatory
             </label>
             <Field label="Training impact" required>
               <textarea className="input" rows={2} value={training} onChange={(e) => setTraining(e.target.value)} required />
             </Field>
             <label className="flex items-center gap-2 fs-2 mb-3">
               <input type="checkbox" checked={trainingRequired} onChange={(e) => setTrainingRequired(e.target.checked)} />
-              Training required — must be confirmed before the change can be made effective
+              Training required - must be confirmed before the change can be made effective
             </label>
           </>
         )}

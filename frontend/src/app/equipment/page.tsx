@@ -180,8 +180,8 @@ export default function EquipmentPage() {
       )}
 
       <p className="hint mb-4">
-        Utilization and recurring-failure analytics (the rest of EQP-FR-028) need a time-series engine
-        this deployment does not have yet — the counts above are the implemented part.
+      Utilization and recurring-failure analytics need a time-series engine
+        this deployment does not have yet - the counts above are the implemented part.
       </p>
 
       <Card>
@@ -439,7 +439,7 @@ function CreateAreaModal({
     <Modal open onClose={onClose} title="New equipment area">
       <form onSubmit={onSubmit}>
         <p className="hint mb-3">
-          Master data — no qualification/release workflow exists for an area, so it&apos;s created active
+          Master data - no qualification/release workflow exists for an area, so it&apos;s created active
           immediately. Referenced by cleaning executions, EM locations, aseptic operations and DDCP
           readiness as area_id/line_id.
         </p>
@@ -465,7 +465,7 @@ function CreateAreaModal({
           <Field label="Criticality" hint="Free text, e.g. high/medium/low.">
             <Input value={criticality} onChange={(e) => setCriticality(e.target.value)} />
           </Field>
-          <Field label="Cleanliness status" hint="Free text — DDCP/cleaning executions may update this later.">
+          <Field label="Cleanliness status" hint="Free text - DDCP/cleaning executions may update this later.">
             <Input value={cleanlinessStatus} onChange={(e) => setCleanlinessStatus(e.target.value)} />
           </Field>
         </div>

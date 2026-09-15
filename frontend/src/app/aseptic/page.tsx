@@ -85,9 +85,9 @@ function NewProfileModal({ siteId, onClose, onDone }: { siteId: string | null; o
     <Modal open onClose={onClose} title="New sterile process profile">
       <form onSubmit={submit}>
         <p className="hint mb-3">
-          Document 40 master data — created directly as RELEASED (no draft/review stage exists for this
+          Master data - created directly as RELEASED (no draft/review stage exists for this
           record). Used as the &quot;Sterile process profile&quot; on Product Master (injectable/inhalation DDCP
-          products, PRD-FR-010) and as the Aseptic profile version on aseptic operations below.
+          products) and as the Aseptic profile version on aseptic operations below.
         </p>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Profile number" required hint="Unique together with version below, across all sites.">
@@ -107,7 +107,7 @@ function NewProfileModal({ siteId, onClose, onDone }: { siteId: string | null; o
               ))}
             </Select>
           </Field>
-          <Field label="Validation reference" hint="Optional — e.g. a media-fill/qualification protocol ID.">
+          <Field label="Validation reference" hint="Optional - e.g. a media-fill/qualification protocol ID.">
             <Input value={validationReference} onChange={(e) => setValidationReference(e.target.value)} />
           </Field>
         </div>
@@ -155,7 +155,7 @@ function SupersedeProfileModal({ profile, onClose, onDone }: { profile: AsepticP
         <p className="hint mb-3">
           Creates <strong>{profile.profile_number} v{profile.version_no + 1}</strong> with the fields
           below; v{profile.version_no} is marked SUPERSEDED and drops out of the Product Master picker
-          (its history stays visible in the list below — it is never deleted).
+          (its history stays visible in the list below - it is never deleted).
         </p>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Required area classification" hint="Cleanroom grade this profile requires.">
@@ -167,7 +167,7 @@ function SupersedeProfileModal({ profile, onClose, onDone }: { profile: AsepticP
               ))}
             </Select>
           </Field>
-            <Field label="Validation reference" hint="Optional — e.g. a media-fill/qualification protocol ID.">
+            <Field label="Validation reference" hint="Optional - e.g. a media-fill/qualification protocol ID.">
             <Input value={validationReference} onChange={(e) => setValidationReference(e.target.value)} />
           </Field>
         </div>
@@ -205,7 +205,7 @@ function ProfileListCard({
       {loading ? (
         <p className="hint">Loading…</p>
       ) : !profiles || profiles.length === 0 ? (
-        <EmptyState>No sterile process profiles yet — use &quot;New sterile process profile&quot; above to add one.</EmptyState>
+        <EmptyState>No sterile process profiles yet - use &quot;New sterile process profile&quot; above to add one.</EmptyState>
       ) : (
         <Table>
           <thead>
@@ -265,7 +265,7 @@ const config: OpsRecordConfig<AsepticOperation> = {
         label: "Sterile input references",
         type: "repeat",
         itemLabel: "Sterile input",
-        hint: "The sterile components (filters, containers, …) this operation depends on — each must already be eligible.",
+        hint: "The sterile components (filters, containers, …) this operation depends on - each must already be eligible.",
         subFields: [{ name: "item_id", label: "Sterile item ID", required: true }],
       },
       { name: "media_fill_reference", label: "Media fill reference", type: "kv", hint: "Set these when this operation is a media fill run." },
@@ -348,7 +348,7 @@ const config: OpsRecordConfig<AsepticOperation> = {
           options: [
             { value: "info", label: "Info" },
             { value: "warning", label: "Warning" },
-            { value: "critical", label: "Critical — holds the operation" },
+            { value: "critical", label: "Critical - holds the operation" },
           ],
         },
         { name: "payload", label: "Additional details", type: "kv" },

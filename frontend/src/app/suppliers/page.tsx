@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   api,
-  ApiError,
   canApproveSupplier,
   canCreateSupplier,
   formatDate,
@@ -29,6 +28,7 @@ import { JsonPanel, summarizeJson } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
 import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 
 interface SupplierSite {
   id: string;
@@ -246,7 +246,7 @@ function SupplierModal({
   const expired = s.qualifications.filter((q) => isOverdue(q.expires_at) && q.status === "approved");
 
   return (
-    <Modal open onClose={onClose} title={`${s.supplier_code} — ${s.legal_name}`} large>
+    <Modal open onClose={onClose} title={`${s.supplier_code} - ${s.legal_name}`} large>
       {expired.length > 0 && (
         <Banner tone="critical" title="Expired qualification">
           {expired.length} approved qualification(s) have passed their expiry date.
@@ -437,7 +437,7 @@ function QualificationModal({
         </Field>
         <KeyValueRows
           label="Scope"
-          hint='What this supplier is qualified to provide — add one row per detail, e.g. "description" → "Raw material supply", "materials" → "Excipients only".'
+          hint='What this supplier is qualified to provide - add one row per detail, e.g. "description" → "Raw material supply", "materials" → "Excipients only".'
           value={scope}
           onChange={setScope}
         />
@@ -472,106 +472,54 @@ function ApproveModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { busy, error, setError, run } = useCommand(onDone);
   const [decision, setDecision] = useState("approved");
   const [justification, setJustification] = useState("");
-  const [password, setPassword] = useState("");
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [meaning, setMeaning] = useState("");
-
-  // Document 18 gates approval behind a signature ceremony and, unlike the QMS modules, does expose the
-  // challenge endpoint — so the ceremony is performed properly here. The challenge binds to the record's
-  // current version and hash, so it is requested per ceremony rather than reused.
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .post<{ challenge_id: string; meaning: string }>(
-        `/supplier-qualifications/${qualification.id}/signature-challenges`,
-        { action: "approve" }
-      )
-      .then((c) => {
-        if (cancelled) return;
-        setChallengeId(c.challenge_id);
-        setMeaning(c.meaning);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not request a signature challenge");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [qualification.id, setError]);
 
   return (
-    <Modal
+    <SignatureCeremony
       open
       onClose={onClose}
+      onDone={onDone}
+      challengePath={`/supplier-qualifications/${qualification.id}/signature-challenges`}
+      action="approve"
       title={
         <span className="flex items-center gap-2">
           <Icon name="pen" /> Approve supplier qualification
         </span>
       }
-    >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(() =>
-            api.post(`/supplier-qualifications/${qualification.id}/approve`, {
-              idempotency_key: newIdempotencyKey(),
-              qualification_id: qualification.id,
-              expected_version: qualification.version,
-              decision,
-              justification: justification || null,
-              challenge_id: challengeId,
-              reauth_password: password,
-            })
-          );
-        }}
-      >
-        {meaning && (
-          <p className="fs-3 mb-3">
-            Meaning: <span className="font-semibold">{meaning}</span>
-          </p>
-        )}
-        <div className="sig-hint mb-3">
-          Fresh authentication required — re-enter your password to sign (Part 11 step-up).
-        </div>
-        <Field label="Decision" required>
-          <Select value={decision} onChange={(e) => setDecision(e.target.value)}>
-            <option value="approved">approved</option>
-            <option value="conditional">conditional</option>
-            <option value="rejected">rejected</option>
-          </Select>
-        </Field>
-        <Field label="Justification" hint="Required for a conditional or rejected decision.">
-          <textarea
-            className="input"
-            rows={3}
-            value={justification}
-            onChange={(e) => setJustification(e.target.value)}
-          />
-        </Field>
-        <Field label="Password" required>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
-        </Field>
-        {error && <p className="error-text mb-2">{error}</p>}
-        <div className="flex justify-between gap-3 mt-3">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={busy || !challengeId || !password}>
-            <Icon name="badge-check" /> {busy ? "Signing…" : "Sign decision"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+      summary="Records the qualification decision for this supplier."
+      submitLabel="Sign decision"
+      reason="none"
+      extraFields={
+        <>
+          <Field label="Decision" required>
+            <Select value={decision} onChange={(e) => setDecision(e.target.value)}>
+              <option value="approved">approved</option>
+              <option value="conditional">conditional</option>
+              <option value="rejected">rejected</option>
+            </Select>
+          </Field>
+          <Field label="Justification" hint="Required for a conditional or rejected decision.">
+            <textarea
+              className="input"
+              rows={3}
+              value={justification}
+              onChange={(e) => setJustification(e.target.value)}
+            />
+          </Field>
+        </>
+      }
+      onSign={(p) =>
+        api.post(`/supplier-qualifications/${qualification.id}/approve`, {
+          idempotency_key: p.idempotency_key,
+          qualification_id: qualification.id,
+          expected_version: qualification.version,
+          decision,
+          justification: justification || null,
+          challenge_id: p.challenge_id,
+          reauth_password: p.reauth_password,
+        })
+      }
+    />
   );
 }
