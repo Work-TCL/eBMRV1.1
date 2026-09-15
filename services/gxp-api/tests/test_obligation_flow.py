@@ -21,6 +21,7 @@ from app.modules.postmarket.obligation_models import (
     PeriodicReportingCycle,
     RegulatoryObligation,
 )
+from app.modules.signature import service as signature_service
 from app.modules.signature.models import SignaturePolicy
 from app.mutation.errors import SignaturePolicyUnresolvedError, StaleVersionError, ValidationFailedError
 from tests.conftest import DEMO_PASSWORD, idem
@@ -44,12 +45,26 @@ def _seed_resolved_policies(db):
 
 
 def _allow_unresolved_decision_actions(db):
-    """SG-160: correction_removal.decide and regulatory_obligation.override_deadline have no Document
-    106 resolution -- tests seed a permissive local policy to exercise the business logic beyond the
-    fail-closed check."""
-    db.add(SignaturePolicy(record_type="correction_removal_regulatory_record", action="decide", meaning="Approved", signature_required=False))
+    """regulatory_obligation.override_deadline/decide_field_alert have no Document 106 resolution --
+    tests seed a permissive local policy to exercise the business logic beyond the fail-closed check.
+    (correction_removal_assessment/regulatory_record "sign" already has a real 2-signature PLATFORM_FLOOR
+    policy from conftest.py's `seeded` fixture, so those two need the real chain, not a bypass here.)"""
     db.add(SignaturePolicy(record_type="regulatory_obligation", action="override_deadline", meaning="Approved", signature_required=False))
     db.add(SignaturePolicy(record_type="regulatory_obligation", action="decide_field_alert", meaning="Approved", signature_required=False))
+
+
+async def _chain_challenge(db, *, record_type, record_id, actor_id, content_hash):
+    """A signature challenge for one position of a real 2-signature chain (correction_removal_assessment
+    /regulatory_record's PLATFORM_FLOOR policy, requires_independent_signer=True). `record_id` must be
+    the actual regulatory record's id -- `_consume_chain_signature()`'s `chain_signatures_so_far()` looks
+    up prior signatures by exactly (record_type, record_id, record_version=1), so a mismatched id would
+    never be found and every signature would resolve as position 1 regardless of how many were signed."""
+    challenge = await signature_service.create_challenge(
+        db, user_id=actor_id, record_type=record_type, record_id=record_id,
+        record_version=1, record_hash=content_hash, meaning="Approved",
+    )
+    await db.flush()
+    return challenge.id
 
 
 async def _get(db, model, obj_id):
@@ -160,32 +175,62 @@ async def test_missing_package_blocks_record_sent_completion(db, seeded):
 async def test_reportable_and_nonreportable_correction_removal_paths(db, seeded):
     async with db.begin():
         owner = await _make_admin(db, seeded, "3")
+        corrector = await _make_admin(db, seeded, "3c")
+        approver = await _make_admin(db, seeded, "3a")
         initiation = datetime(2026, 4, 6, tzinfo=timezone.utc)  # Monday
+        field_action_reference = {"field_action_id": str(uuid.uuid4()), "scope_snapshot_version": 1}
         record = await commands.create_correction_removal_assessment(
             db, commands.CreateCorrectionRemovalAssessmentCommand(
                 idempotency_key=idem(), site_id=seeded["site_id"],
-                field_action_reference={"field_action_id": str(uuid.uuid4()), "scope_snapshot_version": 1},
+                field_action_reference=field_action_reference,
                 initiation_at=initiation,
             ), owner.id,
         )
 
-    # SG-160: no signature resolution yet for this specific fresh policy row check.
+    # Assessment must be fully approved (state -> OPEN) before reportability can be decided at all --
+    # PLATFORM_FLOOR requires 2 independent signatures (corrector, then a different approver).
+    assessment_hash = commands._field_action_reference_hash(field_action_reference)
     async with db.begin():
-        with pytest.raises(SignaturePolicyUnresolvedError):
-            await commands.decide_correction_removal_reportability(
-                db, commands.DecideCorrectionRemovalReportabilityCommand(
-                    idempotency_key=idem(), record_id=record.aggregate_id, expected_version=1,
-                    reportable=True, rationale="meets Part 806 reportability criteria",
-                ), owner.id,
-            )
+        challenge = await _chain_challenge(db, record_id=record.aggregate_id, record_type="correction_removal_assessment", actor_id=corrector.id, content_hash=assessment_hash)
+        await commands.approve_correction_removal_assessment(
+            db, commands.ApproveCorrectionRemovalAssessmentCommand(
+                idempotency_key=idem(), record_id=record.aggregate_id, field_action_reference=field_action_reference,
+                challenge_id=challenge, reauth_password=DEMO_PASSWORD,
+            ), corrector.id,
+        )
+    async with db.begin():
+        challenge = await _chain_challenge(db, record_id=record.aggregate_id, record_type="correction_removal_assessment", actor_id=approver.id, content_hash=assessment_hash)
+        await commands.approve_correction_removal_assessment(
+            db, commands.ApproveCorrectionRemovalAssessmentCommand(
+                idempotency_key=idem(), record_id=record.aggregate_id, field_action_reference=field_action_reference,
+                challenge_id=challenge, reauth_password=DEMO_PASSWORD,
+            ), approver.id,
+        )
+    opened_record = await _get(db, CorrectionRemovalRegulatoryRecord, record.aggregate_id)
+    assert opened_record.state == "OPEN"
 
+    # Reportability decision is its own independent 2-signature chain (corrector, then a different
+    # approver) -- position 1 stages the decision, position 2 actually applies it.
+    decide_cmd = commands.DecideCorrectionRemovalReportabilityCommand(
+        idempotency_key=idem(), record_id=record.aggregate_id, expected_version=opened_record.version,
+        reportable=True, rationale="meets Part 806 reportability criteria", calendar_version="v1",
+    )
+    decision_hash = commands._decision_content_hash(decide_cmd)
     async with db.begin():
-        _allow_unresolved_decision_actions(db)
+        challenge = await _chain_challenge(db, record_id=record.aggregate_id, record_type="correction_removal_regulatory_record", actor_id=corrector.id, content_hash=decision_hash)
         await commands.decide_correction_removal_reportability(
-            db, commands.DecideCorrectionRemovalReportabilityCommand(
-                idempotency_key=idem(), record_id=record.aggregate_id, expected_version=1,
-                reportable=True, rationale="meets Part 806 reportability criteria", calendar_version="v1",
-            ), owner.id,
+            db, decide_cmd.model_copy(update={"challenge_id": challenge, "reauth_password": DEMO_PASSWORD}), corrector.id,
+        )
+    staged_record = await _get(db, CorrectionRemovalRegulatoryRecord, record.aggregate_id)
+    assert staged_record.state == "PENDING_DECISION_APPROVAL"
+    async with db.begin():
+        approve_cmd = commands.ApproveCorrectionRemovalDecisionCommand(
+            idempotency_key=idem(), record_id=record.aggregate_id, expected_version=staged_record.version,
+            reportable=True, rationale="meets Part 806 reportability criteria", calendar_version="v1",
+        )
+        challenge = await _chain_challenge(db, record_id=record.aggregate_id, record_type="correction_removal_regulatory_record", actor_id=approver.id, content_hash=decision_hash)
+        await commands.approve_correction_removal_decision(
+            db, approve_cmd.model_copy(update={"challenge_id": challenge, "reauth_password": DEMO_PASSWORD}), approver.id,
         )
     reportable_record = await _get(db, CorrectionRemovalRegulatoryRecord, record.aggregate_id)
     assert reportable_record.regime == "PART_806_REPORT"
@@ -193,18 +238,53 @@ async def test_reportable_and_nonreportable_correction_removal_paths(db, seeded)
     assert reportable_record.due_at == initiation + timedelta(days=14)  # 2 weekends skipped
 
     async with db.begin():
+        field_action_reference2 = {"field_action_id": str(uuid.uuid4()), "scope_snapshot_version": 1}
         record2 = await commands.create_correction_removal_assessment(
             db, commands.CreateCorrectionRemovalAssessmentCommand(
                 idempotency_key=idem(), site_id=seeded["site_id"],
-                field_action_reference={"field_action_id": str(uuid.uuid4()), "scope_snapshot_version": 1},
+                field_action_reference=field_action_reference2,
                 initiation_at=initiation,
             ), owner.id,
         )
+    assessment_hash2 = commands._field_action_reference_hash(field_action_reference2)
+    async with db.begin():
+        challenge = await _chain_challenge(db, record_id=record2.aggregate_id, record_type="correction_removal_assessment", actor_id=corrector.id, content_hash=assessment_hash2)
+        await commands.approve_correction_removal_assessment(
+            db, commands.ApproveCorrectionRemovalAssessmentCommand(
+                idempotency_key=idem(), record_id=record2.aggregate_id, field_action_reference=field_action_reference2,
+                challenge_id=challenge, reauth_password=DEMO_PASSWORD,
+            ), corrector.id,
+        )
+    async with db.begin():
+        challenge = await _chain_challenge(db, record_id=record2.aggregate_id, record_type="correction_removal_assessment", actor_id=approver.id, content_hash=assessment_hash2)
+        await commands.approve_correction_removal_assessment(
+            db, commands.ApproveCorrectionRemovalAssessmentCommand(
+                idempotency_key=idem(), record_id=record2.aggregate_id, field_action_reference=field_action_reference2,
+                challenge_id=challenge, reauth_password=DEMO_PASSWORD,
+            ), approver.id,
+        )
+    opened_record2 = await _get(db, CorrectionRemovalRegulatoryRecord, record2.aggregate_id)
+    assert opened_record2.state == "OPEN"
+
+    decide_cmd2 = commands.DecideCorrectionRemovalReportabilityCommand(
+        idempotency_key=idem(), record_id=record2.aggregate_id, expected_version=opened_record2.version,
+        reportable=False, rationale="does not meet Part 806 reportability criteria",
+    )
+    decision_hash2 = commands._decision_content_hash(decide_cmd2)
+    async with db.begin():
+        challenge = await _chain_challenge(db, record_id=record2.aggregate_id, record_type="correction_removal_regulatory_record", actor_id=corrector.id, content_hash=decision_hash2)
         await commands.decide_correction_removal_reportability(
-            db, commands.DecideCorrectionRemovalReportabilityCommand(
-                idempotency_key=idem(), record_id=record2.aggregate_id, expected_version=1,
-                reportable=False, rationale="does not meet Part 806 reportability criteria",
-            ), owner.id,
+            db, decide_cmd2.model_copy(update={"challenge_id": challenge, "reauth_password": DEMO_PASSWORD}), corrector.id,
+        )
+    staged_record2 = await _get(db, CorrectionRemovalRegulatoryRecord, record2.aggregate_id)
+    async with db.begin():
+        approve_cmd2 = commands.ApproveCorrectionRemovalDecisionCommand(
+            idempotency_key=idem(), record_id=record2.aggregate_id, expected_version=staged_record2.version,
+            reportable=False, rationale="does not meet Part 806 reportability criteria",
+        )
+        challenge = await _chain_challenge(db, record_id=record2.aggregate_id, record_type="correction_removal_regulatory_record", actor_id=approver.id, content_hash=decision_hash2)
+        await commands.approve_correction_removal_decision(
+            db, approve_cmd2.model_copy(update={"challenge_id": challenge, "reauth_password": DEMO_PASSWORD}), approver.id,
         )
     nonreportable_record = await _get(db, CorrectionRemovalRegulatoryRecord, record2.aggregate_id)
     assert nonreportable_record.regime == "PART_806_20_RECORD"
@@ -215,7 +295,7 @@ async def test_reportable_and_nonreportable_correction_removal_paths(db, seeded)
     async with db.begin():
         await commands.add_correction_removal_scope_amendment(
             db, commands.AddCorrectionRemovalScopeAmendmentCommand(
-                idempotency_key=idem(), record_id=record.aggregate_id, expected_version=2,
+                idempotency_key=idem(), record_id=record.aggregate_id, expected_version=reportable_record.version,
                 amendment={"additional_lots": ["LOT-002", "LOT-003"]}, rationale="scope expanded to additional lots",
             ), owner.id,
         )

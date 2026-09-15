@@ -183,6 +183,28 @@ paths:
         '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
 
+  /postmarket/v1/signals/signature-challenges:
+    post:
+      operationId: postOpenSignalSignatureChallenge
+      tags: [postmarket]
+      summary: Create the signature challenge for `safety_signal.open` (SG-156 follow-up)
+      description: >
+        Closes the CTRC-FR-001 gap: `postOpenSafetySignal` already consumes a signature challenge once
+        Document 106 supplies a policy row for `safety_signal`/`open`, but no endpoint could ever issue
+        one. Binds to `sha256({"signal_code": ...})` and `record_version=1` — the same hash
+        `open_safety_signal()` recomputes at consume time, computed against the code the caller is about
+        to open before the record exists to load.
+      x-requirement-ids: [PMS-FR-021, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OpenSignalSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: Challenge created., content: { application/json: { schema: { $ref: '#/components/schemas/PostmarketSignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '422': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
   /postmarket/v1/signals:
     post:
       operationId: postOpenSafetySignal
@@ -200,6 +222,23 @@ paths:
         '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
         '422': { description: "SIGNAL_SCOPE_INVALID or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/signals/{signal_id}/assessment-signature-challenges:
+    post:
+      operationId: postAssessSignalSignatureChallenge
+      tags: [postmarket]
+      summary: Create the signature challenge for `safety_signal.assess` (SG-156 follow-up)
+      description: >
+        Closes the CTRC-FR-001 gap for `postAssessSafetySignal`'s signature. Bound to the signal's own
+        content hash (`_signal_hash`) at its current version, recomputed identically at consume time.
+      x-requirement-ids: [PMS-FR-022, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: signal_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Challenge created., content: { application/json: { schema: { $ref: '#/components/schemas/PostmarketSignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
 
   /postmarket/v1/signals/{signal_id}/assessments:
     post:
@@ -219,6 +258,23 @@ paths:
         '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
         '409': { description: "STALE_SAFETY_CASE_VERSION or INVALID_TRANSITION.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/signals/{signal_id}/escalation-signature-challenges:
+    post:
+      operationId: postEscalateSignalSignatureChallenge
+      tags: [postmarket]
+      summary: Create the signature challenge for `safety_signal.escalate` (SG-156 follow-up)
+      description: >
+        Closes the CTRC-FR-001 gap for `postEscalateSafetySignal`'s signature. Bound to the signal's own
+        content hash (`_signal_hash`) at its current version, recomputed identically at consume time.
+      x-requirement-ids: [PMS-FR-024, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: signal_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Challenge created., content: { application/json: { schema: { $ref: '#/components/schemas/PostmarketSignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
         '422': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
 
   /postmarket/v1/signals/{signal_id}/escalations:
@@ -276,6 +332,25 @@ components:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
 
   schemas:
+    OpenSignalSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Body of postOpenSignalSignatureChallenge (SG-156 follow-up).
+      x-requirement-ids: [SIG-FR-005]
+      required: [signal_code]
+      properties:
+        signal_code: { type: string }
+
+    PostmarketSignatureChallengeResponse:
+      type: object
+      description: The challenge receipt returned by every postmarket signal signature-challenge endpoint (response schema, not closed).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
     RegisterPostmarketSourceCommand:
       type: object
       additionalProperties: false
