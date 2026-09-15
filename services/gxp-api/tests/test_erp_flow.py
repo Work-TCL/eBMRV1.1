@@ -28,7 +28,11 @@ def _mock_adapter(handler) -> ERPNextAdapter:
 
 def _patch_adapter(monkeypatch, handler) -> None:
     adapter = _mock_adapter(handler)
-    monkeypatch.setattr(erp_commands, "build_adapter", lambda instance: adapter)
+
+    async def _fake_build_adapter(session, instance):
+        return adapter
+
+    monkeypatch.setattr(erp_commands, "build_adapter", _fake_build_adapter)
 
 
 # --- ERP instance registry (ERP-ARC-002) --------------------------------------------------------------
@@ -1302,3 +1306,72 @@ async def test_sap_adapter_csrf_fetch_failure_surfaces_as_auth_error(client, see
     result = await adapter.dispatch(CanonicalOutboundCommand(command_type="POST_GOODS_RECEIPT", entity_type=None, internal_ref={}, payload={}, idempotency_key="k1"))
     assert not result.succeeded
     assert result.raw_status == 403
+
+
+# =================================================================================================
+# build_adapter() secret-manager wiring — SG-126 gap resolution (WP-07 pass)
+# =================================================================================================
+
+
+async def test_build_adapter_uses_managed_secret_value_when_ref_is_registered(client, seeded, db):
+    """If auth_secret_ref names a registered ON_PREM secret, build_adapter resolves the real value
+    through fetch_secret_value() (authorization-gated, audited) instead of using the ref as the
+    credential directly."""
+    from app.core.security import hash_password
+    from app.modules.erp.commands import build_adapter
+    from app.modules.erp.models import ErpInstance
+    from app.modules.iam.models import User, UserSiteRole
+    from app.modules.security import crypto_commands as sec_commands
+    from tests.conftest import DEMO_PASSWORD
+
+    async with db.begin():
+        actor = User(username="erpsec.u1", email="erpsec.u1@x.com", full_name="ERP Sec U",
+                     password_hash=hash_password(DEMO_PASSWORD), status="active")
+        db.add(actor)
+        await db.flush()
+        db.add(UserSiteRole(user_id=actor.id, site_id=seeded["site_id"], role_id=seeded["roles"]["Admin"].id))
+
+    async with db.begin():
+        instance = ErpInstance(
+            instance_name=f"managed-secret-{uuid.uuid4()}", vendor="GENERIC", environment="SANDBOX",
+            base_url="https://custom.demo.invalid", auth_method="API_KEY",
+            auth_secret_ref="on-prem/erp-instance-managed", version=1,
+        )
+        db.add(instance)
+        await db.flush()
+        instance_id = instance.id
+
+    async with db.begin():
+        await sec_commands.create_secret(db, sec_commands.CreateSecretCommand(
+            idempotency_key=idem(), secret_ref="on-prem/erp-instance-managed", provider="ON_PREM",
+            purpose="ERP adapter credential", owner="platform-team",
+            consumer_identities=[f"erp_instance:{instance_id}"], initial_value="real-managed-secret",
+        ), actor.id)
+
+    async with db.begin():
+        instance = await db.get(ErpInstance, instance_id)
+        adapter = await build_adapter(db, instance)
+    assert adapter.config.auth_secret == "real-managed-secret"
+
+
+async def test_build_adapter_falls_back_to_raw_ref_when_unregistered(client, seeded, db):
+    """An ErpInstance whose auth_secret_ref does not match any registered secret_metadata row keeps
+    behaving exactly as it did before SG-126's ON_PREM store existed -- the ref is used directly as the
+    credential. Every pre-existing ErpInstance in this test suite is in this branch."""
+    from app.modules.erp.commands import build_adapter
+    from app.modules.erp.models import ErpInstance
+
+    async with db.begin():
+        instance = ErpInstance(
+            instance_name=f"unmanaged-{uuid.uuid4()}", vendor="GENERIC", environment="SANDBOX",
+            base_url="https://custom.demo.invalid", auth_method="API_KEY",
+            auth_secret_ref="not-a-registered-secret-ref", version=1,
+        )
+        db.add(instance)
+        await db.flush()
+        instance_id = instance.id
+
+    async with db.begin():
+        instance = await db.get(ErpInstance, instance_id)
+        adapter = await build_adapter(db, instance)
+    assert adapter.config.auth_secret == "not-a-registered-secret-ref"

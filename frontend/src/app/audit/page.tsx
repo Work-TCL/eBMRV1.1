@@ -33,6 +33,9 @@ interface AuditEvent {
   correlation_id: string;
   prev_event_hash: string | null;
   event_hash: string;
+  // Present only via GET /audit/v1/records/{aggregate_type}/{aggregate_id}?verify_chain=true — absent
+  // (undefined) from the plain /search results this page otherwise uses.
+  chain_valid?: boolean | null;
 }
 
 const HAS_SIGNATURE_OPTIONS = [
@@ -50,7 +53,10 @@ export default function AuditLedgerPage() {
   const [hasSignature, setHasSignature] = useState("");
   const [occurredFrom, setOccurredFrom] = useState("");
   const [occurredTo, setOccurredTo] = useState("");
+  const [verifyChain, setVerifyChain] = useState(false);
   const [selected, setSelected] = useState<AuditEvent | null>(null);
+
+  const canVerifyChain = Boolean(aggregateType.trim() && aggregateId.trim());
 
   function fetchEvents(query: ListQuery): Promise<Paged<AuditEvent>> {
     const search = new URLSearchParams({
@@ -60,6 +66,18 @@ export default function AuditLedgerPage() {
     });
     if (query.q) search.set("q", query.q);
     search.set("sort_by", query.sort_by ?? "occurred_at");
+
+    // GET /audit/v1/records/{aggregate_type}/{aggregate_id}?verify_chain=true — the only endpoint that
+    // reports whether this record's hash chain is intact — is a distinct route, not a /search query
+    // param (verified against audit/router.py), so a chain-verified lookup switches the base URL rather
+    // than merely adding one more filter to /search.
+    if (canVerifyChain && verifyChain) {
+      search.set("verify_chain", "true");
+      return api.get<Paged<AuditEvent>>(
+        `/audit/v1/records/${encodeURIComponent(aggregateType.trim())}/${encodeURIComponent(aggregateId.trim())}?${search.toString()}`
+      );
+    }
+
     if (aggregateType) search.set("aggregate_type", aggregateType);
     if (aggregateId.trim()) search.set("aggregate_id", aggregateId.trim());
     if (actorId.trim()) search.set("actor_id", actorId.trim());
@@ -106,13 +124,27 @@ export default function AuditLedgerPage() {
       header: "Changed fields",
       render: (e) => (e.changed_fields.length ? e.changed_fields.join(", ") : "—"),
     },
+    {
+      key: "chain_valid",
+      header: "Chain",
+      render: (e) =>
+        e.chain_valid === undefined ? (
+          <span className="text-muted">—</span>
+        ) : e.chain_valid ? (
+          <Icon name="check-circle" />
+        ) : (
+          <span className="error-text">
+            <Icon name="alert-triangle" /> broken
+          </span>
+        ),
+    },
   ];
 
   return (
     <div>
       <PageHead
         title="Audit ledger"
-        subtitle="Search and review every regulated audit event — append-only, hash-chained, never editable."
+        subtitle="Search and review every regulated audit event - append-only, hash-chained, never editable."
       />
 
       <div className="flex items-end gap-4 mb-4" style={{ flexWrap: "wrap" }}>
@@ -165,12 +197,26 @@ export default function AuditLedgerPage() {
         <Field label="To">
           <Input type="date" value={occurredTo} onChange={(e) => setOccurredTo(e.target.value)} />
         </Field>
+        <Field
+          label="Verify hash chain"
+          hint={canVerifyChain ? "Confirms this record's events haven't been tampered with." : "Requires both Record ID and Record type."}
+        >
+          <label className="flex items-center gap-2 fs-2" style={{ height: "var(--input-height, 38px)" }}>
+            <input
+              type="checkbox"
+              checked={verifyChain}
+              disabled={!canVerifyChain}
+              onChange={(e) => setVerifyChain(e.target.checked)}
+            />
+            Verify
+          </label>
+        </Field>
       </div>
 
       <Card>
         <CardHeader title="Events" />
         <DataTable
-          key={`${aggregateType}|${aggregateId}|${actorId}|${siteId}|${hasSignature}|${occurredFrom}|${occurredTo}`}
+          key={`${aggregateType}|${aggregateId}|${actorId}|${siteId}|${hasSignature}|${occurredFrom}|${occurredTo}|${verifyChain}`}
           columns={columns}
           fetchPage={fetchEvents}
           rowKey={(e) => e.id}
@@ -205,12 +251,12 @@ function EventDetailModal({
     ["Reason", event.reason ?? "—"],
     ["Correlation ID", event.correlation_id],
     ["Event hash", event.event_hash],
-    ["Previous hash", event.prev_event_hash ?? "— (first event on this record)"],
+    ["Previous hash", event.prev_event_hash ?? "- (first event on this record)"],
   ];
 
 
   return (
-    <Modal open onClose={onClose} title={`${event.aggregate_type} — ${event.action}`} large>
+    <Modal open onClose={onClose} title={`${event.aggregate_type} - ${event.action}`} large>
       <div className="mb-4">
         {rows.map(([label, value]) => (
           <div key={label} className="flex gap-3 fs-2" style={{ padding: "4px 0" }}>

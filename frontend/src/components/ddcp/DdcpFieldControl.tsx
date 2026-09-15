@@ -178,7 +178,7 @@ export function DdcpFieldControl({
           // one"), for the record kinds page.tsx's genealogy lookup can actually refill.
           emptyHint={
             field.recordKind === "pfs_handoff" || field.recordKind === "pfs_assembly_record" || field.recordKind === "pfs_fill_operation"
-              ? `No ${plural(field.pickerKind ?? "record")} remembered this session (a page refresh clears it) — use "Look up existing records for a batch" above to reload them from this batch's real history.`
+              ? `No ${plural(field.pickerKind ?? "record")} remembered this session (a page refresh clears it) - use "Look up existing records for a batch" above to reload them from this batch's real history.`
               : undefined
           }
         />
@@ -404,7 +404,7 @@ function ProductVersionPickerField({
 
   if (businessIdsError) {
     return (
-      <Field label={field.label} required={field.required} hint="Couldn't load the product list — enter the product version ID directly.">
+      <Field label={field.label} required={field.required} hint="Couldn't load the product list - enter the product version ID directly.">
         <Input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Product version ID" />
       </Field>
     );
@@ -429,7 +429,7 @@ function ProductVersionPickerField({
           <option value="">{businessIdsLoading ? "Loading products…" : "Select a product…"}</option>
           {(businessIds ?? []).map((b) => (
             <option key={b.product_business_id} value={b.product_business_id}>
-              {b.product_business_id} — {b.name}
+              {b.product_business_id} - {b.name}
             </option>
           ))}
         </Select>
@@ -444,7 +444,7 @@ function ProductVersionPickerField({
           </option>
           {released.map((v) => (
             <option key={v.product_version_id} value={v.product_version_id}>
-              v{v.version_no} — {v.name}
+              v{v.version_no} - {v.name}
             </option>
           ))}
         </Select>
@@ -489,7 +489,7 @@ function SterilizationItemPickerField({
       options={options}
       status={status}
       kind="sterilization/depyrogenation record"
-      emptyHint="No completed sterilization or depyrogenation record is on file yet for this site — record one on /sterilization first, or leave this blank if the component doesn't need one."
+      emptyHint="No completed sterilization or depyrogenation record is on file yet for this site - record one on /sterilization first, or leave this blank if the component doesn't need one."
     />
   );
 }
@@ -525,7 +525,7 @@ function RuleAcceptancePickerField({
       options={options}
       status={status}
       kind="released rule"
-      emptyHint="No rule has a currently-effective RELEASED version yet — release one on /rules first."
+      emptyHint="No rule has a currently-effective RELEASED version yet - release one on /rules first."
     />
   );
 }
@@ -564,7 +564,7 @@ function AsepticInterventionPickerField({
       options={options}
       status={status}
       kind="aseptic intervention"
-      emptyHint="No aseptic intervention is on file yet for this site — record one on /aseptic first, or leave this blank if there's no linked intervention."
+      emptyHint="No aseptic intervention is on file yet for this site - record one on /aseptic first, or leave this blank if there's no linked intervention."
     />
   );
 }
@@ -789,7 +789,7 @@ function RefFieldControl({
               emptyHint={
                 isQcResult
                   ? batchId
-                    ? "No QC result is on file yet for this batch — link one via the QC module (/qc: sample → test order → result) first, or enter the ID manually if it isn't in this batch's QC chain."
+                    ? "No QC result is on file yet for this batch - link one via the QC module (/qc: sample → test order → result) first, or enter the ID manually if it isn't in this batch's QC chain."
                     : "Enter the batch above first to look up its QC results."
                   : undefined
               }

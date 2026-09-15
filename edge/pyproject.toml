@@ -1,0 +1,72 @@
+[project]
+name = "edge-gateway"
+version = "0.1.0"
+description = "Document 43 (SPEC-EDGE-001) reference Edge Gateway runtime -- plant-side acquisition, normalization, buffering and forwarding. Not the GxP system of record (Architectural Principles, Document 43)."
+requires-python = ">=3.12"
+dependencies = [
+    # Already an approved, actively-maintained dependency in this project (services/gxp-api/pyproject.toml,
+    # Document 104 justification recorded there) -- reused here rather than adding a second HTTP client or
+    # a second schema-validation library. Same async-native fit as the server side.
+    "httpx>=0.27",
+    "pydantic>=2.9",
+
+    # -- Document 104 justifications for Document 44 (SPEC-EDGE-002) protocol driver dependencies --
+    # None of these are imported outside plugins/<protocol>/ -- Document 44 Prohibitions section 14:
+    # "Do not import OPC UA/Modbus/MQTT libraries into GxP Core packages." services/gxp-api never
+    # depends on this edge/pyproject.toml, so the boundary is structural, not just a code-review rule.
+
+    # asyncua: pure-Python OPC UA 1.05.x client/server stack (MIT license). Document 44's own "Current
+    # Protocol Baseline" section names OPC UA 1.05.x as the reference protocol and cites the OPC
+    # Foundation spec directly; asyncua is the de-facto reference implementation used by its own
+    # conformance test suite and by other regulated-industry integrations. No dependency already in
+    # this project (httpx/pydantic) can speak the OPC UA binary/SecureChannel protocol. Actively
+    # maintained (weekly release cadence), no known critical CVEs at pin time, no native extension
+    # (pure Python -- no additional build/security-scanning surface for a compiled artifact).
+    "asyncua>=2.0,<3",
+
+    # pymodbus: pure-Python Modbus TCP/RTU client+server stack (BSD-3-Clause license), the reference
+    # implementation named implicitly by DRV-FR-007/008/009's TCP+RTU+invalid-value requirements.
+    # Chosen over hand-rolling Modbus PDU/CRC framing because DRV-FR-009 ("Timeout/CRC/exception/
+    # out-of-range marks BAD/COMM_ERROR") requires exact native-error fidelity that a hand-rolled
+    # decoder would risk getting subtly wrong; pymodbus's CRC/exception handling is exercised by its
+    # own large test suite. Also supplies the async in-process TCP/serial *server* this pass uses to
+    # run real protocol-simulator-backed tests (edge/tests/test_plugin_modbus_tcp.py,
+    # test_plugin_modbus_rtu.py) rather than boundary-mocking Modbus entirely.
+    "pymodbus>=3.15,<4",
+
+    # aiomqtt: thin asyncio wrapper (MIT license) around the well-established paho-mqtt client,
+    # supporting MQTT 5.0 (DRV-FR-010's explicit "MQTT 5" requirement -- paho-mqtt's own native async
+    # API predates and does not fully cover MQTT5 properties/reason-codes the way aiomqtt's wrapper
+    # does). Tests run against a real local `mosquitto` broker subprocess (already present as an OS
+    # package in this environment, not a new dependency) rather than a mocked broker.
+    "aiomqtt>=2.5,<3",
+
+    # pysnmp: pure-Python SNMPv1/v2c/v3 manager+agent stack (BSD-2-Clause license), the only actively
+    # maintained SNMP implementation for Python; no existing project dependency can encode/decode
+    # SNMP's ASN.1/BER PDUs. DRV-FR-012 names "SNMP v3 preferred with scoped credentials" explicitly --
+    # pysnmp is the reference implementation for v3 USM (User Security Model) auth/privacy in Python.
+    "pysnmp>=7.1,<8",
+
+    # pyserial: the standard cross-platform serial-port I/O library (BSD-3-Clause license) required by
+    # both `pymodbus`'s Modbus RTU transport (DRV-FR-008) and this pass's own generic serial/TCP
+    # proprietary adapter (DRV-FR-013, `plugins/serial/`) -- there is no pure-stdlib way to open/
+    # configure a serial port (baud/parity/stopbits) on Linux/Windows/macOS uniformly. Extremely widely
+    # used (pymodbus, Home Assistant and most of the Python industrial-automation ecosystem depend on
+    # it), actively maintained, no native/compiled extension on Linux.
+    "pyserial>=3.5,<4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.setuptools]
+# Document 43 section 12's flat top-level layout (runtime/, plugins/, storage/, contracts/, cli/) rather
+# than a src/ layout -- deliberately explicit here since setuptools cannot infer a single package root
+# from that many top-level directories.
+packages = ["runtime", "runtime.config", "runtime.supervisor", "runtime.ingestion", "runtime.forwarding", "runtime.health", "runtime.security", "runtime.observability", "plugins", "plugins.common", "plugins.modbus", "plugins.opcua", "plugins.mqtt", "plugins.snmp", "plugins.serial", "plugins.rest", "plugins.file", "plugins.simulators", "plugins.barcode", "plugins.balance", "plugins.printer", "plugins.tester", "plugins.vision", "storage", "contracts", "cli"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

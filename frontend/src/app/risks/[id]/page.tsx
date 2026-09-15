@@ -145,7 +145,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
           {current && (
             <Card pad className="mb-4">
               <div className="flex justify-between items-center mb-3">
-                <span className="font-semibold">Current assessment — cycle {current.cycle_number}</span>
+                <span className="font-semibold">Current assessment - cycle {current.cycle_number}</span>
                 <StatePill state="accepted" icon="check-circle">
                   Current
                 </StatePill>
@@ -164,7 +164,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
           )}
 
           {data.assessment_versions.length === 0 && (
-            <EmptyState icon="gauge">No assessment recorded yet — add one to score this risk.</EmptyState>
+            <EmptyState icon="gauge">No assessment recorded yet - add one to score this risk.</EmptyState>
           )}
 
           {data.assessment_versions.filter((v) => !v.is_current).length > 0 && (
@@ -279,7 +279,7 @@ function TransitionModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={`${LABEL[transition]} — ${risk.risk_number}`}>
+    <Modal open onClose={onClose} title={`${LABEL[transition]} - ${risk.risk_number}`}>
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(transition) && (
           <Banner tone="warn" title="This transition requires an electronic signature">
@@ -292,7 +292,7 @@ function TransitionModal({
             <Field
               label="Methodology ID"
               required
-              hint="A released rule of type risk_methodology (see the Rules page) — required for the first assessment of a cycle."
+              hint="A released rule of type risk_methodology (see the Rules page) - required for the first assessment of a cycle."
             >
               <Input value={methodologyId} onChange={(e) => setMethodologyId(e.target.value)} required />
             </Field>

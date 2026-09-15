@@ -8,7 +8,7 @@ from sqlalchemy.sql import func
 
 from app.core.db import Base
 
-# Document 24 (SPEC-QC-002) §5. Only GXP_MANAGED behavior is built this pass -- SG-067.
+# Document 24 (SPEC-QC-002) §5. Only GXP_MANAGED behavior is built this pass -- SG-070.
 OWNERSHIP_MODES = ("gxp_managed", "lims_managed_with_sync", "hybrid")
 BUILDABLE_OWNERSHIP_MODES = ("gxp_managed",)
 
@@ -18,7 +18,7 @@ class LimsInstance(Base):
     decision (SG-045's precedent). No API operation registers an instance (Document 24's own 6-operation
     §8 list has none) -- instances are provisioned as configuration data, same class of decision as
     Document 106's own signature-policy floor. `service_actor_user_id` stands in for a dedicated
-    machine-identity model, which does not exist anywhere in this codebase (SG-067 / LIMS-FR-013)."""
+    machine-identity model, which does not exist anywhere in this codebase (SG-070 / LIMS-FR-013)."""
 
     __tablename__ = "lims_instance"
     __table_args__ = (UniqueConstraint("instance_code"), {"schema": "ebmr"})

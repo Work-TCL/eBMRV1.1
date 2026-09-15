@@ -49,6 +49,55 @@ YIELD_RULE_ID = "yield_percent"  # seeded platform-floor rule -- see scripts/see
 # literal one Document 17 §3 gives, not an invention (YLD-FR-001/003/007).
 
 
+async def _apply_supersede(
+    session: AsyncSession, *, model, supersedes_id: uuid.UUID, new_row, type_field: str, expected_type: str,
+    reason: str | None, actor_user_id: uuid.UUID, aggregate_type: str, corrected_event_type: str,
+) -> None:
+    """YLD-FR-022 "correction preserves original": the prior row is never UPDATEd in place (AG-08) --
+    it's flagged SUPERSEDED and the new row (already flushed by the caller) links back to it via
+    `supersedes_id`. Same discipline as `genealogy.service.correct_edge()`. Requires `new_row.id` to
+    already exist, so the caller must `session.flush()` the new row first."""
+    if not reason:
+        raise ValidationFailedError("reason is required when supersedes_id is set (YLD-FR-022)")
+
+    original = (
+        await session.execute(select(model).where(model.id == supersedes_id).with_for_update())
+    ).scalar_one_or_none()
+    if original is None:
+        raise NotFoundError(f"Record to supersede not found ({aggregate_type})", supersedes_id=str(supersedes_id))
+    if original.state == "SUPERSEDED":
+        raise ValidationFailedError(
+            "Cannot supersede a record that is already SUPERSEDED", supersedes_id=str(supersedes_id),
+        )
+    if getattr(original, type_field) != expected_type:
+        raise ValidationFailedError(
+            f"supersedes_id must reference a record with the same {type_field}",
+            expected=expected_type, got=getattr(original, type_field),
+        )
+    if original.batch_id != new_row.batch_id:
+        raise ValidationFailedError(
+            "Cannot supersede a record from a different batch", supersedes_id=str(supersedes_id),
+        )
+
+    old_state = original.state
+    original.state = "SUPERSEDED"
+    new_row.supersedes_id = original.id
+    await session.flush()
+
+    correlation_id = uuid.uuid4()
+    await write_audit_event(
+        session, site_id=original.site_id, aggregate_type=aggregate_type, aggregate_id=original.id,
+        aggregate_version=1, action="Corrected", actor_id=actor_user_id, correlation_id=correlation_id,
+        reason=reason, old_value={"state": old_state},
+        new_value={"state": "SUPERSEDED", "corrected_by_id": str(new_row.id)},
+    )
+    await write_outbox_event(
+        session, event_type=corrected_event_type, aggregate_type=aggregate_type, aggregate_id=original.id,
+        aggregate_version=1, payload={"id": str(original.id), "corrected_by_id": str(new_row.id)},
+        correlation_id=correlation_id,
+    )
+
+
 def _receipt_from_existing(existing) -> MutationReceipt:
     return MutationReceipt(
         command_id=existing.id, aggregate_id=existing.aggregate_id, resulting_version=existing.resulting_version,
@@ -157,6 +206,8 @@ class EvaluateYieldCommand(CommandEnvelope):
     manual_source: str | None = None
     manual_reason: str | None = None
     input_refs: dict = {}
+    supersedes_id: uuid.UUID | None = None  # YLD-FR-022: correct a prior wrong calculation
+    reason: str | None = None               # required when supersedes_id is set
 
 
 async def evaluate_yield(
@@ -234,6 +285,13 @@ async def evaluate_yield(
     session.add(calc)
     await session.flush()
 
+    if cmd.supersedes_id is not None:
+        await _apply_supersede(
+            session, model=ManufacturingCalculation, supersedes_id=cmd.supersedes_id, new_row=calc,
+            type_field="calculation_type", expected_type="YIELD", reason=cmd.reason, actor_user_id=actor_user_id,
+            aggregate_type="manufacturing_calculation", corrected_event_type="ReconciliationSuperseded",
+        )
+
     return await _write_receipt(
         session, cmd=cmd, payload_hash=payload_hash, site_id=calc.site_id, aggregate_type="manufacturing_calculation",
         aggregate_id=calc.id, version=1, action="Created", actor_user_id=actor_user_id, reason=None, old_state=None,
@@ -250,6 +308,8 @@ class EvaluatePotencyCommand(CommandEnvelope):
     rule_id: str
     inputs: dict
     uom: str | None = None
+    supersedes_id: uuid.UUID | None = None  # YLD-FR-022: correct a prior wrong calculation
+    reason: str | None = None               # required when supersedes_id is set
 
 
 async def evaluate_potency(
@@ -290,6 +350,13 @@ async def evaluate_potency(
     session.add(calc)
     await session.flush()
 
+    if cmd.supersedes_id is not None:
+        await _apply_supersede(
+            session, model=ManufacturingCalculation, supersedes_id=cmd.supersedes_id, new_row=calc,
+            type_field="calculation_type", expected_type="POTENCY", reason=cmd.reason, actor_user_id=actor_user_id,
+            aggregate_type="manufacturing_calculation", corrected_event_type="ReconciliationSuperseded",
+        )
+
     return await _write_receipt(
         session, cmd=cmd, payload_hash=payload_hash, site_id=calc.site_id, aggregate_type="manufacturing_calculation",
         aggregate_id=calc.id, version=1, action="Created", actor_user_id=actor_user_id, reason=None, old_state=None,
@@ -315,6 +382,8 @@ class EvaluateReconciliationCommand(CommandEnvelope):
     external_reference: dict | None = None
     loss_reasons: list | None = None              # YLD-FR-021, required when approved_loss > 0
     linked_deviation_id: uuid.UUID | None = None  # YLD-FR-021, an existing QMS deviation
+    supersedes_id: uuid.UUID | None = None        # YLD-FR-022: correct a prior wrong reconciliation
+    reason: str | None = None                     # required when supersedes_id is set
 
 
 def _validate_loss_reasons(approved_loss: Decimal, loss_reasons: list | None) -> None:
@@ -421,6 +490,7 @@ async def _persist_reconciliation(
     external_reference: dict | None, categories: tuple[str, ...], actor_user_id: uuid.UUID,
     device_unit_id: uuid.UUID | None = None, command_type: str = "EvaluateReconciliation",
     loss_reasons: list | None = None, linked_deviation_id: uuid.UUID | None = None,
+    supersedes_id: uuid.UUID | None = None, supersede_reason: str | None = None,
 ) -> MutationReceipt:
     """The shared mass-balance evaluation. Callers resolve their own source quantities first (label
     reconciliation reads Document 16's counts, component reconciliation scopes to a Document 12 device
@@ -481,6 +551,14 @@ async def _persist_reconciliation(
     session.add(rec)
     await session.flush()
 
+    if supersedes_id is not None:
+        await _apply_supersede(
+            session, model=ReconciliationRecord, supersedes_id=supersedes_id, new_row=rec,
+            type_field="reconciliation_type", expected_type=reconciliation_type, reason=supersede_reason,
+            actor_user_id=actor_user_id, aggregate_type="reconciliation_record",
+            corrected_event_type="ReconciliationSuperseded",
+        )
+
     event_type = "MaterialReconciliationCalculated" if within else "ReconciliationFailed"
     return await _write_receipt(
         session, cmd=cmd, payload_hash=payload_hash, site_id=rec.site_id, aggregate_type="reconciliation_record",
@@ -512,6 +590,7 @@ async def _evaluate_reconciliation(
         tolerance_rule=cmd.tolerance_rule, external_reference=cmd.external_reference,
         categories=QUANTITY_CATEGORIES, actor_user_id=actor_user_id,
         loss_reasons=cmd.loss_reasons, linked_deviation_id=cmd.linked_deviation_id,
+        supersedes_id=cmd.supersedes_id, supersede_reason=cmd.reason,
     )
 
 
@@ -538,6 +617,8 @@ class EvaluateLabelReconciliationCommand(CommandEnvelope):
     external_reference: dict | None = None
     loss_reasons: list | None = None              # YLD-FR-021, required when approved_loss > 0
     linked_deviation_id: uuid.UUID | None = None  # YLD-FR-021, an existing QMS deviation
+    supersedes_id: uuid.UUID | None = None        # YLD-FR-022: correct a prior wrong reconciliation
+    reason: str | None = None                     # required when supersedes_id is set
 
 
 async def evaluate_label_reconciliation(
@@ -586,6 +667,7 @@ async def evaluate_label_reconciliation(
         tolerance_rule=cmd.tolerance_rule, external_reference=cmd.external_reference,
         categories=QUANTITY_CATEGORIES, actor_user_id=actor_user_id, command_type="EvaluateLabelReconciliation",
         loss_reasons=cmd.loss_reasons, linked_deviation_id=cmd.linked_deviation_id,
+        supersedes_id=cmd.supersedes_id, supersede_reason=cmd.reason,
     )
 
 
@@ -609,6 +691,8 @@ class EvaluateComponentReconciliationCommand(CommandEnvelope):
     external_reference: dict | None = None
     loss_reasons: list | None = None              # YLD-FR-021, required when approved_loss > 0
     linked_deviation_id: uuid.UUID | None = None  # YLD-FR-021, an existing QMS deviation
+    supersedes_id: uuid.UUID | None = None        # YLD-FR-022: correct a prior wrong reconciliation
+    reason: str | None = None                     # required when supersedes_id is set
 
 
 async def evaluate_component_reconciliation(
@@ -651,6 +735,7 @@ async def evaluate_component_reconciliation(
         categories=COMPONENT_QUANTITY_CATEGORIES, actor_user_id=actor_user_id,
         device_unit_id=cmd.device_unit_id, command_type="EvaluateComponentReconciliation",
         loss_reasons=cmd.loss_reasons, linked_deviation_id=cmd.linked_deviation_id,
+        supersedes_id=cmd.supersedes_id, supersede_reason=cmd.reason,
     )
 
 

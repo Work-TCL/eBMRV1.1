@@ -145,7 +145,7 @@ export default function PackagingPage() {
 
       <Card>
         <CardHeader title="Packaging runs" />
-        {/* Held until the site resolves — DataTable does not watch siteId, so mounting early would
+        {/* Held until the site resolves - DataTable does not watch siteId, so mounting early would
             issue one unscoped request and never correct itself. */}
         {siteLoading ? (
           <p className="table-loading-row" style={{ padding: "var(--space-4)" }}>
@@ -231,7 +231,7 @@ function CreateRunModal({ onClose, onDone }: { onClose: () => void; onDone: () =
  <option value="">Select a batch</option>
               {batches.map((b) => (
                 <option key={b.id} value={b.id}>
-                    {b.batch_number} — {b.product_name} ({b.product_code})
+                    {b.batch_number} - {b.product_name} ({b.product_code})
                 </option>
               ))}
             </Select>
@@ -283,7 +283,7 @@ function RunModal({
   const totalIssued = r.label_issues.reduce((sum, i) => sum + i.quantity_issued, 0);
 
   return (
-    <Modal open onClose={onClose} title={`Packaging run — ${r.line_ref ?? "unassigned line"}`} large>
+    <Modal open onClose={onClose} title={`Packaging run - ${r.line_ref ?? "unassigned line"}`} large>
       {!r.line_clearance_completed && (
         <Banner tone="warn" title="Line clearance outstanding" icon="lock">
           Labels cannot be issued until line clearance is recorded.
@@ -291,7 +291,7 @@ function RunModal({
       )}
       {latestReconciliation && latestReconciliation.result !== "pass" && (
         <Banner tone="critical" title="Label reconciliation variance">
-          Variance of {latestReconciliation.calculated_variance} label(s) — result{" "}
+          Variance of {latestReconciliation.calculated_variance} label(s) - result{" "}
           {latestReconciliation.result}. A run cannot complete on a failed reconciliation.
         </Banner>
       )}

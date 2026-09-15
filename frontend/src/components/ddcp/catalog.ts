@@ -136,6 +136,18 @@ export interface DdcpFamily {
   hasProfileGet: boolean;
   hasGenealogy: boolean;
   hasReviewSummary: boolean;
+  /** SG-180 diagnostic reads, batch-scoped like readiness/genealogy/review-summary above — only
+   * Document 54's (prefilled-syringe) endpoints exist for these (see `ddcp/router.py`). */
+  hasSerializationCompliance: boolean;
+  hasStepSyncStatus: boolean;
+  /** `GET {prefix}/change-linkage?object_type=&object_id=` — only Document 54's router declares this,
+   * even though the object it looks up (any DDCP-linked change record) isn't family-specific. */
+  hasChangeLinkage: boolean;
+  /** `GET {prefix}/complaint-trace/{finished_serial}` (autoinjector) vs
+   * `GET {prefix}/batches/{batch_id}/complaint-trace` (coated-device) — different id shapes per family,
+   * so these are two separate flags rather than one. */
+  hasComplaintTraceBySerial: boolean;
+  hasComplaintTraceByBatch: boolean;
   /** Readiness GET accepts these optional query fields beyond the always-required profile_version_id
    * (only Document 54's endpoint does — see `services/gxp-api/app/modules/ddcp/router.py`). */
   readinessExtraFields: DdcpField[];
@@ -153,13 +165,18 @@ const pfs: DdcpFamily = {
   hasProfileGet: true,
   hasGenealogy: true,
   hasReviewSummary: true,
+  hasSerializationCompliance: true,
+  hasStepSyncStatus: true,
+  hasChangeLinkage: true,
+  hasComplaintTraceBySerial: false,
+  hasComplaintTraceByBatch: false,
   readinessExtraFields: [
  { name: "line_id", label: "Equipment area / line", type: "areaSelect", hint: "Optional checks line clearance and EM status too." },
  { name: "filler_equipment_id", label: "Filler equipment", type: "equipmentSelect", hint: "Optional checks this equipment's eligibility too." },
   ],
   profileFields: [
  { name: "profile_code", label: "Profile code", type: "text", required: true, placeholder: "e.g. PFS-DEMO-001", hint: "A unique code for this product combined with the site and version to identify it." },
- { name: "product_version_id", label: "Product (Product Master)", type: "productVersionSelect", required: true, hint: "The RELEASED Product Master version this profile is the combination-product spec for (SG-175) — must have manufacturing profile \"injectable_ddcp\"." },
+ { name: "product_version_id", label: "Product (Product Master)", type: "productVersionSelect", required: true, hint: "The RELEASED Product Master version this profile is the combination-product spec for - must have manufacturing profile \"injectable_ddcp\"." },
     { name: "subtype", label: "Subtype", type: "select", options: [
       { value: "PREFILLED_SYRINGE", label: "Prefilled syringe" },
       { value: "CARTRIDGE", label: "Cartridge" },
@@ -171,7 +188,7 @@ const pfs: DdcpFamily = {
     architectureField('Sterile-process and fill-control settings, e.g. "sterileProcess" → "true".'),
     controlsField(
       'One recognized key here: a "serialization" row set to "true" flags unit serialization as ' +
- 'applicable for reporting (PFS-FR-019) this never blocks release. The backend actually reads ' +
+      'applicable for reporting this never blocks release. The backend actually reads' +
       'it nested ({"serialization": {"required": true}}), which this flat editor can\'t produce; a ' +
       "top-level true is stored as entered but won't be picked up by that reporting check."
     ),
@@ -304,7 +321,7 @@ const pfs: DdcpFamily = {
         { name: "equipment_id", label: "Equipment", type: "equipmentSelect" },
         { name: "process_parameters", label: "Process parameters", type: "kv", hint: 'Equipment/process settings for this step, e.g. "torque" → "2.5".' + FREE_FORM_NOTE },
         { name: "result", label: "Result", type: "select", required: true, options: [{ value: "PASS", label: "Pass" }, { value: "FAIL", label: "Fail" }, { value: "REWORK", label: "Rework" }], default: "PASS" },
- { name: "rework_procedure_reference", label: "Rework procedure reference", type: "ref", refKeys: [{ value: "procedure_id", label: "Released procedure ID" }], hint: "Required when result is Rework (PFS-FR-027) rework is disallowed by default without it." },
+        { name: "rework_procedure_reference", label: "Rework procedure reference", type: "ref", refKeys: [{ value: "procedure_id", label: "Released procedure ID" }], hint: "Required when result is Rework rework is disallowed by default without it." },
         { name: "occurred_at", label: "Occurred at", type: "datetime" },
       ],
     },
@@ -344,6 +361,21 @@ const pfs: DdcpFamily = {
         { name: "occurred_at", label: "Occurred at", type: "datetime" },
       ],
     },
+    {
+      path: "step-mappings",
+      label: "Map a DDCP action to a recipe step",
+      about: "Links one of the three DDCP actions to a stable recipe step code, so batch progress and DDCP progress can be shown side by side.",
+      group: "Step mappings",
+      fields: [
+        { name: "recipe_version_id", label: "Recipe version ID", type: "text", required: true, hint: "Find it on /recipe-master." },
+        { name: "ddcp_action", label: "DDCP action", type: "select", required: true, options: [
+          { value: "constituent_handoff.accept", label: "Constituent handoff - accept" },
+          { value: "filling_stage.complete", label: "Filling stage - complete" },
+          { value: "device_assembly.verify", label: "Device assembly - verify" },
+        ] },
+        { name: "stable_step_code", label: "Stable step code", type: "text", required: true, hint: "The recipe step code this DDCP action corresponds to." },
+      ],
+    },
   ],
 };
 
@@ -357,10 +389,15 @@ const autoinjector: DdcpFamily = {
   hasProfileGet: false,
   hasGenealogy: false,
   hasReviewSummary: false,
+  hasSerializationCompliance: false,
+  hasStepSyncStatus: false,
+  hasChangeLinkage: false,
+  hasComplaintTraceBySerial: true,
+  hasComplaintTraceByBatch: false,
   readinessExtraFields: [],
   profileFields: [
     { name: "profile_code", label: "Profile code", type: "text", required: true, placeholder: "e.g. AUTO-DEMO-001" },
- { name: "product_version_id", label: "Product (Product Master)", type: "productVersionSelect", required: true, hint: "The RELEASED Product Master version this profile is the combination-product spec for (SG-175). No manufacturing-profile value names \"autoinjector\" specifically, so only existence/released/site are checked, not a family match." },
+    { name: "product_version_id", label: "Product (Product Master)", type: "productVersionSelect", required: true, hint: "The RELEASED Product Master version this profile is the combination-product spec for. No manufacturing-profile value names \"autoinjector\" specifically, so only existence/released/site are checked, not a family match." },
     { name: "injector_type", label: "Injector type", type: "select", required: true, options: [
       { value: "AUTOINJECTOR", label: "Autoinjector" },
  { value: "PEN_SINGLE_USE", label: "Pen single use" },
@@ -439,7 +476,7 @@ const autoinjector: DdcpFamily = {
         { name: "result", label: "Result", type: "select", required: true, options: [{ value: "PASS", label: "Pass" }, { value: "REJECT", label: "Reject" }, { value: "REWORK", label: "Rework" }] },
         { name: "reason", label: "Reason", type: "text", hint: "Required for Reject or Rework." },
         { name: "ncr_reference", label: "NCR reference", type: "ref", refKeys: [{ value: "ncr_id", label: "NCR ID" }] },
- { name: "rework_procedure_reference", label: "Rework procedure reference", type: "ref", refKeys: [{ value: "procedure_id", label: "Released procedure ID" }], hint: "Required for Rework (INJ-FR-022) disallowed by default without it." },
+        { name: "rework_procedure_reference", label: "Rework procedure reference", type: "ref", refKeys: [{ value: "procedure_id", label: "Released procedure ID" }], hint: "Required for Rework disallowed by default without it." },
       ],
     },
     {
@@ -470,10 +507,15 @@ const inhalation: DdcpFamily = {
   hasProfileGet: false,
   hasGenealogy: true,
   hasReviewSummary: false,
+  hasSerializationCompliance: false,
+  hasStepSyncStatus: false,
+  hasChangeLinkage: false,
+  hasComplaintTraceBySerial: false,
+  hasComplaintTraceByBatch: false,
   readinessExtraFields: [],
   profileFields: [
     { name: "profile_code", label: "Profile code", type: "text", required: true, placeholder: "e.g. INH-DEMO-001" },
- { name: "product_version_id", label: "Product (Product Master)", type: "productVersionSelect", required: true, hint: "The RELEASED Product Master version this profile is the combination-product spec for (SG-175) — must have manufacturing profile \"inhalation_ddcp\"." },
+    { name: "product_version_id", label: "Product (Product Master)", type: "productVersionSelect", required: true, hint: "The RELEASED Product Master version this profile is the combination-product spec for - must have manufacturing profile \"inhalation_ddcp\"." },
  { name: "subtype", label: "Subtype", type: "select", required: true, options: [{ value: "MDI", label: "MDI metered dose" }, { value: "DPI", label: "DPI dry powder" }] },
     { name: "fill_route", label: "Fill route", type: "text", hint: "Must match what fill runs declare when they start." },
     { name: "environment_profile_id", label: "Environment profile", type: "text", hint: "If set, fill runs must report a ready environment status." },
@@ -565,10 +607,15 @@ const coatedDevice: DdcpFamily = {
   hasProfileGet: false,
   hasGenealogy: false,
   hasReviewSummary: false,
+  hasSerializationCompliance: false,
+  hasStepSyncStatus: false,
+  hasChangeLinkage: false,
+  hasComplaintTraceBySerial: false,
+  hasComplaintTraceByBatch: true,
   readinessExtraFields: [],
   profileFields: [
     { name: "profile_code", label: "Profile code", type: "text", required: true, placeholder: "e.g. COAT-DEMO-001" },
- { name: "product_version_id", label: "Product (Product Master)", type: "productVersionSelect", required: true, hint: "The RELEASED Product Master version this profile is the combination-product spec for (SG-175). No manufacturing-profile value names \"coated device\" specifically, so only existence/released/site are checked, not a family match." },
+    { name: "product_version_id", label: "Product (Product Master)", type: "productVersionSelect", required: true, hint: "The RELEASED Product Master version this profile is the combination-product spec for. No manufacturing-profile value names \"coated device\" specifically, so only existence/released/site are checked, not a family match." },
     { name: "coating_route_id", label: "Coating route", type: "text" },
     { name: "sterilization_route_id", label: "Sterilization route", type: "text" },
     { name: "environment_profile_id", label: "Environment profile", type: "text", hint: "If set, coating runs must report a ready environment status." },
@@ -582,6 +629,7 @@ const coatedDevice: DdcpFamily = {
       label: "Start a coating run",
       about: "An initial drug-solution quantity, if given, is recorded as ISSUED on the mass-balance ledger.",
       group: "Coating",
+      producesRecordKind: "coat_run",
       fields: [
         { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
         { name: "profile_version_id", label: "Released profile", type: "profileSelect", required: true },
@@ -595,6 +643,20 @@ const coatedDevice: DdcpFamily = {
         },
         { name: "initial_drug_solution_quantity", label: "Initial drug solution quantity", type: "decimal" },
         { name: "initial_drug_solution_uom", label: "Initial drug solution unit", type: "text", placeholder: "g" },
+      ],
+    },
+    {
+      path: "coating-runs/{operation_id}/process-evidence",
+      label: "Record coating process evidence",
+      about: "Records one coating-process parameter reading, optionally evaluated against a released acceptance rule.",
+      group: "Coating",
+      fields: [
+        { name: "operation_id", label: "Coating run ID", type: "recordSelect", recordKind: "coat_run", pickerKind: "coating run", required: true, hint: "Picked from coating runs started earlier this session or enter one manually." },
+        { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1", hint: "Auto-filled when picked above from a record this session already knows about - re-check it if an earlier action on this same record failed, or you entered the ID manually." },
+        { name: "parameter_code", label: "Parameter code", type: "text", required: true },
+        { name: "value", label: "Value", type: "text", required: true },
+        { name: "uom", label: "Unit of measure", type: "text" },
+        { name: "acceptance_rule_id", label: "Acceptance rule", type: "ruleSelect", hint: "Optional - the released rule this reading is evaluated against, if any." },
       ],
     },
     {
@@ -664,7 +726,7 @@ const coatedDevice: DdcpFamily = {
     {
       path: "unit-dispositions",
       label: "Record a unit disposition",
-      about: "Recoating/stripping/reprocessing is disallowed by default (COAT-FR-025).",
+      about: "Recoating/stripping/reprocessing is disallowed by default.",
       group: "Counts & disposition",
       fields: [
         { name: "batch_id", label: "Batch", type: "batchSelect", required: true },

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, clientPagedFetcher, formatDateTime, holdsAnyRole, newIdempotencyKey } from "@/lib/api";
-import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table } from "@/components/ui/Table";
@@ -19,6 +19,8 @@ import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { RepeatableRows, buildRepeatArray, type RepeatRow, type RepeatSubField } from "@/components/shared/RepeatableFields";
 
 function isNumericParameter(dataType: string): boolean {
   return ["numeric", "decimal", "number", "float", "integer"].includes(dataType.toLowerCase());
@@ -364,7 +366,7 @@ export default function BatchExecutionPage() {
           }
         />
         {/* Holding the table until the site resolves avoids one request racing the initial `siteId`
-            load (empty string / null on first render) — DataTable does not watch `siteId` itself, so
+            load (empty string / null on first render) - DataTable does not watch `siteId` itself, so
             that request would never correct on its own; see RecordListPage's identical guard. */}
         {siteLoading ? (
           <p className="table-loading-row" style={{ padding: "var(--space-4)" }}>
@@ -465,10 +467,9 @@ function CreateBatchModal({
         }}
       >
         <p className="hint mb-3">
-          Both versions must be released — the backend refuses to create a batch against a draft product
-          or recipe version. This creates the <code>gxp_batch</code> record every module — DDCP, QC,
-          Packaging, Yield Reconciliation, QA Review, Release — now reads (SG-149/SG-173, 2026-09-08
-          cutover: the legacy <code>ebmr.batches</code> table and its own page have been retired).
+          Both versions must be released - the backend refuses to create a batch against a draft product
+          or recipe version. This creates the <code>gxp_batch</code> record every module - DDCP, QC,
+          Packaging, Yield Reconciliation, QA Review, Release - now reads.
         </p>
         <Field label="Batch number" required>
           <Input value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} required autoFocus />
@@ -491,7 +492,7 @@ function CreateBatchModal({
               </option>
               {(businessIds ?? []).map((b) => (
                 <option key={b.product_business_id} value={b.product_business_id}>
-                  {b.product_business_id} — {b.name}
+                  {b.product_business_id} - {b.name}
                 </option>
               ))}
             </Select>
@@ -517,7 +518,7 @@ function CreateBatchModal({
               </option>
               {releasedProductVersions.map((v) => (
                 <option key={v.product_version_id} value={v.product_version_id}>
-                  v{v.version_no} — {v.name}
+                  v{v.version_no} - {v.name}
                 </option>
               ))}
             </Select>
@@ -621,6 +622,8 @@ function ExecutionModal({
   const [detailStep, setDetailStep] = useState<BatchStep | null>(null);
   const [holdingStep, setHoldingStep] = useState<BatchStep | null>(null);
   const [resumingStep, setResumingStep] = useState<BatchStep | null>(null);
+  const [linkingEvidenceStep, setLinkingEvidenceStep] = useState<BatchStep | null>(null);
+  const [handingOverStep, setHandingOverStep] = useState<BatchStep | null>(null);
   const [completingProduction, setCompletingProduction] = useState(false);
 
   const v = view.data;
@@ -657,7 +660,7 @@ function ExecutionModal({
               <div key={blocker.step_id} className="flex gap-2" style={{ padding: "3px 0" }}>
                 <Icon name="alert-triangle" />
                 <span>
-                  <span className="font-semibold tabular">{blocker.recipe_step_code}</span> —{" "}
+                  <span className="font-semibold tabular">{blocker.recipe_step_code}</span> -{" "}
                   {blocker.reason}
                 </span>
               </div>
@@ -693,7 +696,7 @@ function ExecutionModal({
       <p className="fact-k mb-2 mt-4">Steps</p>
       {v.steps.length === 0 ? (
         <p className="hint">
-          No step instances yet — they are created when the batch is issued.
+          No step instances yet - they are created when the batch is issued.
         </p>
       ) : (
         <Table>
@@ -741,6 +744,12 @@ function ExecutionModal({
                             <Icon name="clipboard" /> Record results
                           </Button>
                         )}
+                        <Button size="sm" variant="secondary" onClick={() => setLinkingEvidenceStep(s)}>
+                          <Icon name="file-plus-2" /> Link evidence
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => setHandingOverStep(s)}>
+                          <Icon name="arrow-right" /> Hand over
+                        </Button>
                         <Button size="sm" variant="secondary" onClick={() => setHoldingStep(s)}>
                           <Icon name="lock" /> Hold
                         </Button>
@@ -871,6 +880,30 @@ function ExecutionModal({
           }}
         />
       )}
+      {linkingEvidenceStep && (
+        <LinkEvidenceModal
+          batch={b}
+          step={linkingEvidenceStep}
+          onClose={() => setLinkingEvidenceStep(null)}
+          onDone={() => {
+            setLinkingEvidenceStep(null);
+            view.reload();
+            onChanged();
+          }}
+        />
+      )}
+      {handingOverStep && (
+        <HandoverStepModal
+          batch={b}
+          step={handingOverStep}
+          onClose={() => setHandingOverStep(null)}
+          onDone={() => {
+            setHandingOverStep(null);
+            view.reload();
+            onChanged();
+          }}
+        />
+      )}
       {completingProduction && (
         <ProductionCompleteModal
           batch={b}
@@ -910,10 +943,10 @@ function HoldStepModal({
       action="hold"
       title={
         <span className="flex items-center gap-2">
-          <Icon name="lock" /> Hold step — {step.recipe_step_code}
+          <Icon name="lock" /> Hold step - {step.recipe_step_code}
         </span>
       }
-      summary="Holding this step is a signed act (Document 106) and stops only this step — the rest of the batch keeps running."
+ summary="Holding this step is a signed act and stops only this step - the rest of the batch keeps running."
       submitLabel="Sign & hold"
       reason="none"
       disabled={!reason.trim()}
@@ -963,18 +996,18 @@ function ResumeStepModal({
       action="resume"
       title={
         <span className="flex items-center gap-2">
-          <Icon name="play" /> Resume step — {step.recipe_step_code}
+          <Icon name="play" /> Resume step - {step.recipe_step_code}
         </span>
       }
       summary={
         activeHold
           ? `Held for: ${activeHold.reason}`
-          : "Resuming this step is a signed act (Document 106)."
+ :"Resuming this step is a signed act."
       }
       submitLabel="Sign & resume"
       reason="none"
       extraFields={
-        <Field label="Resume note" hint="Optional — recorded in the audit trail.">
+        <Field label="Resume note" hint="Optional - recorded in the audit trail.">
           <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
       }
@@ -1013,10 +1046,10 @@ function ProductionCompleteModal({
       action="production_complete"
       title={
         <span className="flex items-center gap-2">
-          <Icon name="check-circle" /> Mark production complete — {batch.batch_number}
+          <Icon name="check-circle" /> Mark production complete - {batch.batch_number}
         </span>
       }
-      summary="Every recipe step is Complete. This is a signed act (Document 106) marking the batch's production phase done. Yield/reconciliation and other production blockers are not checked by this action yet (SG-048)."
+ summary="Every recipe step is Complete. This is a signed act marking the batch's production phase done. Yield/reconciliation and other production blockers are not checked by this action yet."
       submitLabel="Sign & mark complete"
       reason="none"
       onSign={(payload) =>
@@ -1051,7 +1084,7 @@ function StepDetailModal({
   for (const r of results) latestByCode.set(r.parameter_code, r);
 
   return (
-    <Modal open onClose={onClose} title={`Step detail — ${step.recipe_step_code}`} large>
+    <Modal open onClose={onClose} title={`Step detail - ${step.recipe_step_code}`} large>
       <FactGrid>
         <Fact label="State">
           <WorkflowStatePill state={step.state} />
@@ -1082,7 +1115,7 @@ function StepDetailModal({
         <div>
           <p className="fact-k mb-1">Predecessors (must be Complete first)</p>
           {!detail || detail.predecessor_codes.length === 0 ? (
-            <p className="hint">None — this step is a root step.</p>
+            <p className="hint">None - this step is a root step.</p>
           ) : (
             <p className="tabular fs-2">{detail.predecessor_codes.join(", ")}</p>
           )}
@@ -1090,7 +1123,7 @@ function StepDetailModal({
         <div>
           <p className="fact-k mb-1">Unblocks next</p>
           {!detail || detail.successor_codes.length === 0 ? (
-            <p className="hint">None — this is a terminal step.</p>
+            <p className="hint">None - this is a terminal step.</p>
           ) : (
             <p className="tabular fs-2">{detail.successor_codes.join(", ")}</p>
           )}
@@ -1170,8 +1203,8 @@ function StepDetailModal({
           </Table>
         )}
         <p className="hint mt-2">
-          File/photo upload against these requirements is not built yet — recorded here for visibility
-          only (SG-047, open).
+          Stage and finalize the evidence object itself under Platform ops → Evidence operations, then use
+ this step&apos;s &quot;Link evidence&quot; action to attach it here.
         </p>
       </div>
 
@@ -1207,7 +1240,7 @@ function BatchActionModal({
   };
 
   return (
-    <Modal open onClose={onClose} title={`${ACTION_LABEL[action]} — ${batch.batch_number}`}>
+    <Modal open onClose={onClose} title={`${ACTION_LABEL[action]} - ${batch.batch_number}`}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -1345,6 +1378,134 @@ function StartStepModal({
   );
 }
 
+const EVIDENCE_LINK_SUBFIELDS: RepeatSubField[] = [
+  { name: "evidence_id", label: "Evidence object ID", required: true, placeholder: "From Platform ops → Evidence operations" },
+  { name: "evidence_sha256", label: "Evidence SHA-256", required: true },
+  { name: "media_type", label: "Media type" },
+  { name: "requirement_code", label: "Requirement code", placeholder: "Matches a declared evidence requirement" },
+];
+
+/** SG-047 (`gxp_step_evidence_link` half) — unsigned by design (attaching evidence is a capture, not a
+ * release/disposition decision). Links already-staged/finalized evidence objects (stage + finalize an
+ * upload via Platform ops → Evidence operations first, then paste the resulting id/hash here) rather than
+ * re-implementing file upload inline — the evidence object lifecycle is owned by `app/modules/evidence`,
+ * not this module. */
+function LinkEvidenceModal({
+  batch,
+  step,
+  onClose,
+  onDone,
+}: {
+  batch: GxpBatch;
+  step: BatchStep;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { busy, error, run } = useCommand(onDone);
+  const [links, setLinks] = useState<RepeatRow[]>([]);
+
+  return (
+    <Modal open onClose={onClose} title={`Link evidence - ${step.recipe_step_code}`}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(() =>
+            api.post(`/batches/v1/${batch.batch_id}/steps/${step.step_id}/evidence-links`, {
+              idempotency_key: newIdempotencyKey(),
+              batch_id: batch.batch_id,
+              step_id: step.step_id,
+              expected_version: step.version,
+              links: buildRepeatArray(EVIDENCE_LINK_SUBFIELDS, links),
+            })
+          );
+        }}
+      >
+        <p className="fs-3 mb-3">
+          Stage and finalize the evidence object first (Platform ops → Evidence operations), then link its
+          id and content hash to this step.
+        </p>
+        <RepeatableRows
+          label="Evidence links"
+          required
+          itemLabel="Evidence link"
+          subFields={EVIDENCE_LINK_SUBFIELDS}
+          value={links}
+          onChange={setLinks}
+        />
+        {error && <p className="error-text mt-3 mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || links.length === 0}>
+            {busy ? "Linking…" : "Link evidence"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function HandoverStepModal({
+  batch,
+  step,
+  onClose,
+  onDone,
+}: {
+  batch: GxpBatch;
+  step: BatchStep;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { busy, error, run } = useCommand(onDone);
+  const entities = useEntityOptions();
+  const [toUserId, setToUserId] = useState("");
+  const [reason, setReason] = useState("");
+
+  return (
+    <Modal open onClose={onClose} title={`Hand over step - ${step.recipe_step_code}`}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(() =>
+            api.post(`/batches/v1/${batch.batch_id}/steps/${step.step_id}/handover`, {
+              idempotency_key: newIdempotencyKey(),
+              batch_id: batch.batch_id,
+              step_id: step.step_id,
+              expected_version: step.version,
+              to_user_id: toUserId,
+              reason: reason.trim() || null,
+            })
+          );
+        }}
+      >
+        <p className="fs-3 mb-3">Reassigns this in-progress step to another qualified operator.</p>
+        <EntityPickerField
+          label="Hand over to"
+          required
+          value={toUserId}
+          onChange={setToUserId}
+          options={entities.users}
+          status={entities.usersStatus}
+          kind="user"
+        />
+        <Field label="Reason" hint="Optional. Recorded in the audit trail.">
+          <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+        {error && <p className="error-text mt-3 mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !toUserId.trim()}>
+            {busy ? "Handing over…" : "Hand over"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 // BAT-FR-009/010, Document 106 row 21 (batch_step/results) — SG-047 partial resolution. Each recorded
 // value's data_type comes from the recipe's own RecipeParameter (parameters prop), not asserted by this
 // form -- the widget below is chosen by matching that declared type, purely a rendering decision.
@@ -1391,10 +1552,10 @@ function RecordResultsModal({
       action="results"
       title={
         <span className="flex items-center gap-2">
-          <Icon name="clipboard" /> Record results — {step.recipe_step_code}
+          <Icon name="clipboard" /> Record results - {step.recipe_step_code}
         </span>
       }
-      summary="Recording a parameter result against this step is a signed act (Document 106)."
+ summary="Recording a parameter result against this step is a signed act."
       submitLabel="Sign & record"
       reason="none"
       disabled={filled.length === 0}
@@ -1487,14 +1648,14 @@ function CompleteStepModal({
       action="complete"
       title={
         <span className="flex items-center gap-2">
-          <Icon name="check-circle" /> Complete step — {step.recipe_step_code}
+          <Icon name="check-circle" /> Complete step - {step.recipe_step_code}
         </span>
       }
       summary={
         missingRequired.length > 0 ? (
           <>Missing a recorded result for: {missingRequired.map((p) => p.parameter_code).join(", ")}. Record results first.</>
         ) : (
-          "Completing this step is a signed act (Document 106) and unblocks the next step once every one of its predecessors is complete."
+"Completing this step is a signed act and unblocks the next step once every one of its predecessors is complete."
         )
       }
       submitLabel="Sign & complete"

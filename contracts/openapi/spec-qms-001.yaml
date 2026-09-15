@@ -558,8 +558,10 @@ components:
         capa_rationale: { type: string }
         change_control_required: { type: boolean, default: false }
         change_control_rationale: { type: [string, "null"] }
+        change_control_id: { type: [string, "null"], format: uuid, description: "SG-060: links to an existing qms.change_control row." }
         training_required: { type: boolean, default: false }
         training_rationale: { type: [string, "null"] }
+        training_assignment_id: { type: [string, "null"], format: uuid, description: "SG-060: links to an existing qms.training_assignment row." }
         challenge_id: { type: [string, "null"], format: uuid }
         reauth_password: { type: [string, "null"], format: password, writeOnly: true }
 

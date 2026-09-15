@@ -1,7 +1,10 @@
 """Document 61 (SPEC-SEC-001, SEC-THR-001..028): threat model version creation, threat registration,
 control mapping (catalog get-or-create), risk calculation/history, residual-risk acceptance and security
-exception opening -- both signature-shaped endpoints fail closed per SG-161 (no Document 106 resolution
-exists for either). See docs/generated/18_SPEC_GAPS.md SG-161.
+exception request/approval. SG-161 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): both now
+require a real "Security Risk Approver" signature, independent of whoever's judgment is being approved
+(the risk calculator, or the exception requester). See docs/generated/18_SPEC_GAPS.md SG-161 and
+app/modules/security/commands.py's module docstring for the request/approve split that makes the
+independence check meaningful.
 """
 
 import uuid
@@ -14,11 +17,13 @@ from app.core.security import hash_password
 from app.modules.iam.models import User, UserSiteRole
 from app.modules.security import commands as sec_commands
 from app.modules.security.models import SecurityControl, SecurityException, SecurityThreat, SecurityThreatModelVersion
-from app.modules.signature.models import SignaturePolicy
+from app.modules.signature import service as signature_service
 from app.mutation.errors import (
+    MissingSignatureError,
     NotFoundError,
+    RoleMissingError,
     SecurityRiskInputIncompleteError,
-    SignaturePolicyUnresolvedError,
+    SodIndependenceRequiredError,
     StaleVersionError,
     ThreatScopeInvalidError,
     ValidationFailedError,
@@ -26,12 +31,24 @@ from app.mutation.errors import (
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 
 
-def _allow_risk_actions(db):
-    """SG-161: no Document 106 resolution exists for security_threat.accept_risk / security_exception.open
-    -- tests that exercise the business logic beyond fail-closed seed a permissive local policy, same
-    precedent test_postmarket_flow.py's `_allow_signal_actions` uses for its own SG-156 gap."""
-    db.add(SignaturePolicy(record_type="security_threat", action="accept_risk", meaning="Approved", signature_required=False))
-    db.add(SignaturePolicy(record_type="security_exception", action="open", meaning="Approved", signature_required=False))
+async def _make_security_risk_approver(db, seeded, tag):
+    user = User(
+        username=f"sec.approver{tag}", email=f"sec.approver{tag}@example.com", full_name="Security Risk Approver",
+        password_hash=hash_password(DEMO_PASSWORD), status="active",
+    )
+    db.add(user)
+    await db.flush()
+    db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"]["Security Risk Approver"].id))
+    return user
+
+
+async def _sign(db, *, actor_id, record_type, record_version, record_hash):
+    challenge = await signature_service.create_challenge(
+        db, user_id=actor_id, record_type=record_type, record_id=uuid.uuid4(),
+        record_version=record_version, record_hash=record_hash, meaning="Approved",
+    )
+    await db.flush()
+    return challenge.id
 
 
 async def _make_admin(db, seeded, tag):
@@ -234,30 +251,30 @@ async def test_calculate_risk_never_overwrites_history_then_accept_fails_closed(
     threat = await _get(db, SecurityThreat, threat_receipt.aggregate_id)
     assert threat.residual_risk["rating"] == {"level": "LOW"}
 
-    # SG-161: no Document 106 row exists for `security_threat.accept_risk` -- the Mutation Gateway
-    # actually fails closed rather than silently defaulting to unsigned acceptance.
+    # SG-161 RESOLVED_APPROVED 2026-09-14: security_threat.accept_risk now requires the "Security Risk
+    # Approver" role -- an Admin-only actor without that role is rejected, not silently accepted.
     async with db.begin():
-        with pytest.raises(SignaturePolicyUnresolvedError):
+        with pytest.raises(RoleMissingError):
             await sec_commands.accept_residual_security_risk(
                 db, sec_commands.AcceptResidualSecurityRiskCommand(
                     idempotency_key=idem(), risk_id=threat.id, expected_version=threat.version,
                     rationale="Compensating control mitigates residual exposure",
                 ), owner.id,
             )
-    # Fail-closed leaves the aggregate unchanged.
+    # Rejection leaves the aggregate unchanged.
     threat_after = await _get(db, SecurityThreat, threat_receipt.aggregate_id)
     assert threat_after.state == "OPEN"
     assert threat_after.version == threat.version
 
 
 @pytest.mark.asyncio
-async def test_accept_residual_risk_transitions_state_once_signature_policy_is_resolved(db, seeded):
-    """Business logic beyond the SG-161 fail-closed guard: with a permissive local policy (same precedent
-    as postmarket's `_allow_signal_actions`), acceptance actually records the decision and transitions
-    the threat to RISK_ACCEPTED."""
+async def test_accept_residual_risk_transitions_state_when_approver_is_independent(db, seeded):
+    """SG-161 RESOLVED_APPROVED 2026-09-14: a "Security Risk Approver" distinct from whoever calculated
+    the residual risk signs, and acceptance actually records the decision and transitions the threat to
+    RISK_ACCEPTED."""
     async with db.begin():
         owner = await _make_admin(db, seeded, "6b")
-        _allow_risk_actions(db)
+        approver = await _make_security_risk_approver(db, seeded, "6b")
         tmv_receipt = await _create_threat_model(db, owner.id)
         threat_receipt = await _register_threat(db, owner.id, tmv_receipt.aggregate_id)
 
@@ -270,11 +287,14 @@ async def test_accept_residual_risk_transitions_state_once_signature_policy_is_r
             ), owner.id,
         )
     async with db.begin():
+        threat = await db.get(SecurityThreat, threat_receipt.aggregate_id)
+        challenge_id = await _sign(db, actor_id=approver.id, record_type="security_threat", record_version=threat.version, record_hash=sec_commands._threat_hash(threat))
         await sec_commands.accept_residual_security_risk(
             db, sec_commands.AcceptResidualSecurityRiskCommand(
                 idempotency_key=idem(), risk_id=threat_receipt.aggregate_id, expected_version=2,
                 rationale="Low residual exposure, compensating control in place",
-            ), owner.id,
+                challenge_id=challenge_id, reauth_password=DEMO_PASSWORD,
+            ), approver.id,
         )
     threat = await _get(db, SecurityThreat, threat_receipt.aggregate_id)
     assert threat.state == "RISK_ACCEPTED"
@@ -283,24 +303,119 @@ async def test_accept_residual_risk_transitions_state_once_signature_policy_is_r
 
 
 @pytest.mark.asyncio
-async def test_open_security_exception_creates_record_once_signature_policy_is_resolved(db, seeded):
+async def test_accept_residual_risk_rejects_the_calculator_as_signer(db, seeded):
+    """SG-161: the same person who calculated the residual risk cannot also accept it -- Document 106's
+    independence requirement, now actually enforced (not merely stated)."""
     async with db.begin():
-        owner = await _make_admin(db, seeded, "7b")
-        _allow_risk_actions(db)
+        approver = await _make_security_risk_approver(db, seeded, "6c")
+        tmv_receipt = await _create_threat_model(db, approver.id)
+        threat_receipt = await _register_threat(db, approver.id, tmv_receipt.aggregate_id)
+        await sec_commands.calculate_security_risk(
+            db, sec_commands.CalculateSecurityRiskCommand(
+                idempotency_key=idem(), threat_id=threat_receipt.aggregate_id, expected_version=1,
+                risk_stage="RESIDUAL", impact_inputs={"impact": "low"}, likelihood_inputs={"likelihood": "low"},
+                methodology="v1", rating={"level": "LOW"},
+            ), approver.id,
+        )
 
     async with db.begin():
-        receipt = await sec_commands.open_security_exception(
-            db, sec_commands.OpenSecurityExceptionCommand(
+        threat = await db.get(SecurityThreat, threat_receipt.aggregate_id)
+        with pytest.raises(SodIndependenceRequiredError):
+            await sec_commands.accept_residual_security_risk(
+                db, sec_commands.AcceptResidualSecurityRiskCommand(
+                    idempotency_key=idem(), risk_id=threat_receipt.aggregate_id, expected_version=threat.version,
+                    rationale="Self-accepting my own calculation",
+                ), approver.id,
+            )
+    threat_after = await _get(db, SecurityThreat, threat_receipt.aggregate_id)
+    assert threat_after.state == "OPEN"
+
+
+@pytest.mark.asyncio
+async def test_request_then_approve_security_exception_by_independent_approver(db, seeded):
+    """SG-161 RESOLVED_APPROVED 2026-09-14: request_security_exception() is unsigned and records the
+    requester; approve_security_exception() is signed by a "Security Risk Approver" independent of that
+    requester and moves the record to OPEN."""
+    async with db.begin():
+        owner = await _make_admin(db, seeded, "7b")
+        approver = await _make_security_risk_approver(db, seeded, "7b")
+        receipt = await sec_commands.request_security_exception(
+            db, sec_commands.RequestSecurityExceptionCommand(
                 idempotency_key=idem(), control_or_requirement="CTRL-MFA-PRIVILEGED",
                 reason="Vendor migration in progress", expiry=datetime.now(timezone.utc) + timedelta(days=30),
                 compensating_controls={"interim": "manual dual-control review"},
             ), owner.id,
         )
     exception = await _get(db, SecurityException, receipt.aggregate_id)
+    assert exception.state == "PENDING_APPROVAL"
+    assert exception.opened_by == owner.id
+
+    async with db.begin():
+        exception = await db.get(SecurityException, receipt.aggregate_id)
+        challenge_id = await _sign(db, actor_id=approver.id, record_type="security_exception", record_version=exception.version, record_hash=sec_commands._exception_hash(exception))
+        await sec_commands.approve_security_exception(
+            db, exception.id, sec_commands.ApproveSecurityExceptionCommand(
+                idempotency_key=idem(), expected_version=exception.version,
+                challenge_id=challenge_id, reauth_password=DEMO_PASSWORD,
+            ), approver.id,
+        )
+    exception = await _get(db, SecurityException, receipt.aggregate_id)
     assert exception.state == "OPEN"
     assert exception.control_or_requirement == "CTRL-MFA-PRIVILEGED"
     assert exception.compensating_controls == {"interim": "manual dual-control review"}
     assert exception.expiry > datetime.now(timezone.utc)
+    assert len(exception.approvers) == 1
+
+
+@pytest.mark.asyncio
+async def test_approve_security_exception_rejects_the_requester_as_approver(db, seeded):
+    """SG-161: the person who requested the exception cannot also approve it -- Document 106 row 133's
+    "MUST be independent of the requester", now actually enforced."""
+    async with db.begin():
+        approver = await _make_security_risk_approver(db, seeded, "7c")
+        receipt = await sec_commands.request_security_exception(
+            db, sec_commands.RequestSecurityExceptionCommand(
+                idempotency_key=idem(), control_or_requirement="CTRL-MFA-PRIVILEGED",
+                reason="Vendor migration in progress", expiry=datetime.now(timezone.utc) + timedelta(days=30),
+            ), approver.id,
+        )
+
+    async with db.begin():
+        exception = await db.get(SecurityException, receipt.aggregate_id)
+        with pytest.raises(SodIndependenceRequiredError):
+            await sec_commands.approve_security_exception(
+                db, exception.id, sec_commands.ApproveSecurityExceptionCommand(
+                    idempotency_key=idem(), expected_version=exception.version,
+                ), approver.id,
+            )
+    exception_after = await _get(db, SecurityException, receipt.aggregate_id)
+    assert exception_after.state == "PENDING_APPROVAL"
+
+
+@pytest.mark.asyncio
+async def test_approve_security_exception_requires_a_real_signature(db, seeded):
+    """SG-161: a correctly-independent Security Risk Approver still cannot approve without completing a
+    real signature challenge -- role/independence correctness alone is not a signature (AG-07)."""
+    async with db.begin():
+        owner = await _make_admin(db, seeded, "7d")
+        approver = await _make_security_risk_approver(db, seeded, "7d")
+        receipt = await sec_commands.request_security_exception(
+            db, sec_commands.RequestSecurityExceptionCommand(
+                idempotency_key=idem(), control_or_requirement="CTRL-MFA-PRIVILEGED",
+                reason="Vendor migration in progress", expiry=datetime.now(timezone.utc) + timedelta(days=30),
+            ), owner.id,
+        )
+
+    async with db.begin():
+        exception = await db.get(SecurityException, receipt.aggregate_id)
+        with pytest.raises(MissingSignatureError):
+            await sec_commands.approve_security_exception(
+                db, exception.id, sec_commands.ApproveSecurityExceptionCommand(
+                    idempotency_key=idem(), expected_version=exception.version,
+                ), approver.id,
+            )
+    exception_after = await _get(db, SecurityException, receipt.aggregate_id)
+    assert exception_after.state == "PENDING_APPROVAL"
 
 
 @pytest.mark.asyncio
@@ -321,28 +436,16 @@ async def test_accept_residual_risk_requires_residual_risk_calculated_first(db, 
 
 
 @pytest.mark.asyncio
-async def test_open_security_exception_rejects_past_expiry_then_fails_closed_without_signature_policy(db, seeded):
+async def test_request_security_exception_rejects_past_expiry(db, seeded):
     async with db.begin():
         owner = await _make_admin(db, seeded, "7")
 
     async with db.begin():
         with pytest.raises(ValidationFailedError):
-            await sec_commands.open_security_exception(
-                db, sec_commands.OpenSecurityExceptionCommand(
+            await sec_commands.request_security_exception(
+                db, sec_commands.RequestSecurityExceptionCommand(
                     idempotency_key=idem(), control_or_requirement="CTRL-MFA-PRIVILEGED",
                     reason="Vendor migration in progress", expiry=datetime.now(timezone.utc) - timedelta(days=1),
-                ), owner.id,
-            )
-
-    # SG-161: Document 106 row 133 names "Elevated authority defined by the record class" with no
-    # dispatch table (same shape as SG-160's row 131) -- deliberately left unresolved.
-    async with db.begin():
-        with pytest.raises(SignaturePolicyUnresolvedError):
-            await sec_commands.open_security_exception(
-                db, sec_commands.OpenSecurityExceptionCommand(
-                    idempotency_key=idem(), control_or_requirement="CTRL-MFA-PRIVILEGED",
-                    reason="Vendor migration in progress", expiry=datetime.now(timezone.utc) + timedelta(days=30),
-                    compensating_controls={"interim": "manual dual-control review"},
                 ), owner.id,
             )
     count = (await db.execute(select(SecurityException))).scalars().all()

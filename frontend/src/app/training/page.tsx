@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -80,6 +81,7 @@ export default function TrainingPage() {
   const [reloadToken, setReloadToken] = useState(0);
   const [requirementOpen, setRequirementOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [waiverOpen, setWaiverOpen] = useState(false);
   const [subjectId, setSubjectId] = useState("");
   const [lookupId, setLookupId] = useState<string | null>(null);
   const entities = useEntityOptions();
@@ -114,6 +116,11 @@ export default function TrainingPage() {
               <Button variant="primary" onClick={() => setAssignOpen(true)}>
                 <Icon name="user-check" /> Assign training
               </Button>
+              {canQualifyTraining(me) && (
+                <Button variant="secondary" onClick={() => setWaiverOpen(true)}>
+                  <Icon name="shield-check" /> Grant waiver
+                </Button>
+              )}
             </div>
           ) : undefined
         }
@@ -289,6 +296,16 @@ export default function TrainingPage() {
           }}
         />
       )}
+      {waiverOpen && (
+        <WaiverModal
+          requirements={rows}
+          onClose={() => setWaiverOpen(false)}
+          onDone={() => {
+            setWaiverOpen(false);
+            setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -460,7 +477,7 @@ function AssignmentActionModal({
             <Field label="Outcome" required>
               <Select value={passed ? "pass" : "fail"} onChange={(e) => setPassed(e.target.value === "pass")}>
                 <option value="pass">Passed</option>
-                <option value="fail">Failed — retraining required</option>
+                <option value="fail">Failed - retraining required</option>
               </Select>
             </Field>
             <Field label="Score">
@@ -634,6 +651,98 @@ function AssignModal({
           </Button>
           <Button type="submit" variant="primary" disabled={busy || !requirementId || !subject.trim()}>
             {busy ? "Assigning…" : "Assign"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function WaiverModal({
+  requirements,
+  onClose,
+  onDone,
+}: {
+  requirements: MatrixRow[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { me } = useMe();
+  const { siteId } = useSiteId();
+  const { busy, error, run } = useCommand(onDone);
+  const entities = useEntityOptions();
+  const [requirementId, setRequirementId] = useState(requirements[0]?.requirement_id ?? "");
+  const [subject, setSubject] = useState("");
+  const [approvedBy, setApprovedBy] = useState(me?.user_id ?? "");
+  const [reason, setReason] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [scope, setScope] = useState<KvRow[]>([]);
+
+  return (
+    <Modal open onClose={onClose} title="Grant a training waiver">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(() =>
+            api.post("/training/v1/waivers", {
+              idempotency_key: newIdempotencyKey(),
+              site_id: siteId,
+              subject_id: subject,
+              requirement_id: requirementId,
+              reason: reason.trim(),
+              approved_by_user_id: approvedBy,
+              scope: Object.keys(buildKvObject(scope)).length ? buildKvObject(scope) : null,
+              expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+            })
+          );
+        }}
+      >
+        <p className="fs-3 mb-3">
+        Waivers carry no signature column in this deployment - the approver is recorded as
+          plain data, not an electronic signature.
+        </p>
+        <Field label="Requirement" required>
+          <Select value={requirementId} onChange={(e) => setRequirementId(e.target.value)} required>
+            <option value="">Select a requirement…</option>
+            {requirements.map((r) => (
+              <option key={r.requirement_id} value={r.requirement_id}>
+                {r.title}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <EntityPickerField
+          label="Person waived"
+          required
+          value={subject}
+          onChange={setSubject}
+          options={entities.users}
+          status={entities.usersStatus}
+          kind="user"
+        />
+        <EntityPickerField
+          label="Approved by"
+          required
+          value={approvedBy}
+          onChange={setApprovedBy}
+          options={entities.users}
+          status={entities.usersStatus}
+          kind="user"
+        />
+        <Field label="Reason" required>
+          <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} required />
+        </Field>
+        <Field label="Expires at" hint="Optional.">
+          <Input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+        </Field>
+        <KeyValueRows label="Scope" hint="Optional - narrows what the waiver covers." value={scope} onChange={setScope} />
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !requirementId || !subject.trim() || !approvedBy.trim() || !reason.trim()}>
+            {busy ? "Granting…" : "Grant waiver"}
           </Button>
         </div>
       </form>

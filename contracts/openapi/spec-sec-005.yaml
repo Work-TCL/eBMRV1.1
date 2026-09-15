@@ -1,30 +1,78 @@
 openapi: 3.1.0
 info:
   title: SPEC-SEC-005 — Secrets Management, PKI, Cryptography & Key Lifecycle
-  version: 0.1.0
+  version: 0.2.0
   description: >
     Document 113 contract for WP-10 Document 65 (`services/gxp-api/app/modules/security/crypto*`).
-    3 owned entities per the approved data-model catalogue: `secret_metadata`, `certificate_metadata`,
-    `crypto_profile` — metadata only, no key material ever stored (Document 65 # 14).
+    4 owned entities per the approved data-model catalogue plus SG-126's gap-resolution addition:
+    `secret_metadata`, `certificate_metadata`, `crypto_profile`, `secret_value` — the latter added in the
+    WP-07 pass and holding only an AES-256-GCM ciphertext envelope for `provider=ON_PREM` secrets, never
+    a plaintext value (Document 65 # 14).
 
 
     Signature: `POST /security/v1/certificates:issue`, `.../certificates/{id}/rotate` and
     `.../certificates/{id}/revoke` each require a `Released` Part 11 signature by an independent
     **QA Releaser** (Document 106 rows 137-139: "QA Approver / Batch Release", "MUST be independent of
     every production performer", Reason: yes) — resolved to the same established non-QMS role mapping as
-    batch.release / edge_gateway.certificate_rotation. `POST /security/v1/secrets/{id}/rotate` has no
-    Document 106 row → RBAC-gated only (Security Admin). `GET /security/v1/crypto-health` is a read-only
-    self-test that returns 503 CRYPTO_HEALTH_FAILED when a critical key/certificate is missing/expired
-    (KEY-FR-028, fail safe).
+    batch.release / edge_gateway.certificate_rotation. `POST /security/v1/secrets`, `.../secrets/{id}/value`
+    and `.../secrets/{id}/rotate` have no Document 106 row → RBAC-gated only (Security Admin).
+    `GET /security/v1/crypto-health` is a read-only self-test that returns 503 CRYPTO_HEALTH_FAILED when a
+    critical key/certificate is missing/expired (KEY-FR-028, fail safe).
 
 
-    The cross-cutting crypto library (`resolveSecret`, `encryptSensitiveField`,
+    The cross-cutting crypto library (`resolveSecret`, `fetchSecretValue`, `encryptSensitiveField`,
     `decryptSensitiveField`, `hashEvidence`, trust-all guard) is `app/modules/security/crypto.py`, not
-    an endpoint.
+    an endpoint. `fetchSecretValue()` (SG-126, WP-07 pass) authorizes through `resolveSecret()` then
+    returns the actual value for `provider=ON_PREM` secrets only; K8S_SECRET/AWS_SM/VAULT fail closed
+    with `SECRET_PROVIDER_NOT_INTEGRATED` — no live client for those exists in this build.
 tags:
   - name: security-crypto
 
 paths:
+  /security/v1/secrets:
+    post:
+      operationId: postCreateSecret
+      tags: [security-crypto]
+      summary: Register a new managed secret (KEY-FR-002/003/004, SG-126)
+      description: >
+        No Document 106 row → RBAC-gated only (Security Admin). `initial_value` is accepted only for
+        `provider=ON_PREM` (encrypted immediately, never returned/logged); rejected for every other
+        provider since this build has no live client to write the value there.
+      x-requirement-ids: [KEY-FR-002, KEY-FR-003, KEY-FR-004, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateSecretCommand' } } }
+      responses:
+        '200': { description: Registered., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '409': { description: "SECRET_ALREADY_EXISTS / IDEMPOTENCY_CONFLICT.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (bad provider, or initial_value on a non-ON_PREM provider).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/secrets/{secret_id}/value:
+    post:
+      operationId: postSetSecretValue
+      tags: [security-crypto]
+      summary: Store or replace an ON_PREM secret's encrypted value (KEY-FR-002/003/004, SG-126)
+      description: >
+        No Document 106 row → RBAC-gated only (Security Admin). `expected_version` binds to the current
+        `secret_value` row's own version (0 when none exists yet). Rejected for any provider other than
+        ON_PREM.
+      x-requirement-ids: [KEY-FR-002, KEY-FR-003, KEY-FR-004, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: secret_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SetSecretValueCommand' } } }
+      responses:
+        '200': { description: Stored., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: "STALE_VERSION / IDEMPOTENCY_CONFLICT.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: "VALIDATION_FAILED (provider is not ON_PREM, or missing reason).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
   /security/v1/secrets/{secret_id}/rotate:
     post:
       operationId: postRotateSecret
@@ -120,6 +168,33 @@ components:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
 
   schemas:
+    CreateSecretCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, secret_ref, provider, purpose, owner]
+      x-requirement-ids: [KEY-FR-002, KEY-FR-003, KEY-FR-004]
+      properties:
+        idempotency_key: { type: string, minLength: 1 }
+        secret_ref: { type: string, minLength: 1, maxLength: 200 }
+        provider: { type: string, enum: [K8S_SECRET, AWS_SM, VAULT, ON_PREM] }
+        purpose: { type: string, minLength: 1 }
+        owner: { type: string, minLength: 1, maxLength: 120 }
+        consumer_identities: { type: array, items: { type: string }, default: [] }
+        rotation_interval_days: { type: integer, minimum: 1, maximum: 3650, default: 90 }
+        initial_value: { type: [string, "null"] }
+
+    SetSecretValueCommand:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, secret_id, expected_version, value, reason]
+      x-requirement-ids: [KEY-FR-002, KEY-FR-003, KEY-FR-004]
+      properties:
+        idempotency_key: { type: string, minLength: 1 }
+        secret_id: { type: string, format: uuid }
+        expected_version: { type: integer, minimum: 0 }
+        value: { type: string, minLength: 1 }
+        reason: { type: string, minLength: 1 }
+
     RotateSecretCommand:
       type: object
       additionalProperties: false

@@ -30,7 +30,9 @@ from app.modules.equipment.em_router import router as em_router
 from app.modules.equipment.router import router as equipment_router
 from app.modules.equipment.sterilization_router import cip_sip_router, filtration_router
 from app.modules.equipment.sterilization_router import router as sterilization_router
+from app.modules.erp import consumer as erp_consumer
 from app.modules.erp.router import router as erp_router
+from app.modules.eventbus import jetstream as eventbus_jetstream
 from app.modules.eventbus import outbox as eventbus_outbox
 from app.modules.evidence.router import router as evidence_router
 from app.modules.genealogy.router import router as genealogy_router
@@ -52,6 +54,7 @@ from app.modules.material.router import reconciliation_v1_router as material_rec
 from app.modules.material.router import router as material_router
 from app.modules.material.router import sampling_orders_router as material_sampling_orders_router
 from app.modules.material.router import v1_router as material_v1_router
+from app.modules.material_specification.router import router as material_specification_router
 from app.modules.packaging.router import router as packaging_router
 from app.modules.postmarket.obligation_router import router as postmarket_obligation_router
 from app.modules.postmarket.reportability_router import router as postmarket_reportability_router
@@ -73,6 +76,7 @@ from app.modules.qms.risk_router import risk_router
 from app.modules.qms.router import router as qms_router
 from app.modules.qms.scar_router import scar_router, supplier_case_router
 from app.modules.qms.training_router import training_router
+from app.modules.readmodels import projector as readmodels_projector
 from app.modules.readmodels.router import platform_router as readmodels_platform_router
 from app.modules.readmodels.router import reports_router, search_router
 from app.modules.recipe.router import router as recipe_router
@@ -91,6 +95,9 @@ from app.modules.supplier_quality.router import router as supplier_quality_route
 from app.modules.validation.router import router as validation_router
 from app.modules.validation.router_wp14 import router as validation_wp14_router
 from app.modules.vault.router import router as vault_router
+from app.modules.workflowops import client as workflowops_client
+from app.modules.workflowops import worker as workflowops_worker
+from app.modules.workflowops.router import router as workflowops_router
 from app.modules.yield_reconciliation.router import router as yield_reconciliation_router
 from app.mutation.errors import DependencyUnavailableError, GxPError
 
@@ -122,9 +129,52 @@ async def outbox_publisher_loop() -> None:
 async def lifespan(app: FastAPI):
     async with SessionLocal() as session:
         await assert_single_organization(session)
+    # WP-11 (ADR-0011): connect to NATS JetStream before the publisher loop starts. A connection
+    # failure here is logged, not fatal -- AG-09 makes NATS transport, not authoritative, so the API
+    # must still accept and commit regulated mutations even if the broker is temporarily unreachable;
+    # the publisher loop's own retry-every-iteration behavior (and nats-py's infinite reconnect) is
+    # what recovers once it comes back.
+    try:
+        await eventbus_jetstream.connect()
+    except Exception:  # noqa: BLE001 - startup must not fail closed over a transport dependency
+        logger.exception("failed to connect to NATS JetStream at startup; publisher will retry")
     task = asyncio.create_task(outbox_publisher_loop())
+
+    # WP-11 Stage 3 (ADR-0011, SG-183): the first real at-least-once consumer. Same fail-open posture as
+    # the publisher above -- if `connect()` above failed, `run_pull_consumer` logs and returns without
+    # running rather than blocking startup; it is not retried within this process session (a future stage
+    # can add that if operational experience calls for it -- restarting the process already recovers it).
+    readmodels_consumer_stop = asyncio.Event()
+    readmodels_consumer_task = asyncio.create_task(readmodels_projector.run(stop_event=readmodels_consumer_stop))
+
+    # WP-11 Stage 4 (ADR-0011, SG-183 / SG-098): the second real at-least-once consumer -- automated
+    # ERPNext consumption posting. Same fail-open posture as the readmodels consumer above.
+    erp_consumer_stop = asyncio.Event()
+    erp_consumer_task = asyncio.create_task(erp_consumer.run(stop_event=erp_consumer_stop))
+
+    # WP-11 Stage 2 (ADR-0011): connect to Temporal and start its worker, same fail-open posture as
+    # NATS above -- AG-10 makes Temporal orchestration, never regulatory truth, so its unavailability
+    # must not block the regulated API from starting or serving requests.
+    worker_stop_event = asyncio.Event()
+    worker_task: asyncio.Task | None = None
+    try:
+        await workflowops_client.connect()
+        worker_task = asyncio.create_task(workflowops_worker.run_worker(stop_event=worker_stop_event))
+    except Exception:  # noqa: BLE001 - startup must not fail closed over an orchestration dependency
+        logger.exception("failed to connect to Temporal at startup; workflows will not run this session")
+
     yield
+
     task.cancel()
+    readmodels_consumer_stop.set()
+    await readmodels_consumer_task
+    erp_consumer_stop.set()
+    await erp_consumer_task
+    await eventbus_jetstream.close()
+    worker_stop_event.set()
+    if worker_task is not None:
+        await worker_task
+    await workflowops_client.close()
 
 
 app = FastAPI(title="eBMR GxP Core", version="0.1.0", lifespan=lifespan)
@@ -155,6 +205,20 @@ _SECURITY_HEADERS = {
 
 
 @app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    """SG-140 (CTR-FR-006/010): every request gets a correlation id up front, before any command runs
+    far enough to mint its own. A rejected command (validation failure, missing signature, stale
+    version, ...) usually fails before `write_audit_event`'s own `correlation_id=uuid.uuid4()` ever
+    runs, so the error path had no id to report at all -- this request-scoped one fills that gap and is
+    the same id echoed on `X-Correlation-Id` and in every error envelope below, letting a client tie a
+    failed request to server-side logs even when no audit/outbox row was ever written for it."""
+    request.state.correlation_id = uuid.uuid4()
+    response = await call_next(request)
+    response.headers.setdefault("X-Correlation-Id", str(request.state.correlation_id))
+    return response
+
+
+@app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     for header, value in _SECURITY_HEADERS.items():
@@ -166,7 +230,10 @@ async def security_headers_middleware(request: Request, call_next):
 async def gxp_error_handler(request: Request, exc: GxPError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
-        content={"code": exc.code, "message": exc.message, "details": exc.details},
+        content={
+            "code": exc.code, "message": exc.message, "details": exc.details,
+            "correlation_id": str(request.state.correlation_id),
+        },
     )
 
 
@@ -187,7 +254,10 @@ async def request_validation_error_handler(request: Request, exc: RequestValidat
     message = f"{field}: {first['msg']}" if field and "msg" in first else (first.get("msg") or "Request validation failed")
     return JSONResponse(
         status_code=422,
-        content={"code": "VALIDATION_FAILED", "message": message, "details": {"errors": errors}},
+        content={
+            "code": "VALIDATION_FAILED", "message": message, "details": {"errors": errors},
+            "correlation_id": str(request.state.correlation_id),
+        },
     )
 
 
@@ -197,7 +267,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     fragment or secret. Any exception that is not a GxPError / OperationalError collapses to a stable
     SYSTEM_FAULT body with a correlation id; the real detail is logged server-side only.
     """
-    correlation_id = uuid.uuid4()
+    # Defensive fallback only: correlation_id_middleware sets this before any route/handler runs, so the
+    # attribute is always present in practice -- the `getattr` guards this last-resort catch-all handler
+    # itself against ever raising a second exception while reporting the first.
+    correlation_id = getattr(request.state, "correlation_id", None) or uuid.uuid4()
     logger.exception("unhandled request error correlation_id=%s path=%s", correlation_id, request.url.path)
     return JSONResponse(
         status_code=500,
@@ -205,6 +278,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
             "code": "SYSTEM_FAULT",
             "message": "An internal error occurred. Contact support with the correlation id.",
             "details": {"correlation_id": str(correlation_id)},
+            "correlation_id": str(correlation_id),
         },
     )
 
@@ -251,8 +325,10 @@ app.include_router(material_dispensing_v1_router)
 app.include_router(material_reconciliation_v1_router)
 app.include_router(audit_router)
 app.include_router(vault_router)
+app.include_router(workflowops_router)
 app.include_router(rules_router)
 app.include_router(product_master_router)
+app.include_router(material_specification_router)
 app.include_router(recipe_master_router)
 app.include_router(device_router)
 app.include_router(genealogy_router)

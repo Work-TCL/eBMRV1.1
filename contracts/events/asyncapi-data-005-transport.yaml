@@ -1,0 +1,135 @@
+asyncapi: 3.0.0
+info:
+  title: SPEC-DATA-005 — GxP Outbox NATS JetStream Transport
+  version: 1.0.0
+  description: >
+    Document 73 (SPEC-DATA-005) EVT-FR-002/003/004, ADR-0011 / SG-183 (WP-11 pass). Documents the
+    broker-level subject/stream/dedup/consumer conventions for the transactional-outbox publisher
+    (`app/modules/eventbus/jetstream.py` + `outbox.py::publish_outbox_event`). The event *payload*
+    schema (the canonical envelope) is `contracts/events/event-data-005.json`'s `EventEnvelope` — this
+    file is the transport layer around it, not a second envelope definition.
+
+
+    STAGE 1 OF SG-183 contracted the real JetStream **producer** side only (stream, subject convention,
+    dedup). STAGE 3 adds the first real projection **consumer**: a durable pull consumer (EVT-FR-009)
+    applying `material_lot` events into the `readmodels` search projection
+    (`app/modules/readmodels/projector.py`) through `consume_event_idempotently()`
+    (`consumer.py`) and `handle_poison_event()` (`dead_letter.py`) — at-least-once delivery,
+    idempotent apply, bounded redelivery, dead-letter after exhaustion. STAGE 4 adds the first real
+    **integration** consumer: `material_consumption` events drive `app/modules/erp/consumer.py`, which
+    calls the pre-existing `queue_erp_command(POST_CONSUMPTION)` pipeline automatically (ERPNext only —
+    no vendor-neutral payload mapping exists for SAP/Oracle/Dynamics). LIMS/Edge integration consumers
+    remain open, a future stage — do not read this file as claiming those exist.
+defaultContentType: application/json
+
+servers:
+  local:
+    host: 127.0.0.1:4222
+    protocol: nats
+    description: >
+      Single-node NATS JetStream, bound to localhost only (`infra/nats-server.conf`), tight resource
+      limits (max_file_store 512MB, max_memory_store 64MB) given this deployment's shared-host disk
+      headroom. Not exposed beyond this deployment; production profiles will point `GXP_NATS_URL` at a
+      real cluster.
+
+channels:
+  gxpEvents:
+    address: "gxp.v1.>"
+    description: >
+      EVT-FR-007's versioned subject namespace: `gxp.v1.{aggregate_type}.{event_type}`
+      (`outbox.py::subject_for()`). One JetStream stream (`GXP_EVENTS`) captures every subject under this
+      wildcard — every producer in `app/modules/*` that calls `write_outbox_event()` publishes here, with
+      no per-module stream proliferation.
+    messages:
+      gxpEvent:
+        $ref: '#/components/messages/gxpEvent'
+
+operations:
+  publishGxpEvent:
+    action: send
+    channel:
+      $ref: '#/channels/gxpEvents'
+    summary: >
+      `outbox_publisher_loop` claims committed, unpublished `mutation.outbox_events` rows
+      (`FOR UPDATE SKIP LOCKED`) and publishes each to JetStream, marking it published only after the
+      broker's PubAck (EVT-FR-004) — never before.
+    description: >
+      Deduplication: `Nats-Msg-Id` is set to the outbox row's own `event_id` (a stable UUID, never
+      regenerated). JetStream's own duplicate-message window (server default) recognizes a republish of
+      the same `event_id` — the exact shape produced if the publisher crashes between a successful
+      publish and marking the row published locally — as a duplicate rather than a new message
+      (`ack.duplicate = true`), so a retried publish after a crash never double-delivers. This is the
+      broker-level backstop; `mark_outbox_published()`'s own `OutboxPublishStateConflictError` guards the
+      same race at the PostgreSQL row level.
+    messages:
+      - $ref: '#/components/messages/gxpEvent'
+
+  consumeMaterialLotEvents:
+    action: receive
+    channel:
+      $ref: '#/channels/gxpEvents'
+    summary: >
+      `readmodels-material-lot-projector` — a durable JetStream pull consumer (EVT-FR-009,
+      `app/modules/eventbus/jetstream.py::pull_subscribe`, `max_deliver=6`, `ack_wait=30s`) filtered to
+      `gxp.v1.material_lot.>`, applying each event into the Postgres-backed search index
+      (`readmodels.projection_document_metadata`, index_type=`material_lot`) through
+      `consume_event_idempotently()` (EVT-FR-005/006: the `eventbus.consumer_inbox` row and the
+      projection write commit in one transaction, so a redelivery of an already-processed `event_id`
+      short-circuits without reapplying it).
+    description: >
+      Failure handling (EVT-FR-010/026): a handler failure below `max_deliver` naks the message for
+      broker redelivery; at `max_deliver` it is dead-lettered (`handle_poison_event()` writes
+      `eventbus.consumer_inbox.result=DEAD_LETTERED` and emits `EventDeadLettered`) and `term()`-ed so
+      the broker stops redelivering it — the original event is never deleted from the stream (limits
+      retention, not work-queue). Ordering (EVT-FR-014/027):
+      `index_authoritative_projection()` ignores an incoming `aggregate_version` that is not strictly
+      greater than what is already indexed for that entity, so an out-of-order redelivery cannot regress
+      the index to stale data. Field selection reuses `readmodels/router.py`'s already-committed
+      `material_lot: {"state"}` allowlist verbatim (READ-FR-009) — this consumer does not make a new
+      field-exposure decision.
+    messages:
+      - $ref: '#/components/messages/gxpEvent'
+
+  consumeMaterialConsumedEvents:
+    action: receive
+    channel:
+      $ref: '#/channels/gxpEvents'
+    summary: >
+      `erp-material-consumption-poster` — a durable JetStream pull consumer (EVT-FR-009) filtered to
+      `gxp.v1.material_consumption.MaterialConsumed`, resolving the event's site's ACTIVE ERPNext
+      `ErpInstance` and the consumed material's ACTIVE `ErpExternalMapping`, then calling the pre-existing
+      `queue_erp_command(POST_CONSUMPTION)` (`app/modules/erp/commands.py`) through
+      `consume_event_idempotently()` — the `eventbus.consumer_inbox` row and the queued
+      `erp.integration_commands` row commit in one transaction.
+    description: >
+      Scope (CON-FR-025, SG-098): ERPNext only — every adapter forwards its payload to the vendor
+      verbatim with no transformation layer, so a single generic payload cannot be correct for more than
+      one vendor; SAP/Oracle/Dynamics need their own verified mapping, not attempted here. A site with no
+      eligible ACTIVE ERPNext instance (`ErpInstance.service_actor_user_id` unset counts as ineligible —
+      migration 0103) is skipped, not an error — ERP integration is optional per AG-13. An unmapped
+      material is a handler failure (EVT-FR-026): naks below `max_deliver`, dead-letters at the limit
+      (`handle_poison_event()`), same mechanism `consumeMaterialLotEvents` uses. First deployment replays
+      the full retained `MaterialConsumed` backlog (`deliver_policy=ALL`, EVT-FR-009) — confirmed,
+      deliberate, not an oversight; see `erp/consumer.py`'s own docstring.
+    messages:
+      - $ref: '#/components/messages/gxpEvent'
+
+components:
+  messages:
+    gxpEvent:
+      name: GxpEvent
+      title: Canonical GxP domain event envelope
+      summary: Every event this service publishes, in the exact shape event-data-005.json's EventEnvelope defines.
+      contentType: application/json
+      headers:
+        type: object
+        properties:
+          Nats-Msg-Id:
+            type: string
+            format: uuid
+            description: Set to event_id — JetStream's dedup key for this message.
+      payload:
+        $ref: '../../contracts/events/event-data-005.json#/$defs/EventEnvelope'
+      x-requirement-ids:
+        [EVT-FR-001, EVT-FR-002, EVT-FR-003, EVT-FR-004, EVT-FR-005, EVT-FR-006, EVT-FR-007,
+         EVT-FR-009, EVT-FR-010, EVT-FR-014, EVT-FR-026, EVT-FR-027]

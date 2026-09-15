@@ -193,7 +193,7 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
             <Fact label="Source record">
               {labelFor(data.source_id, sourceOptionsFor(data.source_type, entities))}
             </Fact>
-            {/* Not a foreign key — a UUID generated for this deviation itself (Document 26's own
+            {/* Not a foreign key - a UUID generated for this deviation itself (Document 26's own
                "quality event" concept), so there's no separate record to resolve a label from. */}
             <IdFact label="Quality event" value={data.quality_event_id} />
           </>
@@ -435,8 +435,8 @@ function TransitionModal({
         onDone={onDone}
         challengePath={`${path}/signature-challenges`}
         action="disposition"
-        title={`Disposition — ${deviation.deviation_number}`}
-        summary="Records the final disposition of this deviation. This is a released quality decision — signer must be independent of the record's investigator and owner."
+        title={`Disposition - ${deviation.deviation_number}`}
+        summary="Records the final disposition of this deviation. This is a released quality decision - signer must be independent of the record's investigator and owner."
         submitLabel="Sign & record disposition"
         disabled={dispositionDisabled}
         extraFields={
@@ -466,7 +466,7 @@ function TransitionModal({
             <Field
               label="CAPA rationale"
               required
-              hint="Required either way — a decision not to raise a CAPA must also be justified."
+              hint="Required either way - a decision not to raise a CAPA must also be justified."
             >
               <textarea
                 className="input"
@@ -547,8 +547,8 @@ function TransitionModal({
         onDone={onDone}
         challengePath={`${path}/signature-challenges`}
         action="close"
-        title={`Close — ${deviation.deviation_number}`}
-        summary="Closes the deviation record permanently — signer must be independent of the record's investigator and owner."
+        title={`Close - ${deviation.deviation_number}`}
+        summary="Closes the deviation record permanently - signer must be independent of the record's investigator and owner."
         submitLabel="Sign & close"
         submitVariant="success"
         disabled={!conclusion.trim()}
@@ -582,7 +582,7 @@ function TransitionModal({
       open
       onClose={onClose}
       large={transition === "impact"}
-      title={`${TRANSITION_LABEL[transition]} — ${deviation.deviation_number}`}
+      title={`${TRANSITION_LABEL[transition]} - ${deviation.deviation_number}`}
     >
       <form onSubmit={submit}>
         {transition === "triage" && (

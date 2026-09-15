@@ -49,6 +49,7 @@ const SECTIONS: NavSection[] = [
     show: signedIn,
     items: [
       { href: "/materials", label: "Materials", icon: "scale" },
+      { href: "/material-specifications", label: "Material specifications", icon: "file-text" },
       { href: "/material-receipts", label: "Material receipts", icon: "package" },
       { href: "/material-lots", label: "Material lots", icon: "list-checks" },
       { href: "/inventory", label: "Inventory", icon: "inbox" },
@@ -146,6 +147,8 @@ const SECTIONS: NavSection[] = [
       { href: "/admin/access-review", label: "Access review", icon: "shield-check" },
       { href: "/security", label: "Security", icon: "lock" },
       { href: "/platform", label: "Platform ops", icon: "database" },
+      { href: "/edge", label: "Edge gateways", icon: "scan" },
+      { href: "/machine-integration", label: "Machine integration", icon: "scan" },
     ],
   },
 ];
@@ -199,8 +202,7 @@ export function Sidebar({ open }: { open: boolean }) {
         <button
           className="sidebar-link sidebar-link--btn"
           onClick={() => {
-            logout();
-            router.push("/login");
+            void logout().then(() => router.push("/login"));
           }}
         >
           <Icon name="log-out" /> Sign out

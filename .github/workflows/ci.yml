@@ -101,7 +101,7 @@ jobs:
     defaults: { run: { working-directory: frontend } }
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: "24", cache: "npm", cache-dependency-path: frontend/package-lock.json }
       - run: npm ci
       - run: npm run lint
@@ -160,7 +160,7 @@ jobs:
       - name: pytest
         run: uv run pytest -q -p no:randomly --junitxml=../../test-results.xml
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with: { name: pytest-junit, path: test-results.xml }
 
@@ -202,12 +202,12 @@ jobs:
         run: uv run --with pip-audit pip-audit --strict || true   # report-only until a triage owner is assigned
 
       - name: gitleaks (secret scan)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: supply-chain-evidence

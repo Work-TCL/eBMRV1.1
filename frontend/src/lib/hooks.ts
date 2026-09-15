@@ -213,10 +213,10 @@ export function useEntityOptions(): {
     listBatchesForSite(siteId)
       .then((rows) => {
         if (cancelled) return;
-        setBatches(rows.map((b) => ({ value: b.id, label: `${b.batch_number} — ${b.product_name} (${b.product_code})` })));
+        setBatches(rows.map((b) => ({ value: b.id, label: `${b.batch_number} - ${b.product_name} (${b.product_code})` })));
         setBatchesStatus(rows.length ? "ready" : "empty");
         const released = rows.filter((b) => b.status === "complete");
-        setReleasedBatches(released.map((b) => ({ value: b.id, label: `${b.batch_number} — ${b.product_name} (${b.product_code})` })));
+        setReleasedBatches(released.map((b) => ({ value: b.id, label: `${b.batch_number} - ${b.product_name} (${b.product_code})` })));
         setReleasedBatchesStatus(released.length ? "ready" : "empty");
       })
       .catch(() => {
@@ -286,9 +286,9 @@ export function useEntityOptions(): {
     listAll<MaterialLot>("/material-lots", { status: "released" })
       .then((rows) => {
         if (cancelled) return;
-        setMaterialLots(rows.map((l) => ({ value: l.id, label: `${l.internal_lot} — ${l.material_name} (${l.material_code})` })));
+        setMaterialLots(rows.map((l) => ({ value: l.id, label: `${l.internal_lot} - ${l.material_name} (${l.material_code})` })));
         setMaterialLotsStatus(rows.length ? "ready" : "empty");
-        setMaterialLotCodes(rows.map((l) => ({ value: l.internal_lot, label: `${l.internal_lot} — ${l.material_name} (${l.material_code})` })));
+        setMaterialLotCodes(rows.map((l) => ({ value: l.internal_lot, label: `${l.internal_lot} - ${l.material_name} (${l.material_code})` })));
         setMaterialLotCodesStatus(rows.length ? "ready" : "empty");
       })
       .catch(() => {
@@ -323,7 +323,7 @@ export function useEntityOptions(): {
     listAll<Supplier>("/suppliers/v1")
       .then((rows) => {
         if (cancelled) return;
-        setSuppliers(rows.map((s) => ({ value: s.id, label: `${s.legal_name} (${s.supplier_code}) — ${s.status}` })));
+        setSuppliers(rows.map((s) => ({ value: s.id, label: `${s.legal_name} (${s.supplier_code}) - ${s.status}` })));
         setSuppliersStatus(rows.length ? "ready" : "empty");
       })
       .catch(() => {
@@ -344,7 +344,7 @@ export function useEntityOptions(): {
       .then((rows) => {
         if (cancelled) return;
         setSterilizationProfiles(
-          rows.map((p) => ({ value: p.id, label: `${p.profile_number} v${p.version} — ${p.process_type}` })),
+          rows.map((p) => ({ value: p.id, label: `${p.profile_number} v${p.version} - ${p.process_type}` })),
         );
         setSterilizationProfilesStatus(rows.length ? "ready" : "empty");
       })
@@ -384,7 +384,7 @@ export function useEntityOptions(): {
     listAll<{ id: string; sample_number: string; sample_type: string; state: string }>("/qc/v1/samples")
       .then((rows) => {
         if (cancelled) return;
-        setQcSamples(rows.map((s) => ({ value: s.id, label: `${s.sample_number} — ${s.sample_type} (${s.state})` })));
+        setQcSamples(rows.map((s) => ({ value: s.id, label: `${s.sample_number} - ${s.sample_type} (${s.state})` })));
         setQcSamplesStatus(rows.length ? "ready" : "empty");
       })
       .catch(() => {

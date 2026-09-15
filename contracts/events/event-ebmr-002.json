@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebmr.internal/contracts/events/event-ebmr-002.json",
+  "title": "SPEC-EBMR-002 — Batch Execution Engine & State Machine Events",
+  "description": "Document 113 event contract for the events app/modules/batch_execution/commands.py actually emits (17 total). Verified directly against source 2026-09-14 (SG-048's own known-limitation note flagged this module's events as uncontracted; closed here). BatchStarted/BatchHeld/BatchResumed/BatchAborted share one producing helper (_simple_transition) and payload shape.",
+  "x-requirement-ids": [
+    "BAT-FR-001", "BAT-FR-002", "BAT-FR-003", "BAT-FR-004", "BAT-FR-006", "BAT-FR-007", "BAT-FR-009",
+    "BAT-FR-011", "BAT-FR-015", "BAT-FR-019", "BAT-FR-020", "BAT-FR-023", "BAT-FR-025", "BAT-FR-026",
+    "BAT-FR-031", "BAT-FR-034"
+  ],
+  "$defs": {
+    "BatchCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "batch_number"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "batch_number": { "type": "string" }
+      },
+      "x-requirement-ids": ["BAT-FR-001", "BAT-FR-002"]
+    },
+    "BatchIssuedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "execution_snapshot_id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "execution_snapshot_id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["BAT-FR-003", "BAT-FR-004", "BAT-FR-006"]
+    },
+    "BatchStateTransitionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["BAT-FR-004", "BAT-FR-019", "BAT-FR-020", "BAT-FR-031"]
+    },
+    "ProductionCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["BAT-FR-026"]
+    },
+    "StepStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "batch_id", "recipe_step_code", "role_override"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "batch_id": { "type": "string", "format": "uuid" },
+        "recipe_step_code": { "type": "string" },
+        "role_override": { "type": "boolean" }
+      },
+      "x-requirement-ids": ["BAT-FR-007", "BAT-FR-008"]
+    },
+    "StepBasicPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "batch_id", "recipe_step_code"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "batch_id": { "type": "string", "format": "uuid" },
+        "recipe_step_code": { "type": "string" }
+      },
+      "x-requirement-ids": ["BAT-FR-006", "BAT-FR-015", "BAT-FR-020", "BAT-FR-034"]
+    },
+    "StepResultRecordedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "batch_id", "recipe_step_code", "parameter_codes"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "batch_id": { "type": "string", "format": "uuid" },
+        "recipe_step_code": { "type": "string" },
+        "parameter_codes": { "type": "array", "items": { "type": "string" } }
+      },
+      "x-requirement-ids": ["BAT-FR-006", "BAT-FR-009", "BAT-FR-011"]
+    },
+    "StepEvidenceLinkedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "batch_id", "recipe_step_code", "evidence_ids"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "batch_id": { "type": "string", "format": "uuid" },
+        "recipe_step_code": { "type": "string" },
+        "evidence_ids": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+      },
+      "x-requirement-ids": ["BAT-FR-006"]
+    },
+    "StepResultCorrectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "step_id", "supersedes"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "step_id": { "type": "string", "format": "uuid" },
+        "supersedes": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["BAT-FR-023"]
+    },
+    "StepHandedOverPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "batch_id", "recipe_step_code", "from_subject_id", "to_subject_id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "batch_id": { "type": "string", "format": "uuid" },
+        "recipe_step_code": { "type": "string" },
+        "from_subject_id": { "type": ["string", "null"], "format": "uuid" },
+        "to_subject_id": { "type": "string", "format": "uuid" }
+      },
+      "x-requirement-ids": ["BAT-FR-025"]
+    }
+  },
+  "events": [
+    {
+      "event_type": "BatchCreated",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch",
+      "payload": { "$ref": "#/$defs/BatchCreatedPayload" },
+      "x-requirement-ids": ["BAT-FR-001", "BAT-FR-002"]
+    },
+    {
+      "event_type": "BatchIssued",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch",
+      "payload": { "$ref": "#/$defs/BatchIssuedPayload" },
+      "x-requirement-ids": ["BAT-FR-003", "BAT-FR-004", "BAT-FR-006"]
+    },
+    {
+      "event_type": "BatchStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch",
+      "payload": { "$ref": "#/$defs/BatchStateTransitionPayload" },
+      "x-requirement-ids": ["BAT-FR-004"]
+    },
+    {
+      "event_type": "BatchHeld",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch",
+      "payload": { "$ref": "#/$defs/BatchStateTransitionPayload" },
+      "x-requirement-ids": ["BAT-FR-019", "BAT-FR-020"]
+    },
+    {
+      "event_type": "BatchResumed",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch",
+      "payload": { "$ref": "#/$defs/BatchStateTransitionPayload" },
+      "x-requirement-ids": ["BAT-FR-019", "BAT-FR-020"]
+    },
+    {
+      "event_type": "BatchAborted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch",
+      "payload": { "$ref": "#/$defs/BatchStateTransitionPayload" },
+      "x-requirement-ids": ["BAT-FR-004", "BAT-FR-031"]
+    },
+    {
+      "event_type": "StepStarted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch_step",
+      "payload": { "$ref": "#/$defs/StepStartedPayload" },
+      "x-requirement-ids": ["BAT-FR-007", "BAT-FR-008"]
+    },
+    {
+      "event_type": "StepResultRecorded",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch_step",
+      "payload": { "$ref": "#/$defs/StepResultRecordedPayload" },
+      "x-requirement-ids": ["BAT-FR-006", "BAT-FR-009", "BAT-FR-011"]
+    },
+    {
+      "event_type": "StepEvidenceLinked",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch_step",
+      "payload": { "$ref": "#/$defs/StepEvidenceLinkedPayload" },
+      "x-requirement-ids": ["BAT-FR-006"]
+    },
+    {
+      "event_type": "StepCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch_step",
+      "payload": { "$ref": "#/$defs/StepBasicPayload" },
+      "x-requirement-ids": ["BAT-FR-006", "BAT-FR-007", "BAT-FR-015"]
+    },
+    {
+      "event_type": "StepReady",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch_step",
+      "payload": { "$ref": "#/$defs/StepBasicPayload" },
+      "x-requirement-ids": ["BAT-FR-006"]
+    },
+    {
+      "event_type": "StepHeld",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch_step",
+      "payload": { "$ref": "#/$defs/StepBasicPayload" },
+      "x-requirement-ids": ["BAT-FR-020"]
+    },
+    {
+      "event_type": "StepResumed",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch_step",
+      "payload": { "$ref": "#/$defs/StepBasicPayload" },
+      "x-requirement-ids": ["BAT-FR-020"]
+    },
+    {
+      "event_type": "ProductionCompleted",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch",
+      "payload": { "$ref": "#/$defs/ProductionCompletedPayload" },
+      "x-requirement-ids": ["BAT-FR-026"]
+    },
+    {
+      "event_type": "StepResultCorrected",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch_step_result",
+      "payload": { "$ref": "#/$defs/StepResultCorrectedPayload" },
+      "x-requirement-ids": ["BAT-FR-023"]
+    },
+    {
+      "event_type": "StepCommentAdded",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch_step",
+      "payload": { "$ref": "#/$defs/StepBasicPayload" },
+      "x-requirement-ids": ["BAT-FR-034"]
+    },
+    {
+      "event_type": "StepHandedOver",
+      "schema_version": "1.0",
+      "producer": "SPEC-EBMR-002",
+      "aggregate_type": "batch_step",
+      "payload": { "$ref": "#/$defs/StepHandedOverPayload" },
+      "x-requirement-ids": ["BAT-FR-025"]
+    }
+  ]
+}

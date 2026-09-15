@@ -1,8 +1,9 @@
 """Document 65 (SPEC-SEC-005) REST surface, prefix `/security/v1`. The 5 operations Document 65 # 7
-lists: rotate a secret, issue / rotate / revoke a certificate, read crypto health. Certificate
-issue/rotate/revoke each carry a `Released` Part 11 signature (Document 106 rows 137-139); the secret
-rotate is RBAC-only; crypto-health is a read-only GET that fails 503 when a critical key/cert is
-missing/expired (KEY-FR-028).
+lists: rotate a secret, issue / rotate / revoke a certificate, read crypto health -- plus 2 added in the
+WP-07/SG-126 pass to close the "no create path for secret_metadata" gap: create a secret, set an
+ON_PREM secret's value. Certificate issue/rotate/revoke each carry a `Released` Part 11 signature
+(Document 106 rows 137-139); secret create/rotate/set-value are RBAC-only; crypto-health is a read-only
+GET that fails 503 when a critical key/cert is missing/expired (KEY-FR-028).
 """
 
 import uuid
@@ -20,6 +21,28 @@ from app.mutation.errors import CryptoHealthFailedError, NotFoundError, Validati
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/security/v1", tags=["security-crypto"])
+
+
+@router.post("/secrets", response_model=MutationReceipt)
+async def post_create_secret(
+    cmd: commands.CreateSecretCommand,
+    session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="secret.create", site_id=None)
+        return await commands.create_secret(session, cmd, actor.user_id)
+
+
+@router.post("/secrets/{secret_id}/value", response_model=MutationReceipt)
+async def post_set_secret_value(
+    secret_id: uuid.UUID, cmd: commands.SetSecretValueCommand,
+    session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.secret_id != secret_id:
+        raise ValidationFailedError("secret_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="secret.set_value", site_id=None)
+        return await commands.set_secret_value(session, cmd, actor.user_id)
 
 
 @router.post("/secrets/{secret_id}/rotate", response_model=MutationReceipt)

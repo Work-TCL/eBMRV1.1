@@ -122,6 +122,13 @@ class RecipeStep(Base):
     instruction_text: Mapped[str | None] = mapped_column(String(4000))
     sequence_hint: Mapped[int] = mapped_column(Integer, nullable=False)
     required_role_code: Mapped[str | None] = mapped_column(String(80))
+    # BAT-FR-014, SG-048 #014 partial resolution (2026-09-14, migration 0f714e883102_0105): distinct from
+    # `qualification_policy_id` below, which stays exactly as unresolved as before -- that UUID has no
+    # backing entity anywhere in this codebase. This new column matches `iam.qualifications.
+    # qualification_code`'s own string shape, the same one `material/commands.py::
+    # _check_dispensing_qualification` already uses; frozen onto BatchStep at issue, same precedent as
+    # `required_role_code`/SG-178.
+    required_qualification_code: Mapped[str | None] = mapped_column(String(100))
     qualification_policy_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     signature_policy_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     exception_policy_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -179,4 +186,59 @@ class RecipeEvidenceRequirement(Base):
     required_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     allowed_mime_types: Mapped[str | None] = mapped_column(String(255))
     retention_class: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class RecipeMaterialRequirement(Base):
+    """SG-045 (equipment/material half) — `min_value`/`max_value`/`uom`/`uom_id` mirror
+    `RecipeParameter`'s own already-DDL-ready tolerance shape exactly (same "no rule-execution engine
+    exists" precedent SG-089 documents for dispensing tolerance) rather than inventing a new tolerance
+    schema. `alternative_material_spec_version_id`/`substitution_allowed` are captured, unenforced --
+    same class as `RecipeStep.required_role_code` before SG-178 wired enforcement, or `equipment_class_id`
+    elsewhere: declared but not yet gated by a runtime check. `material_spec_version_id` FKs the new
+    SG-057 entity (migration d2d738c7f191)."""
+
+    __tablename__ = "gxp_recipe_material_requirement"
+    __table_args__ = {"schema": "ebmr"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    step_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_recipe_step.id"), nullable=False)
+    material_spec_version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ebmr.gxp_material_specification_version.id"), nullable=False
+    )
+    target_value: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
+    min_value: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
+    max_value: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
+    uom: Mapped[str | None] = mapped_column(String(40))
+    uom_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.gxp_uom.uom_id"))
+    alternative_material_spec_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ebmr.gxp_material_specification_version.id")
+    )
+    substitution_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    consume_mode: Mapped[str | None] = mapped_column(String(40))
+    genealogy_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class RecipeEquipmentRequirement(Base):
+    """SG-045 (equipment half) — `equipment_class` is a captured, unenforced reference, the same
+    precedent `EquipmentAsset.equipment_class_id` already uses (no equipment-class-master entity exists).
+    `require_current_calibration`/`require_current_qualification` declare the gate this recipe step needs
+    (would compare against `EquipmentAsset.calibration_status`/`.qualification_status`, mirroring SG-178's
+    `required_role_code` pattern) but are NOT enforced by this pass -- BAT-FR-012/013's batch_execution
+    step-start wiring (SG-048 #012/#013, explicitly deferred pending this schema) is a separate build.
+    `require_current_cleaning` is captured for the same reason and additionally has no persistent status
+    field to check against yet (cleaning state lives in separate CleaningExecution/LineClearance event
+    records, not on EquipmentAsset)."""
+
+    __tablename__ = "gxp_recipe_equipment_requirement"
+    __table_args__ = {"schema": "ebmr"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    step_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_recipe_step.id"), nullable=False)
+    equipment_class: Mapped[str] = mapped_column(String(80), nullable=False)
+    exact_equipment_optional: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    require_current_calibration: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    require_current_qualification: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    require_current_cleaning: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

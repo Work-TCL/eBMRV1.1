@@ -9,10 +9,12 @@ import {
   newIdempotencyKey,
   type ListQuery,
   type Material,
+  type MaterialContainer,
   type MaterialLot,
   type MutationReceipt,
   type Paged,
 } from "@/lib/api";
+import { useEntityOptions } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -22,8 +24,10 @@ import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
-import { Banner } from "@/components/ui/Banner";
 import { MaterialLotStatePill } from "@/components/ui/StatePill";
+import { JsonPanel } from "@/components/ui/JsonPanel";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 
 const STATUS_OPTIONS = ["", "quarantine", "released", "rejected", "consumed", "expired"];
 
@@ -33,6 +37,10 @@ export default function MaterialLotsPage() {
 
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [dispositionLot, setDispositionLot] = useState<MaterialLot | null>(null);
+  const [samplingLot, setSamplingLot] = useState<MaterialLot | null>(null);
+  const [collectingOrder, setCollectingOrder] = useState<{ id: string; version: number } | null>(null);
+  const [qualityStatusLot, setQualityStatusLot] = useState<MaterialLot | null>(null);
+  const [retestingLot, setRetestingLot] = useState<MaterialLot | null>(null);
 
   function fetchLots(query: ListQuery): Promise<Paged<MaterialLot>> {
     const search = new URLSearchParams({
@@ -81,12 +89,28 @@ export default function MaterialLotsPage() {
     {
       key: "actions",
       header: "",
-      render: (l) =>
-        l.status === "quarantine" ? (
-          <Button size="sm" variant="secondary" onClick={() => setDispositionLot(l)}>
-            <Icon name="badge-check" /> Disposition
+      render: (l) => (
+        <div className="flex gap-2 justify-end">
+          <Button size="sm" variant="ghost" onClick={() => setQualityStatusLot(l)}>
+            <Icon name="info" /> Quality status
           </Button>
-        ) : null,
+          {(l.status === "quarantine" || l.status === "sampling") && (
+            <Button size="sm" variant="secondary" onClick={() => setSamplingLot(l)}>
+              <Icon name="flask" /> Sample
+            </Button>
+          )}
+          {l.status === "quarantine" && (
+            <Button size="sm" variant="secondary" onClick={() => setRetestingLot(l)}>
+              <Icon name="refresh" /> Retest
+            </Button>
+          )}
+          {l.status === "quarantine" && (
+            <Button size="sm" variant="secondary" onClick={() => setDispositionLot(l)}>
+              <Icon name="badge-check" /> Disposition
+            </Button>
+          )}
+        </div>
+      ),
     },
   ];
 
@@ -128,7 +152,7 @@ export default function MaterialLotsPage() {
           rowKey={(l) => l.id}
           searchPlaceholder="Search by lot number or material…"
           emptyIcon="list-checks"
-          emptyMessage="No material lots yet — receive one to get started."
+          emptyMessage="No material lots yet - receive one to get started."
           defaultSort={{ by: "received_at", dir: "desc" }}
           reloadToken={reloadToken}
         />
@@ -150,6 +174,42 @@ export default function MaterialLotsPage() {
           onClose={() => setDispositionLot(null)}
           onDone={() => {
             setDispositionLot(null);
+            setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
+
+      {samplingLot && (
+        <NewSamplingOrderModal
+          lot={samplingLot}
+          onClose={() => setSamplingLot(null)}
+          onCreated={(order) => {
+            setSamplingLot(null);
+            setCollectingOrder(order);
+            setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
+
+      {collectingOrder && (
+        <CollectSampleModal
+          order={collectingOrder}
+          onClose={() => setCollectingOrder(null)}
+          onDone={() => {
+            setCollectingOrder(null);
+            setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
+
+      {qualityStatusLot && <QualityStatusModal lot={qualityStatusLot} onClose={() => setQualityStatusLot(null)} />}
+
+      {retestingLot && (
+        <RetestModal
+          lot={retestingLot}
+          onClose={() => setRetestingLot(null)}
+          onDone={() => {
+            setRetestingLot(null);
             setReloadToken((n) => n + 1);
           }}
         />
@@ -237,7 +297,7 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
           <Field label="Received quantity" required>
             <Input value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
           </Field>
-          <Field label="Unit of measure" required hint="Defaults to the material's standard unit — change it if this lot was received in a different unit, e.g. L instead of mL.">
+          <Field label="Unit of measure" required hint="Defaults to the material's standard unit - change it if this lot was received in a different unit, e.g. L instead of mL.">
             <Input
               value={uom}
               onChange={(e) => {
@@ -275,78 +335,337 @@ function DispositionModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [challengeId, setChallengeId] = useState<string | null>(null);
   const [decision, setDecision] = useState<"released" | "rejected">("released");
   const [reason, setReason] = useState("");
-  const [password, setPassword] = useState("");
+
+  return (
+    <SignatureCeremony
+      open
+      onClose={onClose}
+      onDone={onDone}
+      challengePath={`/material-lots/${lot.id}/signature-challenges`}
+      action="disposition"
+      title={`QC disposition - lot ${lot.internal_lot}`}
+      summary={
+        <>
+          {lot.material_name} ({lot.material_code}) - {lot.received_quantity} {lot.uom} received{" "}
+          {lot.received_at ? formatDateTime(lot.received_at) : ""}
+          {lot.expiry_date ? `, expires ${lot.expiry_date}` : ""}.
+        </>
+      }
+      submitVariant={decision === "rejected" ? "danger" : "success"}
+      reason="none"
+      extraFields={
+        <>
+          <Field label="Decision" required>
+            <Select value={decision} onChange={(e) => setDecision(e.target.value as "released" | "rejected")}>
+              <option value="released">Release</option>
+              <option value="rejected">Reject</option>
+            </Select>
+          </Field>
+          <Field label="Reason" hint="Required for a reject decision in a real deployment; optional here.">
+            <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </Field>
+        </>
+      }
+      onSign={(p) =>
+        api.post<MutationReceipt>(`/material-lots/${lot.id}/disposition`, {
+          idempotency_key: p.idempotency_key,
+          lot_id: lot.id,
+          expected_version: lot.version,
+          decision,
+          reason: reason || null,
+          challenge_id: p.challenge_id,
+          reauth_password: p.reauth_password,
+        })
+      }
+    />
+  );
+}
+
+/** Document 20 (SPEC-MAT-004?) sampling orders — `app/modules/material/router.py`: `POST
+ * /materials/v1/lots/{lot_id}/sampling-orders` (create) and `POST /sampling-orders/{id}/collect` (a
+ * different router prefix entirely — not under /materials/v1). Only "quarantine" or "sampling" lots are
+ * eligible (server-enforced). No GET exists for a sampling order (verified against router.py), so this
+ * modal captures the id/version from the create receipt and hands it straight to `CollectSampleModal`
+ * rather than making the operator note it down and paste it back in later. */
+function NewSamplingOrderModal({
+  lot,
+  onClose,
+  onCreated,
+}: {
+  lot: MaterialLot;
+  onClose: () => void;
+  onCreated: (order: { id: string; version: number }) => void;
+}) {
+  const entities = useEntityOptions();
+  const [containers, setContainers] = useState<MaterialContainer[] | null>(null);
+  const [selectedContainerIds, setSelectedContainerIds] = useState<string[]>([]);
+  const [samplingPlanRef, setSamplingPlanRef] = useState("");
+  const [assignedSamplerId, setAssignedSamplerId] = useState("");
+  const [asepticEvidenceRef, setAsepticEvidenceRef] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     api
-      .post<{ challenge_id: string }>(`/material-lots/${lot.id}/signature-challenges`, { action: "disposition" })
-      .then((c) => setChallengeId(c.challenge_id))
-      .catch(() => setError("Could not request signature challenge"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      .get<{ items: MaterialContainer[] }>(`/material-lots/${lot.id}/containers`)
+      .then((r) => {
+        if (!cancelled) setContainers(r.items);
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not load containers");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lot.id]);
 
-  async function confirm() {
-    if (!challengeId) return;
+  function toggleContainer(id: string) {
+    setSelectedContainerIds((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.post<MutationReceipt>(`/material-lots/${lot.id}/disposition`, {
+      const receipt = await api.post<MutationReceipt>(`/materials/v1/lots/${lot.id}/sampling-orders`, {
         idempotency_key: newIdempotencyKey(),
         lot_id: lot.id,
         expected_version: lot.version,
-        decision,
-        reason: reason || null,
-        challenge_id: challengeId,
-        reauth_password: password,
+        sampling_plan_ref: samplingPlanRef.trim() || null,
+        selected_container_ids: selectedContainerIds,
+        assigned_sampler_user_id: assignedSamplerId,
+        aseptic_evidence_ref: asepticEvidenceRef.trim() || null,
       });
-      onDone();
+      onCreated({ id: receipt.aggregate_id, version: receipt.resulting_version });
     } catch (err) {
-      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Disposition failed");
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not create sampling order");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Modal open onClose={onClose} title={`QC disposition — lot ${lot.internal_lot}`}>
-      <Banner tone="info" title={`${lot.material_name} (${lot.material_code})`}>
-        {lot.received_quantity} {lot.uom} received {lot.received_at ? formatDateTime(lot.received_at) : ""}
-        {lot.expiry_date ? `, expires ${lot.expiry_date}` : ""}.
-      </Banner>
+    <Modal open onClose={onClose} title={`Order sampling - lot ${lot.internal_lot}`}>
+      <form onSubmit={submit}>
+        <EntityPickerField
+          label="Assigned sampler"
+          required
+          value={assignedSamplerId}
+          onChange={setAssignedSamplerId}
+          options={entities.users}
+          status={entities.usersStatus}
+          kind="user"
+        />
+        <Field label="Sampling plan reference" hint="Optional.">
+          <Input value={samplingPlanRef} onChange={(e) => setSamplingPlanRef(e.target.value)} />
+        </Field>
+        <Field label="Aseptic evidence reference" hint="Optional - for a sterile-product sample draw.">
+          <Input value={asepticEvidenceRef} onChange={(e) => setAsepticEvidenceRef(e.target.value)} />
+        </Field>
 
-      <Field label="Decision" required>
-        <Select value={decision} onChange={(e) => setDecision(e.target.value as "released" | "rejected")}>
-          <option value="released">Release</option>
-          <option value="rejected">Reject</option>
-        </Select>
-      </Field>
-      <Field label="Reason" hint="Required for a reject decision in a real deployment; optional here.">
-        <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
-      </Field>
-      <p className="fs-2 text-muted mb-2">
-        Fresh authentication required — re-enter your password to sign (Part 11 step-up).
-      </p>
-      <Field label="Password" required>
-        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
-      </Field>
-      {error && <p className="error-text mb-3">{error}</p>}
-      <div className="flex justify-between gap-3 mt-2">
-        <Button type="button" variant="secondary" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          variant={decision === "rejected" ? "danger" : "success"}
-          disabled={busy || !challengeId || !password}
-          onClick={confirm}
-        >
-          {busy ? "Signing…" : "Sign & submit"}
+        <Field label="Containers to sample from" required hint="At least one container must be selected.">
+          {loadError ? (
+            <p className="error-text">{loadError}</p>
+          ) : containers === null ? (
+            <p className="hint">Loading containers…</p>
+          ) : containers.length === 0 ? (
+            <p className="hint">This lot has no containers recorded.</p>
+          ) : (
+            <div className="sig-block">
+              {containers.map((c) => (
+                <label key={c.id} className="flex items-center gap-2 fs-2 mb-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedContainerIds.includes(c.id)}
+                    onChange={() => toggleContainer(c.id)}
+                  />
+                  {c.container_code} - {c.current_quantity} {c.uom} ({c.container_status})
+                </label>
+              ))}
+            </div>
+          )}
+        </Field>
+
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !assignedSamplerId.trim() || selectedContainerIds.length === 0}>
+            {busy ? "Creating…" : "Create sampling order"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function CollectSampleModal({
+  order,
+  onClose,
+  onDone,
+}: {
+  order: { id: string; version: number };
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [orderId, setOrderId] = useState(order.id);
+  const [expectedVersion, setExpectedVersion] = useState(String(order.version));
+  const [sampleQuantity, setSampleQuantity] = useState("");
+  const [sampleUom, setSampleUom] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post<MutationReceipt>(`/sampling-orders/${orderId.trim()}/collect`, {
+        idempotency_key: newIdempotencyKey(),
+        sampling_order_id: orderId.trim(),
+        expected_version: Number(expectedVersion),
+        sample_quantity: sampleQuantity.trim(),
+        sample_uom: sampleUom.trim(),
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not record collection");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Record sample collection">
+      <form onSubmit={submit}>
+        <p className="fs-2 text-muted mb-3">
+        No lookup exists for a sampling order -
+          the id and version below come from the order you just created, or can be entered directly if
+          already known.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Sampling order ID" required>
+            <Input value={orderId} onChange={(e) => setOrderId(e.target.value)} required />
+          </Field>
+          <Field label="Expected version" required>
+            <Input type="number" value={expectedVersion} onChange={(e) => setExpectedVersion(e.target.value)} required />
+          </Field>
+          <Field label="Sample quantity" required>
+            <Input value={sampleQuantity} onChange={(e) => setSampleQuantity(e.target.value)} required />
+          </Field>
+          <Field label="Sample UOM" required>
+            <Input value={sampleUom} onChange={(e) => setSampleUom(e.target.value)} required />
+          </Field>
+        </div>
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Not yet - collect later
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={busy || !orderId.trim() || !expectedVersion.trim() || !sampleQuantity.trim() || !sampleUom.trim()}
+          >
+            {busy ? "Recording…" : "Record collection"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function QualityStatusModal({ lot, onClose }: { lot: MaterialLot; onClose: () => void }) {
+  const [status, setStatus] = useState<Record<string, unknown> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<Record<string, unknown>>(`/materials/v1/lots/${lot.id}/quality-status`)
+      .then((s) => {
+        if (!cancelled) setStatus(s);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not load quality status");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lot.id]);
+
+  return (
+    <Modal open onClose={onClose} title={`Quality status - lot ${lot.internal_lot}`}>
+      {error && <p className="error-text">{error}</p>}
+      {!error && !status && <p className="hint">Loading…</p>}
+      {status && <JsonPanel title="Quality status" value={status} />}
+      <div className="flex justify-end mt-3">
+        <Button variant="secondary" onClick={onClose}>
+          Close
         </Button>
       </div>
+    </Modal>
+  );
+}
+
+function RetestModal({
+  lot,
+  onClose,
+  onDone,
+}: {
+  lot: MaterialLot;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post<MutationReceipt>(`/materials/v1/lots/${lot.id}/retest`, {
+        idempotency_key: newIdempotencyKey(),
+        lot_id: lot.id,
+        expected_version: lot.version,
+        reason: reason.trim(),
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not place lot on retest");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Send for retest - lot ${lot.internal_lot}`}>
+      <form onSubmit={submit}>
+        <p className="fs-3 mb-3">
+          Distinct from Disposition (release/reject) - sends this lot back for retesting instead of a
+          final release/reject decision.
+        </p>
+        <Field label="Reason" required>
+          <textarea className="input" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} required autoFocus />
+        </Field>
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !reason.trim()}>
+            {busy ? "Saving…" : "Send for retest"}
+          </Button>
+        </div>
+      </form>
     </Modal>
   );
 }

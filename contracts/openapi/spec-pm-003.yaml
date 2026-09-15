@@ -105,7 +105,13 @@ paths:
     post:
       operationId: postCreateCorrectionRemovalAssessment
       tags: [postmarket-obligations]
-      summary: Open a Part 806 correction/removal regulatory assessment from a Document 36 field action (PMO-FR-009/030)
+      summary: Request a Part 806 correction/removal regulatory assessment from a Document 36 field action (PMO-FR-009/030)
+      description: >
+        SG-160 partial resolution (2026-09-14): unsigned by itself, matching `vault.request_correction()`'s
+        own split -- a signature challenge must bind to an existing `record_id` (SIG-FR-005/010) and none
+        exists before this call creates one. State starts `PENDING_ASSESSMENT_APPROVAL`; the record is not
+        usable until `postApproveCorrectionRemovalAssessment` supplies both of Document 106 row 130's
+        required signatures ("Authorized corrector + independent approver").
       x-requirement-ids: [PMO-FR-009, PMO-FR-030, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
       security: [{ bearerAuth: [] }]
       parameters: [{ name: field_action_id, in: path, required: true, schema: { type: string, format: uuid } }]
@@ -113,17 +119,73 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/CreateCorrectionRemovalAssessmentCommand' } } }
       responses:
-        '200': { description: Opened., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '200': { description: Requested. `aggregate_id` is the new record's id., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
         '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
         '422': { description: CORRECTION_REMOVAL_SCOPE_MISSING., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/correction-removal/{record_id}/assessment-signature-challenges:
+    post:
+      operationId: postCorrectionRemovalAssessmentSignatureChallenge
+      tags: [postmarket-obligations]
+      summary: Create the signature challenge for one position of the assessment's 2-signature chain (SG-160)
+      description: >
+        Chain position (1 = corrector, 2 = independent approver) is derived from how many valid
+        signatures this record already carries, never accepted from the caller. Bound to
+        `sha256(field_action_reference)`; from position 2 onward, checked against the first signer's own
+        hash so a later signer cannot approve different content. Same shape as
+        `vault/router.py::postCorrectionSignatureChallenge`.
+      x-requirement-ids: [PMO-FR-009, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: record_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CorrectionRemovalAssessmentSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: Challenge created., content: { application/json: { schema: { $ref: '#/components/schemas/CorrectionRemovalChainSignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: Every required signature already collected, or content does not match the earlier signer(s)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/correction-removal/{record_id}/assessment-signatures:
+    post:
+      operationId: postApproveCorrectionRemovalAssessment
+      tags: [postmarket-obligations]
+      summary: Sign one position of the assessment's 2-signature chain (Document 106 row 130, SG-160)
+      description: >
+        Resubmitted once per chain position (corrector, then an independent approver) -- same shape as
+        `vault.complete_correction()`. Only the final required signature actually opens the record
+        (state -> `OPEN`); earlier positions record the signature and return without changing state.
+        Not itself a Document 60 §12 endpoint name -- the "obvious continuation endpoint" precedent
+        `postApproveStepResultCorrection`/`postApproveResultCorrection`/`vault.complete_correction`
+        already establish in this same platform.
+      x-requirement-ids: [PMO-FR-009, MUT-FR-005, MUT-FR-010, MUT-FR-011, MUT-FR-015, MUT-FR-018, SIG-FR-005, SIG-FR-010, SIG-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: record_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveCorrectionRemovalAssessmentCommand' } } }
+      responses:
+        '200': { description: Signed (chain incomplete) or Opened (chain complete)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: SOD_INDEPENDENCE_REQUIRED (same actor as an earlier position in this chain), or the record is not awaiting a signature., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: field_action_reference does not match what the earlier signer(s) approved., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
 
   /postmarket/v1/correction-removal/{record_id}/decision:
     post:
       operationId: postDecideCorrectionRemoval
       tags: [postmarket-obligations]
       summary: Decide Part 806 reportability -- reportable creates a 10-working-day 806 obligation, otherwise a controlled 806.20 record (PMO-FR-010/011)
-      description: No Document 106 signature resolution exists (2-signature requirement, SG-160) — returns SIGNATURE_POLICY_UNRESOLVED.
+      description: >
+        SG-160 partial resolution (2026-09-14): the `record_id` already exists (created by
+        `postCreateCorrectionRemovalAssessment`/`postApproveCorrectionRemovalAssessment`), so unlike
+        assessment creation this call itself carries Document 106 row 129's chain position 1 (the
+        "corrector") -- a challenge can be requested against the existing record before calling this.
+        Only stages the decision; `postApproveCorrectionRemovalDecision` must supply an independent
+        position-2 signature before due_at/regime/state are actually applied.
       x-requirement-ids: [PMO-FR-010, PMO-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
       security: [{ bearerAuth: [] }]
       parameters: [{ name: record_id, in: path, required: true, schema: { type: string, format: uuid } }]
@@ -131,12 +193,52 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/DecideCorrectionRemovalReportabilityCommand' } } }
       responses:
+        '200': { description: Signed (chain incomplete) or Decided (signature_count==1)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_REGULATORY_OBLIGATION_VERSION, or the assessment is not fully approved yet., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '422': { description: rationale is required., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/correction-removal/{record_id}/decision-signature-challenges:
+    post:
+      operationId: postCorrectionRemovalDecisionSignatureChallenge
+      tags: [postmarket-obligations]
+      summary: Create the signature challenge for one position of the decision's 2-signature chain (SG-160)
+      x-requirement-ids: [PMO-FR-010, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: record_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CorrectionRemovalDecisionSignatureChallengeRequest' } } }
+      responses:
+        '200': { description: Challenge created., content: { application/json: { schema: { $ref: '#/components/schemas/CorrectionRemovalChainSignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: Every required signature already collected, content does not match the earlier signer(s), or the record is not awaiting a decision signature., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /postmarket/v1/correction-removal/{record_id}/decision-signatures:
+    post:
+      operationId: postApproveCorrectionRemovalDecision
+      tags: [postmarket-obligations]
+      summary: Sign the independent-approver position of the reportability decision (Document 106 row 129, SG-160)
+      description: >
+        Chain position 2 -- applies the decision (due_at/regime/assessment_state, state -> `DECIDED`)
+        once signed, provided the approver differs from `postDecideCorrectionRemoval`'s own corrector.
+      x-requirement-ids: [PMO-FR-010, PMO-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018, SIG-FR-005, SIG-FR-010, SIG-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: record_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveCorrectionRemovalDecisionCommand' } } }
+      responses:
         '200': { description: Decided., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
         '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
-        '409': { description: STALE_REGULATORY_OBLIGATION_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
-        '422': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '409': { description: SOD_INDEPENDENCE_REQUIRED, STALE_REGULATORY_OBLIGATION_VERSION, or the decision is not awaiting a signature., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
 
   /postmarket/v1/correction-removal/{record_id}/scope-amendments:
     post:
@@ -402,6 +504,52 @@ components:
         field_action_reference: { type: object }
         initiation_at: { type: string, format: date-time }
 
+    CorrectionRemovalAssessmentSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Body of postCorrectionRemovalAssessmentSignatureChallenge (SG-160).
+      x-requirement-ids: [SIG-FR-005]
+      required: [field_action_reference]
+      properties:
+        field_action_reference: { type: object }
+
+    CorrectionRemovalDecisionSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Body of postCorrectionRemovalDecisionSignatureChallenge (SG-160).
+      x-requirement-ids: [SIG-FR-005]
+      required: [reportable, rationale]
+      properties:
+        reportable: { type: boolean }
+        rationale: { type: string }
+        calendar_version: { type: [string, "null"] }
+        required_facts: { type: object, default: {} }
+
+    CorrectionRemovalChainSignatureChallengeResponse:
+      type: object
+      description: The challenge receipt returned by both correction-removal chain challenge endpoints (response schema, so not closed).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, chain_position, signature_count, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        chain_position: { type: integer, minimum: 1, description: "1 = corrector, 2 = independent approver; server-derived, never client-supplied." }
+        signature_count: { type: integer }
+        expires_at: { type: string, format: date-time }
+
+    ApproveCorrectionRemovalAssessmentCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-009, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, record_id, field_action_reference]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        record_id: { type: string, format: uuid }
+        field_action_reference: { type: object, description: Must match what the earlier signer(s) in this chain approved. }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
     DecideCorrectionRemovalReportabilityCommand:
       type: object
       additionalProperties: false
@@ -413,6 +561,23 @@ components:
         record_id: { type: string, format: uuid }
         expected_version: { type: integer }
         reportable: { type: boolean }
+        rationale: { type: string }
+        calendar_version: { type: [string, "null"] }
+        required_facts: { type: object, default: {} }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"] }
+
+    ApproveCorrectionRemovalDecisionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [PMO-FR-010, PMO-FR-011, MUT-FR-005, MUT-FR-009, MUT-FR-010]
+      required: [idempotency_key, record_id, expected_version, reportable, rationale]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        record_id: { type: string, format: uuid }
+        expected_version: { type: integer }
+        reportable: { type: boolean, description: Must match what postDecideCorrectionRemoval's own corrector signed. }
         rationale: { type: string }
         calendar_version: { type: [string, "null"] }
         required_facts: { type: object, default: {} }

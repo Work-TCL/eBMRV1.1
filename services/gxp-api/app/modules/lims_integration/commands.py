@@ -342,7 +342,7 @@ async def ingest_lims_result(
     instance = await _get_instance(session, cmd.instance_id)
     if instance.ownership_mode != "gxp_managed":
         raise ValidationFailedError(
-            "Only ownership_mode='gxp_managed' is implemented this pass (SG-067)", ownership_mode=instance.ownership_mode
+            "Only ownership_mode='gxp_managed' is implemented this pass (SG-070)", ownership_mode=instance.ownership_mode
         )
 
     dup = (
@@ -464,7 +464,7 @@ async def ingest_lims_result(
 
 # ---------------------------------------------------------------------------
 # ReconcileLimsInstance -- LIMS-FR-025/026: POST /integrations/lims/{instance}/reconcile. On-demand
-# (no periodic scheduler exists -- SG-067). Not signed (no Document 106 row).
+# (no periodic scheduler exists -- SG-070). Not signed (no Document 106 row).
 # ---------------------------------------------------------------------------
 
 

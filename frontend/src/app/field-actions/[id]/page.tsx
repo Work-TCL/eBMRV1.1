@@ -149,7 +149,7 @@ export default function FieldActionDetailPage({ params }: { params: Promise<{ id
         <>
           {rec && rec.outstanding_count > 0 && (
             <Banner tone="warn" title={`${rec.outstanding_count} unit(s) outstanding`}>
-              Reconciliation is incomplete — product remains unaccounted for in the field.
+              Reconciliation is incomplete - product remains unaccounted for in the field.
             </Banner>
           )}
 
@@ -231,7 +231,7 @@ export default function FieldActionDetailPage({ params }: { params: Promise<{ id
 
 function ScopeTab({ items }: { items: ScopeItem[] }) {
   if (items.length === 0) {
-    return <EmptyState icon="layers">No scope items defined — the affected population is not yet bounded.</EmptyState>;
+    return <EmptyState icon="layers">No scope items defined - the affected population is not yet bounded.</EmptyState>;
   }
   return (
     <Card>
@@ -411,7 +411,7 @@ function TransitionModal({
       open
       onClose={onClose}
       large={transition === "reconcile" || transition === "reportability"}
-      title={`${LABEL[transition]} — ${fieldAction.action_number}`}
+      title={`${LABEL[transition]} - ${fieldAction.action_number}`}
     >
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(transition) && (

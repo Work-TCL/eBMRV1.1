@@ -1,8 +1,8 @@
 # Build Status
 
-_Generated 2026-09-11 — do not hand-edit._
+_Generated 2026-09-15 — do not hand-edit._
 
-**Overall:** 97/103 modules started · 0 released · 763/2965 requirements verified · 2512/9150 test cases executed
+**Overall:** 100/103 modules started · 0 released · 849/2965 requirements verified · 2658/9150 test cases executed
 
 ## Work packages
 
@@ -14,7 +14,7 @@ _Generated 2026-09-11 — do not hand-edit._
 | WP-03 | Genealogy / Review / Release / Packaging / Yield | 0/5 | IN_DEVELOPMENT | WP-02 |
 | WP-04 | Procurement / Materials / QC | 0/8 | IN_DEVELOPMENT | WP-02 |
 | WP-05 | Quality Management System | 0/12 | IN_DEVELOPMENT | WP-01, WP-02 |
-| WP-06 | Equipment / Sterile / Edge | 0/10 | NOT_STARTED | WP-02, WP-04 |
+| WP-06 | Equipment / Sterile / Edge | 0/10 | IN_DEVELOPMENT | WP-02, WP-04 |
 | WP-07 | Enterprise Integrations | 0/6 | IN_DEVELOPMENT | WP-01, WP-04 |
 | WP-08 | DDCP Product Profiles | 0/4 | IN_DEVELOPMENT | WP-02, WP-03, WP-06 |
 | WP-09 | Postmarket | 0/3 | CODE_COMPLETE | WP-05 |
@@ -35,8 +35,8 @@ _Generated 2026-09-11 — do not hand-edit._
 | 07 | SPEC-IAM-001 | WP-01 | H | 32 | 3 | 118 | 6 | 0 | 110 | IN_DEVELOPMENT | Claude Code |
 | 08 | SPEC-GXP-006 | WP-01 | H | 32 | 10 | 134 | 43 | 0 | 83 | IN_DEVELOPMENT | Claude Code |
 | 09 | SPEC-EBMR-000 | WP-02 | H | 32 | 0 | 121 | 26 | 0 | 92 | IN_DEVELOPMENT | Claude Code |
-| 10 | SPEC-EBMR-001 | WP-02 | H | 36 | 4 | 115 | 29 | 0 | 83 | IN_DEVELOPMENT | Claude Code |
-| 11 | SPEC-EBMR-002 | WP-02 | H | 36 | 1 | 96 | 32 | 0 | 99 | IN_DEVELOPMENT | Claude Code |
+| 10 | SPEC-EBMR-001 | WP-02 | H | 36 | 4 | 115 | 31 | 0 | 81 | IN_DEVELOPMENT | Claude Code |
+| 11 | SPEC-EBMR-002 | WP-02 | H | 36 | 5 | 96 | 40 | 0 | 88 | IN_DEVELOPMENT | Claude Code |
 | 12 | SPEC-EBMR-003 | WP-02 | H | 30 | 6 | 71 | 19 | 0 | 90 | IN_DEVELOPMENT | Claude Code |
 | 13 | SPEC-EBMR-004 | WP-03 | H | 30 | 4 | 61 | 24 | 0 | 64 | IN_DEVELOPMENT | Claude Code |
 | 14 | SPEC-EBMR-005 | WP-03 | H | 30 | 1 | 80 | 24 | 0 | 83 | IN_DEVELOPMENT | Claude Code |
@@ -47,11 +47,11 @@ _Generated 2026-09-11 — do not hand-edit._
 | 19 | SPEC-MAT-002A | WP-04 | H | 32 | 29 | 70 | 69 | 0 | 6 | CODE_COMPLETE | Claude Code |
 | 20 | SPEC-MAT-002B | WP-04 | H | 32 | 28 | 98 | 64 | 0 | 10 | CODE_COMPLETE | Claude Code |
 | 21 | SPEC-MAT-002C | WP-04 | H | 32 | 26 | 102 | 73 | 0 | 23 | CODE_COMPLETE | Claude Code |
-| 22 | SPEC-MAT-002D | WP-04 | H | 32 | 24 | 109 | 67 | 0 | 22 | CODE_COMPLETE | Claude Code |
-| 23 | SPEC-QC-001 | WP-04 | H | 38 | 9 | 98 | 42 | 0 | 103 | IN_DEVELOPMENT | Claude Code |
+| 22 | SPEC-MAT-002D | WP-04 | H | 32 | 24 | 109 | 68 | 0 | 21 | CODE_COMPLETE | Claude Code |
+| 23 | SPEC-QC-001 | WP-04 | H | 38 | 10 | 98 | 44 | 0 | 101 | IN_DEVELOPMENT | Claude Code |
 | 24 | SPEC-QC-002 | WP-04 | H | 34 | 10 | 106 | 64 | 0 | 63 | IN_DEVELOPMENT | Claude Code |
 | 25 | SPEC-QC-003 | WP-04 | H | 40 | 32 | 106 | 69 | 0 | 19 | IN_DEVELOPMENT | Claude Code |
-| 26 | SPEC-QMS-001 | WP-05 | H | 24 | 13 | 73 | 31 | 0 | 28 | IN_DEVELOPMENT | Claude Code |
+| 26 | SPEC-QMS-001 | WP-05 | H | 24 | 15 | 73 | 33 | 0 | 26 | IN_DEVELOPMENT | Claude Code |
 | 27 | SPEC-QMS-002 | WP-05 | H | 22 | 14 | 61 | 34 | 0 | 19 | IN_DEVELOPMENT | Claude Code |
 | 28 | SPEC-QMS-003 | WP-05 | H | 18 | 3 | 65 | 26 | 0 | 35 | IN_DEVELOPMENT | Claude Code |
 | 29 | SPEC-QMS-004 | WP-05 | H | 24 | 17 | 61 | 33 | 0 | 21 | IN_DEVELOPMENT | Claude Code |
@@ -68,10 +68,10 @@ _Generated 2026-09-11 — do not hand-edit._
 | 40 | SPEC-EQP-003 | WP-06 | H | 28 | 20 | 74 | 39 | 0 | 11 | IN_DEVELOPMENT | Claude Code |
 | 41 | SPEC-EQP-004 | WP-06 | H | 26 | 20 | 70 | 36 | 0 | 16 | IN_DEVELOPMENT | Claude Code |
 | 42 | SPEC-EQP-005 | WP-06 | H | 30 | 23 | 93 | 47 | 0 | 16 | IN_DEVELOPMENT | Claude Code |
-| 43 | SPEC-EDGE-001 | WP-06 | H | 30 | 4 | 115 | 39 | 0 | 64 | IN_DEVELOPMENT | Claude Code |
-| 44 | SPEC-EDGE-002 | WP-06 | H | 25 | 0 | 70 | 0 | 0 | 70 | NOT_STARTED | Claude Code |
-| 45 | SPEC-EDGE-003 | WP-06 | H | 30 | 0 | 66 | 0 | 0 | 66 | NOT_STARTED | Claude Code |
-| 46 | SPEC-EDGE-004 | WP-06 | H | 25 | 0 | 76 | 0 | 0 | 76 | NOT_STARTED | Claude Code |
+| 43 | SPEC-EDGE-001 | WP-06 | H | 30 | 30 | 115 | 77 | 1 | 7 | CODE_COMPLETE | Claude Code |
+| 44 | SPEC-EDGE-002 | WP-06 | H | 25 | 12 | 70 | 20 | 0 | 47 | IN_DEVELOPMENT | Claude Code |
+| 45 | SPEC-EDGE-003 | WP-06 | H | 30 | 29 | 66 | 41 | 0 | 0 | CODE_COMPLETE | Claude Code |
+| 46 | SPEC-EDGE-004 | WP-06 | H | 25 | 3 | 76 | 16 | 0 | 37 | IN_DEVELOPMENT | Claude Code |
 | 47 | SPEC-EDGE-005 | WP-06 | H | 32 | 18 | 91 | 45 | 0 | 25 | IN_DEVELOPMENT | Claude Code |
 | 48 | SPEC-ERP-001 | WP-07 | H | 30 | 29 | 120 | 108 | 0 | 4 | IN_DEVELOPMENT | Claude Code |
 | 49 | SPEC-ERP-002 | WP-07 | H | 24 | 21 | 98 | 71 | 0 | 1 | IN_DEVELOPMENT | Claude Code |
@@ -83,14 +83,14 @@ _Generated 2026-09-11 — do not hand-edit._
 | 55 | SPEC-DDCP-002 | WP-08 | H | 30 | 9 | 67 | 28 | 0 | 0 | IN_DEVELOPMENT | — |
 | 56 | SPEC-DDCP-003 | WP-08 | H | 30 | 8 | 66 | 27 | 0 | 0 | IN_DEVELOPMENT | — |
 | 57 | SPEC-DDCP-004 | WP-08 | H | 30 | 8 | 71 | 28 | 0 | 0 | IN_DEVELOPMENT | — |
-| 58 | SPEC-PM-001 | WP-09 | H | 34 | 6 | 63 | 18 | 0 | 0 | CODE_COMPLETE | Claude Code |
-| 59 | SPEC-PM-002 | WP-09 | H | 32 | 6 | 71 | 24 | 0 | 0 | CODE_COMPLETE | Claude Code |
+| 58 | SPEC-PM-001 | WP-09 | H | 34 | 7 | 63 | 18 | 0 | 0 | CODE_COMPLETE | Claude Code |
+| 59 | SPEC-PM-002 | WP-09 | H | 32 | 8 | 71 | 25 | 0 | 0 | CODE_COMPLETE | Claude Code |
 | 60 | SPEC-PM-003 | WP-09 | H | 32 | 12 | 59 | 27 | 0 | 0 | CODE_COMPLETE | Claude Code |
-| 61 | SPEC-SEC-001 | WP-10 | H | 28 | 4 | 62 | 11 | 0 | 0 | CODE_COMPLETE | Claude Code |
+| 61 | SPEC-SEC-001 | WP-10 | H | 28 | 6 | 62 | 12 | 0 | 0 | CODE_COMPLETE | Claude Code |
 | 62 | SPEC-SEC-002 | WP-10 | H | 26 | 6 | 56 | 15 | 0 | 0 | CODE_COMPLETE | Claude Code |
 | 63 | SPEC-SEC-003 | WP-10 | H | 26 | 5 | 47 | 12 | 0 | 0 | CODE_COMPLETE | Claude Code |
 | 64 | SPEC-SEC-004 | WP-10 | H | 30 | 10 | 47 | 23 | 0 | 0 | CODE_COMPLETE | Claude Code |
-| 65 | SPEC-SEC-005 | WP-10 | H | 28 | 9 | 55 | 25 | 0 | 0 | CODE_COMPLETE | Claude Code |
+| 65 | SPEC-SEC-005 | WP-10 | H | 28 | 10 | 55 | 26 | 0 | 0 | CODE_COMPLETE | Claude Code |
 | 66 | SPEC-SEC-006 | WP-10 | H | 30 | 5 | 54 | 20 | 0 | 0 | CODE_COMPLETE | Claude Code |
 | 67 | SPEC-SEC-007 | WP-10 | H | 30 | 4 | 58 | 17 | 0 | 0 | CODE_COMPLETE | Claude Code |
 | 68 | SPEC-SEC-008 | WP-10 | H | 34 | 7 | 60 | 21 | 0 | 0 | CODE_COMPLETE | Claude Code |
@@ -98,8 +98,8 @@ _Generated 2026-09-11 — do not hand-edit._
 | 70 | SPEC-DATA-002 | WP-11 | H | 34 | 0 | 69 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 | 71 | SPEC-DATA-003 | WP-11 | H | 28 | 0 | 55 | 0 | 0 | 0 | NOT_STARTED | — |
 | 72 | SPEC-DATA-004 | WP-11 | H | 30 | 0 | 62 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
-| 73 | SPEC-DATA-005 | WP-11 | H | 30 | 0 | 63 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
-| 74 | SPEC-DATA-006 | WP-11 | H | 30 | 0 | 69 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 73 | SPEC-DATA-005 | WP-11 | H | 30 | 3 | 63 | 9 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
+| 74 | SPEC-DATA-006 | WP-11 | H | 30 | 0 | 69 | 3 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 | 75 | SPEC-DATA-007 | WP-11 | H | 30 | 0 | 55 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 | 76 | SPEC-DATA-008 | WP-11 | H | 32 | 0 | 53 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
 | 77 | SPEC-DATA-009 | WP-11 | H | 35 | 0 | 127 | 0 | 0 | 0 | IN_DEVELOPMENT | Claude Code |
@@ -154,7 +154,7 @@ _Generated 2026-09-11 — do not hand-edit._
 | SPEC-EQP-003 | SG-109; SG-117 |
 | SPEC-EQP-004 | SG-109; SG-115 |
 | SPEC-EQP-005 | SG-109; SG-116 |
-| SPEC-EDGE-001 | SG-118; SG-119; SG-120 |
+| SPEC-EDGE-001 | SG-118; SG-119; SG-120; SG-187; SG-188 |
 | SPEC-EDGE-005 | SG-127; SG-128; SG-129; SG-130; SG-131 |
 | SPEC-ERP-001 | SG-121; SG-122; SG-123; SG-124; SG-125; SG-126 |
 | SPEC-ERP-002 | SG-121; SG-122; SG-123; SG-124; SG-125; SG-126 |
@@ -167,4 +167,3 @@ _Generated 2026-09-11 — do not hand-edit._
 | SPEC-PM-003 | SG-160 |
 | SPEC-DATA-003 | SG-182 |
 | SPEC-ENG-005 | SG-013 (blocking): 344 of 434 implemented operations are in a surface with no committed contract; 484 event types have no committed schema at all; SG-014: no WP-01 operation declares expected_version, so CTRC-FR-006 and the optimistic-concurrency test cases cannot be executed |
-| SPEC-AI-001 | SG-167: Document 106 has zero SPEC-AI-001 signature policy rows -- 5 signed functions unsatisfiable |

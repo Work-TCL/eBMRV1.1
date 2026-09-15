@@ -24,6 +24,7 @@ from app.modules.iam import models as iam_models  # noqa: F401
 from app.modules.lims_integration import models as lims_integration_models  # noqa: F401
 from app.modules.machine_integration import models as machine_integration_models  # noqa: F401
 from app.modules.material import models as material_models  # noqa: F401
+from app.modules.material_specification import models as material_specification_models  # noqa: F401
 from app.modules.mutation import models as mutation_models  # noqa: F401
 from app.modules.packaging import models as packaging_models  # noqa: F401
 from app.modules.postmarket import models as postmarket_models  # noqa: F401

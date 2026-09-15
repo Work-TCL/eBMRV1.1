@@ -219,7 +219,7 @@ export default function RolesAdminPage() {
                   />
                   <span>
                     <span className="font-semibold">{p.code}</span>
-                    {p.description && <span className="text-muted"> — {p.description}</span>}
+                    {p.description && <span className="text-muted"> - {p.description}</span>}
                   </span>
                 </label>
               ))}

@@ -533,3 +533,27 @@ class DrugCoatingUsageLedger(Base):
     occurred_at: Mapped[datetime] = mapped_column(nullable=False)
     correction_of_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ddcp.drug_coating_usage_ledger.id"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class DdcpStepMapping(Base):
+    """SG-180 (option B, project-owner-directed 2026-09-11): declares which DDCP execution action
+    corresponds to which generic recipe step (`gxp_recipe_step.stable_step_code`) on a given recipe
+    version. Read-only/visibility use this pass -- `_require_step_signature()`'s Document 106 policy for
+    `(batch_step, complete)`/`(batch_step, results)` is `signature_required=True` platform-wide with no
+    per-step exception, so an auto-completion write from this mapping would always need a signature DDCP's
+    own action doesn't collect; that write path was deliberately NOT built (would be permanently inert
+    under the current policy). This table plus the read endpoint that joins it against `BatchStep.state`
+    fixes SG-180's actual root cause -- a demo operator with no way to see the two systems are related --
+    without ever bypassing a signature."""
+
+    __tablename__ = "gxp_ddcp_step_mapping"
+    __table_args__ = (UniqueConstraint("recipe_version_id", "ddcp_action"), {"schema": "ddcp"})
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    recipe_version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ebmr.gxp_recipe_version.id"), nullable=False
+    )
+    ddcp_action: Mapped[str] = mapped_column(String(80), nullable=False)
+    stable_step_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

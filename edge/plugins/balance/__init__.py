@@ -1,0 +1,1 @@
+"""Document 46 (SPEC-EDGE-004) balance/scale peripheral plugin -- PER-FR-007/008/009/020/023/025."""

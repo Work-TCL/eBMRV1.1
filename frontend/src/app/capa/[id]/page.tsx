@@ -332,7 +332,7 @@ function CompleteActionModal({
   const [verifiedBy, setVerifiedBy] = useState(me?.user_id ?? "");
 
   return (
-    <Modal open onClose={onClose} title={`Complete action — ${action.action_type}`}>
+    <Modal open onClose={onClose} title={`Complete action - ${action.action_type}`}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -462,7 +462,7 @@ function TransitionModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={`${LABEL[transition]} — ${capa.capa_number}`} large={transition === "plan"}>
+    <Modal open onClose={onClose} title={`${LABEL[transition]} - ${capa.capa_number}`} large={transition === "plan"}>
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(transition) && (
           <Banner tone="warn" title="This transition requires an electronic signature">

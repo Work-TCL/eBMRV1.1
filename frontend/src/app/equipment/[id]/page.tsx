@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import {
   api,
   ApiError,
@@ -17,6 +17,7 @@ import {
 } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -432,7 +433,6 @@ function ActionModal({
   onDone: () => void;
 }) {
   const [reason, setReason] = useState("");
-  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const entities = useEntityOptions();
@@ -458,32 +458,42 @@ function ActionModal({
   const [nextDueDate, setNextDueDate] = useState("");
   const [verified, setVerified] = useState(false);
 
-  const signatureRequired = action === "hold";
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [meaning, setMeaning] = useState("");
-
-  // Request the challenge when a signing action opens. The challenge is bound to the record's current
-  // version and hash, so it must be fetched here (per ceremony) and not reused — the backend rejects
-  // one whose record changed underneath it.
-  useEffect(() => {
-    if (!signatureRequired) return;
-    let cancelled = false;
-    api
-      .post<{ challenge_id: string; meaning: string }>(`/equipment/v1/${asset.id}/signature-challenges`, {
-        action: "hold",
-      })
-      .then((c) => {
-        if (cancelled) return;
-        setChallengeId(c.challenge_id);
-        setMeaning(c.meaning);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Could not request a signature challenge");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [signatureRequired, asset.id]);
+  if (action === "hold") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`/equipment/v1/${asset.id}/signature-challenges`}
+        action="hold"
+        title={
+          <span className="flex items-center gap-2">
+            <Icon name="pen" /> {ACTION_TITLE.hold} - {asset.equipment_code}
+          </span>
+        }
+        summary="Placing this asset on hold blocks it from being offered for use until returned to service."
+        submitLabel="Sign and place on hold"
+        submitVariant="danger"
+        reason="none"
+        extraFields={
+          <Field label="Hold reason" required hint="Part of the permanent record and shown wherever this asset is offered for use.">
+            <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} required />
+          </Field>
+        }
+        disabled={!reason.trim()}
+        onSign={(p) =>
+          api.post<MutationReceipt>(`/equipment/v1/${asset.id}/hold`, {
+            idempotency_key: p.idempotency_key,
+            asset_id: asset.id,
+            expected_version: asset.version,
+            reason,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+          })
+        }
+      />
+    );
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -525,13 +535,6 @@ function ActionModal({
           verified,
           reason: reason || null,
         });
-      } else if (action === "hold") {
-        await api.post<MutationReceipt>(`/equipment/v1/${asset.id}/hold`, {
-          ...base,
-          reason,
-          challenge_id: challengeId,
-          reauth_password: password,
-        });
       } else {
         await api.post<MutationReceipt>(`/equipment/v1/${asset.id}/return-to-service`, {
           ...base,
@@ -546,19 +549,16 @@ function ActionModal({
     }
   }
 
-  const canSubmit =
-    !busy &&
-    (action !== "hold" || (!!challengeId && !!password && !!reason.trim())) &&
-    (action !== "calibration" || (!!dueDate && !!performedDate));
+  const canSubmit = !busy && (action !== "calibration" || (!!dueDate && !!performedDate));
 
   return (
     <Modal
       open
       onClose={onClose}
-      large={action !== "hold" && action !== "return_to_service"}
+      large={action !== "return_to_service"}
       title={
         <span className="flex items-center gap-2">
-          {signatureRequired && <Icon name="pen" />} {ACTION_TITLE[action]} — {asset.equipment_code}
+          {ACTION_TITLE[action]} - {asset.equipment_code}
         </span>
       }
     >
@@ -674,39 +674,9 @@ function ActionModal({
           </>
         )}
 
-        <Field
-          label={action === "hold" ? "Hold reason" : "Reason"}
-          required={action === "hold"}
-          hint={
-            action === "hold"
-              ? "Part of the permanent record and shown wherever this asset is offered for use."
-              : "Optional. Recorded in the audit trail."
-          }
-        >
+        <Field label="Reason" hint="Optional. Recorded in the audit trail.">
           <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
-
-        {signatureRequired && (
-          <>
-            {meaning && (
-              <p className="fs-3 mb-2">
-                Meaning: <span className="font-semibold">{meaning}</span>
-              </p>
-            )}
-            <div className="sig-hint mb-3">
-              Fresh authentication required — re-enter your password to sign (Part 11 step-up).
-            </div>
-            <Field label="Password" required>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
-            </Field>
-          </>
-        )}
 
         {error && <p className="error-text mb-2">{error}</p>}
 
@@ -714,8 +684,8 @@ function ActionModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant={action === "hold" ? "danger" : "primary"} disabled={!canSubmit}>
-            {busy ? "Saving…" : signatureRequired ? "Sign and place on hold" : "Save"}
+          <Button type="submit" variant="primary" disabled={!canSubmit}>
+            {busy ? "Saving…" : "Save"}
           </Button>
         </div>
       </form>

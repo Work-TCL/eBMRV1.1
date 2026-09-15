@@ -187,6 +187,8 @@ export function FormFieldsGrid({
               subFields={f.subFields ?? []}
               value={(complexValues[f.name] as RepeatRow[]) ?? []}
               onChange={(rows) => setComplexValues((c) => ({ ...c, [f.name]: rows }))}
+              userOptions={entities.users}
+              userOptionsStatus={entities.usersStatus}
             />
           </div>
         ) : f.type === "kv" ? (
@@ -443,7 +445,7 @@ export function FormConsole({
             entities={entities}
           />
         ) : op.method === "GET" ? null : (
-          <Field label="Payload (JSON)" hint="This operation has a nested payload — see the API contract.">
+          <Field label="Payload (JSON)" hint="This operation has a nested payload - see the API contract.">
             <textarea
               className="input"
               rows={10}

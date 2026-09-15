@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { FormConsole } from "@/components/shared/FormConsole";
+import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
 
 // Parameter-less GET dashboards. (Control matrix is per-threat-model — it lives in the threat-model
@@ -35,12 +37,13 @@ export default function SecurityPage() {
       />
 
       <ReadDashboards />
+      <ParameterizedReadsCard />
       <RaiseIncidentCard />
       <RegisterVulnerabilityCard />
       <RequestPrivilegedAccessCard />
 
       <FormConsole
-        title="Threat model & risk operations (Doc 61)"
+      title="Threat model & risk operations"
         root="/security/v1"
         ops={[
           {
@@ -58,17 +61,6 @@ export default function SecurityPage() {
                 hint: "Which security attributes this threat impacts (optional).",
               },
               { name: "reason", label: "Reason" },
-            ],
-          },
-          {
-            path: "risks/{id}/accept",
-            label: "Accept a residual risk",
-            about: "Formally accepts the residual risk on a threat's current risk calculation.",
-            fields: [
-              { name: "id", label: "Risk (threat) ID", required: true },
-              { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
-              { name: "rationale", label: "Rationale", type: "textarea", required: true },
-              { name: "expiry_review_date", label: "Expiry review date", type: "datetime" },
             ],
           },
           {
@@ -142,8 +134,37 @@ export default function SecurityPage() {
         ]}
       />
 
+      <SignedJsonForm
+      title="Threat model & risk operations - signed"
+        subtitle="Residual risk acceptance and security exception approval now require a Part 11 signature."
+        root="/security/v1"
+        ops={[
+          {
+            postPath: "risks/{risk_id}/accept",
+            challengePath: "risks/{risk_id}/accept-signature-challenges",
+            action: "accept_risk",
+            label: "Accept a residual risk",
+            about: "Formally accepts the residual risk on a threat's current risk calculation.",
+            fields: [
+              { name: "risk_id", label: "Risk (threat) ID", required: true },
+              { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+              { name: "rationale", label: "Rationale", type: "textarea", required: true },
+              { name: "expiry_review_date", label: "Expiry review date", type: "datetime" },
+            ],
+          },
+          {
+            postPath: "exceptions/{exception_id}/approve",
+            challengePath: "exceptions/{exception_id}/approval-signature-challenges",
+            action: "approve",
+            label: "Approve a security exception",
+            about: "The approver must be independent of whoever requested the exception.",
+            fields: [{ name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" }],
+          },
+        ]}
+      />
+
       <FormConsole
-        title="Identity & session operations (Doc 62)"
+      title="Identity & session operations"
         root="/security/v1"
         ops={[
           {
@@ -158,7 +179,7 @@ export default function SecurityPage() {
             path: "sessions:revoke-all",
             label: "Revoke all sessions for a subject",
             fields: [
-              { name: "subject_id", label: "Subject ID", required: true },
+              { name: "subject_id", label: "Subject", type: "userSelect", required: true },
               { name: "reason", label: "Reason", type: "textarea", required: true },
             ],
           },
@@ -252,7 +273,7 @@ export default function SecurityPage() {
           {
             path: "break-glass",
             label: "Break-glass access",
-            about: "Emergency access outside the normal approval flow — used only when the incident requires it.",
+            about: "Emergency access outside the normal approval flow - used only when the incident requires it.",
             fields: [
               { name: "requested_role", label: "Requested role", required: true },
               { name: "incident_ref", label: "Incident reference", required: true },
@@ -501,6 +522,68 @@ function ReadDashboards() {
   );
 }
 
+function ParameterizedReadsCard() {
+  const [threatModelVersionId, setThreatModelVersionId] = useState("");
+  const [deploymentProfile, setDeploymentProfile] = useState("");
+  const [releaseId, setReleaseId] = useState("");
+  const [result, setResult] = useState<{ label: string; data: unknown } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function run(label: string, path: string) {
+    setBusy(true);
+    setResult(null);
+    try {
+      setResult({ label, data: await api.get<unknown>(path) });
+    } catch (err) {
+      setResult({ label, data: { error: err instanceof Error ? err.message : String(err) } });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="Control matrix & release security evidence" />
+      <div className="grid grid-cols-3 gap-4 mb-3">
+        <Field label="Threat model version ID">
+          <Input value={threatModelVersionId} onChange={(e) => setThreatModelVersionId(e.target.value)} />
+        </Field>
+        <Field label="Deployment profile" hint="Optional.">
+          <Input value={deploymentProfile} onChange={(e) => setDeploymentProfile(e.target.value)} />
+        </Field>
+        <Field label="Release ID">
+          <Input value={releaseId} onChange={(e) => setReleaseId(e.target.value)} />
+        </Field>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="secondary"
+          disabled={busy || !threatModelVersionId.trim()}
+          onClick={() => {
+            const q = new URLSearchParams({ threat_model_version_id: threatModelVersionId.trim() });
+            if (deploymentProfile.trim()) q.set("deployment_profile", deploymentProfile.trim());
+            run("Control matrix", `/security/v1/control-matrix?${q.toString()}`);
+          }}
+        >
+          <Icon name="search" /> Generate control matrix
+        </Button>
+        <Button
+          variant="secondary"
+          disabled={busy || !releaseId.trim()}
+          onClick={() => run("Release security evidence", `/security/v1/releases/${encodeURIComponent(releaseId.trim())}/security-evidence`)}
+        >
+          <Icon name="search" /> Release security evidence
+        </Button>
+      </div>
+      {result && (
+        <div className="mt-3">
+          <JsonPanel title={result.label} value={result.data} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function RaiseIncidentCard() {
   const [title, setTitle] = useState("");
   const [severity, setSeverity] = useState("high");
@@ -521,7 +604,7 @@ function RaiseIncidentCard() {
         detected_at: detectedAt ? new Date(detectedAt).toISOString() : new Date().toISOString(),
         reason: reason.trim(),
       });
-      setMsg(`Incident opened — ${r.aggregate_id}`);
+      setMsg(`Incident opened - ${r.aggregate_id}`);
     } catch (err) {
       setMsg(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed");
     } finally {
@@ -531,7 +614,7 @@ function RaiseIncidentCard() {
 
   return (
     <Card pad className="mb-4">
-      <CardHeader title="Raise a security incident (Doc 67)" />
+    <CardHeader title="Raise a security incident" />
       <form onSubmit={submit} className="grid grid-cols-2 gap-4 mt-3">
         <Field label="Title" required>
           <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
@@ -577,7 +660,7 @@ function RegisterVulnerabilityCard() {
         component: { name: componentName.trim(), version: componentVersion.trim() },
         reason: reason.trim(),
       });
-      setMsg(`Registered — ${r.aggregate_id}`);
+      setMsg(`Registered - ${r.aggregate_id}`);
     } catch (err) {
       setMsg(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed");
     } finally {
@@ -587,7 +670,7 @@ function RegisterVulnerabilityCard() {
 
   return (
     <Card pad className="mb-4">
-      <CardHeader title="Register a vulnerability (Doc 68)" />
+    <CardHeader title="Register a vulnerability" />
       <form onSubmit={submit} className="grid grid-cols-2 gap-4 mt-3">
         <Field label="Vulnerability ID" required hint="e.g. CVE-2026-xxxxx">
           <Input value={vulnId} onChange={(e) => setVulnId(e.target.value)} required />
@@ -639,7 +722,7 @@ function RequestPrivilegedAccessCard() {
         requested_end: end ? new Date(end).toISOString() : new Date(Date.now() + 3600_000).toISOString(),
         ticket_ref: ticketRef.trim() || null,
       });
-      setMsg(`Request created — ${r.aggregate_id}. Approve it via the privileged-access operations console.`);
+      setMsg(`Request created - ${r.aggregate_id}. Approve it via the privileged-access operations console.`);
     } catch (err) {
       setMsg(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed");
     } finally {
@@ -649,7 +732,7 @@ function RequestPrivilegedAccessCard() {
 
   return (
     <Card pad className="mb-4">
-      <CardHeader title="Request privileged access (Doc 63)" />
+    <CardHeader title="Request privileged access" />
       <form onSubmit={submit} className="grid grid-cols-2 gap-4 mt-3">
         <Field label="Requested role" required>
           <Input value={requestedRole} onChange={(e) => setRequestedRole(e.target.value)} required />

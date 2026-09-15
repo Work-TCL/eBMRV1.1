@@ -20,12 +20,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.batch_execution import service as batch_execution_service
-from app.modules.batch_execution.models import ALLOWED_TRANSITIONS, Batch, BatchStep, StepHold, StepResult
-from app.modules.iam.models import User
+from app.modules.batch_execution.models import (
+    ALLOWED_TRANSITIONS,
+    Batch,
+    BatchStep,
+    StepComment,
+    StepEvidenceLink,
+    StepHandover,
+    StepHold,
+    StepResult,
+    StepResultCorrection,
+)
+from app.modules.iam.models import Qualification, User
 from app.modules.policy.service import effective_role_names, evaluate_policy
 from app.modules.product_master.models import ProductVersion
 from app.modules.recipe_master import service as recipe_master_service
-from app.modules.recipe_master.models import RecipeParameter
+from app.modules.recipe_master.models import RecipeEvidenceRequirement, RecipeParameter
 from app.modules.rules import service as rules_service
 from app.modules.signature import service as signature_service
 from app.modules.vault import service as vault_service
@@ -35,6 +45,8 @@ from app.mutation.errors import (
     NotFoundError,
     ParameterRequiredError,
     ProductionNotCompleteError,
+    QualificationExpiredError,
+    QualificationMissingError,
     RoleMissingError,
     StaleVersionError,
     StepRoleMismatchError,
@@ -254,6 +266,8 @@ async def issue_batch(session: AsyncSession, cmd: IssueBatchCommand, actor_user_
                     # SG-178: freeze the recipe-declared performer role into the snapshot so step-start
                     # enforcement compares against the released recipe, not a later-mutated one.
                     "required_role_code": s.required_role_code,
+                    # BAT-FR-014, SG-048 #014: same freeze-at-issue treatment for qualification.
+                    "required_qualification_code": s.required_qualification_code,
                 }
                 for s in steps
             ],
@@ -271,6 +285,7 @@ async def issue_batch(session: AsyncSession, cmd: IssueBatchCommand, actor_user_
                 batch_id=batch.id,
                 recipe_step_code=s.stable_step_code,
                 required_role_code=s.required_role_code,
+                required_qualification_code=s.required_qualification_code,
                 state=initial_states[s.stable_step_code],
             )
         )
@@ -459,6 +474,35 @@ async def _enforce_step_role(
     return True
 
 
+async def _enforce_step_qualification(session: AsyncSession, *, step: BatchStep, actor_user_id: uuid.UUID) -> None:
+    """BAT-FR-014, SG-048 #014 partial resolution. "Unqualified action blocked" -- unlike role, BAT-FR-014
+    names no override path, so this fails closed with no override, checked at both start (performer) and
+    complete (BAT-FR-014 also names "verifier", but no second-signer step type exists yet -- SG-048 #017 --
+    so this pass applies the same performer check at both actions rather than guessing a verifier shape).
+    Reuses `iam.qualifications` + the exact `material/commands.py::_check_dispensing_qualification`
+    pattern (SG-086: two competing qualification stores exist, this picks the one with an already-reviewed
+    production precedent and dedicated named error codes)."""
+    required_code = step.required_qualification_code
+    if not required_code:
+        return
+    now = datetime.now(timezone.utc)
+    result = await session.execute(
+        select(Qualification)
+        .where(Qualification.user_id == actor_user_id, Qualification.qualification_code == required_code)
+        .order_by(Qualification.granted_at.desc())
+        .limit(1)
+    )
+    qualification = result.scalar_one_or_none()
+    if qualification is None:
+        raise QualificationMissingError(
+            "Actor has no record of the qualification this step requires", qualification_code=required_code
+        )
+    if qualification.expires_at is not None and qualification.expires_at.replace(tzinfo=timezone.utc) < now:
+        raise QualificationExpiredError(
+            "Actor's qualification for this step has expired", qualification_code=required_code
+        )
+
+
 async def start_step(session: AsyncSession, cmd: StartStepCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
     payload_hash = sha256_hex(cmd.model_dump(mode="json"))
     existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
@@ -476,6 +520,7 @@ async def start_step(session: AsyncSession, cmd: StartStepCommand, actor_user_id
     role_override = await _enforce_step_role(
         session, step=step, batch=batch, actor_user_id=actor_user_id, override_reason=cmd.override_reason
     )
+    await _enforce_step_qualification(session, step=step, actor_user_id=actor_user_id)
 
     step.state = "in_progress"
     step.assigned_subject_id = actor_user_id
@@ -595,6 +640,41 @@ async def _recipe_parameters_for_step(session: AsyncSession, batch: Batch, step:
     return [p for p in graph["parameters"] if p.step_id == recipe_step_id]
 
 
+async def _recipe_evidence_requirements_for_step(
+    session: AsyncSession, batch: Batch, step: BatchStep
+) -> list[RecipeEvidenceRequirement]:
+    """BAT-FR-015 evidence half (SG-048 #015 partial resolution). Same lookup shape as
+    `_recipe_parameters_for_step`, against the recipe's declared `gxp_recipe_evidence_requirement` rows
+    instead of its parameters."""
+    graph = await recipe_master_service.get_graph(session, batch.recipe_version_id)
+    code_by_step_id = {s.id: s.stable_step_code for s in graph["steps"]}
+    step_id_by_code = {code: sid for sid, code in code_by_step_id.items()}
+    recipe_step_id = step_id_by_code.get(step.recipe_step_code)
+    return [e for e in graph["evidence"] if e.step_id == recipe_step_id]
+
+
+
+# BAT-FR-011, SG-048 #011 partial resolution: a human may tag a result 'device_transcribed' -- they read
+# it off a device/instrument and are keying it in, distinct from their own direct observation ('manual').
+# Both are still human-entered; true automated device/edge ingestion (registered source identity,
+# sequence/idempotency, mapping version) is not built and stays SG-048 #011 open.
+ALLOWED_RESULT_SOURCE_TYPES = ("manual", "device_transcribed")
+
+
+def _step_result_quality_status(parameter: RecipeParameter, value_numeric: Decimal | None) -> str | None:
+    """BAT-FR-009, SG-048 #009 partial resolution: informational only, never blocks the command (see
+    StepResult.quality_status's own docstring for why)."""
+    if parameter.min_value is None and parameter.max_value is None:
+        return None
+    if value_numeric is None:
+        return "not_evaluated"
+    if parameter.min_value is not None and value_numeric < parameter.min_value:
+        return "out_of_range"
+    if parameter.max_value is not None and value_numeric > parameter.max_value:
+        return "out_of_range"
+    return "in_range"
+
+
 class StepResultInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -603,6 +683,7 @@ class StepResultInput(BaseModel):
     value_text: str | None = None
     value_bool: bool | None = None
     uom: str | None = None
+    source_type: str = "manual"
     source_timestamp: datetime | None = None
 
 
@@ -636,6 +717,10 @@ async def record_step_results(
     for item in cmd.results:
         if item.parameter_code not in parameters_by_code:
             raise ValidationFailedError("Unknown parameter for this step", parameter_code=item.parameter_code)
+        if item.source_type not in ALLOWED_RESULT_SOURCE_TYPES:
+            raise ValidationFailedError(
+                "Unknown source_type", source_type=item.source_type, allowed=list(ALLOWED_RESULT_SOURCE_TYPES)
+            )
 
     signature_id = await _require_step_signature(
         session, step=step, action="results", challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
@@ -653,6 +738,8 @@ async def record_step_results(
             value_text=item.value_text,
             value_bool=item.value_bool,
             uom=item.uom or parameter.uom,
+            source_type=item.source_type,
+            quality_status=_step_result_quality_status(parameter, item.value_numeric),
             source_timestamp=item.source_timestamp,
             created_by=actor_user_id,
             signature_id=signature_id,
@@ -711,6 +798,107 @@ async def record_step_results(
     )
 
 
+class EvidenceLinkInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: uuid.UUID
+    evidence_version: int = 1
+    evidence_sha256: str
+    media_type: str | None = None
+    requirement_code: str | None = None
+
+
+class LinkStepEvidenceCommand(CommandEnvelope):
+    batch_id: uuid.UUID
+    step_id: uuid.UUID
+    expected_version: int
+    links: list[EvidenceLinkInput]
+
+
+async def link_step_evidence(
+    session: AsyncSession, cmd: LinkStepEvidenceCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    """SG-047 (`gxp_step_evidence_link` half). Unsigned by design -- Document 106 has no policy row for
+    an "evidence link" action on `batch_step` (attaching evidence is a capture, not a release/disposition
+    decision the way `complete`/`results` are); RBAC + audit is the same authorization level
+    `evidence.upload` already uses elsewhere in this codebase."""
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    batch = await batch_execution_service.get_batch(session, cmd.batch_id)
+    step = await _load_step_for_update(session, cmd.batch_id, cmd.step_id, cmd.expected_version)
+    if step.state != "in_progress":
+        raise InvalidTransitionError(
+            "Evidence can only be linked against a step that is in progress", current_state=step.state
+        )
+    if not cmd.links:
+        raise ValidationFailedError("At least one evidence link is required")
+
+    linked: list[StepEvidenceLink] = []
+    for item in cmd.links:
+        link = StepEvidenceLink(
+            step_id=step.id,
+            evidence_id=item.evidence_id,
+            evidence_version=item.evidence_version,
+            evidence_sha256=item.evidence_sha256,
+            media_type=item.media_type,
+            requirement_code=item.requirement_code,
+            linked_by=actor_user_id,
+        )
+        session.add(link)
+        linked.append(link)
+
+    # Same reasoning as record_step_results: bump the aggregate version even though `state` itself
+    # doesn't change, so a concurrent write conflicts cleanly (MUT-FR-009).
+    step.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=batch.site_id,
+        aggregate_type="batch_step",
+        aggregate_id=step.id,
+        aggregate_version=step.version,
+        action="Changed",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        new_value={"evidence_linked": [str(link.evidence_id) for link in linked]},
+    )
+    await write_outbox_event(
+        session,
+        event_type="StepEvidenceLinked",
+        aggregate_type="batch_step",
+        aggregate_id=step.id,
+        aggregate_version=step.version,
+        payload={
+            "id": str(step.id),
+            "batch_id": str(batch.id),
+            "recipe_step_code": step.recipe_step_code,
+            "evidence_ids": [str(link.evidence_id) for link in linked],
+        },
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=batch.site_id,
+        command_type="LinkStepEvidence",
+        aggregate_type="batch_step",
+        aggregate_id=step.id,
+        expected_version=cmd.expected_version,
+        resulting_version=step.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=step.id, resulting_version=step.version, audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
+    )
+
+
 class CompleteStepCommand(CommandEnvelope):
     batch_id: uuid.UUID
     step_id: uuid.UUID
@@ -741,6 +929,7 @@ async def complete_step(session: AsyncSession, cmd: CompleteStepCommand, actor_u
     role_override = await _enforce_step_role(
         session, step=step, batch=batch, actor_user_id=actor_user_id, override_reason=cmd.override_reason
     )
+    await _enforce_step_qualification(session, step=step, actor_user_id=actor_user_id)
 
     # BAT-FR-015: every required RecipeParameter for this step must already have a recorded result.
     parameters = await _recipe_parameters_for_step(session, batch, step)
@@ -750,6 +939,28 @@ async def complete_step(session: AsyncSession, cmd: CompleteStepCommand, actor_u
         missing = sorted(required_codes - recorded_codes)
         if missing:
             raise ParameterRequiredError("Required parameters have no recorded result", missing_parameter_codes=missing)
+
+    # BAT-FR-015 evidence half (SG-048 #015 partial resolution, 2026-09-14): every RecipeEvidenceRequirement
+    # declared for this step needs at least `required_count` StepEvidenceLink rows tagged with the
+    # matching `requirement_code` (== the recipe's own `evidence_type` -- the same parameter_code<->
+    # parameter_code naming symmetry the results check above already uses). Document 11 Section 7's own
+    # named error vocabulary has no dedicated code for evidence-completeness (only PARAMETER_REQUIRED) --
+    # this reuses the generic ValidationFailedError, the same class link_step_evidence already uses for
+    # the sibling "at least one link is required" check, rather than inventing a new named error code.
+    evidence_requirements = await _recipe_evidence_requirements_for_step(session, batch, step)
+    if evidence_requirements:
+        links = await batch_execution_service.get_step_evidence_links(session, step.id)
+        linked_counts: dict[str, int] = {}
+        for link in links:
+            if link.requirement_code:
+                linked_counts[link.requirement_code] = linked_counts.get(link.requirement_code, 0) + 1
+        missing_evidence = sorted(
+            req.evidence_type
+            for req in evidence_requirements
+            if linked_counts.get(req.evidence_type, 0) < req.required_count
+        )
+        if missing_evidence:
+            raise ValidationFailedError("Required evidence has not been linked", missing_evidence_types=missing_evidence)
 
     signature_id = await _require_step_signature(
         session, step=step, action="complete", challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
@@ -1115,3 +1326,418 @@ async def production_complete_batch(
 
 def _batch_record_hash(batch: Batch) -> str:
     return sha256_hex({"id": str(batch.id), "version": batch.version})
+
+
+# ---------------------------------------------------------------------------
+# RequestStepResultCorrection / ApproveStepResultCorrection -- BAT-FR-023, SG-048 #023 partial resolution
+# (2026-09-14): POST /batches/{id}/steps/{stepId}/correct. 2-step, 2-signature per Document 106 row 20
+# ("Authorized corrector + independent approver", corrector and approver MUST differ, mandatory reason).
+# Deliberately mirrors qc.commands.request_result_correction/approve_result_correction (Document 106 row
+# 57's identical shape) rather than inventing a new correction-ceremony pattern: a staging
+# `StepResultCorrection` row holds the request between the two signed steps; approval appends a new
+# `StepResult` row (`supersedes_result_id` set, `result_version` incremented) rather than editing the
+# original -- AG-08. Scope kept to the literal requirement text ("Completed step data correction"): only a
+# step already in state "complete" can have one of its results corrected.
+# ---------------------------------------------------------------------------
+
+
+def _step_result_hash(result: StepResult) -> str:
+    return sha256_hex(
+        {
+            "id": str(result.id),
+            "result_version": result.result_version,
+            "value_numeric": str(result.value_numeric) if result.value_numeric is not None else None,
+            "value_text": result.value_text,
+            "value_bool": result.value_bool,
+        }
+    )
+
+
+async def _require_step_result_signature(
+    session: AsyncSession,
+    *,
+    result: StepResult,
+    challenge_id: uuid.UUID | None,
+    reauth_password: str | None,
+    actor_user_id: uuid.UUID,
+) -> uuid.UUID | None:
+    """Document 106 row 20 (`batch_step_result`/`correct`): bound to the *original result's* own
+    version/hash (never mutated across the request/approve pair, same precedent as
+    qc.commands._record_hash(original, ..., version_field="result_version")), not the owning BatchStep's
+    version -- the two are independent aggregates."""
+    policy = await signature_service.resolve_signature_requirement(session, record_type="batch_step_result", action="correct")
+    if not policy.signature_required:
+        return None
+    if challenge_id is None or not reauth_password:
+        raise MissingSignatureError("This action requires a signature", required_meaning=policy.meaning)
+    actor = await session.get(User, actor_user_id)
+    if actor is None or not verify_password(reauth_password, actor.password_hash):
+        raise MissingSignatureError("Fresh step-up authentication failed")
+    challenge = await signature_service.consume_challenge(
+        session,
+        challenge_id=challenge_id,
+        user_id=actor_user_id,
+        record_version=result.result_version,
+        record_hash=_step_result_hash(result),
+    )
+    signature = await signature_service.sign(session, challenge=challenge, auth_context={"method": "password_reauth"})
+    return signature.id
+
+
+class RequestStepResultCorrectionCommand(CommandEnvelope):
+    batch_id: uuid.UUID
+    step_id: uuid.UUID
+    result_id: uuid.UUID
+    reason_text: str
+    corrected_value_numeric: Decimal | None = None
+    corrected_value_text: str | None = None
+    corrected_value_bool: bool | None = None
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+async def request_step_result_correction(
+    session: AsyncSession, cmd: RequestStepResultCorrectionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.reason_text:
+        raise ValidationFailedError("reason_text is required for a step result correction")
+
+    batch = await batch_execution_service.get_batch(session, cmd.batch_id)
+    step = await batch_execution_service.get_step(session, cmd.batch_id, cmd.step_id)
+    if step.state != "complete":
+        raise InvalidTransitionError(
+            "Only a result on a completed step can be corrected", current_state=step.state
+        )
+
+    original = await session.get(StepResult, cmd.result_id)
+    if original is None or original.step_id != step.id:
+        raise NotFoundError("Step result not found")
+
+    await evaluate_policy(session, actor_user_id, action="batch_step.correct", site_id=batch.site_id)
+
+    signature_id = await _require_step_result_signature(
+        session, result=original, challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+        actor_user_id=actor_user_id,
+    )
+
+    correction = StepResultCorrection(
+        original_result_id=original.id,
+        reason_text=cmd.reason_text,
+        corrected_value_numeric=cmd.corrected_value_numeric,
+        corrected_value_text=cmd.corrected_value_text,
+        corrected_value_bool=cmd.corrected_value_bool,
+        status="requested",
+        requested_by_user_id=actor_user_id,
+        requested_signature_id=signature_id,
+    )
+    session.add(correction)
+    await session.flush()
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=batch.site_id,
+        aggregate_type="step_result_correction",
+        aggregate_id=correction.id,
+        aggregate_version=1,
+        action="Created",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        reason=cmd.reason_text,
+        new_value={"original_result_id": str(original.id)},
+        signature_id=signature_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=batch.site_id,
+        command_type="RequestStepResultCorrection",
+        aggregate_type="step_result_correction",
+        aggregate_id=correction.id,
+        expected_version=None,
+        resulting_version=1,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=correction.id, resulting_version=1, audit_event_id=audit_event.id,
+        signature_id=signature_id, correlation_id=correlation_id,
+    )
+
+
+class ApproveStepResultCorrectionCommand(CommandEnvelope):
+    correction_id: uuid.UUID
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+async def approve_step_result_correction(
+    session: AsyncSession, cmd: ApproveStepResultCorrectionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    correction = await session.get(StepResultCorrection, cmd.correction_id)
+    if correction is None:
+        raise NotFoundError("Correction not found")
+    if correction.status != "requested":
+        raise InvalidTransitionError("Correction is not awaiting approval", current_status=correction.status)
+    if actor_user_id == correction.requested_by_user_id:
+        raise InvalidTransitionError("Approver must be independent of the corrector for this correction (SoD)")
+
+    original = await session.get(StepResult, correction.original_result_id)
+    step = await session.get(BatchStep, original.step_id)
+    batch = await batch_execution_service.get_batch(session, step.batch_id)
+
+    await evaluate_policy(session, actor_user_id, action="batch_step.correct", site_id=batch.site_id)
+
+    signature_id = await _require_step_result_signature(
+        session, result=original, challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+        actor_user_id=actor_user_id,
+    )
+
+    corrected_value_numeric = (
+        correction.corrected_value_numeric if correction.corrected_value_numeric is not None else original.value_numeric
+    )
+    # BAT-FR-009, SG-048 #009: recompute quality_status for the corrected value, not the superseded one --
+    # a correction that fixes an out-of-range reading should not keep carrying the old flag.
+    parameters_by_code = {p.parameter_code: p for p in await _recipe_parameters_for_step(session, batch, step)}
+    parameter = parameters_by_code.get(original.parameter_code)
+    new_result = StepResult(
+        step_id=original.step_id,
+        parameter_code=original.parameter_code,
+        data_type=original.data_type,
+        result_version=original.result_version + 1,
+        value_numeric=corrected_value_numeric,
+        value_text=correction.corrected_value_text if correction.corrected_value_text is not None else original.value_text,
+        value_bool=correction.corrected_value_bool if correction.corrected_value_bool is not None else original.value_bool,
+        uom=original.uom,
+        source_type=original.source_type,
+        quality_status=_step_result_quality_status(parameter, corrected_value_numeric) if parameter else None,
+        source_timestamp=original.source_timestamp,
+        created_by=actor_user_id,
+        signature_id=signature_id,
+        supersedes_result_id=original.id,
+    )
+    session.add(new_result)
+    await session.flush()
+
+    correction.status = "completed"
+    correction.approved_by_user_id = actor_user_id
+    correction.approved_signature_id = signature_id
+    correction.resulting_result_id = new_result.id
+    correction.completed_at = datetime.now(timezone.utc)
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=batch.site_id,
+        aggregate_type="step_result_correction",
+        aggregate_id=correction.id,
+        aggregate_version=2,
+        action="Approved",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        new_value={"resulting_result_id": str(new_result.id)},
+        signature_id=signature_id,
+    )
+    await write_outbox_event(
+        session,
+        event_type="StepResultCorrected",
+        aggregate_type="batch_step_result",
+        aggregate_id=new_result.id,
+        aggregate_version=1,
+        payload={"id": str(new_result.id), "step_id": str(step.id), "supersedes": str(original.id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=batch.site_id,
+        command_type="ApproveStepResultCorrection",
+        aggregate_type="step_result_correction",
+        aggregate_id=correction.id,
+        expected_version=None,
+        resulting_version=2,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=new_result.id, resulting_version=1, audit_event_id=audit_event.id,
+        signature_id=signature_id, correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# AddStepComment -- BAT-FR-034, SG-048 #034 partial resolution (2026-09-14): POST
+# /batches/{id}/steps/{stepId}/comments. Unsigned by design -- Document 106 has no policy row for a
+# comment action (a capture, not a release/disposition decision), same precedent as link_step_evidence.
+# ---------------------------------------------------------------------------
+
+
+class AddStepCommentCommand(CommandEnvelope):
+    batch_id: uuid.UUID
+    step_id: uuid.UUID
+    expected_version: int
+    comment_text: str
+
+
+async def add_step_comment(session: AsyncSession, cmd: AddStepCommentCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.comment_text or not cmd.comment_text.strip():
+        raise ValidationFailedError("comment_text is required")
+
+    batch = await batch_execution_service.get_batch(session, cmd.batch_id)
+    step = await _load_step_for_update(session, cmd.batch_id, cmd.step_id, cmd.expected_version)
+
+    comment = StepComment(step_id=step.id, comment_text=cmd.comment_text, created_by=actor_user_id)
+    session.add(comment)
+
+    # Same reasoning as link_step_evidence: bump the aggregate version even though `state` itself doesn't
+    # change, so a concurrent write conflicts cleanly (MUT-FR-009).
+    step.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=batch.site_id,
+        aggregate_type="batch_step",
+        aggregate_id=step.id,
+        aggregate_version=step.version,
+        action="Changed",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        new_value={"comment_added": cmd.comment_text},
+    )
+    await write_outbox_event(
+        session,
+        event_type="StepCommentAdded",
+        aggregate_type="batch_step",
+        aggregate_id=step.id,
+        aggregate_version=step.version,
+        payload={"id": str(step.id), "batch_id": str(batch.id), "recipe_step_code": step.recipe_step_code},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=batch.site_id,
+        command_type="AddStepComment",
+        aggregate_type="batch_step",
+        aggregate_id=step.id,
+        expected_version=cmd.expected_version,
+        resulting_version=step.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=step.id, resulting_version=step.version, audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# HandoverStep -- BAT-FR-025, SG-048 #025 partial resolution (2026-09-14, project-owner-directed: build
+# unsigned/RBAC-gated interim scope). POST /batches/{id}/steps/{stepId}/handover. Unsigned -- no Document
+# 106 policy row exists for this action; a real signature-policy decision for it is a human call this pass
+# does not make (tracked in SG-048's own resolution note).
+# ---------------------------------------------------------------------------
+
+
+class HandoverStepCommand(CommandEnvelope):
+    batch_id: uuid.UUID
+    step_id: uuid.UUID
+    expected_version: int
+    to_user_id: uuid.UUID
+    reason: str | None = None
+
+
+async def handover_step(session: AsyncSession, cmd: HandoverStepCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    batch = await batch_execution_service.get_batch(session, cmd.batch_id)
+    step = await _load_step_for_update(session, cmd.batch_id, cmd.step_id, cmd.expected_version)
+    if step.state != "in_progress":
+        raise InvalidTransitionError(
+            "Only an in-progress step's working assignment can be handed over", current_state=step.state
+        )
+
+    to_user = await session.get(User, cmd.to_user_id)
+    if to_user is None:
+        raise NotFoundError("to_user_id does not reference a known user")
+
+    from_subject_id = step.assigned_subject_id
+    handover = StepHandover(
+        step_id=step.id,
+        from_subject_id=from_subject_id,
+        to_subject_id=cmd.to_user_id,
+        reason=cmd.reason,
+        handed_over_by=actor_user_id,
+    )
+    session.add(handover)
+
+    # "without changing prior attribution": step.started_at and the original StepStarted audit event are
+    # untouched -- only the current working assignment moves forward, with its own full history here.
+    step.assigned_subject_id = cmd.to_user_id
+    step.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=batch.site_id,
+        aggregate_type="batch_step",
+        aggregate_id=step.id,
+        aggregate_version=step.version,
+        action="Changed",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        reason=cmd.reason,
+        old_value={"assigned_subject_id": str(from_subject_id) if from_subject_id else None},
+        new_value={"assigned_subject_id": str(cmd.to_user_id)},
+    )
+    await write_outbox_event(
+        session,
+        event_type="StepHandedOver",
+        aggregate_type="batch_step",
+        aggregate_id=step.id,
+        aggregate_version=step.version,
+        payload={
+            "id": str(step.id), "batch_id": str(batch.id), "recipe_step_code": step.recipe_step_code,
+            "from_subject_id": str(from_subject_id) if from_subject_id else None, "to_subject_id": str(cmd.to_user_id),
+        },
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=batch.site_id,
+        command_type="HandoverStep",
+        aggregate_type="batch_step",
+        aggregate_id=step.id,
+        expected_version=cmd.expected_version,
+        resulting_version=step.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=step.id, resulting_version=step.version, audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
+    )

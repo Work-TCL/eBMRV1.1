@@ -2494,8 +2494,24 @@ options:
   - (B) Guess a generic key-value policy blob now (rejected — the risk above).
 blocking: false
 owner: Data Architect + Recipe module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "2026-09-11, project-owner-directed (Phase 4 / wp16-phase4-wp02-recipe-batch-sync,
+  asked directly which option to take for both this gap and its SG-057 dependency; chose to pull SG-057
+  into scope too rather than stub/defer the material half). Both entities built taking option (A), with
+  every field either reusing an already-approved existing shape (never inventing new regulated content)
+  or captured-unenforced per the same precedent gxp_recipe_step.required_role_code/equipment_class_id
+  already use: recipe_material_requirement's target_value/min_value/max_value/uom/uom_id mirror
+  gxp_recipe_parameter's own tolerance columns exactly (migration 4c2d52d2b8a2);
+  alternative_material_spec_version_id/substitution_allowed/consume_mode are captured, unenforced.
+  recipe_equipment_requirement's equipment_class is captured (no class-master entity exists, same as
+  EquipmentAsset.equipment_class_id); require_current_calibration/require_current_qualification are
+  declared for a future BAT-FR-012/013 batch_execution wiring (SG-048 #012/#013, still deferred), not
+  enforced by this migration; require_current_cleaning is captured with no status field to check against
+  yet. material_spec_version_id resolves against the new SG-057 entity (migration d2d738c7f191). Both
+  tables wired into recipe_master's create_draft/update_draft _replace_graph() (app/modules/recipe_master/
+  commands.py) and exposed on GET /recipes/v2/versions/{id}. Verified: tests/test_recipe_master.py
+  (21/21 passed, 4 new), tests/test_material_specification.py (7/7 passed, new file)."
+status: PARTIALLY RESOLVED (schema + recipe-draft authoring built; BAT-FR-012/013 runtime enforcement at
+  batch step start deliberately not attempted — separate build, now unblocked)
 ```
 
 ### SG-046 — 16 Document 10 requirements depend on modules/infrastructure that don't exist yet
@@ -2630,8 +2646,19 @@ options:
 blocking: false
 owner: Data Architect + Batch Execution module owner
 resolution_document: "2026-09-09, project-owner-directed (asked directly after a live demo batch got permanently stuck: every step past the recipe's root step stayed 'pending' forever because nothing could ever complete a step -- chose 'build step completion now' over 'leave it documented'). gxp_step_result built (migration db47f27cf18b_0092/services/gxp-api/app/modules/batch_execution/models.py::StepResult): the polymorphic-value question SG-047 flagged is resolved by reusing gxp_recipe_parameter's own already-DDL-ready data_type/uom/Numeric(24,8) precision as the discriminator, not by inventing a new Document 110 policy. New commands record_step_results/complete_step (commands.py) + POST /batches/v1/{id}/steps/{id}/results, /complete, /signature-challenges (router.py); both signed per Document 106 rows 19/21 (new SIGNATURE_POLICY_FLOOR rows batch_step/results, batch_step/complete -- scripts/seed.py, scripts/sync_signature_policies.py, tests/conftest.py); BAT-FR-006's readiness computation gained a runtime half (service.py::recompute_readiness) so a 'pending' successor becomes 'ready' once every declared predecessor is 'complete'. gxp_step_evidence_link and gxp_batch_hold are NOT built -- evidence-manifest alignment with Document 06 and a hold record's signature-policy binding are separate judgment calls this change does not make; SG-047 stays open for those two only. Verified: tests/test_batch_execution.py (21/21 passed, including 3 new tests) plus test_batch_flow.py/test_release.py/test_qa_review.py as an untouched-module control (34/34 passed). FURTHER PARTIAL RESOLUTION, same day, project-owner-directed (asked which of six remaining demo gaps to build; chose step-level hold + Production Complete + deferred material/equipment linkage): a narrow, step-scoped slice of gxp_batch_hold is now built -- StepHold (migration a6d525b2d585_0093), one row per hold episode (released_at IS NULL = active), both hold and resume signed reusing Document 106 row 14/17's shapes (new SIGNATURE_POLICY_FLOOR rows batch_step/hold, batch_step/resume) via new commands hold_step/resume_step + POST .../steps/{id}/hold, /resume. This resolves BAT-FR-020's step scope only -- gxp_batch_hold's full generality (arbitrary scope, quality-event linkage) and gxp_step_evidence_link both remain open. Verified: tests/test_batch_execution.py now 25/25 (2 more new tests) plus the same 34/34 control."
-status: PARTIALLY RESOLVED (gxp_step_result + a step-scoped slice of gxp_batch_hold only; gxp_step_evidence_link and gxp_batch_hold's full generality remain open)
+status: PARTIALLY RESOLVED (gxp_step_result + a step-scoped slice of gxp_batch_hold + gxp_step_evidence_link now built; only gxp_batch_hold's full generality — arbitrary scope, quality-event linkage — remains open)
 ```
+
+**FURTHER PARTIAL RESOLUTION, 2026-09-11, project-owner-directed** (Phase 4 / wp16-phase4-wp02-recipe-
+batch-sync): `gxp_step_evidence_link` built (migration 2e0dcac852aa), reusing `vault.gxp_vault_evidence`'s
+exact shape (evidence_id/evidence_version/evidence_sha256/media_type) per this gap's own requirement that
+it "agree with Document 06's Vault evidence manifest shape, not a guessed one" — not a new manifest schema,
+the same one already approved for VLT-FR-005. Append-only (SELECT/INSERT only, same as gxp_step_result).
+New unsigned command `link_step_evidence` (app/modules/batch_execution/commands.py) + `POST /batches/v1/
+{id}/steps/{id}/evidence-links` (router.py) — unsigned by design, since Document 106 has no policy row for
+an evidence-link action on `batch_step` (a capture, not a release/disposition decision the way `complete`/
+`results` are). `gxp_batch_hold`'s full generality remains the only open piece of this gap. Verified:
+tests/test_batch_execution.py 30/30 passed (3 new tests for evidence-links).
 
 ### SG-048 — 24 Document 11 requirements depend on modules/infrastructure that don't exist yet
 
@@ -2714,8 +2741,153 @@ options:
   - (B) Build speculative versions now against guessed dependency shapes (rejected — the risk above).
 blocking: false
 owner: Platform Architect
-resolution_document: "2026-09-09, project-owner-directed, PARTIAL: two of the 24 requirements resolved. #020 (batch hold, step scope) -- see SG-047's further-partial resolution note (StepHold, migration a6d525b2d585_0093, signed hold/resume per Document 106 row 14/17's shapes). #026 (production completion, steps-completeness sub-clause only) -- gxp_batch.state gains 'production_complete', reachable once every gxp_batch_step is 'complete' (the yield/reconciliation sub-clause still needs Document 17, not checked); signed per Document 106 row 16 (new SIGNATURE_POLICY_FLOOR row batch/production_complete), POST /batches/v1/{id}/production-complete + /signature-challenges, error PRODUCTION_NOT_COMPLETE added matching Document 11 §7's own vocabulary. #012/#013 (material consume / equipment eligibility at step start) were considered and explicitly NOT built this pass -- both require RecipeStep to declare which material/equipment a step needs, and that declaration is itself SG-045's still-open, unresolved schema question (recipe_material_requirement/recipe_equipment_requirement -- 'tolerance rule', 'alternative policy', 'consume mode', 'calibration/qualification/cleaning policies' are policy concepts, not typed columns); building #012/#013 without SG-045 first would mean guessing that schema too, the exact risk this entry already names. The other 20 requirements remain fully open, same reasoning as before. Verified: tests/test_batch_execution.py 25/25 (2 new tests for hold/resume, 2 for production-complete) plus test_batch_flow.py/test_release.py/test_qa_review.py as an untouched-module control, 34/34."
-status: PARTIALLY RESOLVED (2 of 24 -- #020, #026; #012/#013 explicitly deferred, blocked on SG-045; 20 remain open)
+resolution_document: "2026-09-09, project-owner-directed, PARTIAL: two of the 24 requirements resolved. #020 (batch hold, step scope) -- see SG-047's further-partial resolution note (StepHold, migration a6d525b2d585_0093, signed hold/resume per Document 106 row 14/17's shapes). #026 (production completion, steps-completeness sub-clause only) -- gxp_batch.state gains 'production_complete', reachable once every gxp_batch_step is 'complete' (the yield/reconciliation sub-clause still needs Document 17, not checked); signed per Document 106 row 16 (new SIGNATURE_POLICY_FLOOR row batch/production_complete), POST /batches/v1/{id}/production-complete + /signature-challenges, error PRODUCTION_NOT_COMPLETE added matching Document 11 §7's own vocabulary. #012/#013 (material consume / equipment eligibility at step start) were considered and explicitly NOT built this pass -- both require RecipeStep to declare which material/equipment a step needs, and that declaration is itself SG-045's still-open, unresolved schema question (recipe_material_requirement/recipe_equipment_requirement -- 'tolerance rule', 'alternative policy', 'consume mode', 'calibration/qualification/cleaning policies' are policy concepts, not typed columns); building #012/#013 without SG-045 first would mean guessing that schema too, the exact risk this entry already names. The other 20 requirements remain fully open, same reasoning as before. Verified: tests/test_batch_execution.py 25/25 (2 new tests for hold/resume, 2 for production-complete) plus test_batch_flow.py/test_release.py/test_qa_review.py as an untouched-module control, 34/34.
+
+  2026-09-12, WP-11 Stage 2 (ADR-0011, SG-183): #018 (timer/duration enforcement + exception generation,
+  'stuck step' half only) resolved narrowly -- real Temporal dev-server, StepStuckDetectionWorkflow.
+  This SG-048 entry itself was not updated at the time; corrected here rather than left stale.
+
+  2026-09-14, WP-11 Stage 5 (ADR-0011, SG-183): #029 (restart/recovery) resolved for that same one
+  workflow -- worker stopped while durably asleep (simulated app restart), a completely independent
+  fresh worker resumes it, exactly one WorkflowStuckDetected signal (not lost, not duplicated); a second
+  test proves the resumed run re-reads live authoritative state (AG-10), not anything stale from before
+  the restart. tests/test_workflowops_restart_recovery.py, 2/2 passed. LIMS/Edge were investigated as a
+  path toward #030 (integration outage rules) and found to need a whole new outbound adapter layer first
+  (no HTTP provider exists in either module) -- #030 remains open, not attempted.
+
+  Running tally (superseded below): 4 of 24 resolved (#018, #020, #026, #029 -- all narrowly scoped to the
+  one entity/workflow each already has, not the requirement's full generality). #012/#013 remain explicitly
+  deferred, blocked on SG-045. The other 18 requirements (#009/010/011/014/015/016/017/021/022/023/024/025/
+  027/028/030/032/033/034) remain fully open, same reasoning as before.
+
+  2026-09-14 (verification pass before further build, project-owner-directed: re-checked all 18 still-open
+  items against the real current code, since this entry's own text had already been shown stale once for
+  #018/#026/#029 above): #016 (step signature) was in fact already substantially built (Document 106 rows
+  19/21 ceremony bound to (id, version) hash, `commands.py::record_step_results`/`complete_step`/
+  `hold_step`/`resume_step`) -- this entry's "remains fully open" listing above was itself stale for #016
+  and is corrected here. #028 (Temporal orchestration) plumbing is real end-to-end (client/worker/workflow/
+  activity/retry, restart-proven) but still serves only the one narrow stuck-step use case -- general
+  adoption stays open, not re-counted as resolved. Of the remaining 16, seven were found buildable now with
+  no new cross-module dependency and no guessed regulated-behaviour shape: #009 (add quality_status/
+  rule_result to StepResult), #011 (device-source tagging, bounded by machine_integration's own deliberate
+  no-auto-write boundary), #014 (qualification gate reusing the already-built `qms.training_service.
+  has_active_qualification()` + `RecipeStep.qualification_policy_id`, mirroring the proven SG-178
+  enforcement shape), #015 (evidence-count completion gate), #023 (step-result correction chain), #025
+  (shift handover, blocked behind a new Document 106 signature-policy decision so lower priority), #034
+  (structured execution comments). The other nine (#010, #017, #021, #022, #024, #027, #030, #032, #033)
+  remain genuinely blocked on a real missing dependency (no rule-execution engine anywhere in this
+  codebase for #021/#022; no released rework-route entity for #024; no second-verifier schema for #017; no
+  QA-review production-input lock wiring for #027; no synchronous ERP/LIMS/Edge call site in
+  batch_execution at all for #030 to ever hit; no step-level scope declaration or fan-out logic for #032;
+  no lateness concept anywhere for #033; #010's manual_fallback_policy is captured but unenforced, same
+  "declared not gated" class as several sibling columns elsewhere in this codebase).
+
+  Of the seven buildable items, #015 and #023 (the two most self-contained -- ranked highest for zero
+  schema-shape ambiguity and an exact reusable precedent) were built this pass:
+
+  - **#015 (BAT-FR-015 evidence half)**: `commands.py::complete_step` now also gates on every declared
+    `gxp_recipe_evidence_requirement.required_count` being met by linked `gxp_step_evidence_link` rows
+    (`requirement_code` matched against the recipe's own `evidence_type`, the same naming symmetry
+    `parameter_code` already uses for the sibling parameter-completeness check). No schema change. No named
+    error code exists in Document 11 Section 7's own vocabulary for this failure mode (only
+    `PARAMETER_REQUIRED` is named) -- reuses the generic `ValidationFailedError`, the same class
+    `link_step_evidence` already uses for its own "at least one link required" check, rather than inventing
+    a new named code. Verified: `tests/test_batch_execution.py::
+    test_complete_step_blocked_without_required_evidence_then_succeeds_after_linking`, 1/1 passed.
+  - **#023 (BAT-FR-023 correction chain)**: new `StepResultCorrection` staging entity plus
+    `StepResult.supersedes_result_id` (migration 12233c9ad8df_0104 -- the exact column
+    db47f27cf18b_0092's own docstring named and deferred). `POST /batches/{id}/steps/{stepId}/correct`
+    (request) + `POST /batches/{id}/steps/{stepId}/corrections/{correctionId}/approve` (approve)
+    deliberately mirror `qc.commands.request_result_correction`/`approve_result_correction` (Document 106
+    row 57's identical 2-signature shape) rather than inventing a new correction-ceremony pattern: 2
+    signatures per Document 106 row 20 ("Authorized corrector + independent approver"), SoD enforced in
+    code (`actor_user_id == correction.requested_by_user_id` -> `INVALID_TRANSITION`), mandatory
+    `reason_text`, original result never edited (AG-08) -- approval appends a new `gxp_step_result` row
+    with `result_version + 1`. Scoped to the literal requirement text ("Completed step data correction"):
+    only a step already in state `complete` can have a result corrected. New permission `batch_step.correct`
+    granted to Admin + Supervisor (Document 106 names no fixed role, same "no fixed role" precedent as the
+    sibling batch_step signature rows; Supervisor chosen over Operator as the RBAC-scoping decision, matching
+    QC's own precedent of restricting `qc_result.correct` to QC Reviewer + Admin, not its base Operator-class
+    role). Verified: `tests/test_batch_execution.py::test_step_result_correction_two_signature_flow` (happy
+    path + same-actor SoD rejection) and `::test_request_step_result_correction_rejected_before_step_is_complete`,
+    2/2 passed, plus the full pre-existing `test_batch_execution.py` suite as an in-module regression check
+    (33/33) and `test_recipe_master.py`/`test_qc.py` as an untouched-module control (26/26).
+
+  Known limitation from this note, now closed (2026-09-14, same-day follow-up): `contracts/events/
+  event-ebmr-002.json` now commits all 17 events `batch_execution/commands.py` emits (the 6 batch-level
+  transitions, 8 pre-existing step-level events, and `StepResultCorrected`/`StepCommentAdded`/
+  `StepHandedOver` added this session) -- `tooling/events/validate.py` confirms zero new findings (the 2
+  pre-existing SG-174 collisions are the only ones left, unchanged).
+
+  2026-09-14, same-day follow-up (user-directed: "fix the known limitations and unresolved gaps as well").
+  Live demo DB caught up from migration `34927659a971` through `12233c9ad8df` (9 pending migrations,
+  pg_dump backup taken first) and further to `164abb1a20dc` as this follow-up's own migrations landed;
+  `alembic check` clean at every step; `pm2 restart ebmr-new-api` confirmed healthy (200 on `/docs`) each
+  time. `scripts.sync_permissions`/`scripts.sync_signature_policies` (idempotent, re-runnable variants of
+  `scripts/seed.py` for an already-seeded deployment) applied the new `batch_step.correct` permission and
+  `batch_step_result`/`correct` policy row to the live DB. TC-011-023-03 ("signature bound to a superseded
+  version") is marked N/A, not left NOT_STARTED: `gxp_step_result` is append-only, so the record a
+  correction's challenge is bound to can never change after the challenge is created -- the scenario
+  cannot occur by construction, the same property QC's identical Document 106 row 57 flow has and never
+  tested either. (This follow-up also found and fixed a real mismatch bug from this session's earlier
+  pass: TC-011-023-02's and TC-011-023-03's `TEST_CASE_LIBRARY.csv` rows had been swapped by an
+  off-by-one anchor in a text-based edit -- row 02 was still showing stale `BLOCKED` text and row 03 had
+  row 02's `MISSING_SIGNATURE` result; the markdown test-case book was unaffected. Lesson for next time:
+  prefer line-indexed CSV edits over text-anchored ones when adjacent rows share boilerplate tails.)
+
+  Of the five items confirmed buildable-now, all five were built this follow-up:
+
+  - **#009 (BAT-FR-009 quality-status half)**: `StepResult.quality_status` (migration
+    fbed8e7ccb3e_0106), computed from `gxp_recipe_parameter.min_value/max_value`, informational only
+    (never blocks the command -- BAT-FR-021 exception generation, the mechanism that would act on an
+    out-of-range result, is not built). "Applicable rule result" (a real rules-engine evaluation) stays
+    open, a materially deeper capability than a computed column.
+  - **#011 (BAT-FR-011 narrow slice)**: `source_type` additionally accepts `device_transcribed` (no
+    schema change -- already a String column) for a human explicitly tagging a value read off a
+    device/instrument, distinct from their own direct observation. Still human-entered; true automated
+    device/edge ingestion stays blocked on `machine_integration`'s own deliberate no-auto-write boundary
+    (MAP-FR-016), untouched this pass.
+  - **#014 (BAT-FR-014 qualification gate)**: user-directed design fork resolved before building --
+    `RecipeStep.required_qualification_code` (migration 0f714e883102_0105) is a *new* column mirroring
+    `required_role_code`'s exact shape/precedent (SG-178), not an attempt to resolve the pre-existing
+    `qualification_policy_id` (which has no backing entity anywhere in this codebase and stays exactly as
+    unresolved as before). Enforced at both start and complete against `iam.qualifications` via
+    `material/commands.py::_check_dispensing_qualification`'s already-production pattern and its two named
+    error codes (`QUALIFICATION_MISSING`/`QUALIFICATION_EXPIRED`), not `qms.QualificationRecord` +
+    `training_service.has_active_qualification()` -- SG-086's dual-qualification-store question stays
+    open, this is an ordinary engineering pick between two existing precedents, not a new invention.
+  - **#025 (BAT-FR-025 shift handover)**: user-directed scope fork resolved before building -- built
+    unsigned/RBAC-gated interim only (new `gxp_step_handover` table, migration 164abb1a20dc_0108), same
+    precedent `StepEvidenceLink` already established, rather than guessing a signature-policy shape
+    Document 106 doesn't name. TC-011-025-02/03 (which assume a required signature) do not apply to this
+    interim scope and are not exercised; a real Document 106 addendum is still needed to close them.
+  - **#034 (BAT-FR-034 execution comments)**: new append-only `gxp_step_comment` table (migration
+    c5ab6dc91f35_0107), same shape as `gxp_step_result`/`gxp_step_evidence_link`. Comment corrections
+    ("preserve history if regulated") are not built -- no correction chain for a comment itself, the same
+    narrower-than-full-generality scope `StepEvidenceLink` already accepted.
+
+  New OpenAPI contract entries added for all new/changed operations (`postAddStepComment`,
+  `postHandoverStep`, `postStepResultSignatureChallenge`'s neighbors already covered; `postStartStep`/
+  `postCompleteStepV1` descriptions updated for the new qualification/evidence error paths; a stale
+  "no step-completion endpoint" sentence on `postStartStep`, itself already wrong before this session
+  touched it, corrected in passing). `tooling/contracts/validate.py` confirms the baseline 17 pre-existing
+  `CTRC-FR-001` findings, unchanged -- every new operation is contracted.
+
+  No new permission or signature-policy row was needed for #009/#011/#014/#025/#034 -- all five are
+  RBAC-gated by the pre-existing `batch_execution.execute` permission (`batch_step.correct`, added earlier
+  this session for the #023 correction flow, is unrelated to these five).
+
+  Verified: `tests/test_batch_execution.py` full suite 42/42 (8 new tests this follow-up: qualification
+  gate x2, quality_status/device_transcribed x2, comments x2, handover x2), plus `test_recipe_master.py`
+  and `test_material_flow.py` as untouched-module controls, all green. `alembic check` clean on both test
+  and live DBs after all four new migrations (0105-0108).
+
+  Running tally: 12 of 24 resolved (#009, #011, #014, #015, #016, #018, #020, #023, #025, #026, #029,
+  #034). #012/#013 remain explicitly deferred, blocked on SG-045. The other ten (#010, #017, #021, #022,
+  #024, #027, #028, #030, #032, #033) remain genuinely blocked on a real missing dependency or narrow to
+  the one plumbing use-case already built (#028), detailed above -- none of them can be built without
+  inventing a schema/engine shape this pass has no authority to decide."
+status: PARTIALLY RESOLVED (12 of 24 -- #009, #011, #014, #015, #016 [corrected], #018, #020, #023, #025, #026, #029, #034; #012/#013 explicitly deferred, blocked on SG-045; 10 remain genuinely blocked on a real missing dependency)
 ```
 
 ### SG-049 — `device_component_usage`/`device_test_result`/`device_defect`/`device_evidence_inheritance` (Document 12) are prose-only field-name lists, not DDL-ready
@@ -3337,8 +3509,27 @@ options:
     would need to be a deliberate spec change, not an implementation guess).
 blocking: false
 owner: Data Architect + Materials/Supplier-Quality module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "2026-09-11, project-owner-directed (Phase 4 / wp16-phase4-wp02-recipe-batch-sync,
+  asked directly; chose to pull this gap into scope as a dependency of SG-045 rather than stub the FK),
+  taking option (A): MaterialSpecification/MaterialSpecificationVersion built
+  (app/modules/material_specification/, migration d2d738c7f191) mirroring product_master.ProductVersion's
+  master+immutable-version split exactly (business_id + version_no identity, draft/released lifecycle,
+  effective dating, release through the generic Vault surface, version_hash) -- the same architectural
+  pattern already approved for Product/Recipe, not a new one. acceptance_criteria is captured JSONB, not
+  a typed parameter-range schema (no acceptance-range execution engine exists yet -- QC method master,
+  still fully open, separate item). Full create_draft/release command surface + router
+  (POST /material-specifications/v1/drafts, GET .../{id}, GET .../{business_id}/versions, POST .../
+  {id}/release, POST .../{id}/signature-challenges). Release correctly fails closed with
+  SIGNATURE_POLICY_UNRESOLVED -- see new gap SG-185. recipe_material_requirement (SG-045) is the first
+  real consumer, FK'ing material_spec_version_id against this entity.
+  NOT built this pass: the three Document 18 entities this gap actually names
+  (approved_supplier_material/purchase_requisition/purchase_order_ref) and the
+  GET .../eligible-suppliers read -- those still need their own build once a real consumer needs them;
+  only the blocking entity itself was in scope. Verified: tests/test_material_specification.py 7/7
+  passed (new file)."
+status: PARTIALLY RESOLVED (MaterialSpecification/MaterialSpecificationVersion entity built and consumed
+  by recipe_material_requirement; approved_supplier_material/purchase_requisition/purchase_order_ref/
+  eligible-suppliers -- the entities this gap was originally about -- remain unbuilt)
 ```
 
 ### SG-058 — 5 Document 18 requirements have no entity, and one (RFQ) has no API operation, anywhere in Document 18 itself
@@ -3470,9 +3661,22 @@ completion. `disposition_deviation()` captures `change_control_required`/`change
 no FK to a real target record -- an honest data point ("this disposition determined a change/training
 action is needed and why"), not a functioning Change Control or training workflow.
 
+**Update (2026-09-12, Phase 4 WP-05 pass):** both entities named as missing now exist -- `qms.change_control`
+(Document 29) and `qms.training_assignment` (Document 31) were built in later WP-05 passes than this gap's
+original filing, and option (A) is now followed exactly as recorded: `deviation_record` gained real
+`change_control_id`/`training_assignment_id` FK columns (migration `0102_deviation_change_training_fk`),
+and `DispositionCommand` accepts them optionally, validated by existence check
+(`session.get(ChangeControl, ...)`/`session.get(TrainingAssignment, ...)`, `NotFoundError` otherwise) --
+the same shape as every other optional-FK-on-an-existing-command precedent in this codebase (e.g. SCAR's
+`supplier_id`). The flag+rationale fields are untouched. **Not done in this pass:** linking a Change
+Control/Training Assignment created *after* disposition already committed (no "link later" command was
+added -- only the one-shot disposition-time link); NCR/Complaint/Field Action's own `capa_required` flags
+have the identical shape and are not similarly linked to `qms.capa_record` in this pass, left as a
+same-shaped fast-follow, not silently assumed done.
+
 ```yaml
 spec_gap_id: SG-060
-title: "DEV-FR-014/015: Change Control and Training/Qualification-action are recorded as a flag + rationale only, no real entity exists to link to"
+title: "DEV-FR-014/015: Change Control and Training/Qualification-action are recorded as a flag + rationale only, no real entity exists to link to -- FK half PARTIALLY RESOLVED 2026-09-12"
 class: D
 description: >
   DEV-FR-014 requires linking Change Control for permanent process/spec/system/document changes; DEV-FR-015
@@ -3508,8 +3712,8 @@ options:
   - (B) Guess the schemas now (rejected -- the risk above).
 blocking: false
 owner: Data Architect + QMS module owner + Change Control module owner (WP-05, later document)
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "app/modules/qms/models.py DeviationRecord.change_control_id/training_assignment_id + app/modules/qms/commands.py disposition_deviation() FK validation, migration b8d3e6f1a2c9_0102; NCR/Complaint/Field Action capa_required->capa_record.id remains unresolved"
+status: PARTIALLY_RESOLVED
 ```
 
 ### SG-061 — DEV-FR-016's DRAFT->PREAPPROVED->ACTIVE planned-deviation lifecycle, DEV-FR-021's recurrence search and DEV-FR-024's export have no operation in Document 26's own 9-op API list
@@ -3867,8 +4071,24 @@ options:
   - (B) Guess the schemas/endpoints now (rejected — the risk above).
 blocking: false
 owner: Data Architect + QC module owner + Equipment module owner (WP-06)
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "2026-09-12, Phase 4 (wp17-phase4-wp04-qc-method-master): QC-FR-004's Method-master
+  half resolved taking option (A) -- QcMethodVersion built (app/modules/qc/models.py, migration
+  dd78daa66970) mirroring MaterialSpecificationVersion's master+immutable-version split, with
+  qc_test_definition.method_version_id an additive nullable FK (dual-written best-effort, same MIG-FR-004
+  expand-step pattern as uom_id). Release correctly fails closed pending a Document 106 policy row --
+  new gap SG-186, not guessed. Verified: tests/test_qc_method.py 9/9 passed (new file).
+  Separately (found while re-verifying this gap's premises before starting, not resolved by this pass):
+  QC-FR-011's qualification-expiry check and QC-FR-012/instrument_ref (WP-06 Equipment) remain open as
+  described. qc_test_specification.scope_type='material' also remains rejected pending a project-owner
+  decision on whether to wire it against SG-057's now-existing MaterialSpecificationVersion (a small,
+  separate follow-on, not attempted this pass). QC-FR-036/037 dashboard/export ops remain open.
+  CORRECTION: this entry's OOS/OOT premise is stale -- Document 25 (OOS/OOT Management, SPEC-QC-003) was
+  built in a later, separate pass than when this gap was written; qc_result.oos_record_id/oot_record_id
+  now carry a real FK (confirmed directly in app/modules/qc/models.py:205 before this pass started), so
+  that sub-item is not actually open despite this gap's own text still saying so."
+status: PARTIALLY RESOLVED (Method-master / QC-FR-004 built; scope_type='material' wiring, WP-06
+  instrument eligibility, QC-FR-011 qualification-expiry, and QC-FR-036/037 dashboard/export remain open;
+  the OOS/OOT sub-item was already resolved elsewhere, this entry just hadn't been updated to say so)
 ```
 
 ### SG-069 — NCR-FR-016: reopen has no operation in Document 28's own 6-op API list
@@ -5625,9 +5845,23 @@ CON-FR-025/026 require ERP posting/discrepancy reconciliation after each committ
 integration exists (WP-07 not built, same root cause as SG-077/082) -- `get_material_reconciliation`
 reports a fixed `erp_posting_status: "not_integrated"`.
 
+**Update (2026-09-14, WP-11 Stage 4):** this text predates WP-07 landing -- `app/modules/erp/` is now
+real and substantial (see SG-183's own Stage 4 update for the full finding). CON-FR-025's "required
+behaviour" clause (post consumption after GxP commit, idempotent retries) is now PARTIALLY RESOLVED:
+`app/modules/erp/consumer.py` (new) automatically posts each real `MaterialConsumed` event to a real
+`queue_erp_command(POST_CONSUMPTION)` call, scoped to ERPNext only (no vendor-neutral payload mapping
+exists for SAP/Oracle/Dynamics, confirmed with the project owner rather than guessed) -- proven end to
+end against the live broker + real Postgres, `tests/test_erp_consumer.py`, 3/3 passed.
+`get_material_reconciliation`'s `erp_posting_status` field is still unread by this new consumer (still
+reports `"not_integrated"` -- reading real `IntegrationCommand` state into that reporting field is a
+separate, not-yet-attempted piece). CON-FR-025-02/03 (inbound replay/timeout-uncertain lookup for this
+specific posting) and all of CON-FR-026 (discrepancy reconciliation, comparing external vs. GxP ledger)
+remain fully open. CON-FR-003/021/022/028 (automatic-consumption source, tolerance rule, deviation
+severity/owner derivation, batch-completion gate) are entirely untouched by this pass.
+
 ```yaml
 spec_gap_id: SG-098
-title: "Document 22 requirements needing infrastructure this codebase does not have yet: automatic-consumption integration, released reconciliation-tolerance rule, batch-completion gate, and ERP posting"
+title: "Document 22 requirements needing infrastructure this codebase does not have yet: automatic-consumption integration, released reconciliation-tolerance rule, batch-completion gate -- ERP posting (CON-FR-025 required-behaviour only) PARTIALLY RESOLVED 2026-09-14 (WP-11 Stage 4)"
 class: D
 description: >
   Document 22 (SPEC-MAT-002D) declares four capabilities this codebase has no infrastructure for yet:
@@ -5658,6 +5892,7 @@ affected_functions:
     qms.commands.create_deviation but batch production_complete is not gated on the outcome
   - app/modules/material/commands.py get_material_reconciliation -- erp_posting_status always "not_integrated"
   - app/modules/batch/commands.py -- production_complete transition unaware of material reconciliation
+  - app/modules/erp/consumer.py -- WP-11 Stage 4: CON-FR-025 required-behaviour half now real (ERPNext only)
 why_material: >
   A guessed automatic-consumption integration, tolerance-rule derivation, deviation-severity default, or
   ERP posting mechanism would each independently invent regulated behaviour this project's own precedent
@@ -5678,8 +5913,8 @@ options:
   - (B) Guess any of the four now (rejected -- the risks above).
 blocking: false
 owner: Platform Architect + Materials module owner + Batch module owner + Rules Engine owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "WP-11 Stage 4 (2026-09-14): app/modules/erp/consumer.py -- real durable NATS JetStream consumer, MaterialConsumed -> queue_erp_command(POST_CONSUMPTION), ERPNext only (SAP/Oracle/Dynamics need their own verified payload mapping, not attempted); migration 0103 adds ErpInstance.service_actor_user_id (mirrors lims_instance's own SG-070 stand-in -- lims_instance.py's own docstring wrongly cites this as SG-067, an unrelated NCR gap; SG-070 is correct) for the audit actor a background consumer otherwise has none of. Tests: tests/test_erp_consumer.py, 3 real tests against the live broker + real Postgres through the real dispense-to-consume REST flow, 3/3 passed, none mocked. Resolves CON-FR-025's required-behaviour clause only -- CON-FR-025-02/03, CON-FR-026, and CON-FR-003/021/022/028 remain fully open, see SG-183's own Stage 4 update for the full write-up."
+status: PARTIALLY_RESOLVED_2026-09-14
 ```
 
 ```yaml
@@ -7214,7 +7449,7 @@ status: OPEN
 
 ```yaml
 spec_gap_id: SG-126
-title: "WP-07 build depth: shared operation set + mapping/ledger CRUD built and tested; deep per-vendor field mapping, SOAP/file/DB adapters and secret-manager integration not built this pass -- item (1)/most of (4) resolved by SG-147, item (2) substantially resolved 2026-08-29 (33/38 requirements)"
+title: "WP-07 build depth: shared operation set + mapping/ledger CRUD built and tested; deep per-vendor field mapping, SOAP/file/DB adapters and secret-manager integration not built this pass -- item (1)/most of (4) resolved by SG-147, item (2) substantially resolved 2026-08-29 (33/38 requirements), item (3) ON_PREM provider resolved 2026-09-12 (K8S_SECRET/AWS_SM/VAULT remain open)"
 class: C
 description: >
   Within the 161 WP-07 requirements, this pass built and tested: the vendor-neutral ERPProvider contract
@@ -7279,12 +7514,38 @@ description: >
   this pass added (`integration_security_events`, `integration_bulk_jobs`, `erp_migration_packages`) are
   now recorded in `docs/generated/05_DATABASE_OWNERSHIP_MATRIX.md` alongside the pre-existing SG-121 rows,
   so the matrix is current as of this pass, not still missing the original gap plus three more silently.
+
+  **Update (2026-09-12, WP-07 secret-manager pass):** item (3) is now partially resolved. Investigation
+  found `app/modules/security/crypto.py::resolve_secret()` (Document 65) already existed but was
+  deliberately authorization/audit-only -- it never fetched a value, by design, and no create-path for a
+  `secret_metadata` row existed at all (`rotate_secret()` requires the row to pre-exist). Built this
+  pass: `security.secret_value` (new table, AES-256-GCM envelope only, never plaintext -- reuses the
+  existing zero-new-dependency `encrypt_sensitive_field`/`decrypt_sensitive_field` primitives from
+  Document 65), `create_secret()`/`POST /security/v1/secrets` (the missing create path, `initial_value`
+  accepted only for `provider=ON_PREM`), `set_secret_value()`/`POST /security/v1/secrets/{id}/value`
+  (optimistic-concurrency update of the encrypted value), and `fetch_secret_value()` in `crypto.py` (calls
+  `resolve_secret()` for authorization/audit, then decrypts and returns the real value -- **ON_PREM
+  provider only**). `app/modules/erp/commands.py::build_adapter()` now calls `fetch_secret_value()`
+  whenever `auth_secret_ref` names a secret actually registered in `secret_metadata`; an unregistered ref
+  (every pre-existing `ErpInstance` row in this codebase) falls back to using the ref directly, unchanged
+  from before this pass -- purely additive, no existing instance's behavior changes.
+
+  **What remains open, deliberately:** K8S_SECRET/AWS_SM/VAULT providers still have no live client --
+  `fetch_secret_value()` fails closed with `SECRET_PROVIDER_NOT_INTEGRATED` (501) for those rather than
+  fabricating a fetch, matching the SG-125/126-established precedent of never claiming a live external
+  call that didn't happen. Building a real client for any of them needs a reachable vendor endpoint to
+  verify against (none is available in this environment, same constraint as the ERP adapters themselves)
+  plus a Document 104 dependency justification for the relevant SDK (`boto3`, `hvac`, `kubernetes`) --
+  neither exists yet, so this is recorded here rather than guessed. Evidence: `tests/test_crypto_secrets_
+  pki.py` (18 passed, 8 new), `tests/test_erp_flow.py` + `test_erp_master_sync.py` (58 passed, including
+  2 new tests proving both the managed-secret and legacy-fallback branches of `build_adapter()`).
 source_documents:
   - Document 48 (SPEC-ERP-001)
   - Document 49 (SPEC-ERP-002)
   - Document 50 (SPEC-ERP-003)
   - Document 51 (SPEC-ERP-004)
   - Document 52 (SPEC-ERP-005)
+  - Document 65 (SPEC-SEC-005) -- item (3)'s resolution, added 2026-09-12
 source_requirement_ids:
   - MDS-FR-004
   - MDS-FR-005
@@ -7297,6 +7558,9 @@ source_requirement_ids:
   - MULTI-FR-016
   - ERP-ARC-004
   - ERP-ARC-028
+  - KEY-FR-002
+  - KEY-FR-003
+  - KEY-FR-004
 affected_modules:
   - SPEC-ERP-001
   - SPEC-ERP-002
@@ -7307,6 +7571,12 @@ affected_functions:
   - services/gxp-api/app/modules/erp/adapters/*.py fetch_changes() -- implemented, never called
   - services/gxp-api/app/modules/erp/commands.py -- no stageInboundMasterRecords()/normalizeMasterRecord()/
     matchInternalEntity() functions exist
+  - services/gxp-api/app/modules/security/crypto.py fetch_secret_value()/is_registered_secret() -- added
+    2026-09-12, ON_PREM provider only
+  - services/gxp-api/app/modules/security/crypto_commands.py create_secret()/set_secret_value() -- added
+    2026-09-12, closes the "no create path for secret_metadata" sub-gap
+  - services/gxp-api/app/modules/erp/commands.py build_adapter() -- added 2026-09-12, resolves a
+    registered secret through fetch_secret_value() instead of using auth_secret_ref directly
 why_material: >
   This is a scope/depth disclosure, not a single regulated-behaviour guess -- it exists so traceability and
   build-status reflect real, verified capability rather than "requirement mentioned in a file that exists."
@@ -7324,7 +7594,7 @@ options:
     for the deep vendor-specific and pipeline items).
 blocking: false
 owner: Platform Architect
-resolution_document: "app/modules/erp/sync.py + app/modules/erp/matching.py (item 1 and most of item 4, resolved 2026-08-29 -- see SG-147); item 2 substantially resolved 2026-08-29 (33/38 WP-07 requirements, see the later same-day update above) with ENXT-FR-018/023, SAP-FR-018/023, MULTI-FR-014/015/016 remaining deliberately deferred -- the three deferred MULTI-FR items now have their own precise, blocking SPEC_GAP entries (SG-151 manifest/checksum/replay rule shape, SG-152 no real DB schema to build against, SG-153 no Document 104 dependency approval for a SOAP/SFTP client) rather than staying folded into this umbrella entry alone; item 3 (secret manager) untouched; item 5 (ownership matrix) current as of 2026-08-29 including this pass's own new tables"
+resolution_document: "app/modules/erp/sync.py + app/modules/erp/matching.py (item 1 and most of item 4, resolved 2026-08-29 -- see SG-147); item 2 substantially resolved 2026-08-29 (33/38 WP-07 requirements, see the later same-day update above) with ENXT-FR-018/023, SAP-FR-018/023, MULTI-FR-014/015/016 remaining deliberately deferred -- the three deferred MULTI-FR items now have their own precise, blocking SPEC_GAP entries (SG-151 manifest/checksum/replay rule shape, SG-152 no real DB schema to build against, SG-153 no Document 104 dependency approval for a SOAP/SFTP client) rather than staying folded into this umbrella entry alone; item 3 (secret manager) partially resolved 2026-09-12 -- app/modules/security/crypto_models.py SecretValue + crypto.py fetch_secret_value()/is_registered_secret() + crypto_commands.py create_secret()/set_secret_value() close the ON_PREM provider end-to-end and wire app/modules/erp/commands.py::build_adapter() to it; K8S_SECRET/AWS_SM/VAULT remain open, no live client, no Document 104 approval yet; item 5 (ownership matrix) current as of 2026-08-29 including this pass's own new tables"
 status: PARTIALLY_RESOLVED
 ```
 
@@ -7795,9 +8065,13 @@ request's own transaction; no async job/queue path exists) are all named in Docu
 behavior beyond what the generic yield/reconciliation read/write mechanics already provide. Unlike SG-132,
 none of these depend on another module -- each is a genuine functional gap within this module's own scope.
 
+**Update (2026-09-12, Phase 4 WP-03 pass):** YLD-FR-022's "correction preserving the original" half is now
+built and PARTIALLY RESOLVED -- see the resolution note below. The "re-evaluating downstream results" half
+of YLD-FR-022 and all 8 other requirements listed remain fully open.
+
 ```yaml
 spec_gap_id: SG-133
-title: "9 Document 17 requirements have no distinct implementation this pass beyond the generic yield/reconciliation mechanics"
+title: "9 Document 17 requirements have no distinct implementation this pass beyond the generic yield/reconciliation mechanics -- YLD-FR-022's supersede half PARTIALLY RESOLVED 2026-09-12"
 class: E
 description: >
   YLD-FR-004 (automated-equipment auto-verification profile), YLD-FR-008 (externally-precomputed-value
@@ -7808,6 +8082,22 @@ description: >
   (sub-lot-to-parent aggregation) and YLD-FR-032 (asynchronous large-scale reconciliation) are named by
   Document 17 but this pass built only the generic yield/reconciliation calculate-and-verify mechanics, not
   each of these specific behaviors.
+
+  **Update (2026-09-12):** YLD-FR-022's "never overwrite, always supersede" half is now built. All five
+  `Evaluate*` commands (`EvaluateYieldCommand`, `EvaluatePotencyCommand`, `EvaluateReconciliationCommand`,
+  `EvaluateLabelReconciliationCommand`, `EvaluateComponentReconciliationCommand`) accept an optional
+  `supersedes_id` + required `reason`; `app/modules/yield_reconciliation/commands.py::_apply_supersede()`
+  flags the original row `SUPERSEDED` (same `calculation_type`/`reconciliation_type` and `batch_id`
+  required, rejecting a mismatched or already-superseded original), links the new row via `supersedes_id`,
+  and writes a `Corrected` audit event + `ReconciliationSuperseded` outbox event on the original -- the
+  same discipline `genealogy.service.correct_edge()` already established (AG-08, no new regulated
+  behavior invented). `ReconciliationSuperseded` was already declared in `07_EVENT_CATALOGUE.yaml` with no
+  producing code path; it now has one, contracted in `contracts/events/event-ebmr-008.json`. The "and
+  re-evaluating downstream results" half remains unbuilt -- what counts as a "downstream result" of a
+  yield/reconciliation calculation is undefined anywhere in the baseline and would require guessing a
+  dependency graph, so it stays open. Verified: `tests/test_yield_reconciliation.py` grew from 33 to 37
+  tests, 37/37 passed (happy path, missing-reason, double-supersede, cross-batch rejection, plus the
+  pre-existing 33 as an untouched-path regression check).
 source_documents:
   - Document 17 (SPEC-EBMR-008)
 source_requirement_ids:
@@ -7841,8 +8131,8 @@ options:
   - (B) Build a plausible default for each now (rejected — AG-15, no regulated behavior is guessed).
 blocking: false
 owner: Platform Architect
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "YLD-FR-022 supersede half: app/modules/yield_reconciliation/commands.py::_apply_supersede(), migration-free (supersedes_id already existed on both tables); remaining 8 items + YLD-FR-022's downstream-re-evaluation half stay open"
+status: PARTIALLY_RESOLVED
 ```
 
 ### SG-134 — YLD-FR-012's "applicable waiver/profile rule" has no waiver or profile-rule concept in the baseline
@@ -8383,8 +8673,29 @@ options:
   - (C) Build all seven as declared (rejected — the signature endpoints cannot be built safely).
 blocking: false  # the platform works; the catalogue and 113 §6 are wrong about it
 owner: Platform Architect + Contract Owner
-resolution_document: "Document 113 §6 amendment + 06_API_CATALOGUE.yaml correction"
-status: OPEN
+resolution_document: "docs/generated/06_API_CATALOGUE.yaml header note + this entry's own resolution narrative"
+status: RESOLVED_APPROVED_2026-09-14
+
+RESOLVED (2026-09-14, project-owner-directed, option A). Half of this was already done and undated in
+this entry: `06_API_CATALOGUE.yaml`'s own header note (dated 2026-08-27) already marks all seven
+operations `implementation_status: NOT_IMPLEMENTED` with the identical "raised as SG-139" explanation
+this gap describes -- that half of option (A) was complete, just never reflected in this entry's own
+`status:` field. The remaining half -- "amend Document 113 §6" -- cannot literally happen: Documents
+106-115 have no active amendment mechanism in this repository (`specs/Documents_106_115/` is the frozen
+baseline; `gap-resolution/addenda/` is a byte-identical, unmaintained mirror, confirmed by diff), and no
+prior resolution in this entire file has ever edited either copy -- every one of them (SG-035's
+signature_order, SG-178's required_role_code, etc.) recorded its resolution in code/docstrings and this
+SPEC_GAPS.md file instead. This entry itself is therefore the authoritative record of the exposure-
+boundary decision Document 113 §6 would otherwise state: **SPEC-GXP-001 (Mutation Gateway) and
+SPEC-GXP-002 (Signature Service) are realised as in-process kernels called from inside every owning
+module's own command handler and its own per-module `POST .../signature-challenges` endpoint,
+respectively -- neither has an independent API surface of its own, and none should ever be built (a
+generic `POST /gxp/v1/commands/{commandType}` or `POST /signature/v1/challenges` accepting a
+client-asserted signature target would violate AG-07).** `tooling/contracts/validate.py` reads `contracts/openapi/*.yaml` directly, not
+`06_API_CATALOGUE.yaml` -- and `spec-gxp-001.yaml`/`spec-gxp-002.yaml` are already components-only
+(no `paths:` entries for any of the seven), so none of the seven were ever counted as "committed
+operations" needing a corresponding implementation in the first place. Verified by re-running the tool:
+17-finding CTRC-FR-001 baseline unchanged.
 ```
 
 ### SG-140 — Three source documents give three different canonical error envelopes
@@ -8453,8 +8764,29 @@ options:
     registry has no single shape to check against).
 blocking: false
 owner: Contract Owner (API) + Platform Architect
-resolution_document: "Document 101 §5 / Document 113 §2 reconciliation"
-status: OPEN
+resolution_document: "app/main.py (correlation_id_middleware, all 3 exception handlers), contracts/openapi/spec-gxp-001.yaml#/components/schemas/ErrorResponse"
+status: RESOLVED_APPROVED_2026-09-14
+
+RESOLVED (2026-09-14, project-owner-directed, option A). Built flat {code, message, details} shape
+ratified as canonical -- unchanged, additive-only. New `correlation_id_middleware` (app/main.py) assigns
+a request-scoped id before any route or command runs (`request.state.correlation_id`), echoed on the
+`X-Correlation-Id` response header. All three exception handlers (`gxp_error_handler`,
+`request_validation_error_handler`, `unhandled_exception_handler`) now include it as a new top-level
+`correlation_id` field -- including the two paths (validation failure, most GxPError rejections) that
+previously had no correlation_id available at all, since a rejected command usually fails before it ever
+reaches the point in its own transaction where it would mint an audit/outbox correlation_id.
+`unhandled_exception_handler` now uses the same request-scoped id instead of minting its own, for a
+single canonical id per request across every error path; `details.correlation_id` is kept there too for
+backward compatibility with anything already reading it from that nested location.
+`retryable` deliberately stays out, per the recommended option -- the `code` itself already carries
+retryability information. `contracts/openapi/spec-gxp-001.yaml#/components/schemas/ErrorResponse` updated
+to require the new field and documents the resolution; Document 101 §5/Document 113 §2's own reconciliation
+text is not separately amended (same "no active amendment mechanism for Documents 101/106-115 prose" finding
+SG-139 records -- this entry is the authoritative resolution record). Verified: `tests/test_batch_execution.py`
+(42/42), `tests/test_appsec_secure_runtime.py` (unaffected -- exercises a distinct pure function,
+`appsec.map_safe_error_response()`, not these handlers), `tests/test_release.py`/`test_qa_review.py`/
+`test_security_threat_model.py`/`test_qc.py` (40/40) as regression controls, no test asserted an exact
+error-response key set that this additive field would break.
 ```
 
 ### SG-141 — The signature meaning `Disposition` is in production use but is not in Document 04's controlled catalogue
@@ -8590,9 +8922,36 @@ options:
     AUD-FR-005 unverifiable).
 blocking: false
 owner: Audit module owner + Platform Architect
-resolution_document: "Document 05 AUD-FR-005 action registry"
-status: OPEN
+resolution_document: "services/gxp-api/app/mutation/audit_actions.py, app/mutation/gateway.py::write_audit_event()"
+status: PARTIALLY_RESOLVED_2026-09-14
 ```
+
+PARTIALLY RESOLVED, phase 1 of option A (2026-09-14, project-owner-directed: "build the registry +
+warn-only logging now"). New `app/mutation/audit_actions.py::KNOWN_AUDIT_ACTIONS` is the registry;
+`write_audit_event()` (`app/mutation/gateway.py`) now logs a warning for any action not in it but still
+commits the write either way -- no rejection, no runtime-rollback risk, matching the recommended
+expand/migrate/contract shape exactly. Phase 2 (closing the enum to actually reject an unregistered
+value, once a release or more has passed with none observed) is a separate, later decision, not
+attempted this pass.
+
+This entry's own 20-value snapshot was re-verified rather than trusted, and found already stale by 8
+values: static re-extraction over `app/` (matching literal `action="..."` arguments actually passed to
+`write_audit_event()`, not the broader superset of unrelated `action=` kwargs used elsewhere for RBAC/
+signature-policy lookups) found 26 real, currently-used values, adding `AdvisoryUnavailable`, `Allowed`,
+`ContextBuilt`, `Denied`, `GovernancePackageGenerated`, `Performed`, `Retired` (all pre-existing,
+`app/modules/ai_governance/commands.py`/`app/modules/validation/`) and **`Signed`** -- the one value
+AUD-FR-005's own text names explicitly but which no code path had actually written before this same
+day's own SG-048/SG-160 chain-signature work started using it for a chain ceremony's intermediate
+positions. `contracts/openapi/spec-gxp-003.yaml#/components/schemas/AuditAction` updated to the full
+26-value list and the phase-1/phase-2 framing; the field stays a non-enum string (phase 2, not this pass).
+
+Verified: `tests/test_audit_action_registry.py` (2 new tests: a known action produces no warning and
+commits normally; an unregistered action logs the expected warning and still commits, proving fail-open
+by design), plus a broad regression sweep across `test_batch_execution.py`, `test_postmarket_flow.py`,
+`test_qc.py`, `test_release.py`, `test_qa_review.py`, `test_material_flow.py`, `test_ai_governance.py`,
+`test_validation_wp12_part1.py` (125/125) confirming the new registry check does not reject or alter any
+existing audit write. `tooling/guardrails/validate.py`/`tooling/contracts/validate.py`/
+`tooling/events/validate.py` confirm their pre-existing baselines unchanged.
 
 ### SG-143 — The rules evaluator does not apply the unit, precision or rounding policies it stores and releases
 
@@ -9712,10 +10071,17 @@ options:
   - (B) Guess a reasonable-sounding checksum/manifest/replay shape now (rejected -- exactly the invented-
     behaviour risk AG-15 exists to prevent; no dependency has even been approved to transport such files yet
     either, see SG-153).
-blocking: true
+  - (C) PARTIALLY RESOLVED 2026-09-14 (project-owner-directed, "build the rule shape now, defer the
+    dependency"): the manifest/checksum/file-identity/acknowledgement/replay RULE SHAPE is now real, pure
+    Python with no transport dependency -- `services/gxp-api/app/modules/erp/file_manifest.py`
+    (`FileManifest`, `build_manifest`/`verify_manifest`/`is_replay`/`acknowledgement_receipt`), checksum
+    algorithm SHA-256 (this codebase's existing standard hash, not a new choice). Verified by real pytest,
+    `services/gxp-api/tests/test_erp_file_manifest.py`, 8/8 PASS. SG-153 (the transport dependency itself)
+    remains fully open and unresolved -- this module has no SFTP/SOAP client to call it from yet.
+blocking: false
 owner: Platform Architect + Document 51/109 owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "services/gxp-api/app/modules/erp/file_manifest.py (rule shape only; full resolution pending SG-153's transport dependency)"
+status: PARTIALLY_RESOLVED_2026-09-14
 ```
 
 ---
@@ -9861,10 +10227,21 @@ options:
   - (A) Leave both unresolved; Mutation Gateway fails closed until Document 106 is amended — recommended
     (chosen this pass; verified by test).
   - (B) Guess a role/meaning now (rejected — direct SIG-FR-004/CLAUDE.md §4 violation).
-blocking: true
+  - (C) RESOLVED_APPROVED 2026-09-14 (project-owner-directed): `decide` -> "Postmarket Regulatory Affairs"
+    (this module's existing "Regulatory Affairs authorized submitter" signer class, reused verbatim per
+    this codebase's own established precedent for that phrase). `approve`'s "per record class" resolved to
+    a single fixed role since no dispatch table exists to vary it: "QA Releaser" -- the closest existing
+    real role to Document 106's "Head of Quality" text (this codebase's actual highest quality-release-
+    authority role, used for batch/recipe/product release), not an invented new role. No independence
+    requirement specified for either. Real signature ceremony now required
+    (`services/gxp-api/scripts/seed.py` SIGNATURE_POLICY_FLOOR). Verified by real pytest,
+    `services/gxp-api/tests/test_reportability_flow.py`, 12/12 PASS (including a rewritten
+    `test_decide_reportability_requires_a_real_signature_then_signed_not_reportable` proving
+    `MissingSignatureError` without a real challenge).
+blocking: false
 owner: Head of Quality + Regulatory Affairs + Product Owner (Document 106 approvers of record)
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "services/gxp-api/scripts/seed.py SIGNATURE_POLICY_FLOOR (reportability_track.decide, regulatory_report.approve) + tests/conftest.py mirror"
+status: RESOLVED_APPROVED_2026-09-14
 ```
 
 ### SG-158 — No approved federal holiday calendar for WORK_DAY/WORKING_DAY regulatory deadlines
@@ -10013,11 +10390,82 @@ options:
   - (A) Leave unresolved; Mutation Gateway fails closed until Document 106 supplies a resolution AND a
     multi-signature ceremony mechanism is built — recommended (chosen this pass, verified by test).
   - (B) Approximate with one signature now (rejected — misrepresents actual control strength).
-blocking: true
-owner: Head of Quality + Regulatory Affairs + Product Owner (Document 106 approvers) + Platform Architect (multi-signature mechanism)
-resolution_document: "— (open)"
-status: OPEN
+blocking: false  # rows 129/130 resolved this pass; row 131 + the ~9 no-row actions stay blocking
+owner: Head of Quality + Regulatory Affairs + Product Owner (Document 106 approvers, row 131 + the ~9 no-row actions only)
+resolution_document: "services/gxp-api/app/modules/postmarket/obligation_commands.py (rows 129/130), scripts/seed.py SIGNATURE_POLICY_CHAIN_FLOOR"
+status: PARTIALLY_RESOLVED_2026-09-14
 ```
+
+RESOLVED for rows 129/130 (2026-09-14, project-owner-directed: "Yes, build it" after being shown the
+stale claim below). **This entry's own central claim -- "no multi-signature ceremony mechanism exists
+anywhere in this codebase" -- was already false when written.**
+`app/modules/vault/commands.py::complete_correction()` (SG-035 pair 4, RESOLVED 2026-09-11, i.e. BEFORE
+this entry's most recent edit) already implements a real, tested, resubmit-per-position chain-signature
+mechanism (`signature_service.enforce_chain_signer_policy()` + `chain_signatures_so_far()`) for the
+identical "Authorized corrector + independent approver" language, at Document 106's own row 1 (the vault
+correction ceremony) -- proven end to end by `tests/test_vault.py::
+test_correction_two_signature_chain_succeeds`. This session's own earlier work (SG-048 #023, same day)
+independently rediscovered the same need and built a second working precedent
+(`batch_step_result`/`correct`) before this gap was revisited, at which point the duplication became
+obvious enough to fix here directly rather than write a third bespoke pattern.
+
+Rows 129/130 now reuse `enforce_chain_signer_policy()`/`chain_signatures_so_far()` verbatim:
+- **Row 130** (`POST /field-actions/{id}/correction-removal-assessment`,
+  `create_correction_removal_assessment()`): unsigned by itself (state ->
+  `PENDING_ASSESSMENT_APPROVAL`) -- a signature challenge must bind to an existing `record_id`
+  (SIG-FR-005/010) and none exists before this call creates one, the same reason
+  `vault.request_correction()` is unsigned. A new `approve_correction_removal_assessment()`, resubmitted
+  once per chain position (corrector, then an independent approver; new `POST
+  /correction-removal/{id}/assessment-signatures` + `.../assessment-signature-challenges`), carries the
+  actual ceremony and opens the record (state -> `OPEN`) only once both have signed.
+- **Row 129** (`POST /correction-removal/{id}/decision`, `decide_correction_removal_reportability()`):
+  the `record_id` already exists by this point (created via row 130's flow), so this call itself carries
+  chain position 1 (a challenge can be requested against the record before calling it, unlike row 130).
+  A new `approve_correction_removal_decision()` (`POST /correction-removal/{id}/decision-signatures` +
+  `.../decision-signature-challenges`) carries position 2 and applies the decision (due_at/regime/state
+  -> `DECIDED`) only once both have signed; the first call only stages the content.
+- Deliberately **not** mirroring `record_correction`/`complete`'s own `signature_order: [None, "QA
+  Releaser"]` (which pins position 2 to a specific role): Document 60's own text for rows 129/130 names
+  no role for either position ("Authorized corrector + independent approver", nothing more specific),
+  unlike Document 106 row 1's text (also just "independent approver" verbatim) which `vault`'s own
+  implementation chose to interpret more strictly. `[None, None]` follows Document 60's literal text
+  exactly -- RBAC-gated by the pre-existing `correction_removal.create`/`correction_removal.decide`
+  permissions, independence enforced by identity ("corrector and approver MUST differ"), not role.
+- New migration `fc212b616386_0109_correction_removal_chain_signatures` adds
+  `assessment_approval_signatures`/`decision_approval_signatures` (mirroring
+  `vault.RecordCorrection.approved_by_signatures`'s shape). New `SIGNATURE_POLICY_CHAIN_FLOOR` rows:
+  `("correction_removal_assessment", "sign", "Approved", 2, [None, None], True)` and
+  `("correction_removal_regulatory_record", "sign", "Approved", 2, [None, None], True)`.
+
+**Still open** (row 131 + the ~9 no-Document-106-row actions): `apply_regulatory_deadline_override()`'s
+"Elevated authority defined by the record class" (row 131) has no dispatch table to resolve it into an
+actual role, the identical shape SG-157's row 124 and SG-161's row 133 have -- not attempted this pass,
+still fails closed with `SIGNATURE_POLICY_UNRESOLVED`. Applicant-relationship configuration, Part 4
+sharing evaluation/package creation, field-alert/BPDR creation and decision, periodic-cycle
+generation/freeze, FDA-request creation, retention calculation and legal hold still have no Document 106
+row at all. These genuinely need a human policy decision (a real Document 106 addendum naming actual
+roles/dispatch rules) that this pass does not have authority to invent.
+
+Verified: `tests/test_postmarket_flow.py::
+test_correction_removal_assessment_and_decision_two_signature_chains` (unsigned-rejected, position-1
+signs without applying, same-actor SoD rejection, position-2 signs and applies both the assessment-open
+and the reportability-decision chains end to end; due_at/regime computed only on the final signature),
+plus the full `test_postmarket_flow.py` suite (16/16) and `test_vault.py` (11/12 -- the one failure,
+`test_concurrent_release_same_business_id_raises_clean_conflict`, is a pre-existing race-condition
+flake confirmed to fail in isolation on an unrelated vault concurrency test this session never touched,
+not a regression) as regression controls. `tooling/contracts/validate.py`/`tooling/events/validate.py`
+confirm their pre-existing 17/2-finding baselines unchanged after adding the new
+`postApproveCorrectionRemovalAssessment`/`postApproveCorrectionRemovalDecision`/two challenge operations
+and the `CorrectionRemovalAssessmentRequested`/`AssessmentSigned`/`ReportabilitySigned` events.
+
+A real test-authoring bug was found and fixed along the way, worth recording for next time: this test
+needed to mutate through the HTTP `client` fixture (to exercise the real router/challenge endpoints) and
+then read back through the `db` fixture's own separate session. `app/core/db.py::SessionLocal` sets
+`expire_on_commit=False`, so `db`'s identity-map cache never learns about `client`'s commits on its own --
+the first fix attempt (`db.expire_all()` inside the shared `_get()` helper) silently broke five unrelated
+tests elsewhere in the same file with a `MissingGreenlet` error. The working fix is a *local* helper
+(`_get_fresh`, this test file only) using `session.get(model, id, populate_existing=True)`, scoped to one
+query instead of the whole session -- `_get()` itself was left untouched.
 
 ### SG-154 — `postmarket_source` field-set conflict between Document 58 and Document 112
 
@@ -10168,10 +10616,19 @@ options:
   - (A) Leave the three actions unresolved; Mutation Gateway fails closed until Document 106 is amended
     with a real resolution — recommended (chosen this pass, no behaviour change needed to adopt a fix).
   - (B) Guess a role/meaning now (rejected — direct SIG-FR-004/CLAUDE.md §4 violation).
-blocking: true
+  - (C) RESOLVED_APPROVED 2026-09-14 (project-owner-directed): "per policy lookup" resolved to RBAC-grant-
+    gated signer classes using roles this codebase had already seeded anticipating exactly this gap --
+    `open`/`assess` -> "Postmarket Safety Reviewer" (kept the pre-existing RBAC split rather than
+    overriding it once found), `escalate` -> "Postmarket Regulatory Affairs". No independence requirement
+    (a progression of one signal, not a second person reviewing another's work). Real signature ceremony
+    now required (`services/gxp-api/scripts/seed.py` SIGNATURE_POLICY_FLOOR, `signature_required=True`,
+    `required_role_id=None` since RBAC alone gates the role). Verified by real pytest,
+    `services/gxp-api/tests/test_postmarket_flow.py`, 16/16 PASS (including a rewritten
+    `test_open_signal_requires_a_real_signature` proving `MissingSignatureError` without a real challenge).
+blocking: false
 owner: Head of Quality + Regulatory Affairs + Product Owner (Document 106 approvers of record)
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "services/gxp-api/scripts/seed.py SIGNATURE_POLICY_FLOOR (safety_signal rows) + tests/conftest.py mirror"
+status: RESOLVED_APPROVED_2026-09-14
 ```
 
 ### SG-161 — Document 61 (SPEC-SEC-001) has two signature-shaped endpoints with no usable Document 106 resolution
@@ -10212,7 +10669,8 @@ affected_modules:
   - SPEC-SEC-001
 affected_functions:
   - services/gxp-api/app/modules/security/commands.py::accept_residual_security_risk
-  - services/gxp-api/app/modules/security/commands.py::open_security_exception
+  - services/gxp-api/app/modules/security/commands.py::request_security_exception (was open_security_exception)
+  - services/gxp-api/app/modules/security/commands.py::approve_security_exception (new, RESOLVED_APPROVED 2026-09-14)
 why_material: >
   Residual-risk acceptance and security-exception approval are both regulated authorization decisions
   Document 61 itself requires independent/elevated sign-off for (SEC-THR-015, SEC-THR-023); guessing a
@@ -10228,10 +10686,29 @@ options:
     (a concrete signer role/dispatch rule for "elevated authority defined by the record class", and a new
     row for risk acceptance) — recommended (chosen this pass, verified by test).
   - (B) Guess a role now (rejected — direct SIG-FR-004/CLAUDE.md §4 violation, same reasoning as SG-160).
-blocking: true
+  - (C) RESOLVED_APPROVED 2026-09-14 (project-owner-directed, two-part decision): both resolve to
+    "Security Risk Approver" -- a role this codebase had already seeded anticipating exactly this gap --
+    independent of whoever's judgment is being approved. `accept_residual_security_risk` checks
+    independence against `residual_risk["calculated_by"]` (SEC-THR-014's own risk-scoring actor, already
+    recorded there; no new column needed). `open_security_exception` hit a real modelling problem:
+    independence has no meaning in a one-step create+sign command (the signer and the record's only
+    stored actor are the same person by construction) -- resolved (project-owner selected this over
+    "ship the gate, document independence as a known limitation") by splitting it into an unsigned
+    `request_security_exception()` (records the requester as `opened_by`, state PENDING_APPROVAL, same
+    2-command shape as SG-160's correction-removal fix earlier this session) and a new, signed
+    `approve_security_exception()` checked for independence against that requester, moving the record to
+    OPEN. New endpoints: `POST /security/v1/exceptions/{id}/approve` +
+    `POST /security/v1/risks/{id}/accept-signature-challenges` +
+    `POST /security/v1/exceptions/{id}/approval-signature-challenges`. Verified by real pytest,
+    `services/gxp-api/tests/test_security_threat_model.py`, 14/14 PASS, including two new tests that prove
+    the independence violation is actually rejected (not merely stated):
+    `test_accept_residual_risk_rejects_the_calculator_as_signer` and
+    `test_approve_security_exception_rejects_the_requester_as_approver`, both asserting
+    `SodIndependenceRequiredError`.
+blocking: false
 owner: Head of Quality + Security Owner + Product Owner (Document 106 approvers of record)
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "services/gxp-api/app/modules/security/commands.py (request/approve split) + scripts/seed.py SIGNATURE_POLICY_FLOOR + contracts/openapi/spec-sec-001.yaml"
+status: RESOLVED_APPROVED_2026-09-14
 ```
 
 ### SG-162 — `service_identity` now exists twice under different names/scopes (`iam.service_identities` vs `security.service_identity`)
@@ -11998,8 +12475,31 @@ options:
     the same time) — largest scope, needs a project-owner decision on authoritative ownership.
 blocking: false
 owner: Batch Execution + DDCP module owners, project-owner decision on options A/B/C
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "2026-09-11, project-owner-directed (Phase 4 / wp16-phase4-wp02-recipe-batch-sync,
+  asked directly; chose option B — DDCP execution drives the generic chain). Building the write-side sync
+  surfaced a defect in option B's own framing this gap didn't originally account for: `_require_step_
+  signature()` resolves `(batch_step, complete)`/`(batch_step, results)` from a single, platform-wide
+  Document 106 policy row — not per-step via `RecipeStep.signature_policy_id` (that field is captured but
+  never actually read by the enforcement path) — and both rows are seeded `signature_required=True`
+  unconditionally (scripts/seed.py). So a write that auto-completes the generic step from DDCP would
+  always need a signature DDCP's own action doesn't collect; there is no "unsigned step" case in the
+  current policy to safely auto-complete into. Rather than bypass that signature (asked directly; declined)
+  or treat DDCP's own signature as interchangeable with a distinct Document 106 requirement (asked
+  directly; declined), the write-side auto-completion path was NOT built — it would be permanently inert
+  under the current policy, dead code pretending to do something it can't safely do.
+  What IS built: `gxp_ddcp_step_mapping` (migration 1d2ce758fc70) — the declarative DDCP-action↔
+  stable_step_code mapping this option needs, scoped per recipe_version_id, RBAC-gated create (`ddcp_
+  profile.author`) — plus `GET /ddcp/v1/prefilled-syringe/batches/{id}/step-sync-status`, which joins a
+  batch's declared mappings against `gxp_batch_step.state` so an operator sees the two "independent
+  progress trackers" are related. This is the part of the gap that is actually load-bearing: the
+  confusion SG-180 was found from was a *visibility* problem (a demo operator with no way to see the
+  connection), and this fixes exactly that without ever bypassing a signature. If Document 106 policy for
+  batch_step actions is ever revised to allow an unsigned case, the mapping mechanism is ready to extend
+  into a real write-side sync at that point. Verified: tests/test_ddcp_step_mapping.py 6/6 passed (new
+  file)."
+status: PARTIALLY RESOLVED (declarative mapping + read-only sync-visibility built, taking option B's
+  direction; the write-side auto-completion option B originally implied is deliberately NOT built — see
+  resolution note for why it would be permanently inert under current Document 106 policy)
 ```
 
 ### SG-181 — `qa_review_package`/`complete` and `release_scope`/`release`+`hold`+`reject` had no Document 106 signature policy row and no signature-challenges endpoint — same defect class as SG-138, different work package
@@ -12193,9 +12693,165 @@ transactional-outbox *pattern* (event written in the domain transaction, publish
 implemented correctly; the transport (Document 73, EVT-FR-001..030) and the durable-workflow engine
 (Document 74, TMP-FR-001..030) are not.
 
+**Update (2026-09-12, WP-11 Stage 1):** the NATS/JetStream half is now real, producer-side. A single-node
+JetStream broker runs locally (`infra/nats-server.conf`, container `ebmr-new-nats`, tight memory/disk
+limits given this host's own headroom), `app/modules/eventbus/jetstream.py` owns the connection lifecycle
+(connected/closed from `app/main.py`'s lifespan; a connect failure at startup is logged, never fatal --
+AG-09 makes this transport, not authoritative truth), and `outbox.py::publish_outbox_event()` now
+publishes the real EVT-FR-001 envelope with `Nats-Msg-Id` set to the event's own id, giving JetStream's
+own dedup window the exact crash-recovery property EVT-FR-004 calls for (a republish of an
+already-acknowledged event is recognized as a duplicate, never delivered twice). `nats-py` added with a
+Document 104 justification (Apache-2.0, zero transitive dependencies). Proven against the live broker,
+not mocked: `tests/test_eventbus_jetstream.py`, 5/5 passed. **Still open:** durable consumer wiring on
+the receiving side (projections/integrations actually subscribing and applying events idempotently --
+this pass only proves the producer publishes and dedups correctly, not that anything downstream consumes
+yet), and all of Temporal (Document 74) -- workflowops and batch-execution recovery/escalation still run
+on the pre-existing stand-in, untouched by this pass.
+
+**Update (2026-09-12, WP-11 Stage 2):** the Temporal half is now also real, narrowly. A real Temporal
+dev-server runs locally (`infra/README.md`, PM2 process `ebmr-new-temporal`, embedded SQLite, headless,
+~130MB RAM), `app/modules/workflowops/client.py` owns the connection lifecycle with the exact same
+bounded-`asyncio.wait_for` discipline WP-11 Stage 1's NATS integration learned the hard way (nats-py's
+`max_reconnect_attempts=-1` was found to hang the *initial* connect forever with no bound; applied to
+Temporal's client from the start this time rather than discovered by a second incident). One real
+workflow now runs: `StepStuckDetectionWorkflow` (`workflows.py`) -- BAT-FR-018/021's "stuck step" half
+only, deliberately narrow (see below). It sleeps via a durable Temporal timer, re-reads the step's
+authoritative state through `batch_execution.service.get_step()` (never caches or guesses it, AG-10),
+and emits `WorkflowStuckDetected` (Document 74 # 9) through a second Activity if the step is still
+`in_progress` -- the workflow itself never decides or writes a regulated batch/step state transition.
+`retry_policy.classify_retry()` is now actually exercised inside the Activity (TMP-FR-011), converting a
+settled `GxPError` (e.g. `NOT_FOUND`) into a non-retryable `ApplicationError` rather than letting
+Temporal's retry policy spin on it forever. `temporalio` added with a Document 104 justification (MIT,
+runtime-critical per DEP-FR-018) plus 3 transitive deps (`nexus-rpc` MIT, `protobuf` BSD-3-Clause,
+`types-protobuf` Apache-2.0, all clean). New REST surface `contracts/openapi/spec-data-006.yaml`
+(`POST`/`GET /workflowops/v1/step-stuck-detection...`, RBAC-only per AG-10, no Document 106 row).
+
+**What this deliberately does NOT do:** port batch-execution's actual recovery/escalation commands onto
+Temporal, or touch any of the other 22 Document 11 requirements SG-048 lists as blocked on Temporal
+*and other unbuilt modules simultaneously* (Material Service, Equipment master, Document 12/17, IAM
+qualification schema) -- attempting those would mean guessing those modules' own shape, the exact
+AG-15 violation SG-048 already declined. This pass proves the real workflow+activity+worker+client
+pattern end to end on the one Document 11 sub-requirement (BAT-FR-018/021's stuck-step half) that has
+no such entangled dependency. Durable consumer wiring for NATS (Stage 1's own remaining item) and the
+rest of Document 11's Temporal scope both remain open, future stages. Proven against the live server,
+not mocked: `tests/test_workflowops_temporal.py`, 6/6 passed (stuck-signal emission, no-signal-if-
+completed-in-time, idempotent double-start, REST start+query, NOT_FOUND fail-closed, unauthorized
+rejection).
+
+**Update (2026-09-13, WP-11 Stage 3):** the NATS half gains its first real **consumer**, closing the
+"durable consumer wiring" item Stage 1 left open -- for projections; integrations (ERP/LIMS/Edge) remain
+open, deliberately, same narrow-scoping discipline Stage 2 used for Temporal (see below).
+`app/modules/eventbus/jetstream.py::pull_subscribe()` adds the durable pull-consumer primitive
+(EVT-FR-009: `ack_policy=EXPLICIT`, `deliver_policy=ALL`, bounded `max_deliver`/`ack_wait`, and the same
+bounded-`asyncio.wait_for` discipline `connect()` already used, applied here to consumer creation too).
+`app/modules/eventbus/consumer.py::run_pull_consumer()` is the first real driver of the
+`consume_event_idempotently()` (EVT-FR-005/006) and `dead_letter.py::handle_poison_event()`
+(EVT-FR-010/026) primitives Stage 1 built but nothing called -- confirmed by grep before building: zero
+call sites outside their own docstrings. Per message: one DB transaction runs
+`consume_event_idempotently()` around the handler (so the `consumer_inbox` dedupe row and the handler's
+own write commit atomically), acks only after that commits, naks below `max_deliver` for real broker
+redelivery, and dead-letters (+ `msg.term()`, which stops redelivery without deleting the message --
+`GXP_EVENTS` uses limits retention, not work-queue) once exhausted.
+
+First real consumer wired end to end: `app/modules/readmodels/projector.py`, `material_lot` events into
+the Postgres-backed search index. Confirmed before building (per this stage's own scoping question):
+`readmodels` was genuinely disconnected from the bus -- its three commands
+(`rebuild_search_index`/`refresh_read_model`/`generate_async_export`) are explicit, operator-triggered
+REST calls that rescan the audit ledger, nothing subscribed to live events. `material_lot` was chosen
+deliberately over `gxp_batch` for what it does *not* invent: it is both the real `aggregate_type`
+`material/commands.py` publishes under and the `index_type` `readmodels/router.py`'s own
+`_ALLOWED_FILTERS` already carries a reviewed `{"state"}` allowlist for -- reused verbatim, no new
+aggregate_type-to-index_type mapping and no new field-exposure decision made in this pass (`gxp_batch`
+would have needed the former, since its outbox events publish as `aggregate_type="batch"`, not
+`"gxp_batch"` -- set aside, not attempted). `index_authoritative_projection()` gained an EVT-FR-014/027
+ordering guard (an incoming `source_version` no greater than what is already indexed is a safe no-op) --
+the pre-existing full-rebuild caller is unaffected (it always computes the true per-aggregate max from
+the audit ledger) but a live incremental consumer needs it, since at-least-once delivery gives no
+total-order guarantee across redeliveries.
+
+Proven against the live broker and a real Postgres database, not mocked:
+`tests/test_eventbus_consumer.py`, 5/5 passed -- a real end-to-end publish-fetch-project round trip;
+duplicate `event_id` does not rerun the handler (`consume_event_idempotently`'s DB dedupe, asserted
+directly since forcing a live broker to redeliver an already-acked message is not a deterministic event
+to wait for); a real handler failure (no matching audit event, not injected) naks for real broker
+redelivery (`num_delivered` incrementing for real across fetches) and is dead-lettered
+(`consumer_inbox.result=DEAD_LETTERED` + a real `EventDeadLettered` outbox row) with no further
+redelivery after `max_deliver`; an out-of-order redelivery (version 2 applied, then a late version 1)
+does not regress the index. AsyncAPI contract updated
+(`contracts/events/asyncapi-data-005-transport.yaml`) with the consumer operation and its
+`x-requirement-ids`. **Still open:** integration consumers (ERP/LIMS/Edge) -- the other half of this
+closure item -- and cross-service/multi-consumer contract tests (TEST-FR-007) beyond this one consumer;
+all of Document 11's remaining Temporal scope (Stage 2's own open item, untouched by this pass).
+
+**Update (2026-09-14, WP-11 Stage 4):** the first real **integration** consumer -- closing the other half
+of Stage 3's remaining item, for ERP specifically. Deep verification before building found
+`app/modules/erp/` already far more built than this gap's own earlier text claimed (that text predates
+WP-07 landing): a real vendor-neutral `ERPProvider` interface, `queue_erp_command()`/`dispatch_erp_command()`
+(full queue -> dispatch -> retry -> compensate -> reconcile lifecycle), and 4 real adapters
+(ERPNext/SAP/Oracle Fusion/Dynamics 365) with `POST_CONSUMPTION` already mapped in every one -- but every
+one of these was REST/operator-triggered only, confirmed by grep: nothing in `material/`/`batch/`/`qc/`
+ever called `queue_erp_command()` automatically. `app/modules/erp/consumer.py` (new) closes that: subscribes
+to `MaterialConsumed`, resolves the site's ACTIVE ERPNext instance and the consumed material's ACTIVE
+`ErpExternalMapping`, and calls the real `queue_erp_command(POST_CONSUMPTION)` -- the same real dispatch
+pipeline `tests/test_erp_flow.py` already exercises end to end, untouched by this pass.
+
+**Two real blockers surfaced and were resolved before building, not guessed past:** (1) every adapter
+forwards its payload to the vendor verbatim with zero transformation layer -- no vendor-neutral consumption
+payload mapping exists anywhere in this codebase (ERPNext wants Stock Entry fields, SAP wants OData
+`A_MaterialDocumentHeader` composition, Oracle wants `inventoryTransactions`, Dynamics wants
+`InventJournalTrans` + `dataAreaId`) -- confirmed with the project owner to scope this consumer to ERPNext
+only, same disclosed-caveat class the adapters' own SG-125 caveats already use, not a new SPEC_GAP.
+(2) `queue_erp_command()` writes a real audit row needing a human `iam.users.id`, but a background consumer
+has none -- resolved by mirroring `lims_instance.service_actor_user_id` (already documented there as a
+stand-in for a real machine-identity model, SG-070/LIMS-FR-013 -- `lims_instance.py`'s own docstring
+wrongly cites this as SG-067, an unrelated NCR gap; SG-070 is the correct number) onto `ErpInstance`
+(migration 0103,
+nullable/additive, MIG-FR-004), rather than inventing a new pattern.
+
+Also confirmed with the project owner: this consumer's durable, like Stage 3's, binds with
+`deliver_policy=ALL` (EVT-FR-009) -- on first deployment it will replay every `MaterialConsumed` event
+already retained on `GXP_EVENTS` and post the whole backlog to ERPNext at once. Deliberate, not an
+oversight: every one of those events genuinely happened, and no live ERPNext tenant is integrated in this
+environment yet, so there is no near-term double-posting risk; documented in `consumer.py`'s own docstring
+as a known first-activation consideration for whoever connects a real tenant later.
+
+Proven against the live broker and a real Postgres database, not mocked, through the real dispense ->
+consume REST flow (not hand-built fixtures): `tests/test_erp_consumer.py`, 3/3 passed -- a mapped material
+is queued end to end with the correct ERPNext payload; a site with no eligible ERPNext instance is skipped
+(acked, not dead-lettered -- ERP integration is optional per AG-13); an unmapped material naks for real
+broker redelivery and is dead-lettered after `max_deliver`, same mechanism Stage 3 built. Closes SG-098's
+CON-FR-025 "required behaviour" bullet (`TC-022-025-01` NOT_STARTED/BLOCKED -> PASS); SG-098's
+CON-FR-025-02/03 (inbound replay/timeout-uncertain lookup) and all of CON-FR-026 (discrepancy
+reconciliation) are untouched, still open. **Still open:** LIMS/Edge integration consumers; SAP/Oracle/
+Dynamics consumption posting (needs their own verified payload mappings); warehouse mapping for the
+ERPNext payload; all of Document 11's remaining Temporal scope.
+
+**Update (2026-09-14, WP-11 Stage 5):** LIMS and Edge were investigated as the next integration-consumer
+candidates and found to have no outbound-to-external-system machinery at all -- confirmed by inspection:
+no HTTP adapter/provider layer in either module, unlike ERP's 4 real vendor adapters. Both are purely
+reactive/inbound (LIMS/edge devices call this platform; this platform never calls them). Building a NATS
+integration consumer for either would mean inventing a whole new outbound adapter layer first, a much
+larger and more speculative undertaking than reusing an already-built path the way Stage 4 did for ERP --
+set aside, confirmed with the project owner, in favor of a well-scoped Temporal item instead: **BAT-FR-029
+(restart/recovery)**, one of the two SG-048 items not entangled with another unbuilt module (the other,
+BAT-FR-018, Stage 2 already resolved narrowly). Proven against the real local Temporal server for the one
+real workflow this codebase runs (`StepStuckDetectionWorkflow`, Stage 2): a real `Worker` instance starts
+the workflow and is stopped while it is durably asleep with zero worker connected (simulating the app
+process being killed); a completely independent fresh `Worker` instance then resumes it, completing
+correctly with exactly one `WorkflowStuckDetected` signal -- not lost, not duplicated. A second test
+proves the resumed run re-reads live authoritative state (AG-10) rather than anything stale from before
+the restart: the step is completed for real during the simulated outage, and the resumed workflow
+correctly emits no signal. Tests: `tests/test_workflowops_restart_recovery.py`, 2/2 passed, none mocked.
+`TC-011-029-01` moved `BLOCKED` -> `PASS`. Temporal's own server process (PM2 `ebmr-new-temporal`) was
+never faulted in this pass -- that is infrastructure availability, a different concern from this
+requirement's "worker/application restart." **Still open:** LIMS/Edge integration consumers (need a new
+outbound adapter layer first); SAP/Oracle/Dynamics ERP posting; the other 19 SG-048 items (each
+entangled with a different unbuilt module); TEST-FR-010's deterministic replay/time-skip harness using
+`temporalio.testing` (this pass's tests ran against the live dev-server directly, same as Stage 2's).
+
 ```yaml
 spec_gap_id: SG-183
-title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use"
+title: "NATS/JetStream (Doc 73) and Temporal (Doc 74) not built — interim in-process outbox + workflowops stand-in in use -- NATS producer side PARTIALLY RESOLVED 2026-09-12; Temporal: one real workflow built 2026-09-12 (Stage 2), BAT-FR-029 restart/recovery PARTIALLY RESOLVED 2026-09-14 (Stage 5); NATS projection consumer PARTIALLY RESOLVED 2026-09-13 (Stage 3); NATS ERP integration consumer PARTIALLY RESOLVED 2026-09-14 (Stage 4) -- LIMS/Edge consumers (need a new outbound adapter layer) + the other 19 SG-048 Temporal items remain open"
 class: E  # engineering build-out of specified infrastructure; no regulated behaviour to decide (ADR-0011 already set direction)
 description: >
   ADR-0011 commits to building NATS/JetStream and Temporal in WP-11 (NATS first, then Temporal),
@@ -12212,15 +12868,36 @@ source_requirement_ids:
   - EVT-FR-002
   - EVT-FR-003
   - EVT-FR-004
+  - EVT-FR-005
+  - EVT-FR-006
+  - EVT-FR-009
+  - EVT-FR-010
+  - EVT-FR-014
+  - EVT-FR-026
+  - EVT-FR-027
   - DATA-FR-014
+  - CON-FR-025
   - TMP-FR-001
+  - TMP-FR-002
+  - TMP-FR-006
+  - TMP-FR-011
+  - TMP-FR-024
+  - BAT-FR-029
 affected_modules:
   - SPEC-DATA-005
   - SPEC-DATA-006
-  - SPEC-EBMR-002  # batch-execution recovery/restart clauses name Temporal
+  - SPEC-DATA-007  # readmodels -- the first live-wired NATS consumer (Stage 3)
+  - SPEC-MAT-002D  # material consumption -- CON-FR-025 ERP posting, first live integration consumer (Stage 4)
+  - SPEC-ERP-006   # queue_erp_command() now has a real automated caller
+  - SPEC-EBMR-002  # batch-execution recovery/restart clauses name Temporal -- BAT-FR-029 proven (Stage 5)
 affected_functions:
   - services/gxp-api/app/main.py::outbox_publisher_loop
   - services/gxp-api/app/modules/eventbus/outbox.py
+  - services/gxp-api/app/modules/eventbus/jetstream.py::pull_subscribe
+  - services/gxp-api/app/modules/eventbus/consumer.py::run_pull_consumer
+  - services/gxp-api/app/modules/readmodels/projector.py
+  - services/gxp-api/app/modules/erp/consumer.py
+  - services/gxp-api/app/modules/erp/models.py::ErpInstance.service_actor_user_id (migration 0103)
   - services/gxp-api/app/modules/workflowops/*
 why_material: >
   AG-09/AG-10 are architecture non-negotiables. Recording the stand-ins as an interim state (not an
@@ -12233,17 +12910,48 @@ options:
   - (A) Build NATS/JetStream then Temporal in WP-11, contract-first, per ADR-0011 — chosen.
   - (B) Descope both for single-customer deployment (rejected by the project owner 2026-09-09).
 closure_criteria:
-  - JetStream producer replaces the stand-in publisher; publish-ack before mark_outbox_published; subject
-    convention per Document 73; at-least-once consumers for projections + integrations; EVT/TEST contract
-    tests (duplicate, replay by event_id, out-of-order, poison event) green.
-  - Temporal runtime deployed; workflowops + batch-execution recovery/escalation paths on Temporal
-    workflows/activities; deterministic replay + time-skip tests (TEST-FR-010) green; authoritative state
-    re-read from owning service (AG-10).
-  - AsyncAPI subject/stream contracts committed (also unblocks the non-QMS event half of SG-013).
+  - "[DONE 2026-09-12] JetStream producer replaces the stand-in publisher; publish-ack before
+    mark_outbox_published; subject convention per Document 73."
+  - "[PARTIAL 2026-09-13, Stage 3] at-least-once consumer for projections: one real durable pull consumer
+    (readmodels-material-lot-projector) wired end to end through consume_event_idempotently() +
+    handle_poison_event(), proven against the live broker (duplicate no-op, failed-handler nak +
+    redelivery, dead-letter after max_deliver, out-of-order no-op -- tests/test_eventbus_consumer.py,
+    5/5 passed)."
+  - "[PARTIAL 2026-09-14, Stage 4] at-least-once consumer for integrations: one real durable pull consumer
+    (erp-material-consumption-poster) wired end to end through the same consume_event_idempotently() +
+    handle_poison_event() machinery into the pre-existing, real queue_erp_command()/dispatch_erp_command()
+    ERP pipeline -- proven against the live broker + real Postgres via the real dispense-to-consume REST
+    flow (mapped material queued with the correct ERPNext payload; unconfigured site skipped, not
+    dead-lettered; unmapped material naks + dead-letters -- tests/test_erp_consumer.py, 3/3 passed).
+    Closes SG-098's CON-FR-025 'required behaviour' bullet. [OPEN] LIMS/Edge integration consumers;
+    SAP/Oracle/Dynamics consumption posting (no verified vendor-neutral payload mapping exists);
+    warehouse mapping for the ERPNext payload; a second/third integration event type beyond
+    MaterialConsumed; cross-consumer/multi-service contract tests (TEST-FR-007) beyond these two durable
+    consumers."
+  - "[PARTIAL 2026-09-12, Stage 2] Temporal runtime deployed (real dev-server); one real workflow built
+    (StepStuckDetectionWorkflow, BAT-FR-018/021 stuck-step half) on real workflows/activities;
+    authoritative state re-read from owning service (AG-10)."
+  - "[PARTIAL 2026-09-14, Stage 5] BAT-FR-029 restart/recovery proven for that one workflow: worker
+    stopped while durably asleep (simulated app restart), a completely independent fresh worker resumes
+    it, exactly one WorkflowStuckDetected signal (not lost, not duplicated); a second test proves the
+    resumed run re-reads live authoritative state (AG-10), not anything stale from before the restart --
+    tests/test_workflowops_restart_recovery.py, 2/2 passed. LIMS/Edge investigated as integration-consumer
+    candidates and found to need a whole new outbound adapter layer first (no HTTP provider exists in
+    either module, unlike ERP's 4 real adapters) -- set aside for this pass. [OPEN] the other 19 SG-048
+    items (each entangled with a different unbuilt module); deterministic replay + time-skip tests
+    (TEST-FR-010) using Temporal's own test environment (every pass's tests so far ran against the live
+    dev-server directly, not the replay-test harness); LIMS/Edge integration consumers; SAP/Oracle/
+    Dynamics ERP posting."
+  - "[PARTIAL 2026-09-13] AsyncAPI subject/stream contracts committed
+    (contracts/events/asyncapi-data-005-transport.yaml) -- now covers both the producer and the one real
+    consumer operation (consumeMaterialLotEvents) with EVT-FR-005/006/009/010/014/026/027
+    x-requirement-ids. Temporal REST surface contracted: contracts/openapi/spec-data-006.yaml.
+    SG-013's non-QMS event half still separately tracks whether every event_type has a contract; this
+    bullet is about the transport/consumer conventions, not that inventory."
 blocking: false  # does not block the M1 core build; blocks EVT-FR/TMP-FR verification and the SG-013 event half
 owner: Platform Architect + SRE Lead
-resolution_document: "— (open; WP-11 build task per ADR-0011)"
-status: OPEN
+resolution_document: "WP-11 Stage 1 (2026-09-12): app/modules/eventbus/jetstream.py -- real single-node NATS JetStream (infra/nats-server.conf, container ebmr-new-nats, tight resource limits given shared-host disk headroom), outbox.py::publish_outbox_event() publishes the canonical EVT-FR-001 envelope with Nats-Msg-Id=event_id for broker-level dedup, app/main.py lifespan connects/closes it (a connection failure at startup is logged, not fatal -- AG-09 transport, not authoritative). nats-py added (Apache-2.0, zero transitive deps, Document 104 justification in pyproject.toml). Tests: tests/test_eventbus_jetstream.py, 5 real tests against the live local broker, 5/5 passed, none mocked. WP-11 Stage 2 (2026-09-12): app/modules/workflowops/{client,activities,workflows,worker,commands,router}.py -- real Temporal dev-server (infra/README.md, PM2 ebmr-new-temporal), one real workflow (StepStuckDetectionWorkflow) proving the pattern end to end; temporalio added (MIT, Document 104 justification). Tests: tests/test_workflowops_temporal.py, 6 real tests against the live server, 6/6 passed, none mocked. WP-11 Stage 3 (2026-09-13): app/modules/eventbus/jetstream.py::pull_subscribe() (durable pull consumer primitive) + consumer.py::run_pull_consumer()/_process_one_message()/_dead_letter_message() (the first real driver of consume_event_idempotently()/handle_poison_event()) + app/modules/readmodels/projector.py (material_lot -> Postgres search index, reusing router.py's existing {\"state\"} allowlist verbatim) + an EVT-FR-014/027 ordering guard added to readmodels/search.py::index_authoritative_projection(). Wired into app/main.py's lifespan next to the outbox publisher/Temporal worker. Tests: tests/test_eventbus_consumer.py, 5 real tests against the live broker + real Postgres, 5/5 passed, none mocked. WP-11 Stage 4 (2026-09-14): app/modules/erp/consumer.py (new) -- subscribes to MaterialConsumed, resolves the site's ACTIVE ERPNext instance + the consumed material's ACTIVE ErpExternalMapping, calls the pre-existing queue_erp_command(POST_CONSUMPTION); migration 0103 adds ErpInstance.service_actor_user_id (mirrors lims_instance.service_actor_user_id, SG-070 -- corrected from lims_instance.py's own wrong SG-067 NCR-gap citation) since a background consumer has no human actor to attribute queue_erp_command()'s audit row to; scoped to ERPNext only (no vendor-neutral payload mapping exists for SAP/Oracle/Dynamics anywhere in this codebase). Wired into app/main.py's lifespan next to the readmodels consumer. Tests: tests/test_erp_consumer.py, 3 real tests against the live broker + real Postgres through the real dispense-to-consume REST flow, 3/3 passed, none mocked. Closes SG-098's CON-FR-025 required-behaviour bullet. WP-11 Stage 5 (2026-09-14): tests/test_workflowops_restart_recovery.py (new) -- BAT-FR-029 restart/recovery proven for StepStuckDetectionWorkflow (Stage 2): a worker is stopped while the workflow is durably asleep (simulated app restart) and a completely independent fresh worker resumes it correctly, exactly one WorkflowStuckDetected signal (not lost, not duplicated); a second test proves the resumed run re-reads live authoritative state (AG-10), not anything stale from before the restart. 2 real tests against the live Temporal server, 2/2 passed, none mocked. LIMS/Edge investigated as integration-consumer candidates and found to need a whole new outbound adapter layer first (no HTTP provider exists in either module) -- set aside. LIMS/Edge integration consumers, SAP/Oracle/Dynamics posting, warehouse mapping, the other 19 SG-048 items, and TEST-FR-010's replay/time-skip harness remain open, future stages."
+status: PARTIALLY_RESOLVED
 ```
 
 ```yaml
@@ -12381,3 +13089,289 @@ clean (only the disclosed `alembic_version` non-finding) immediately after a ful
 base` / `alembic upgrade head` round-trip; `ruff check app scripts --select F` and
 `tooling/guardrails/validate.py` both clean; `app.all_models` imports with 297 tables. Full pass/fail
 test-suite evidence in the completion report for this task.
+
+
+### SG-185 — `material_specification_version`/`release` has no Document 106 signature policy row
+
+Added 2026-09-11, Phase 4 / wp16-phase4-wp02-recipe-batch-sync (SG-057's resolution). Document 106 was
+authored before this pass's new `MaterialSpecificationVersion` entity existed, so it has no row for
+`(material_specification_version, release)` — the same class of gap `vault_object/release` and
+`record_correction/complete` had before their own SG-035 resolutions, and `qa_review_package/complete`
+had before SG-181.
+
+```yaml
+spec_gap_id: SG-185
+title: "material_specification_version/release has no Document 106 signature policy row"
+class: R
+description: >
+  scripts/seed.py's SIGNATURE_POLICY_FLOOR and Document 106 §9 have no row for
+  (material_specification_version, release) because this record type did not exist before Phase 4's
+  wp16-phase4-wp02-recipe-batch-sync branch (SG-057's resolution) introduced it.
+  resolve_signature_requirement() therefore raises SignaturePolicyUnresolvedError, and
+  POST /material-specifications/v1/drafts/{id}/release correctly returns 409
+  SIGNATURE_POLICY_UNRESOLVED for every actor, including Admin.
+source_documents:
+  - Document 106 (signature policy baseline)
+  - docs/generated/18_SPEC_GAPS.md SG-057 (the entity this policy would govern)
+source_requirement_ids:
+  - SIG-FR-004
+  - SIGP-FR-004
+affected_modules:
+  - SPEC-MAT-001
+affected_functions:
+  - app/modules/material_specification/commands.py::release_material_spec_version
+why_material: >
+  Whether releasing a material specification requires a signature, which meaning, which signer role and
+  whether independence is required are exactly the class of regulated-process decisions this pass has no
+  authority to invent — the same reasoning SG-035/SG-138/SG-167/SG-181 all applied to their own
+  previously-unmapped record_type/action pairs.
+risk_if_guessed: >
+  A guessed signer class or independence requirement could pass validation review while not matching the
+  Quality organization's actual intended control for material specification release — a specification
+  underlies supplier approval and purchasing eligibility (SG-057's own why_material), so a wrong policy
+  here has the same downstream risk class as a wrong product/recipe release policy.
+options:
+  - (A) Author from the closest existing Document 106 §8/§9 family analogue, matching how SG-035/SG-138/
+    SG-167's PHASE_3_DEFERRED_DECISIONS.md items were resolved — recommended, fastest path once a
+    project-owner decision names the analogue (product_version/release and recipe_version/release are the
+    nearest existing precedents: author != releaser, independent QA Releaser).
+  - (B) Leave fail-closed indefinitely (current state) — correct and safe, but blocks any real material
+    specification from ever being released.
+blocking: false
+owner: Quality/Regulatory org (signature policy authority) + Materials module owner
+resolution_document: "— (open)"
+status: OPEN
+```
+
+
+### SG-186 — `qc_method_version`/`release` has no Document 106 signature policy row
+
+Added 2026-09-12, Phase 4 / wp17-phase4-wp04-qc-method-master (SG-066's Method-master resolution).
+Document 106 was authored before this pass's new `QcMethodVersion` entity existed, so it has no row for
+`(qc_method_version, release)` — the same class of gap `material_specification_version/release` (SG-185),
+`vault_object/release` and `record_correction/complete` had before their own resolutions.
+
+```yaml
+spec_gap_id: SG-186
+title: "qc_method_version/release has no Document 106 signature policy row"
+class: R
+description: >
+  scripts/seed.py's SIGNATURE_POLICY_FLOOR and Document 106 §9 have no row for
+  (qc_method_version, release) because this record type did not exist before Phase 4's
+  wp17-phase4-wp04-qc-method-master branch (SG-066's Method-master resolution) introduced it.
+  resolve_signature_requirement() therefore raises SignaturePolicyUnresolvedError, and
+  POST /qc/v1/methods/drafts/{id}/release correctly returns 409 SIGNATURE_POLICY_UNRESOLVED for every
+  actor, including Admin.
+source_documents:
+  - Document 106 (signature policy baseline)
+  - docs/generated/18_SPEC_GAPS.md SG-066 (the entity this policy would govern)
+source_requirement_ids:
+  - SIG-FR-004
+  - SIGP-FR-004
+affected_modules:
+  - SPEC-QC-001
+affected_functions:
+  - app/modules/qc/commands.py::release_qc_method_version
+why_material: >
+  Whether releasing a QC method version requires a signature, which meaning, which signer role and
+  whether independence is required (QC-FR-004 names "approval" but not by whom) are exactly the class of
+  regulated-process decisions this pass has no authority to invent — the same reasoning SG-035/SG-138/
+  SG-167/SG-181/SG-185 all applied to their own previously-unmapped record_type/action pairs.
+risk_if_guessed: >
+  A guessed signer class or independence requirement could pass validation review while not matching the
+  Quality organization's actual intended control for method release — a released method underlies every
+  test result recorded against it, so a wrong policy here has the same downstream risk class as a wrong
+  test-specification release policy (Document 106 row 58).
+options:
+  - (A) Author from the closest existing Document 106 §8/§9 family analogue, matching how SG-035/SG-138/
+    SG-167/SG-185 were resolved — recommended. `qc_test_specification/release` (row 58: QA Approver/Batch
+    Release role, independent of every production performer) is the nearest existing precedent in the
+    same module.
+  - (B) Leave fail-closed indefinitely (current state) — correct and safe, but blocks any real QC method
+    from ever being released, and blocks qc_test_definition rows from ever citing a released method.
+blocking: false
+owner: Quality/Regulatory org (signature policy authority) + QC module owner
+resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-187
+title: "New edge/ gateway deployable (Document 43 §12) has no real X.509/PKI issuance and validates configuration by checksum only, not a cryptographic signature -- same limitation class as SG-118/SG-120, now on the gateway side"
+class: C
+description: >
+  This pass built the actual on-prem Edge Gateway runtime (`edge/`, Document 43 §12's declared
+  `runtime/plugins/storage/contracts/migrations/cli/tests` layout) that the 6 server-side APIs
+  (SG-118/SG-119/SG-120) had nothing to call into before now -- closing 17 of Document 43's 30 EDGE-FR
+  requirements that were NOT_STARTED because they describe the gateway's own runtime behaviour
+  (connector supervision, plugin sandbox, config activation, local buffering/forwarding, health/clock
+  reporting, secrets, container/systemd deployment), not server API surface. Per plan-mode sign-off this
+  pass (user selected "Python, matching gxp-api" over a new Go toolchain or scope-only ADR), the agent
+  reuses this repo's already-approved httpx/pydantic dependencies (Document 104 justification recorded in
+  edge/pyproject.toml) and needed no other new runtime dependency.
+
+  Two places in the new gateway code inherit the server side's already-documented "no real PKI issuance
+  exists in this codebase" limitation (services/gxp-api/app/modules/edge/commands.py's
+  `GatewayEnrollmentResult` docstring, referenced by SG-118/SG-120) rather than inventing one:
+  (1) `edge/runtime/security/identity.py::generate_gateway_fingerprint()` produces a locally-generated
+  SHA-256 identifier (hostname + random secret), not an X.509 CSR/certificate -- consistent with the
+  server's own `cert_chain` field already being "the fingerprint captured at enrollment, unenforced";
+  (2) `edge/runtime/config/loader.py::validate_config_payload()` verifies the server-supplied SHA-256
+  checksum only, not a detached cryptographic signature, because EDGE-FR-005's "signatures/checksum"
+  wording has no defined signing-key distribution/rotation mechanism anywhere in Document 43 or
+  Document 106 to verify against.
+source_documents:
+  - Document 43 (SPEC-EDGE-001)
+  - Document 62 (SPEC-SEC-002, deferred in full -- same reference as SG-120)
+  - Document 106 (signature policy baseline -- has no config-signing-key row)
+source_requirement_ids:
+  - EDGE-FR-002
+  - EDGE-FR-005
+  - EDGE-FR-020
+affected_modules:
+  - SPEC-EDGE-001
+affected_functions:
+  - edge/runtime/security/identity.py generate_gateway_fingerprint()
+  - edge/runtime/config/loader.py validate_config_payload()
+why_material: >
+  A trust/signing-key mechanism is exactly the class of decision AG-15/SEC-THR-024 reserve for a
+  reviewed security design, not code invented to fill a gap -- a wrong shape here (e.g. a locally
+  generated "signing key" nothing else in the system trusts) would be a worse outcome than the honest
+  checksum-only integrity check this pass implemented instead.
+risk_if_guessed: >
+  Under-building (refusing to activate any configuration without real signature verification) would leave
+  every one of the 17 newly-built EDGE-FR requirements permanently unusable, since no signing-key
+  infrastructure exists anywhere in this codebase to verify against yet. The chosen resolution (checksum
+  integrity only, explicitly flagged) is bounded by the same "captured, unenforced" risk this project
+  already accepted for SG-118/SG-120 -- a compromised config-distribution channel could serve wrong-but-
+  consistent config, but the schema/plugin-version/contradictory-settings validation in
+  `validate_config_payload()` still runs regardless, and EDGE-FR-006's atomic-activation-with-rollback
+  bounds the blast radius of a bad config to "gateway retains prior valid configuration."
+options:
+  - (A) Ship checksum-only config integrity and fingerprint-only gateway identity now, flagged here for a
+    Document 62/106 amendment defining a real signing-key/PKI mechanism before wider production use --
+    recommended (chosen this pass), same precedent as SG-118/SG-120.
+  - (B) Block all 17 EDGE-FR gateway-runtime requirements until Document 62 defines real PKI (rejected --
+    Document 62 is a full separate specification the user did not ask to build this pass, and blocking
+    leaves Document 43 shipped as dead server-side API with nothing calling it).
+blocking: false
+owner: Platform Architect + Security owner (Document 62 owner)
+resolution_document: "— (open, interim checksum/fingerprint mechanism in effect per this SPEC_GAP pending Document 62)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-188
+title: "EDGE-FR-008 plugin sandbox: this reference build enforces credential hygiene, not OS-level filesystem denial -- a plugin process can read any path its OS user can read (TC-043-S013 FAILs honestly)"
+class: C
+description: >
+  EDGE-FR-008 requires protocol plugins "cannot access GxP database credentials or unrestricted
+  filesystem/secrets." `edge/runtime/supervisor/supervisor.py` launches every connector as its own OS
+  subprocess with a restricted environment (only PATH/LANG/LC_ALL/PYTHONPATH passed through -- no GxP
+  database URL, no service-identity bearer token) and a dedicated per-connector scratch directory --
+  this is real and verified (edge/tests/test_plugin_sandbox.py::
+  test_plugin_subprocess_has_no_gxp_secrets_in_environment and
+  test_each_connector_gets_its_own_isolated_scratch_dir, both PASS). What this reference build does NOT
+  do is apply any OS-level filesystem jail (no chroot, mount namespace, or seccomp profile) to the
+  subprocess -- it runs as the same OS user as the supervisor and can `open()` any absolute path that
+  user can read, including files outside its scratch directory. A new test written this pass,
+  `test_plugin_filesystem_access_is_hygiene_not_os_level_denial`, proves this directly: a plugin given an
+  absolute path to a file outside its scratch dir successfully reads it. Per this project's own "no
+  fabricated evidence" rule, TC-043-S013 (Document 43's own mandatory test #13, "protocol plugin attempts
+  forbidden filesystem access") is recorded as FAIL, not BLOCKED or PASS -- the behavior was built,
+  tested, and found not to meet the literal "unrestricted filesystem" reading of EDGE-FR-008.
+source_documents:
+  - Document 43 (SPEC-EDGE-001), section 14 mandatory test #13
+source_requirement_ids:
+  - EDGE-FR-008
+affected_modules:
+  - SPEC-EDGE-001
+affected_functions:
+  - edge/runtime/supervisor/supervisor.py ConnectorSupervisor._spawn() -- restricted env/cwd only, no
+    filesystem jail
+  - edge/tests/test_plugin_sandbox.py::test_plugin_filesystem_access_is_hygiene_not_os_level_denial
+  - test-cases/WP-06/Document_43_SPEC-EDGE-001_TEST_CASES.md TC-043-S013
+why_material: >
+  Building a real OS-level jail (chroot, a Linux mount/user namespace, or a seccomp-bpf syscall filter)
+  is itself a new security-boundary/deployment-privilege decision -- it typically requires elevated
+  capabilities (CAP_SYS_ADMIN or root) to construct, which is a materially different and larger trust/
+  privilege model than an unprivileged supervisor process, and needs its own SEC-THR-024 threat review
+  before being invented here.
+risk_if_guessed: >
+  Claiming this boundary as a security control without OS-level enforcement (marking EDGE-FR-008 VERIFIED
+  because the credential-hygiene half works) would materially overstate the isolation a compromised or
+  malicious plugin actually faces -- a false sense of containment is worse than an honestly-recorded gap,
+  which is exactly why this pass records FAIL on TC-043-S013 instead of rounding it up to PASS or hiding
+  it as "future deployable, out of scope."
+options:
+  - (A) Record the honest FAIL and the credential-hygiene-only boundary as a known limitation, deferring
+    real OS-level sandboxing (likely requiring rootless containers/user namespaces per connector, or a
+    seccomp profile) to a dedicated future pass with its own threat review -- recommended (chosen this
+    pass; no further action taken this pass beyond recording it accurately).
+  - (B) Attempt a real chroot/namespace jail now (rejected -- a privilege-escalation-adjacent security
+    primitive invented without a threat review is exactly the guessed-security-boundary risk AG-15/
+    SEC-THR-024 exist to prevent, and typically requires the supervisor to run with elevated capabilities
+    it does not have in this reference build).
+blocking: false
+owner: Platform Architect + Security owner
+resolution_document: "— (open; TC-043-S013 recorded FAIL, tracked here pending a dedicated OS-sandboxing design pass)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-189
+title: "Document 46 (SPEC-EDGE-004) peripheral send_command() has no production dispatch path into a running sandboxed connector subprocess"
+class: C
+description: >
+  Document 46 requires the gateway to send an already-approved payload to certain peripherals -- a
+  rendered label to a printer (PER-FR-011/013), a tare instruction to a balance (PER-FR-009). Document 43's
+  `ConnectorPlugin` interface (`edge/plugins/base.py`) was deliberately inbound-only (`poll()` only,
+  EDGE-FR-008's fixed adapter interface); this pass added an optional `send_command()` extension method
+  with a safe default (`PeripheralCommandNotSupportedError`) that `edge/plugins/printer/printer.py` and
+  `edge/plugins/balance/balance.py` override with real, tested implementations -- but only exercised
+  directly/in-process by their own tests. `edge/runtime/supervisor/supervisor.py::_spawn()` opens every
+  connector subprocess's stdin as `DEVNULL` (matching `run_plugin_main()`'s "stdout only" contract), so no
+  actual runtime path delivers a command from the gateway's own runtime loop into a supervised, sandboxed
+  connector process once the gateway is actually running one. This is explicitly not Document 43's
+  EDGE-FR-023 command channel (`runtime/security/command_channel.py`, gates remote/network-issued
+  OT/PLC/SCADA writes behind an interlock allowlist) -- `send_command()` relays an already-authorized,
+  already-rendered payload to a peripheral the connector already exclusively owns the connection to, no
+  new regulated decision is made by either mechanism.
+source_documents:
+  - Document 46 (SPEC-EDGE-004, PER-FR-009, PER-FR-011, PER-FR-013)
+  - Document 43 (SPEC-EDGE-001, EDGE-FR-008, EDGE-FR-023 -- the sibling mechanism this is NOT)
+source_requirement_ids:
+  - PER-FR-009
+  - PER-FR-011
+  - PER-FR-013
+affected_modules:
+  - SPEC-EDGE-004
+  - SPEC-EDGE-001
+affected_functions:
+  - edge/plugins/base.py ConnectorPlugin.send_command() -- interface + safe default
+  - edge/plugins/printer/printer.py, edge/plugins/balance/balance.py -- real overrides, tested in-process only
+  - edge/runtime/supervisor/supervisor.py::_spawn() -- stdin=DEVNULL, no duplex channel exists
+why_material: >
+  Wiring a real duplex channel into a sandboxed subprocess (a stdin protocol, a local socket, or
+  otherwise) is a security-relevant decision -- it adds a second direction to a boundary EDGE-FR-008 built
+  specifically to be one-way, and Document 44's protocol-driver work may independently need the same
+  channel for its own future write-capable protocols (Modbus/OPC UA writes are currently hard-disabled by
+  each driver, per those modules' own tests) -- inventing a shape here without coordinating against that
+  shared supervisor code risks a second, incompatible mechanism.
+risk_if_guessed: >
+  Under-building (leaving send_command() production-unreachable, as this pass did) means Document 46's
+  printer/balance write path only works if a future pass adds the missing transport -- honestly limited,
+  not silently broken. Guessing a duplex-channel design now, without Document 44's parallel needs in view,
+  risks a supervisor-level security boundary change neither module actually validated together.
+options:
+  - (A) Ship the `send_command()` interface + real, directly-tested peripheral implementations now; leave
+    the supervisor-to-subprocess transport as a flagged, honestly-recorded limitation for a coordinated
+    follow-up pass — recommended (chosen this pass; no fabricated "it works end-to-end" claim).
+  - (B) Wire a duplex channel into the supervisor now (rejected -- a security-boundary change made without
+    coordinating against Document 44's own potential need for the same channel, guessed rather than
+    reviewed).
+blocking: false
+owner: Platform Architect + Security owner (supervisor sandbox boundary owner)
+resolution_document: "— (open; edge/plugins/base.py::send_command() and its two real overrides are the interim, production-unreachable interface)"
+status: OPEN
+```

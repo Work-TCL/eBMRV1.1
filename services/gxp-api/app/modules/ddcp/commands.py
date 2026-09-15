@@ -28,7 +28,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
-from app.modules.batch_execution.models import Batch
+from app.modules.batch_execution.models import Batch, BatchStep
 from app.modules.ddcp.models import (
     ASSEMBLY_STEPS,
     CONSTITUENT_TYPES,
@@ -39,6 +39,7 @@ from app.modules.ddcp.models import (
     ConstituentRequirement,
     DdcpProfileVersion,
     DdcpReleaseCheckpoint,
+    DdcpStepMapping,
     DeviceAssemblyRecord,
     DeviceFunctionalTestLink,
     FillOperation,
@@ -50,6 +51,7 @@ from app.modules.equipment.models import EquipmentAsset
 from app.modules.iam.models import User
 from app.modules.material.models import MaterialLot
 from app.modules.product_master.models import ProductVersion
+from app.modules.recipe_master.models import RecipeStep, RecipeVersion
 from app.modules.qms.change_models import ChangeAffectedObject, ChangeControl
 from app.modules.qms.models import DeviationRecord
 from app.modules.rules import commands as rules_commands
@@ -1592,5 +1594,138 @@ async def get_ddcp_change_linkage(session: AsyncSession, object_type: str, objec
                 "impact_category": affected.impact_category, "action_required": affected.action_required,
             }
             for affected, change in rows
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# SG-180 (option B) — DDCP action <-> generic recipe step declarative mapping, read-only sync visibility.
+# See DdcpStepMapping's own docstring (app/modules/ddcp/models.py) for why no write-side auto-completion
+# was built: Document 106's (batch_step, complete)/(batch_step, results) policy is unconditionally
+# signature_required=True, so it would be permanently inert.
+# ---------------------------------------------------------------------------
+
+DDCP_MAPPABLE_ACTIONS = ("constituent_handoff.accept", "filling_stage.complete", "device_assembly.verify")
+
+
+class CreateDdcpStepMappingCommand(CommandEnvelope):
+    recipe_version_id: uuid.UUID
+    ddcp_action: str
+    stable_step_code: str
+
+
+async def create_step_mapping(
+    session: AsyncSession, cmd: CreateDdcpStepMappingCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return MutationReceipt(
+            command_id=existing.id, aggregate_id=existing.aggregate_id, resulting_version=existing.resulting_version,
+            audit_event_id=None, correlation_id=None,
+        )
+
+    if cmd.ddcp_action not in DDCP_MAPPABLE_ACTIONS:
+        raise ValidationFailedError(
+            "Unknown ddcp_action", ddcp_action=cmd.ddcp_action, allowed=list(DDCP_MAPPABLE_ACTIONS)
+        )
+
+    step = (
+        await session.execute(
+            select(RecipeStep).where(
+                RecipeStep.recipe_version_id == cmd.recipe_version_id,
+                RecipeStep.stable_step_code == cmd.stable_step_code,
+            )
+        )
+    ).scalar_one_or_none()
+    if step is None:
+        raise NotFoundError(
+            "stable_step_code not found on this recipe version",
+            recipe_version_id=str(cmd.recipe_version_id), stable_step_code=cmd.stable_step_code,
+        )
+
+    conflict = (
+        await session.execute(
+            select(DdcpStepMapping).where(
+                DdcpStepMapping.recipe_version_id == cmd.recipe_version_id,
+                DdcpStepMapping.ddcp_action == cmd.ddcp_action,
+            )
+        )
+    ).scalar_one_or_none()
+    if conflict is not None:
+        raise ValidationFailedError(
+            "A mapping for this recipe_version_id/ddcp_action already exists",
+            recipe_version_id=str(cmd.recipe_version_id), ddcp_action=cmd.ddcp_action,
+        )
+
+    recipe_version = await session.get(RecipeVersion, cmd.recipe_version_id)
+
+    mapping = DdcpStepMapping(
+        recipe_version_id=cmd.recipe_version_id,
+        ddcp_action=cmd.ddcp_action,
+        stable_step_code=cmd.stable_step_code,
+        created_by=actor_user_id,
+    )
+    session.add(mapping)
+    await session.flush()
+
+    return await _write_receipt(
+        session, cmd=cmd, payload_hash=payload_hash, site_id=recipe_version.site_id,
+        aggregate_type="ddcp_step_mapping", aggregate_id=mapping.id, version=1, action="Created",
+        actor_user_id=actor_user_id, reason=None, old_state=None, event_type="DdcpStepMappingCreated",
+        event_payload={
+            "id": str(mapping.id), "recipe_version_id": str(cmd.recipe_version_id),
+            "ddcp_action": cmd.ddcp_action, "stable_step_code": cmd.stable_step_code,
+        },
+        expected_version=None, command_type="CreateDdcpStepMapping",
+    )
+
+
+async def get_step_mappings(session: AsyncSession, recipe_version_id: uuid.UUID) -> list[dict]:
+    rows = (
+        await session.execute(select(DdcpStepMapping).where(DdcpStepMapping.recipe_version_id == recipe_version_id))
+    ).scalars().all()
+    return [
+        {
+            "id": str(m.id), "recipe_version_id": str(m.recipe_version_id),
+            "ddcp_action": m.ddcp_action, "stable_step_code": m.stable_step_code,
+        }
+        for m in rows
+    ]
+
+
+async def get_batch_ddcp_sync_status(session: AsyncSession, batch_id: uuid.UUID) -> dict:
+    """The read that actually addresses SG-180's root cause: for a given batch, which DDCP actions map to
+    which generic steps, and what state is each side in right now -- so an operator sees the connection
+    instead of two apparently-unrelated progress trackers."""
+    batch = await session.get(Batch, batch_id)
+    if batch is None:
+        raise NotFoundError("Batch not found")
+
+    mappings = (
+        await session.execute(select(DdcpStepMapping).where(DdcpStepMapping.recipe_version_id == batch.recipe_version_id))
+    ).scalars().all()
+    if not mappings:
+        return {"batch_id": str(batch_id), "mappings": []}
+
+    step_codes = [m.stable_step_code for m in mappings]
+    steps_by_code = {
+        s.recipe_step_code: s
+        for s in (
+            await session.execute(
+                select(BatchStep).where(BatchStep.batch_id == batch_id, BatchStep.recipe_step_code.in_(step_codes))
+            )
+        ).scalars().all()
+    }
+
+    return {
+        "batch_id": str(batch_id),
+        "mappings": [
+            {
+                "ddcp_action": m.ddcp_action,
+                "stable_step_code": m.stable_step_code,
+                "generic_step_state": steps_by_code[m.stable_step_code].state if m.stable_step_code in steps_by_code else None,
+            }
+            for m in mappings
         ],
     }

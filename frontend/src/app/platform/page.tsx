@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api } from "@/lib/api";
+import { api, ApiError, downloadEvidence } from "@/lib/api";
 import { useRequireAdmin } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -93,7 +93,7 @@ export default function PlatformPage() {
               { name: "tier", label: "Tier", type: "select", required: true, options: ["T0", "T1", "T2", "T3", "T4"].map((v) => ({ value: v, label: v })) },
               { name: "rto_seconds", label: "RTO (seconds)", type: "number", required: true, default: "3600" },
               { name: "rpo_seconds", label: "RPO (seconds)", type: "number", default: "300" },
-              { name: "approved_by", label: "Approved by", required: true },
+              { name: "approved_by", label: "Approved by", type: "userSelect", required: true },
               { name: "reason", label: "Reason", required: true },
             ],
           },
@@ -107,7 +107,7 @@ export default function PlatformPage() {
               { name: "completed_at", label: "Completed at", type: "datetime", required: true },
               {
                 name: "integrity_checks", label: "Integrity checks", type: "kv", required: true,
-                hint: 'Each check performed and whether it passed — enter "true" or "false" as the value, e.g. "checksum_verified" → "true". At least one is required.',
+                hint: 'Each check performed and whether it passed - enter "true" or "false" as the value, e.g. "checksum_verified" → "true". At least one is required.',
               },
               { name: "reason", label: "Reason", required: true },
             ],
@@ -170,7 +170,7 @@ export default function PlatformPage() {
           {
             path: "{evidence_id}/legal-holds",
             label: "Apply a legal hold",
-            about: "Document 106 has no signature-policy row for this action yet — if one is later added, this form does not yet request the signature challenge it would require, so the action will correctly fail closed rather than proceed unsigned.",
+            about: "No signature policy is configured for this action yet - if one is later added, this form does not yet request the signature challenge it would require, so the action will correctly fail closed rather than proceed unsigned.",
             fields: [
               { name: "evidence_id", label: "Evidence object ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -180,6 +180,8 @@ export default function PlatformPage() {
           },
         ]}
       />
+
+      <DownloadEvidenceCard />
 
       <FormConsole
         title="Search & report operations"
@@ -199,6 +201,29 @@ export default function PlatformPage() {
         ]}
       />
       <FormConsole
+      title="Workflow orchestration ops"
+        root="/workflowops/v1"
+        ops={[
+          {
+            path: "step-stuck-detection",
+            label: "Start step-stuck detection",
+            about: "Launches a Temporal workflow that watches one batch step for lack of progress. Unsigned by design - orchestration is never regulatory truth (AG-10).",
+            fields: [
+              { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
+              { name: "step_id", label: "Step ID", required: true },
+              { name: "threshold_seconds", label: "Threshold (seconds)", type: "number", default: "900" },
+            ],
+          },
+          {
+            path: "step-stuck-detection/{step_id}",
+            label: "Get step-stuck detection status",
+            method: "GET",
+            fields: [{ name: "step_id", label: "Step ID", required: true }],
+          },
+        ]}
+      />
+
+      <FormConsole
         title="Async report exports"
         root="/reports/v1"
         ops={[
@@ -215,6 +240,49 @@ export default function PlatformPage() {
         ]}
       />
     </div>
+  );
+}
+
+/** `GET /evidence/v1/{evidence_id}/download` returns raw bytes (`Content-Disposition: attachment`), not
+ * JSON — a `FormConsole` op can only show a JSON response, so this is its own small card using
+ * `downloadEvidence()` (lib/api.ts), which fetches with the auth header and hands the browser a save. */
+function DownloadEvidenceCard() {
+  const [evidenceId, setEvidenceId] = useState("");
+  const [purpose, setPurpose] = useState("inspection");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function download() {
+    setBusy(true);
+    setError(null);
+    try {
+      await downloadEvidence(evidenceId.trim(), purpose.trim() || "inspection");
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Download failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="Download evidence" />
+      <p className="fs-2 text-muted mb-3">
+      Only a FINALIZED or ARCHIVED evidence object can be downloaded.
+      </p>
+      <div className="grid grid-cols-3 gap-4 mb-3">
+        <Field label="Evidence object ID">
+          <Input value={evidenceId} onChange={(e) => setEvidenceId(e.target.value)} />
+        </Field>
+        <Field label="Purpose" hint="Recorded in the audit trail for this download.">
+          <Input value={purpose} onChange={(e) => setPurpose(e.target.value)} />
+        </Field>
+      </div>
+      {error && <p className="error-text mb-2">{error}</p>}
+      <Button variant="secondary" disabled={busy || !evidenceId.trim()} onClick={download}>
+        <Icon name="download" /> {busy ? "Downloading…" : "Download"}
+      </Button>
+    </Card>
   );
 }
 

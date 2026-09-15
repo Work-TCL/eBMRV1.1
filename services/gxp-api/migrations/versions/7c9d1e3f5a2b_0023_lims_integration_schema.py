@@ -14,7 +14,7 @@ own "result" table -- this module is an adapter in front of the already-built `q
 versioning unmodified, never touching `qc_*` tables directly (Document 24 §18: "Never let adapter write
 GxP tables directly").
 
-Real blockers NOT built this pass (see SG-067 and the extended SG-066 in docs/generated/18_SPEC_GAPS.md):
+Real blockers NOT built this pass (see SG-070 and the extended SG-066 in docs/generated/18_SPEC_GAPS.md):
 LIMS-FR-013 (real mTLS/OAuth/workload-identity source authentication -- no service/machine-identity
 mechanism exists anywhere in this codebase; endpoints instead reuse the existing human bearer-token auth),
 LIMS-FR-016/020 (OOS record creation/retest linkage -- Document 25 not built yet), LIMS-FR-017

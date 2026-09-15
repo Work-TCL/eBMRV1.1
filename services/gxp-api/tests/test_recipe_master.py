@@ -8,6 +8,7 @@ import uuid
 
 from app.core.security import hash_password
 from app.modules.iam.models import User, UserSiteRole
+from app.modules.material.models import Material
 from app.modules.signature.models import SignaturePolicy
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 
@@ -538,3 +539,128 @@ async def test_recipe_release_is_signed_by_an_independent_qa_releaser(client, se
     detail = (await client.get(f"/recipes/v2/versions/{rv}", headers=auth_headers(releaser_token))).json()
     assert detail["lifecycle_state"] == "released"
     assert detail["released_vault_object_id"] is not None
+
+
+async def test_material_and_equipment_requirements_round_trip(client, seeded, db):
+
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe.reqs")
+    admin_token = await login(client, "admin.recipe.reqs")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], "RCPPRD-REQS")
+
+    async with db.begin():
+        material = Material(site_id=seeded["site_id"], code="MAT-RCP-REQ-1", name="Recipe Req Material", uom="kg")
+        db.add(material)
+    material_id = material.id
+
+    mat_spec_resp = await client.post(
+        "/material-specifications/v1/drafts",
+        json={
+            "idempotency_key": idem(), "material_spec_business_id": "RCPMAT-REQ-1", "version_no": 1,
+            "material_id": str(material_id), "name": "Recipe Req Material Spec", "site_id": str(seeded["site_id"]),
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert mat_spec_resp.status_code == 200, mat_spec_resp.text
+    material_spec_version_id = mat_spec_resp.json()["aggregate_id"]
+
+    body = _two_step_body(product_version_id, seeded["site_id"], "RCP-REQS")
+    body["steps"][0]["material_requirements"] = [
+        {
+            "material_spec_version_id": material_spec_version_id,
+            "target_value": "10.0", "min_value": "9.5", "max_value": "10.5", "uom": "kg",
+            "substitution_allowed": False, "consume_mode": "full", "genealogy_required": True,
+        }
+    ]
+    body["steps"][0]["equipment_requirements"] = [
+        {
+            "equipment_class": "mixer", "exact_equipment_optional": True,
+            "require_current_calibration": True, "require_current_qualification": True,
+        }
+    ]
+
+    resp = await client.post("/recipes/v2/drafts", json=body, headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    rv = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/recipes/v2/versions/{rv}", headers=auth_headers(admin_token))).json()
+    assert len(detail["material_requirements"]) == 1
+    mreq = detail["material_requirements"][0]
+    assert mreq["material_spec_version_id"] == material_spec_version_id
+    assert mreq["min_value"] == "9.50000000"
+    assert mreq["max_value"] == "10.50000000"
+    assert mreq["genealogy_required"] is True
+
+    assert len(detail["equipment_requirements"]) == 1
+    ereq = detail["equipment_requirements"][0]
+    assert ereq["equipment_class"] == "mixer"
+    assert ereq["require_current_calibration"] is True
+    assert ereq["require_current_qualification"] is True
+    assert ereq["require_current_cleaning"] is False
+
+
+async def test_material_requirement_rejects_unknown_material_spec_version_id(client, seeded, db):
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe.reqs2")
+    admin_token = await login(client, "admin.recipe.reqs2")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], "RCPPRD-REQS2")
+
+    body = _two_step_body(product_version_id, seeded["site_id"], "RCP-REQS2")
+    body["steps"][0]["material_requirements"] = [
+        {"material_spec_version_id": str(uuid.uuid4()), "genealogy_required": True}
+    ]
+
+    resp = await client.post("/recipes/v2/drafts", json=body, headers=auth_headers(admin_token))
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_update_draft_replaces_material_and_equipment_requirements(client, seeded, db):
+
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe.reqs3")
+    admin_token = await login(client, "admin.recipe.reqs3")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], "RCPPRD-REQS3")
+
+    async with db.begin():
+        material = Material(site_id=seeded["site_id"], code="MAT-RCP-REQ-3", name="Recipe Req Material 3", uom="kg")
+        db.add(material)
+    material_id = material.id
+
+    mat_spec_resp = await client.post(
+        "/material-specifications/v1/drafts",
+        json={
+            "idempotency_key": idem(), "material_spec_business_id": "RCPMAT-REQ-3", "version_no": 1,
+            "material_id": str(material_id), "name": "Recipe Req Material Spec 3", "site_id": str(seeded["site_id"]),
+        },
+        headers=auth_headers(admin_token),
+    )
+    material_spec_version_id = mat_spec_resp.json()["aggregate_id"]
+
+    body = _two_step_body(product_version_id, seeded["site_id"], "RCP-REQS3")
+    body["steps"][0]["equipment_requirements"] = [{"equipment_class": "mixer"}]
+    create = await client.post("/recipes/v2/drafts", json=body, headers=auth_headers(admin_token))
+    assert create.status_code == 200, create.text
+    rv = create.json()["aggregate_id"]
+
+    steps = [dict(s) for s in body["steps"]]
+    steps[0] = dict(steps[0])
+    steps[0]["equipment_requirements"] = []
+    steps[0]["material_requirements"] = [
+        {"material_spec_version_id": material_spec_version_id, "genealogy_required": False}
+    ]
+    update_body = {
+        "idempotency_key": idem(),
+        "recipe_version_id": rv,
+        "expected_version": 1,
+        "sections": body["sections"],
+        "steps": steps,
+        "dependencies": body["dependencies"],
+    }
+    update = await client.put(f"/recipes/v2/drafts/{rv}", json=update_body, headers=auth_headers(admin_token))
+    assert update.status_code == 200, update.text
+
+    detail = (await client.get(f"/recipes/v2/versions/{rv}", headers=auth_headers(admin_token))).json()
+    assert detail["equipment_requirements"] == []
+    assert len(detail["material_requirements"]) == 1
+    assert detail["material_requirements"][0]["genealogy_required"] is False

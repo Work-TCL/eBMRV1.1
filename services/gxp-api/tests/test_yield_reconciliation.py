@@ -897,3 +897,168 @@ async def test_duplicate_idempotency_key_returns_same_receipt(client, seeded, db
     second = await client.post("/manufacturing-calculations/v1/yield/evaluate", json=body, headers=auth_headers(admin_token))
     assert first.status_code == 200 and second.status_code == 200
     assert first.json()["aggregate_id"] == second.json()["aggregate_id"]
+
+
+# =================================================================================================
+# YLD-FR-022 "correction preserves original" -- supersede (WP-03 gap resolution)
+# =================================================================================================
+
+
+async def test_evaluate_yield_supersede_flags_original_and_links_correction(client, seeded, db):
+    admin_token, batch_id = await _setup_batch(db, client, seeded, "14")
+    original = await client.post(
+        "/manufacturing-calculations/v1/yield/evaluate",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "theoretical_quantity": "100", "actual_quantity": "95", "uom": "kg"},
+        headers=auth_headers(admin_token),
+    )
+    assert original.status_code == 200, original.text
+    original_id = original.json()["aggregate_id"]
+
+    correction = await client.post(
+        "/manufacturing-calculations/v1/yield/evaluate",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "theoretical_quantity": "100", "actual_quantity": "97",
+            "uom": "kg", "supersedes_id": original_id, "reason": "actual_quantity was transcribed wrong",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert correction.status_code == 200, correction.text
+    correction_id = correction.json()["aggregate_id"]
+
+    original_row = await db.get(ManufacturingCalculation, uuid.UUID(original_id))
+    correction_row = await db.get(ManufacturingCalculation, uuid.UUID(correction_id))
+    assert original_row.state == "SUPERSEDED"
+    assert correction_row.supersedes_id == original_row.id
+    assert correction_row.result["yield_percent"] == "97.00"
+
+    from app.modules.audit.models import AuditEvent
+    from app.modules.mutation.models import OutboxEvent
+    corrected_audit = await db.scalar(
+        sa_select(AuditEvent).where(AuditEvent.aggregate_id == original_row.id, AuditEvent.action == "Corrected")
+    )
+    assert corrected_audit is not None and corrected_audit.reason == "actual_quantity was transcribed wrong"
+    superseded_event = await db.scalar(
+        sa_select(OutboxEvent).where(
+            OutboxEvent.aggregate_id == original_row.id, OutboxEvent.event_type == "ReconciliationSuperseded",
+        )
+    )
+    assert superseded_event is not None
+    assert superseded_event.payload["corrected_by_id"] == correction_id
+
+
+async def test_evaluate_yield_supersede_requires_reason(client, seeded, db):
+    admin_token, batch_id = await _setup_batch(db, client, seeded, "15")
+    original = await client.post(
+        "/manufacturing-calculations/v1/yield/evaluate",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "theoretical_quantity": "100", "actual_quantity": "95", "uom": "kg"},
+        headers=auth_headers(admin_token),
+    )
+    original_id = original.json()["aggregate_id"]
+
+    resp = await client.post(
+        "/manufacturing-calculations/v1/yield/evaluate",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "theoretical_quantity": "100", "actual_quantity": "97",
+            "uom": "kg", "supersedes_id": original_id,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_evaluate_yield_supersede_rejects_already_superseded_original(client, seeded, db):
+    admin_token, batch_id = await _setup_batch(db, client, seeded, "16")
+    original = await client.post(
+        "/manufacturing-calculations/v1/yield/evaluate",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "theoretical_quantity": "100", "actual_quantity": "95", "uom": "kg"},
+        headers=auth_headers(admin_token),
+    )
+    original_id = original.json()["aggregate_id"]
+    first_correction = await client.post(
+        "/manufacturing-calculations/v1/yield/evaluate",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "theoretical_quantity": "100", "actual_quantity": "97",
+            "uom": "kg", "supersedes_id": original_id, "reason": "first correction",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert first_correction.status_code == 200, first_correction.text
+
+    second_correction = await client.post(
+        "/manufacturing-calculations/v1/yield/evaluate",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "theoretical_quantity": "100", "actual_quantity": "98",
+            "uom": "kg", "supersedes_id": original_id, "reason": "trying to correct the same original twice",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert second_correction.status_code == 422, second_correction.text
+    assert second_correction.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_evaluate_material_reconciliation_supersede_flags_original(client, seeded, db):
+    admin_token, batch_id = await _setup_batch(db, client, seeded, "17")
+    original = await client.post(
+        "/reconciliation/v1/material/evaluate",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "reconciliation_type": "MATERIAL",
+            "item_ref": {"material_id": str(uuid.uuid4())}, "uom": "kg",
+            "quantities": {"issued": "100.000000", "consumed": "98.000000", "returned": "2.000000"},
+            "tolerance_rule": {"type": "absolute", "value": "0.5", "inclusive": True},
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert original.status_code == 200, original.text
+    original_id = original.json()["aggregate_id"]
+
+    correction = await client.post(
+        "/reconciliation/v1/material/evaluate",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "reconciliation_type": "MATERIAL",
+            "item_ref": {"material_id": str(uuid.uuid4())}, "uom": "kg",
+            "quantities": {"issued": "100.000000", "consumed": "97.000000", "returned": "3.000000"},
+            "tolerance_rule": {"type": "absolute", "value": "0.5", "inclusive": True},
+            "supersedes_id": original_id, "reason": "returned quantity was miscounted",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert correction.status_code == 200, correction.text
+
+    original_row = await db.get(ReconciliationRecord, uuid.UUID(original_id))
+    correction_row = await db.get(ReconciliationRecord, uuid.UUID(correction.json()["aggregate_id"]))
+    assert original_row.state == "SUPERSEDED"
+    assert correction_row.supersedes_id == original_row.id
+
+
+async def test_supersede_rejects_a_record_from_a_different_batch(client, seeded, db):
+    admin_token, batch_id_1, product_version_id, recipe_version_id = await _setup_batch_with_product(db, client, seeded, "18")
+    resp = await client.post(
+        "/batches/v1",
+        json={
+            "idempotency_key": idem(), "site_id": str(seeded["site_id"]), "batch_number": "BAT-YLD-18b",
+            "product_version_id": product_version_id, "recipe_version_id": recipe_version_id,
+            "target_qty": "10.0", "target_uom": "kg",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    batch_id_2 = resp.json()["aggregate_id"]
+
+    original = await client.post(
+        "/manufacturing-calculations/v1/yield/evaluate",
+        json={"idempotency_key": idem(), "batch_id": batch_id_1, "theoretical_quantity": "100", "actual_quantity": "95", "uom": "kg"},
+        headers=auth_headers(admin_token),
+    )
+    original_id = original.json()["aggregate_id"]
+
+    resp = await client.post(
+        "/manufacturing-calculations/v1/yield/evaluate",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id_2, "theoretical_quantity": "100", "actual_quantity": "97",
+            "uom": "kg", "supersedes_id": original_id, "reason": "wrong batch on purpose",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"

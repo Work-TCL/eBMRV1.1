@@ -7,20 +7,26 @@ the domain state (EVT-FR-002, already `app/mutation/gateway.py::write_outbox_eve
 after commit, idempotently, marking published only after broker acknowledgement (EVT-FR-004) -- is
 unchanged; this module makes the three publisher steps nameable, testable and monitorable.
 
-Phase 1 has no live NATS/JetStream broker (Document 73 # 15's "infra feed deferred" shape, same as
-Document 66's zero-trust functions / Document 74's Temporal wiring): `publish_outbox_event()` logs the
-publish intent and returns a receipt as if acknowledged. Swapping in a real JetStream client changes
-only this function's body -- callers, the outbox table and the atomicity guarantee do not change.
+WP-11 (ADR-0011, SG-183): `publish_outbox_event()` now publishes for real to NATS JetStream
+(`app.modules.eventbus.jetstream`) -- the canonical EVT-FR-001 envelope (event_id, event_type,
+schema_version, aggregate id/version, payload, correlation/causation, occurred_at) is the JSON body;
+`event_id` is also the JetStream message's `Nats-Msg-Id` header, giving the broker itself dedup-on-republish
+for free (a crash between publish and `mark_outbox_published` simply republishes the same event_id, which
+JetStream's own duplicate window recognizes as a duplicate -- `ack.duplicate` is recorded but never
+treated as an error, same event, same effect). Raises on nack/timeout/not-connected, exactly as the prior
+stand-in's docstring always said a real client would.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.eventbus import jetstream
 from app.modules.mutation.models import OutboxEvent
 from app.mutation.errors import OutboxPublishStateConflictError
 
@@ -49,18 +55,39 @@ async def claim_outbox_batch(
     return list(result.scalars().all())
 
 
+def _canonical_envelope(event: OutboxEvent) -> dict:
+    """EVT-FR-001's canonical event envelope, built directly from the outbox row -- no second event
+    shape, no re-derivation of anything the row does not already carry."""
+    return {
+        "event_id": str(event.id),
+        "event_type": event.event_type,
+        "schema_version": event.schema_version,
+        "aggregate_type": event.aggregate_type,
+        "aggregate_id": str(event.aggregate_id),
+        "aggregate_version": event.aggregate_version,
+        "payload": event.payload,
+        "correlation_id": str(event.correlation_id),
+        "causation_id": str(event.causation_id) if event.causation_id else None,
+        "occurred_at": event.occurred_at.isoformat(),
+    }
+
+
 async def publish_outbox_event(event: OutboxEvent) -> dict:
-    """`publishOutboxEvent()` -- Phase 1: logs the publish (transport is swappable; see module
-    docstring). Returns a PublishReceipt; a real broker integration raises on nack/timeout so the
-    caller never marks an unacknowledged publish as done (EVT-FR-004)."""
+    """`publishOutboxEvent()` -- WP-11: publishes the canonical envelope to real NATS JetStream and
+    waits for the broker's PubAck before returning. Raises on nack/timeout/not-connected so the caller
+    (`mark_outbox_published`) never marks an unacknowledged publish as done (EVT-FR-004)."""
     subject = subject_for(event)
+    envelope = _canonical_envelope(event)
+    ack = await jetstream.publish(subject, json.dumps(envelope).encode("utf-8"), msg_id=str(event.id))
     logger.info(
-        "publishing subject=%s event_id=%s aggregate=%s/%s version=%s",
+        "published subject=%s event_id=%s aggregate=%s/%s version=%s stream=%s seq=%s duplicate=%s",
         subject, event.id, event.aggregate_type, event.aggregate_id, event.aggregate_version,
+        ack["stream"], ack["seq"], ack["duplicate"],
     )
     return {
         "event_id": str(event.id), "subject": subject, "acknowledged": True,
         "published_at": datetime.now(timezone.utc).isoformat(),
+        "stream": ack["stream"], "seq": ack["seq"], "duplicate": ack["duplicate"],
     }
 
 

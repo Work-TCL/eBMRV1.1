@@ -308,25 +308,31 @@ components:
         Audit action semantics (AUD-FR-005).
 
 
-        DELIBERATELY NOT A CLOSED ENUM, and this is a finding rather than a design choice. AUD-FR-005
-        requires "stable event types", but nothing in the codebase constrains the value: `write_audit_event`
-        takes `action: str`, and several modules pass it through a shared helper from a caller-supplied
-        variable (`app/modules/release/commands.py`, `app/modules/qms/scar_commands.py`,
-        `app/modules/batch_execution/commands.py` and others). There is no central action registry, so a
-        new module can introduce a new spelling — or a typo — with nothing to reject it. Declaring a
-        closed enum here would make this contract false. Raised as SG-142.
+        DELIBERATELY NOT A CLOSED ENUM. SG-142 partial resolution (2026-09-14, project-owner-directed,
+        option A phase 1): `write_audit_event()` (app/mutation/gateway.py) now checks every action
+        against a central registry (`app/mutation/audit_actions.py::KNOWN_AUDIT_ACTIONS`) and logs a
+        warning for an unregistered value -- but still commits the write either way. Closing this to a
+        hard-enforced, rejecting enum immediately would risk a legitimate new action value being rejected
+        the moment a new module needs one, which under MUT-FR-015 would roll back the domain mutation
+        with it. Declaring a closed *contract* enum here would still make this contract false today, for
+        the same reason. Phase 2 (closing the enum in both the registry's own enforcement and this
+        contract) is a separate, later decision -- not attempted this pass; that transition will be a
+        `schema_version` bump, not an additive change.
 
 
-        The twenty values below are the complete set of PascalCase literals the current code writes,
-        recovered by static extraction over `app/`. `Sampled` and `LossRecorded` come from a conditional
-        in `app/modules/material/commands.py`. Consumers should treat unknown values as opaque
-        (CTR-FR-017 unknown-enum handling) until SG-142 is resolved and this becomes a closed enum — that
-        transition will be a `schema_version` bump, not an additive change.
+        The 26 values below are the complete registry as of 2026-09-14, recovered by static extraction
+        over `app/` and cross-checked against `KNOWN_AUDIT_ACTIONS` directly (SG-142's own original
+        20-value snapshot was already stale by 8 values when re-checked, including `Signed` -- AUD-FR-005
+        names it explicitly, but no code path actually wrote it until this same day's own SG-048/SG-160
+        chain-signature work started using it). `Sampled` and `LossRecorded` come from a conditional in
+        `app/modules/material/commands.py`. Consumers should still treat unknown values as opaque
+        (CTR-FR-017 unknown-enum handling) until phase 2 closes the enum.
       x-requirement-ids: [AUD-FR-005, CTR-FR-017]
       examples:
         - Created
         - Changed
         - Corrected
+        - Signed
         - Approved
         - Released
         - Rejected
@@ -344,6 +350,13 @@ components:
         - LossRecorded
         - IntegrationAccepted
         - PermissionsChanged
+        - AdvisoryUnavailable
+        - Allowed
+        - ContextBuilt
+        - Denied
+        - GovernancePackageGenerated
+        - Performed
+        - Retired
 
     AuditExportFilter:
       type: object
