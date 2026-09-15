@@ -93,7 +93,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /regulatory/v1/cases/{caseId}/reportability-tracks` (or the owning command) exercising: Rules calculate candidate applicability and deadlines; authorized reviewer makes final REPORTABLE/NOT_REPORTABLE/PENDING decision. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** No autonomous legal decision. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** PASS  |  **Executed by:** Claude Code  |  **Date:** 2026-08-30  |  **Actual result:** decideReportability() records the authorized reviewer's decision; fails closed with SIGNATURE_POLICY_UNRESOLVED until a local policy is seeded (SG-157). test_decide_reportability_fails_closed_then_signed_not_reportable.  |  **Defect:** none
+- **Status:** PASS  |  **Executed by:** Claude Code  |  **Date:** 2026-08-30  |  **Actual result:** decideReportability() records the authorized reviewer's decision; fails closed with SIGNATURE_POLICY_UNRESOLVED until a local policy is seeded (SG-157). test_decide_reportability_requires_a_real_signature_then_signed_not_reportable.  |  **Defect:** none
 
 ### TC-059-004-02 — Human decision authority — Limit boundary behaviour
 
@@ -194,7 +194,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /regulatory/v1/cases/{caseId}/reportability-tracks` (or the owning command) exercising: Capture malfunction, recurrence-consequence rationale, device evaluation and evidence. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** MDR basis. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** PASS  |  **Executed by:** Claude Code  |  **Date:** 2026-08-30  |  **Actual result:** MALFUNCTION report_type_code track decided NOT_REPORTABLE with rationale and evidence_refs. test_decide_reportability_fails_closed_then_signed_not_reportable.  |  **Defect:** none
+- **Status:** PASS  |  **Executed by:** Claude Code  |  **Date:** 2026-08-30  |  **Actual result:** MALFUNCTION report_type_code track decided NOT_REPORTABLE with rationale and evidence_refs. test_decide_reportability_requires_a_real_signature_then_signed_not_reportable.  |  **Defect:** none
 
 ### TC-059-009-02 — Malfunction assessment — Offline buffering and reconnect preserve evidence
 
