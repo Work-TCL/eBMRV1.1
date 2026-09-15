@@ -1,0 +1,1 @@
+"""Document 46 (SPEC-EDGE-004) vision inspection system peripheral plugin -- PER-FR-015/016/017/025."""

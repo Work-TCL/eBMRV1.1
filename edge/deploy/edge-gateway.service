@@ -1,0 +1,28 @@
+# Document 43 EDGE-FR-029 (systemd reference deployment) and section 10 (least-privilege OS account,
+# no inbound SSH required). Install to /etc/systemd/system/edge-gateway.service.
+
+[Unit]
+Description=eBMR/eDHR Edge Gateway (Document 43 / SPEC-EDGE-001)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=edge
+Group=edge
+ExecStart=/opt/edge-gateway/.venv/bin/python -m cli.main --state-dir /var/lib/edge-gateway run
+WorkingDirectory=/opt/edge-gateway
+Restart=on-failure
+RestartSec=5
+
+# Least-privilege hardening (section 10: "least-privilege OS account").
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/edge-gateway
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1 @@
+"""Document 46 (SPEC-EDGE-004) barcode scanner peripheral plugin -- PER-FR-003/004/005/006/020/023/025."""
