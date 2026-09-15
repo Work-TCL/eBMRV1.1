@@ -321,7 +321,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: Capture typed value, UOM, source, source timestamp, receive time, actor/device, quality status and applicable rule result. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Complete evidence. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** PASS (manual/typed capture only — source_type fixed 'manual'; device/edge sourcing, BAT-FR-011, stays SG-048 #011)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-09  |  **Actual result:** `test_record_results_and_complete_step_advances_dependency_graph` (tests/test_batch_execution.py) — `POST /batches/v1/{id}/steps/{id}/results` records a `gxp_step_result` row typed from the recipe's own RecipeParameter (data_type/uom), signed (Document 106 row 21), aggregate version incremented, StepResultRecorded outbox row, audit event.  |  **Defect:** none
+- **Status:** PASS (typed capture plus quality_status; "applicable rule result" — a real rules-engine evaluation — stays open, a materially deeper capability than a computed column)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-14 (quality_status added; original typed-capture verification 2026-09-09)  |  **Actual result:** `test_record_results_and_complete_step_advances_dependency_graph` — `POST /batches/v1/{id}/steps/{id}/results` records a `gxp_step_result` row typed from the recipe's own RecipeParameter (data_type/uom), signed (Document 106 row 21), aggregate version incremented, StepResultRecorded outbox row, audit event. `test_record_step_results_computes_quality_status_and_accepts_device_transcribed_source` — `quality_status` ('in_range'/'out_of_range'/'not_evaluated') is computed from the recipe parameter's own min_value/max_value, informational only (both tests/test_batch_execution.py).  |  **Defect:** none
 
 ### TC-011-009-02 — Parameter capture — Illegal state transition is rejected
 
@@ -372,7 +372,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: Accept registered device data with source identity, sequence/idempotency, mapping version and data-quality status. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Machine evidence attributable. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (narrow slice: a human explicitly tags a result 'device_transcribed' -- they read it off a device/instrument and key it in, distinct from their own direct observation 'manual'. Both remain human-entered; true automated device/edge ingestion -- registered source identity, sequence/idempotency, mapping version -- is not built and stays open, SG-048 #011)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-14  |  **Actual result:** `test_record_step_results_computes_quality_status_and_accepts_device_transcribed_source` (tests/test_batch_execution.py) — `POST .../results` accepts `source_type: "device_transcribed"`, persisted and returned via execution-view; `test_record_step_results_rejects_unknown_source_type` — an unrecognized `source_type` is rejected 422 `VALIDATION_FAILED`.  |  **Defect:** none
 
 ### TC-011-011-02 — Device/Edge result — Illegal state transition is rejected
 
@@ -449,7 +449,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: Verify performer/verifier training/qualification at action time. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Unqualified action blocked. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (new `RecipeStep.required_qualification_code`, frozen onto BatchStep at issue -- distinct from the pre-existing, still-unresolvable `qualification_policy_id` -- enforced against `iam.qualifications`, not `qms.QualificationRecord`; SG-086's dual-qualification-store question stays open, this reuses `material/commands.py::_check_dispensing_qualification`'s already-production precedent)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-14  |  **Actual result:** `test_start_step_blocked_without_required_qualification_then_succeeds_once_granted` (tests/test_batch_execution.py) — `POST .../start` on a step declaring `required_qualification_code` is rejected 403 `QUALIFICATION_MISSING` until a matching `iam.Qualification` row is granted, then succeeds. `test_start_step_blocked_when_qualification_expired` — an expired qualification is rejected 403 `QUALIFICATION_EXPIRED`.  |  **Defect:** none
 
 ### TC-011-015-01 — Step validation — required behaviour
 
@@ -461,7 +461,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: Before completion validate required parameters, evidence, calculations, QC requirements, materials and signatures. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Incomplete step cannot complete. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** PASS (required-parameter presence check only — evidence/calculations/QC/materials sub-checks stay SG-048)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-09  |  **Actual result:** `test_complete_step_blocked_without_required_parameter_result` (tests/test_batch_execution.py) — `POST .../complete` on a step with an unrecorded required RecipeParameter is rejected 422 `PARAMETER_REQUIRED`, `details.missing_parameter_codes` names it; step state/version unchanged.  |  **Defect:** none
+- **Status:** PASS (required-parameter and required-evidence sub-checks; calculations/QC/materials sub-checks stay SG-048)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-14 (evidence sub-check added; parameter sub-check originally verified 2026-09-09)  |  **Actual result:** `test_complete_step_blocked_without_required_parameter_result` — `POST .../complete` on a step with an unrecorded required RecipeParameter is rejected 422 `PARAMETER_REQUIRED`, `details.missing_parameter_codes` names it; step state/version unchanged. `test_complete_step_blocked_without_required_evidence_then_succeeds_after_linking` — same endpoint on a step with an unmet `gxp_recipe_evidence_requirement.required_count` is rejected 422 `VALIDATION_FAILED`, `details.missing_evidence_types` names it, then succeeds once the required evidence is linked (both tests/test_batch_execution.py).  |  **Defect:** none
 
 ### TC-011-015-02 — Step validation — Action without the required signature is blocked
 
@@ -750,7 +750,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: Completed step data correction uses controlled correction workflow preserving original, reason, impact and signatures. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** No edit-in-place. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (2-signature request/approve ceremony; "aggregate version incremented" reads as the new `gxp_step_result` row's own `result_version` since the original is append-only/never edited, AG-08)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-14  |  **Actual result:** `test_step_result_correction_two_signature_flow` (tests/test_batch_execution.py) — corrector requests a correction to a completed step's recorded result, an independent approver approves it; the original `gxp_step_result` row is unchanged, a new row (`result_version` + 1, `supersedes_result_id` set) carries the corrected value; two audit events (Created, Approved), one outbox event (`StepResultCorrected`), both receipts returned.  |  **Defect:** none
 
 ### TC-011-023-02 — Step correction — Action without the required signature is blocked
 
@@ -764,7 +764,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Expected error code:** `SIGNATURE_REQUIRED`
 - **Depends on:** TC-011-023-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (real error code `MISSING_SIGNATURE`, see TC-011-015-02's same note)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-14  |  **Actual result:** `test_request_step_result_correction_requires_signature` (tests/test_batch_execution.py) — `POST .../correct` with no `challenge_id`/`reauth_password` is rejected 428 `MISSING_SIGNATURE`; no correction row created.  |  **Defect:** none
 
 ### TC-011-023-03 — Step correction — Signature bound to a superseded version is rejected
 
@@ -778,7 +778,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Expected error code:** `SIGNATURE_STALE`
 - **Depends on:** TC-011-023-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** N/A (`gxp_step_result` is append-only, AG-08 -- the original row's version/hash the challenge is bound to never changes after the challenge is created; only a new superseding row is ever created on approval. The scenario this case tests cannot occur by construction against this record. QC's identical Document 106 row 57 correction flow, `qc_result`, has the same append-only property and was never tested for this scenario either.)  |  **Executed by:** N/A  |  **Date:** 2026-09-14  |  **Actual result:** N/A  |  **Defect:** none
 
 ### TC-011-023-04 — Step correction — Illegal state transition is rejected
 
@@ -792,7 +792,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Expected error code:** `STATE_TRANSITION_INVALID`
 - **Depends on:** TC-011-023-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (this codebase's real error-code taxonomy names this class `INVALID_TRANSITION`, not the template's placeholder `STATE_TRANSITION_INVALID` — same code every other illegal-transition case in the repo returns, e.g. `app/mutation/errors.py::InvalidTransitionError`; illegal state here = step not yet "complete", the only state BAT-FR-023 allows correcting)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-14  |  **Actual result:** `test_request_step_result_correction_rejected_before_step_is_complete` (tests/test_batch_execution.py) — requesting a correction while the step is still "in_progress" is rejected 409 `INVALID_TRANSITION`; no correction row created.  |  **Defect:** none
 
 ### TC-011-024-01 — Rework/reprocess — required behaviour
 
@@ -858,7 +858,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: Support controlled operator handover without changing prior attribution; active step may require pause/checklist/signature. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Continuity maintained. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS (unsigned/RBAC-gated interim scope, project-owner-directed: Document 106 has no policy row for this action; a real signature-policy decision is a human call not made this pass, tracked in SG-048's own resolution note)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-14  |  **Actual result:** `test_handover_step_succeeds_without_changing_prior_attribution` (tests/test_batch_execution.py) — `POST .../handover` moves an in-progress step's `assigned_subject_id` and records a `gxp_step_handover` row, without rewriting `started_at` or the original StepStarted audit event; `test_handover_step_rejected_when_not_in_progress` — rejected 409 `INVALID_TRANSITION` on a step that hasn't started.  |  **Defect:** none
 
 ### TC-011-025-02 — Shift handover — Action without the required signature is blocked
 
@@ -872,7 +872,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Expected error code:** `SIGNATURE_REQUIRED`
 - **Depends on:** TC-011-025-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** N/A (this interim, project-owner-directed scope for SG-048 #025 is unsigned/RBAC-gated by design — Document 106 has no policy row for this action, so there is no signature to require. Applies once a real Document 106 addendum adds one; not applicable to the built scope.)  |  **Executed by:** N/A  |  **Date:** 2026-09-14  |  **Actual result:** N/A  |  **Defect:** none
 
 ### TC-011-025-03 — Shift handover — Signature bound to a superseded version is rejected
 
@@ -886,7 +886,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Expected error code:** `SIGNATURE_STALE`
 - **Depends on:** TC-011-025-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** N/A (same reason as TC-011-025-02: this interim scope is unsigned, so there is no signature challenge for a version to become stale against. Applies once a real Document 106 addendum adds a signature requirement.)  |  **Executed by:** N/A  |  **Date:** 2026-09-14  |  **Actual result:** N/A  |  **Defect:** none
 
 ### TC-011-026-01 — Production completion — required behaviour
 
@@ -1202,7 +1202,7 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /batches/v1` (or the owning command) exercising: Structured comments/notes may be added with author/time; corrections to comments preserve history if regulated. | 4. Complete any signature challenge the policy set requires. | 5. Read back the aggregate, the audit stream and the outbox by command id.
 - **Expected result:** Communication auditable. Aggregate version incremented; one audit event; one outbox row; receipt returned.
 - **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, screenshot where UI-driven
-- **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
+- **Status:** PASS ("Structured comments/notes may be added with author/time" built; "corrections to comments preserve history if regulated" not built -- no correction chain for a comment itself this pass, same narrower-than-full-generality scope SG-047's own StepEvidenceLink already accepted)  |  **Executed by:** automated (pytest)  |  **Date:** 2026-09-14  |  **Actual result:** `test_add_step_comment_succeeds` (tests/test_batch_execution.py) — `POST .../comments` persists an append-only `gxp_step_comment` row (author/time captured), returned via execution-view; `test_add_step_comment_rejects_empty_text` — empty/whitespace-only text is rejected 422 `VALIDATION_FAILED`.  |  **Defect:** none
 
 ### TC-011-035-01 — Production dashboard — required behaviour
 
