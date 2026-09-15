@@ -389,7 +389,7 @@ function CreateReceiptModal({
           <Field label="Manufacturer's lot number">
             <Input value={manufacturerLot} onChange={(e) => setManufacturerLot(e.target.value)} />
           </Field>
- <Field label="Received quantity (gross)" required hint="Kept as exact text DATA-FR-019.">
+          <Field label="Received quantity (gross)" required hint="Kept as exact text.">
             <Input value={grossQuantity} onChange={(e) => setGrossQuantity(e.target.value)} required />
           </Field>
           <Field label="Unit of measure" required>

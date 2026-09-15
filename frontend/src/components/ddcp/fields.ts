@@ -10,7 +10,7 @@
 export type DdcpFieldType =
   | "text"
   | "number" // integer
-  | "decimal" // decimal-as-string — never coerced to a JS number (AG-15 / DATA-FR-019)
+  |"decimal" // decimal-as-string - never coerced to a JS number
   | "datetime"
   | "bool"
   | "select"
@@ -18,23 +18,23 @@ export type DdcpFieldType =
   | "equipmentSelect"
   | "areaSelect"
   | "profileSelect" // a family-scoped DDCP profile picker (see catalog.ts's DdcpFamily.prefix)
-  | "productVersionSelect" // SG-175: a two-step Product Master picker (business ID, then that
+  |"productVersionSelect" // SG-175: a two-step Product Master picker (business ID, then that
   // product's RELEASED versions) — used only by product_version_id on the profile-create form,
   // there is no flat "all product versions" list endpoint to pick from directly
-  | "recordSelect" // an id picked from records created earlier this session (see catalog.ts's DdcpOp.producesRecordKind) — falls back to manual entry, same as the other pickers
-  | "sterilizationSelect" // GET /sterilization/v1/items/eligible (SG-179 follow-up) — a completed
+  | "recordSelect" // an id picked from records created earlier this session (see catalog.ts's DdcpOp.producesRecordKind) - falls back to manual entry, same as the other pickers
+  |"sterilizationSelect" // GET /sterilization/v1/items/eligible - a completed
   // sterilization load item or filter use, site-scoped; used only by sterilization_use_id
-  | "ruleSelect" // GET /rules/v1 — a rule with a currently-effective RELEASED version, by its rule_id
+  | "ruleSelect" // GET /rules/v1 - a rule with a currently-effective RELEASED version, by its rule_id
   // (a human string, not a uuid); same list recipe_master's condition_rule_id picker already uses.
   // Used by every acceptance_rule_id (fill IPC's "no effective released version" 404 otherwise).
-  | "asepticInterventionSelect" // GET /aseptic/v1/interventions — a real AsepticIntervention id,
+  | "asepticInterventionSelect" // GET /aseptic/v1/interventions - a real AsepticIntervention id,
   // site-scoped; used only by source_aseptic_intervention_id on "Record an aseptic intervention"
   | "ref" // a small {chosen-key: value} reference object, e.g. source_batch_reference
   | "repeat" // an array of objects built from subFields, e.g. constituent_requirements
-  | "kv" // a free-form {key: value} object, e.g. constituent_architecture — the backend stores this
+  | "kv" // a free-form {key: value} object, e.g. constituent_architecture - the backend stores this
   // verbatim with no fixed schema; nothing here is validated, so there is no hidden key catalogue to
   // discover (see each field's own hint for the one or two keys the backend actually reads, if any)
-  | "boolKv"; // a single-key {kvKey: true|false} object — for the rare kv field where the backend
+  | "boolKv"; // a single-key {kvKey: true|false} object - for the rare kv field where the backend
   // actually reads one specific boolean key (e.g. environment_status.ready) rather than treating the
   // whole object as opaque; renders as a plain Yes/No control instead of asking the user to know and
   // type that key by hand.

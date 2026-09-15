@@ -118,7 +118,14 @@ export function SignedJsonForm({
   }
 
   const params = pathParamNames(op.postPath + " " + op.challengePath);
-  const missingPathValue = params.some((p) => !(pathValues[p] ?? "").trim());
+  // A path placeholder that's also a declared body field (required by this backend's path/body
+  // equality checks — see `SignedJsonOp.fields` doc above) gets its value from the body field state,
+  // not a second, separately-typed input — the user fills it once.
+  const fieldNames = new Set((op.fields ?? []).map((f) => f.name));
+  const standalonePathParams = params.filter((p) => !fieldNames.has(p));
+  const resolvedPathValues: Record<string, string> = { ...pathValues };
+  for (const p of params) if (fieldNames.has(p)) resolvedPathValues[p] = values[p] ?? "";
+  const missingPathValue = standalonePathParams.some((p) => !(pathValues[p] ?? "").trim());
   const missingFieldValue = op.fields ? missingRequiredFields(op.fields, values, complexValues) : false;
 
   return (
@@ -136,9 +143,9 @@ export function SignedJsonForm({
       </Field>
       {op.about && <p className="fs-2 text-muted mb-3">{op.about}</p>}
 
-      {params.length > 0 && (
+      {standalonePathParams.length > 0 && (
         <div className="grid grid-cols-3 gap-4 mb-3">
-          {params.map((p) => (
+          {standalonePathParams.map((p) => (
             <Field key={p} label={p} required>
               <Input value={pathValues[p] ?? ""} onChange={(e) => setPathValues((c) => ({ ...c, [p]: e.target.value }))} />
             </Field>
@@ -188,7 +195,7 @@ export function SignedJsonForm({
           open={open}
           onClose={() => setOpen(false)}
           onDone={() => setOpen(false)}
-          challengePath={`${root}/${fillPath(op.challengePath, pathValues)}`}
+          challengePath={`${root}/${fillPath(op.challengePath, resolvedPathValues)}`}
           action={op.action}
           challengeBody={op.mirrorBodyInChallenge ? pendingBody : undefined}
           title={op.label}
@@ -196,7 +203,7 @@ export function SignedJsonForm({
             <>
               You are about to sign <strong>{op.label.toLowerCase()}</strong>
               {op.mirrorBodyInChallenge
-                ? " — the challenge is bound to the exact JSON payload above; changing it after requesting the challenge invalidates it."
+                ? " - the challenge is bound to the exact JSON payload above; changing it after requesting the challenge invalidates it."
                 : "."}
             </>
           }
@@ -207,7 +214,7 @@ export function SignedJsonForm({
               mergedBody[op.mergeChallengeField] = payload[op.mergeChallengeField];
             }
             try {
-              const receipt = await api.post<MutationReceipt>(`${root}/${fillPath(op.postPath, pathValues)}`, {
+              const receipt = await api.post<MutationReceipt>(`${root}/${fillPath(op.postPath, resolvedPathValues)}`, {
                 idempotency_key: payload.idempotency_key,
                 ...mergedBody,
                 challenge_id: payload.challenge_id,

@@ -296,7 +296,7 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (code: s
         <Field
           label="Content hash"
           required
-          hint="Digest of the authored content. It is what the released version is bound to — the document body itself lives in the Vault."
+          hint="Digest of the authored content. It is what the released version is bound to - the document body itself lives in the Vault."
         >
           <Input value={contentHash} onChange={(e) => setContentHash(e.target.value)} required />
         </Field>
@@ -393,7 +393,7 @@ function ActionModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={`${ACTION_LABEL[action]} — ${version.document_code} ${version.version_label}`}>
+    <Modal open onClose={onClose} title={`${ACTION_LABEL[action]} - ${version.document_code} ${version.version_label}`}>
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(action) && (
           <Banner tone="warn" title="This transition requires an electronic signature">

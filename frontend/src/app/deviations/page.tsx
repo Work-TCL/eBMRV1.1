@@ -50,7 +50,7 @@ const SOURCE_PICKER_KIND: Partial<Record<string, string>> = {
 const SOURCE_MANUAL_HINT: Partial<Record<string, string>> = {
   environment: "The EM sample or task ID this deviation traces to.",
   document: "The document version ID this deviation traces to.",
-  system: "No record picker for this source type — enter the relevant reference ID.",
+  system: "No record picker for this source type - enter the relevant reference ID.",
 };
 
 export default function DeviationsPage() {
@@ -261,7 +261,7 @@ function RaiseDeviationModal({ onClose, onDone }: { onClose: () => void; onDone:
               <Field
                 label="End date"
                 required
-                hint="Hard stop — the record cannot advance past this date."
+                hint="Hard stop - the record cannot advance past this date."
               >
                 <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
               </Field>

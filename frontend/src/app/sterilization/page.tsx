@@ -1,15 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { holdsAnyRole, pagedFetcher, type Me } from "@/lib/api";
+import { api, holdsAnyRole, pagedFetcher, type Me } from "@/lib/api";
 import { useSiteId } from "@/lib/hooks";
 import { Fact, OpsRecordPage, type OpsRecordConfig } from "@/components/shared/OpsRecordPage";
+import { FormConsole } from "@/components/shared/FormConsole";
+import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { Field } from "@/components/ui/Field";
+import { Input } from "@/components/ui/Input";
+import { Icon } from "@/components/ui/Icon";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { Table } from "@/components/ui/Table";
 import { JsonPanel } from "@/components/ui/JsonPanel";
+
+const PROCESS_TYPES = [
+  "steam_autoclave", "dry_heat", "depyrogenation", "gas", "radiation", "external_reference", "SIP", "CIP", "sterile_filtration",
+];
 
 interface LoadItem {
   id: string;
@@ -68,13 +77,17 @@ const config: OpsRecordConfig<ProcessCycle> = {
     can: canOperate,
     path: "/sterilization/v1/cycles",
     fields: [
-      { name: "process_type", label: "Process type", required: true, placeholder: "e.g. moist_heat, dry_heat" },
+      {
+        name: "process_type", label: "Process type", required: true, type: "select",
+        options: PROCESS_TYPES.map((v) => ({ value: v, label: v })),
+        hint: "CIP and SIP cycles use this same form - the process type is what distinguishes them.",
+      },
       { name: "equipment_id", label: "Equipment", type: "equipmentSelect", required: true },
       { name: "profile_version_id", label: "Cycle profile version", type: "sterilizationProfileSelect", required: true },
       { name: "batch_id", label: "Batch", type: "batchSelect", hint: "Optional." },
       {
         name: "load_items", label: "Load items", type: "repeat", required: true, itemLabel: "Item",
-              hint: "Every item going into this cycle — at least one is required.",
+              hint: "Every item going into this cycle - at least one is required.",
         subFields: [
           { name: "item_type", label: "Item type", required: true, placeholder: "e.g. filter, garment, component" },
           {
@@ -105,7 +118,7 @@ const config: OpsRecordConfig<ProcessCycle> = {
       </Fact>
       {r.batch_id && (
         <Fact label="Batch">
-          {r.batch_number ? `${r.batch_number} — ${r.batch_product_name} (${r.batch_product_code})` : r.batch_id}
+          {r.batch_number ? `${r.batch_number} - ${r.batch_product_name} (${r.batch_product_code})` : r.batch_id}
         </Fact>
       )}
       <Fact label="Controller cycle ID">{r.controller_cycle_id ?? "—"}</Fact>
@@ -271,7 +284,7 @@ function CycleListCard({ siteId, reloadToken, onOpen }: { siteId: string | null;
           fetchPage={fetchCycles}
           rowKey={(c) => c.id}
           searchPlaceholder="Search process type…"
-          emptyMessage={<>No sterilization cycles yet — use &quot;Create process cycle&quot; above to add one.</>}
+          emptyMessage={<>No sterilization cycles yet - use &quot;Create process cycle&quot; above to add one.</>}
           defaultSort={{ by: "created_at", dir: "desc" }}
           onRowClick={(c) => onOpen(c.id)}
           reloadToken={reloadToken}
@@ -288,15 +301,129 @@ export default function SterilizationPage() {
   const [reloadToken, setReloadToken] = useState(0);
 
   return (
-    <OpsRecordPage
-      config={config}
-      collapseCreate
-      detailInModal
-      hideLookup
-      afterHeader={(openRecord) => (
-        <CycleListCard siteId={siteId} reloadToken={reloadToken} onOpen={openRecord} />
+    <div>
+      <OpsRecordPage
+        config={config}
+        collapseCreate
+        detailInModal
+        hideLookup
+        afterHeader={(openRecord) => (
+          <CycleListCard siteId={siteId} reloadToken={reloadToken} onOpen={openRecord} />
+        )}
+        onCreated={() => setReloadToken((n) => n + 1)}
+      />
+      <FiltrationSection />
+    </div>
+  );
+}
+
+/** Document 42 sterile-filtration integrity — `app/modules/equipment/sterilization_router.py`'s
+ * `filtration_router`. Not folded into `OpsRecordPage`'s `config` above: install/get/integrity-tests
+ * live under `/filtration/v1/filters/...` but the signature-challenge and complete mutation live under
+ * `/filtration/v1/uses/...` (verified in router.py — same underlying `SterileFilterUse` row, two path
+ * prefixes) — `OpsRecordPage` assumes one `apiRoot` for every record-scoped action, so a plain
+ * `FormConsole` + `SignedJsonForm` pair (each free to declare its own full path) fits this backend's
+ * actual shape without changing a component every other WP-06 page depends on. */
+function FiltrationSection() {
+  return (
+    <>
+      <FormConsole
+        title="Sterile filtration - install & integrity testing"
+        root="/filtration/v1"
+        ops={[
+          {
+            path: "filters/install",
+            label: "Install a filter",
+            fields: [
+              { name: "site_id", label: "Site ID", required: true },
+              { name: "filter_serial", label: "Filter serial", required: true },
+              { name: "filter_lot", label: "Filter lot" },
+              { name: "filter_type", label: "Filter type" },
+              { name: "manufacturer", label: "Manufacturer" },
+              { name: "batch_id", label: "Batch", type: "batchSelect", hint: "Optional." },
+              { name: "sterilization_cycle_id", label: "Sterilization cycle ID", hint: "Optional - the cycle that sterilized this filter." },
+              { name: "housing_location", label: "Housing location" },
+              { name: "direction", label: "Direction" },
+            ],
+          },
+          {
+            path: "filters/{use_id}/integrity-tests",
+            label: "Record an integrity test",
+            fields: [
+              { name: "use_id", label: "Filter use ID", required: true },
+              { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+              { name: "phase", label: "Phase", type: "select", required: true, options: [
+                { value: "pre", label: "Pre-use" }, { value: "post", label: "Post-use" }] },
+              { name: "result", label: "Result", type: "select", required: true, options: [
+                { value: "pass", label: "Pass" }, { value: "fail", label: "Fail" }] },
+              { name: "test_ref", label: "Test reference", type: "kv", hint: "e.g. method, instrument ID, bubble-point value." },
+            ],
+          },
+        ]}
+      />
+
+      <FilterStatusCard />
+
+      <SignedJsonForm
+        title="Complete a filter use - signed"
+        subtitle="Only a filter with a recorded post-use test can be completed."
+        root="/filtration/v1"
+        ops={[
+          {
+            postPath: "uses/{use_id}/complete",
+            challengePath: "uses/{use_id}/signature-challenges",
+            action: "complete",
+            label: "Complete filter use",
+            fields: [
+              { name: "use_id", label: "Filter use ID", required: true },
+              { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+              { name: "process_parameters", label: "Process parameters", type: "kv" },
+              { name: "reason", label: "Reason" },
+            ],
+          },
+        ]}
+      />
+    </>
+  );
+}
+
+function FilterStatusCard() {
+  const [useId, setUseId] = useState("");
+  const [result, setResult] = useState<unknown>(undefined);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function lookup() {
+    if (!useId.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await api.get<unknown>(`/filtration/v1/filters/${encodeURIComponent(useId.trim())}`));
+    } catch (err) {
+      setResult(undefined);
+      setError(err instanceof Error ? err.message : "Lookup failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="Filter use status" />
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Filter use ID">
+          <Input value={useId} onChange={(e) => setUseId(e.target.value)} style={{ minWidth: 260 }} />
+        </Field>
+        <Button variant="secondary" disabled={busy || !useId.trim()} onClick={lookup}>
+          <Icon name="search" /> {busy ? "Loading…" : "Look up"}
+        </Button>
+      </div>
+      {error && <p className="error-text mt-3">{error}</p>}
+      {result !== undefined && (
+        <div className="mt-3">
+          <JsonPanel title="Filter use" value={result} />
+        </div>
       )}
-      onCreated={() => setReloadToken((n) => n + 1)}
-    />
+    </Card>
   );
 }

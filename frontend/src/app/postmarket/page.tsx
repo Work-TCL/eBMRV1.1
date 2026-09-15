@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { FormConsole } from "@/components/shared/FormConsole";
+import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 import { RepeatableRows, buildRepeatArray, type RepeatRow } from "@/components/shared/RepeatableFields";
 
 const REPORT_TYPE_OPTIONS = [
@@ -44,7 +45,7 @@ export default function PostmarketPage() {
       {canWork(me) && (
         <>
           <FormConsole
-            title="Safety case & signal operations (Doc 58)"
+          title="Safety case & signal operations"
             root="/postmarket/v1"
             ops={[
               {
@@ -66,6 +67,19 @@ export default function PostmarketPage() {
               { path: "safety-cases/{case_id}/duplicate-candidates", label: "List probable duplicates", method: "GET",
                 fields: [{ name: "case_id", label: "Safety case ID", required: true }] },
               {
+                path: "safety-cases/{case_id}/resolve-product",
+                label: "Resolve the marketed product",
+                fields: [
+                  { name: "case_id", label: "Safety case ID", required: true },
+                  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+                  { name: "marketed_product_id", label: "Marketed product ID", hint: "Optional." },
+                  { name: "application_profile_id", label: "Application profile ID", hint: "Optional." },
+                  { name: "product_resolution", label: "Product resolution", type: "kv", hint: "Optional - free-form resolution detail." },
+                  { name: "mark_resolved", label: "Mark resolved", type: "bool", default: "false" },
+                  { name: "reason", label: "Reason" },
+                ],
+              },
+              {
                 path: "safety-cases/{case_id}/followups",
                 label: "Add a follow-up",
                 fields: [
@@ -79,37 +93,6 @@ export default function PostmarketPage() {
                 ],
               },
               {
-                path: "signals",
-                label: "Open a safety signal",
-                fields: [
-                  { name: "site_id", label: "Site ID", required: true },
-                  { name: "signal_code", label: "Signal code", required: true },
-                  { name: "detection_source", label: "Detection source", required: true },
-                  {
-                    name: "trigger_refs", label: "Triggers", type: "repeat", required: true, itemLabel: "Trigger",
-                    subFields: [{ name: "ref", label: "Reference" }, { name: "note", label: "Note" }],
-                  },
-                  { name: "population_definition", label: "Population definition", type: "kv", required: true },
-                  { name: "case_ids_for_snapshot", label: "Case IDs for snapshot", type: "stringList", itemLabel: "Case ID" },
-                  { name: "rationale", label: "Rationale", type: "textarea", required: true },
-                  { name: "rule_version", label: "Rule version" },
-                  { name: "exposure_denominator", label: "Exposure denominator", type: "kv" },
-                  { name: "denominator_uncertain", label: "Denominator uncertain", type: "bool" },
-                ],
-              },
-              {
-                path: "signals/{signal_id}/assessments",
-                label: "Assess a signal",
-                fields: [
-                  { name: "signal_id", label: "Signal ID", required: true },
-                  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
-                  { name: "assessment", label: "Assessment", type: "kv", required: true },
-                  { name: "next_state", label: "Next state", required: true },
-                  { name: "recommended_actions", label: "Recommended actions", type: "stringList", itemLabel: "Action" },
-                  { name: "reason", label: "Reason" },
-                ],
-              },
-              {
                 path: "sources",
                 label: "Register a postmarket source",
                 fields: [
@@ -117,7 +100,7 @@ export default function PostmarketPage() {
                   { name: "source_type", label: "Source type", required: true },
                   { name: "organization_or_system", label: "Organization or system", required: true },
                   { name: "channel", label: "Channel", required: true },
-                  { name: "owner_subject_id", label: "Owner (user ID)", required: true },
+                  { name: "owner_subject_id", label: "Owner", type: "userSelect", required: true },
                   { name: "ingestion_profile_id", label: "Ingestion profile ID" },
                   { name: "reason", label: "Reason" },
                 ],
@@ -152,17 +135,6 @@ export default function PostmarketPage() {
                 ],
               },
               {
-                path: "signals/{signal_id}/escalations",
-                label: "Escalate a signal",
-                fields: [
-                  { name: "signal_id", label: "Signal ID", required: true },
-                  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
-                  { name: "target_module", label: "Target module", required: true, placeholder: "e.g. deviations, capa, risks, field-actions" },
-                  { name: "target_command", label: "Target command payload", type: "kv", required: true, hint: "The fields the target module's own create command expects." },
-                  { name: "rationale", label: "Rationale", type: "textarea", required: true },
-                ],
-              },
-              {
                 path: "periodic-datasets:freeze",
                 label: "Freeze a periodic safety dataset",
                 fields: [
@@ -177,30 +149,74 @@ export default function PostmarketPage() {
             ]}
           />
 
-          <FormConsole
-            title="Regulatory reporting operations (Doc 59)"
-            root="/regulatory/v1"
+          <SignedJsonForm
+          title="Safety signal operations - signed"
+            subtitle="Opening, assessing and escalating a safety signal now require a Part 11 signature."
+            root="/postmarket/v1"
             ops={[
               {
-                path: "tracks/{track_id}/decisions",
-                label: "Decide reportability",
-                about: "Records the reportable / not-reportable decision for one report type and its rationale.",
+                postPath: "signals",
+                challengePath: "signals/signature-challenges",
+                action: "open",
+                label: "Open a safety signal",
+                mirrorBodyInChallenge: true,
+                about: "The challenge signs the signal_code before the record exists - the rest of the fields still go to the mutation.",
                 fields: [
-                  { name: "track_id", label: "Track ID", required: true },
+                  { name: "site_id", label: "Site ID", required: true },
+                  { name: "signal_code", label: "Signal code", required: true },
+                  { name: "detection_source", label: "Detection source", required: true },
+                  {
+                    name: "trigger_refs", label: "Triggers", type: "repeat", required: true, itemLabel: "Trigger",
+                    subFields: [{ name: "ref", label: "Reference" }, { name: "note", label: "Note" }],
+                  },
+                  { name: "population_definition", label: "Population definition", type: "kv", required: true },
+                  { name: "case_ids_for_snapshot", label: "Case IDs for snapshot", type: "stringList", itemLabel: "Case ID" },
+                  { name: "rationale", label: "Rationale", type: "textarea", required: true },
+                  { name: "rule_version", label: "Rule version" },
+                  { name: "exposure_denominator", label: "Exposure denominator", type: "kv" },
+                  { name: "denominator_uncertain", label: "Denominator uncertain", type: "bool" },
+                ],
+              },
+              {
+                postPath: "signals/{signal_id}/assessments",
+                challengePath: "signals/{signal_id}/assessment-signature-challenges",
+                action: "assess",
+                label: "Assess a signal",
+                fields: [
+                  { name: "signal_id", label: "Signal ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
-                  { name: "decision", label: "Decision", type: "select", required: true, options: [
-                    { value: "REPORTABLE", label: "Reportable" }, { value: "NOT_REPORTABLE", label: "Not reportable" }, { value: "PENDING", label: "Pending" }] },
+                  { name: "assessment", label: "Assessment", type: "kv", required: true },
+                  { name: "next_state", label: "Next state", required: true, type: "select", options: [
+                    "DETECTED", "TRIAGE", "ASSESSMENT", "REFUTED", "MONITORING", "CONFIRMED", "ACTION", "CLOSED",
+                  ].map((v) => ({ value: v, label: v })) },
+                  { name: "recommended_actions", label: "Recommended actions", type: "stringList", itemLabel: "Action" },
+                  { name: "reason", label: "Reason" },
+                ],
+              },
+              {
+                postPath: "signals/{signal_id}/escalations",
+                challengePath: "signals/{signal_id}/escalation-signature-challenges",
+                action: "escalate",
+                label: "Escalate a signal",
+                fields: [
+                  { name: "signal_id", label: "Signal ID", required: true },
+                  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+                  { name: "target_module", label: "Target module", required: true, type: "select", options: [
+                    { value: "CAPA", label: "CAPA" }, { value: "CHANGE_CONTROL", label: "Change control" },
+                    { value: "RISK_REVIEW", label: "Risk review" }, { value: "FIELD_ACTION", label: "Field action" },
+                    { value: "REPORTABILITY_TRACK", label: "Reportability track (not yet implemented)" },
+                  ] },
+                  { name: "target_command", label: "Target command payload", type: "kv", required: true, hint: "The fields the target module's own create command expects." },
                   { name: "rationale", label: "Rationale", type: "textarea", required: true },
                 ],
               },
-              {
-                path: "reports/{report_id}/approve",
-                label: "Approve a report",
-                fields: [
-                  { name: "report_id", label: "Report ID", required: true },
-                  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
-                ],
-              },
+            ]}
+          />
+
+          <FormConsole
+          title="Regulatory reporting operations"
+            root="/regulatory/v1"
+            ops={[
               {
                 path: "tracks/{track_id}/deadline:calculate",
                 label: "Calculate a regulatory deadline",
@@ -298,8 +314,40 @@ export default function PostmarketPage() {
             ]}
           />
 
+          <SignedJsonForm
+          title="Regulatory reporting operations - signed"
+            subtitle="Deciding reportability and approving a report now require a Part 11 signature."
+            root="/regulatory/v1"
+            ops={[
+              {
+                postPath: "tracks/{track_id}/decisions",
+                challengePath: "tracks/{track_id}/decision-signature-challenges",
+                action: "decide",
+                label: "Decide reportability",
+                about: "Records the reportable / not-reportable decision for one report type and its rationale.",
+                fields: [
+                  { name: "track_id", label: "Track ID", required: true },
+                  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+                  { name: "decision", label: "Decision", type: "select", required: true, options: [
+                    { value: "REPORTABLE", label: "Reportable" }, { value: "NOT_REPORTABLE", label: "Not reportable" }] },
+                  { name: "rationale", label: "Rationale", type: "textarea", required: true },
+                ],
+              },
+              {
+                postPath: "reports/{report_id}/approve",
+                challengePath: "reports/{report_id}/approval-signature-challenges",
+                action: "approve",
+                label: "Approve a report",
+                fields: [
+                  { name: "report_id", label: "Report ID", required: true },
+                  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+                ],
+              },
+            ]}
+          />
+
           <FormConsole
-            title="Part 4 obligations (Doc 60)"
+          title="Part 4 obligations"
             root="/postmarket/v1"
             ops={[
               {
@@ -315,7 +363,7 @@ export default function PostmarketPage() {
                   { name: "issue_type", label: "Issue type", required: true },
                   { name: "facility", label: "Facility" },
                   { name: "applicant_receipt_at", label: "Applicant receipt at", type: "datetime", required: true },
-                  { name: "owner_subject_id", label: "Owner (user ID)" },
+                  { name: "owner_subject_id", label: "Owner", type: "userSelect" },
                 ],
               },
               {
@@ -397,6 +445,17 @@ export default function PostmarketPage() {
                 ],
               },
               {
+                path: "correction-removal/{record_id}/scope-amendments",
+                label: "Amend correction/removal scope",
+                about: "Scope expansion to additional lots/batches - appended, never overwriting the original assessment.",
+                fields: [
+                  { name: "record_id", label: "Correction/removal record ID", required: true },
+                  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+                  { name: "amendment", label: "Amendment", type: "kv", required: true },
+                  { name: "rationale", label: "Rationale", type: "textarea", required: true },
+                ],
+              },
+              {
                 path: "field-alerts/{obligation_id}/decision",
                 label: "Field alert decision",
                 fields: [
@@ -417,7 +476,7 @@ export default function PostmarketPage() {
                   { name: "application_id", label: "Application ID", required: true },
                   { name: "deviation_facts", label: "Deviation facts", type: "kv", required: true },
                   { name: "discovery_at", label: "Discovered at", type: "datetime", required: true },
-                  { name: "owner_subject_id", label: "Owner (user ID)" },
+                  { name: "owner_subject_id", label: "Owner", type: "userSelect" },
                 ],
               },
               {
@@ -451,7 +510,7 @@ export default function PostmarketPage() {
                   { name: "requested_events_or_information", label: "Requested events or information", type: "textarea", required: true },
                   { name: "due_at", label: "Due at", type: "datetime", required: true },
                   { name: "received_at", label: "Received at", type: "datetime", required: true },
-                  { name: "owner_subject_id", label: "Owner (user ID)" },
+                  { name: "owner_subject_id", label: "Owner", type: "userSelect" },
                 ],
               },
               {
@@ -479,6 +538,40 @@ export default function PostmarketPage() {
                       { name: "calculated_duration_days", label: "Duration (days)", type: "number" },
                     ],
                   },
+                ],
+              },
+            ]}
+          />
+
+          <SignedJsonForm
+          title="Correction/removal independent approval - signed"
+            subtitle="Both the initial assessment and the reportability decision need a second, independent signature."
+            root="/postmarket/v1"
+            ops={[
+              {
+                postPath: "correction-removal/{record_id}/assessment-signatures",
+                challengePath: "correction-removal/{record_id}/assessment-signature-challenges",
+                action: "sign",
+                label: "Approve a correction/removal assessment",
+                mirrorBodyInChallenge: true,
+                fields: [
+                  { name: "record_id", label: "Correction/removal record ID", required: true },
+                  { name: "field_action_reference", label: "Field action reference", type: "kv", required: true, hint: "Must match exactly what the assessment being approved recorded." },
+                ],
+              },
+              {
+                postPath: "correction-removal/{record_id}/decision-signatures",
+                challengePath: "correction-removal/{record_id}/decision-signature-challenges",
+                action: "sign",
+                label: "Approve a correction/removal reportability decision",
+                mirrorBodyInChallenge: true,
+                fields: [
+                  { name: "record_id", label: "Correction/removal record ID", required: true },
+                  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+                  { name: "reportable", label: "Reportable", type: "bool", required: true },
+                  { name: "rationale", label: "Rationale", type: "textarea", required: true },
+                  { name: "calendar_version", label: "Calendar version" },
+                  { name: "required_facts", label: "Required facts", type: "kv" },
                 ],
               },
             ]}

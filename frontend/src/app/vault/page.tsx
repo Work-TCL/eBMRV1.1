@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
+import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 
 // Matches app/modules/vault/router.py::_object_dict.
 interface VaultObject {
@@ -71,7 +72,7 @@ export default function VaultPage() {
     <div>
       <PageHead
         title="Vault"
-        subtitle="Immutable release history — every batch release and material-lot disposition gets a hash-verified snapshot here."
+        subtitle="Immutable release history - every batch release and material-lot disposition gets a hash-verified snapshot here."
       />
 
       <form onSubmit={onSubmitLookup} className="flex items-end gap-4 mb-4" style={{ flexWrap: "wrap" }}>
@@ -151,6 +152,36 @@ export default function VaultPage() {
           }}
         />
       )}
+
+      <SignedJsonForm
+        title="Release a master record to the vault - signed"
+        subtitle="The generic release path - domain modules that already run their own release ceremony (batch release, material lot disposition) never reach this; use it only for a record type with no dedicated release flow of its own."
+        root="/vault/v1"
+        ops={[
+          {
+            postPath: "masters/{object_type}/{business_id}/release",
+            challengePath: "masters/{object_type}/{business_id}/signature-challenges",
+            action: "release",
+            label: "Release a master record",
+            mirrorBodyInChallenge: true,
+            fields: [
+              { name: "object_type", label: "Object type", required: true },
+              { name: "business_id", label: "Business ID", required: true },
+              { name: "canonical_payload", label: "Canonical payload", type: "kv", required: true, hint: "The exact record content being released, as key/value pairs." },
+              { name: "business_version_label", label: "Business version label", hint: "Optional." },
+              {
+                name: "evidence", label: "Evidence", type: "repeat", itemLabel: "Evidence item",
+                subFields: [
+                  { name: "evidence_id", label: "Evidence object ID", required: true },
+                  { name: "evidence_sha256", label: "SHA-256", required: true },
+                  { name: "media_type", label: "Media type" },
+                  { name: "sequence", label: "Sequence", type: "number" },
+                ],
+              },
+            ],
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -186,7 +217,7 @@ function ObjectDetailModal({
 
 
   return (
-    <Modal open onClose={onClose} title={`${object.object_type} / ${object.business_id} — v${object.internal_version}`} large>
+    <Modal open onClose={onClose} title={`${object.object_type} / ${object.business_id} - v${object.internal_version}`} large>
       <div className="mb-4">
         {(
           [
@@ -216,7 +247,7 @@ function ObjectDetailModal({
           <span className={integrity.digest_valid && integrity.link_valid ? "text-muted" : "error-text"}>
             {integrity.digest_valid && integrity.link_valid
               ? "Digest and chain link both verify."
-              : `Tampering detected — digest_valid=${integrity.digest_valid}, link_valid=${integrity.link_valid}`}
+              : `Tampering detected - digest_valid=${integrity.digest_valid}, link_valid=${integrity.link_valid}`}
           </span>
         )}
       </div>
@@ -308,7 +339,7 @@ function RequestCorrectionModal({
         </Field>
         <p className="hint mb-3">
           This only records the request. Completing a correction requires a signature policy this deployment
-          hasn&apos;t defined yet — it will correctly fail closed until one exists.
+          hasn&apos;t defined yet - it will correctly fail closed until one exists.
         </p>
         <div className="flex justify-between gap-3 mt-2">
           <Button type="button" variant="secondary" onClick={onClose}>
@@ -364,7 +395,7 @@ function CompareModal({
       open
       onClose={onClose}
       large
-      title={`Compare — ${current.object_type} / ${current.business_id}`}
+      title={`Compare - ${current.object_type} / ${current.business_id}`}
     >
       {error && <p className="error-text mb-3">{error}</p>}
       {!previous && !error && <p className="text-muted">Loading previous version…</p>}

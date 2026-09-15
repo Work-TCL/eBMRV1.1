@@ -166,7 +166,7 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="VMP · function risk — signed approvals" root="/validation/v1" ops={VMP_SIGNED_OPS} />
+          <SignedJsonForm title="VMP · function risk - signed approvals" root="/validation/v1" ops={VMP_SIGNED_OPS} />
 
           <FormConsole
             title="Test library · IQ · OQ (Docs 82–84)"
@@ -289,7 +289,7 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="Test · IQ · OQ — signed completions & approvals" root="/validation/v1" ops={TEST_IQ_OQ_SIGNED_OPS} />
+          <SignedJsonForm title="Test · IQ · OQ - signed completions & approvals" root="/validation/v1" ops={TEST_IQ_OQ_SIGNED_OPS} />
 
           <FormConsole
             title="Infrastructure · Part 11 · data integrity · interfaces (Docs 86, 88–90)"
@@ -438,7 +438,7 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="Infrastructure · Part 11 · data integrity · interfaces — signed approvals" root="/validation/v1" ops={INFRA_SIGNED_OPS} />
+          <SignedJsonForm title="Infrastructure · Part 11 · data integrity · interfaces - signed approvals" root="/validation/v1" ops={INFRA_SIGNED_OPS} />
 
           <FormConsole
             title="DR · security · performance qualification (Docs 91–93)"
@@ -518,7 +518,7 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="DR · security · performance — signed operations" root="/validation/v1" ops={DR_SEC_PERF_SIGNED_OPS} />
+          <SignedJsonForm title="DR · security · performance - signed operations" root="/validation/v1" ops={DR_SEC_PERF_SIGNED_OPS} />
 
           <FormConsole
             title="Exceptions · revalidation (Docs 94, 96)"
@@ -569,7 +569,7 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="Exceptions · periodic review — signed operations" root="/validation/v1" ops={EXCEPTION_SIGNED_OPS} />
+          <SignedJsonForm title="Exceptions · periodic review - signed operations" root="/validation/v1" ops={EXCEPTION_SIGNED_OPS} />
         </>
       )}
     </div>
@@ -740,7 +740,7 @@ const DR_SEC_PERF_SIGNED_OPS: SignedJsonOp[] = [
       { name: "environment", label: "Environment", required: true },
       { name: "load_model", label: "Load model", type: "kv" },
       { name: "planned_duration_seconds", label: "Planned duration (seconds)", type: "number", default: "3600" },
-      { name: "thresholds", label: "Thresholds", type: "kv", required: true, hint: "Must not be empty — at least one setting is required." },
+      { name: "thresholds", label: "Thresholds", type: "kv", required: true, hint: "Must not be empty - at least one setting is required." },
     ],
   },
   {
@@ -788,7 +788,7 @@ const EXCEPTION_SIGNED_OPS: SignedJsonOp[] = [
       { name: "exception_type", label: "Exception type", type: "select", required: true, default: "TEST_FAILURE", options: ["DEFECT", "TEST_FAILURE", "PROTOCOL_DEVIATION", "ENVIRONMENT_DEVIATION", "EVIDENCE_ISSUE", "REQUIREMENT_GAP"].map((v) => ({ value: v, label: v })) },
       { name: "source_execution_type", label: "Source execution type", required: true },
       { name: "source_execution_id", label: "Source execution ID", required: true },
-      { name: "original_evidence", label: "Original evidence", type: "kv", required: true, hint: "Must not be empty — at least one setting is required." },
+      { name: "original_evidence", label: "Original evidence", type: "kv", required: true, hint: "Must not be empty - at least one setting is required." },
       { name: "affected_requirement_refs", label: "Affected requirements", type: "stringList", itemLabel: "Requirement code" },
       { name: "severity", label: "Severity", type: "select", required: true, default: "HIGH", options: FINDING_SEVERITIES },
       { name: "gxp_impact", label: "GxP impact", type: "bool", default: "false" },
@@ -816,7 +816,7 @@ const EXCEPTION_SIGNED_OPS: SignedJsonOp[] = [
     challengePath: "exceptions/{exception_id}/signature-challenges",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
-      { name: "retest_plan", label: "Retest plan", type: "kv", required: true, hint: "Must not be empty — at least one setting is required." },
+      { name: "retest_plan", label: "Retest plan", type: "kv", required: true, hint: "Must not be empty - at least one setting is required." },
       { name: "fix_ref", label: "Fix reference" },
     ],
   },
@@ -847,7 +847,7 @@ const EXCEPTION_SIGNED_OPS: SignedJsonOp[] = [
       { name: "release_ref", label: "Release reference", required: true },
       { name: "period_start", label: "Period start", type: "datetime", required: true },
       { name: "period_end", label: "Period end", type: "datetime", required: true },
-      { name: "inputs_considered", label: "Inputs considered", type: "kv", required: true, hint: "Must not be empty — at least one setting is required." },
+      { name: "inputs_considered", label: "Inputs considered", type: "kv", required: true, hint: "Must not be empty - at least one setting is required." },
     ],
   },
   {

@@ -22,6 +22,15 @@ import { StatePill } from "@/components/ui/StatePill";
 import { summarizeJson } from "@/components/ui/JsonPanel";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import {
+  KeyValueRows,
+  RepeatableRows,
+  buildKvObject,
+  buildRepeatArray,
+  type KvRow,
+  type RepeatRow,
+  type RepeatSubField,
+} from "@/components/shared/RepeatableFields";
 
 // GET /reconciliation/v1/batches/{batch_id}/summary — app/modules/yield_reconciliation/commands.py::get_batch_summary
 interface Calculation {
@@ -254,8 +263,27 @@ export default function YieldPage() {
       )}
 
       {canEvaluateYield(me) && (
-        <div className="mt-6">
+        <div className="mt-6 grid gap-4">
           <EvaluateYieldCard onEvaluated={() => load()} defaultBatchId={batchId} entities={entities} />
+          <EvaluatePotencyCard onEvaluated={() => load()} defaultBatchId={batchId} entities={entities} />
+          <ReconciliationCard
+            title="Evaluate material reconciliation"
+            postPath="/reconciliation/v1/material/evaluate"
+            reconciliationType="MATERIAL"
+            onEvaluated={() => load()}
+            defaultBatchId={batchId}
+            entities={entities}
+          />
+          <ReconciliationCard
+            title="Evaluate packaging reconciliation"
+            postPath="/reconciliation/v1/packaging/evaluate"
+            reconciliationType="PACKAGING"
+            onEvaluated={() => load()}
+            defaultBatchId={batchId}
+            entities={entities}
+          />
+          <EvaluateLabelReconciliationCard onEvaluated={() => load()} />
+          <EvaluateComponentReconciliationCard onEvaluated={() => load()} defaultBatchId={batchId} entities={entities} />
         </div>
       )}
 
@@ -270,7 +298,7 @@ export default function YieldPage() {
           challengePath={`/reconciliation/v1/${verifyTarget.id}/signature-challenges`}
           challengeBody={{ record_kind: verifyTarget.kind }}
           action="verify"
-          title={`Verify — ${verifyTarget.label}`}
+          title={`Verify - ${verifyTarget.label}`}
           summary={`You are attesting that this ${verifyTarget.kind.toLowerCase()} record is complete and correct. A verified record no longer blocks release.`}
           submitLabel="Sign & verify"
           submitVariant="success"
@@ -339,7 +367,7 @@ function EvaluateYieldCard({
       <CardHeader title="Evaluate yield" />
       <p className="fs-2 text-muted mb-3">
         Runs the yield formula (actual ÷ theoretical × 100) against the batch and records the tolerance
-        outcome. Enter the exact measured quantities — they are never rounded.
+        outcome. Enter the exact measured quantities - they are never rounded.
       </p>
       <form onSubmit={submit} className="grid grid-cols-3 gap-4">
         <EntityPickerField
@@ -351,7 +379,7 @@ function EvaluateYieldCard({
           status={entities.batchesStatus}
           kind="batch"
         />
-        <Field label="Phase code" hint="Optional — omit for a whole-batch yield.">
+        <Field label="Phase code" hint="Optional - omit for a whole-batch yield.">
           <Input value={phaseCode} onChange={(e) => setPhaseCode(e.target.value)} />
         </Field>
         <Field label="UOM" required>
@@ -373,7 +401,7 @@ function EvaluateYieldCard({
         <div />
       </form>
       {error && <p className="error-text mt-2">{error}</p>}
-      {done && <p className="fs-2 mt-2">Yield evaluated — see the calculations table above.</p>}
+      {done && <p className="fs-2 mt-2">Yield evaluated - see the calculations table above.</p>}
       <div className="mt-3">
         <Button
           type="submit"
@@ -382,6 +410,462 @@ function EvaluateYieldCard({
           disabled={busy || !batchId.trim() || !theoretical.trim() || !actual.trim() || !uom.trim()}
         >
           {busy ? "Evaluating…" : "Evaluate yield"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+const LOSS_REASON_SUBFIELDS: RepeatSubField[] = [
+  { name: "category", label: "Category", required: true },
+  { name: "description", label: "Description", required: true },
+  { name: "quantity", label: "Quantity", type: "number" },
+];
+
+/** The `{type, value, inclusive}` shape is identical across every reconciliation command
+ * (`tolerance_rule: dict`) — structured fields here instead of a raw `kv` editor since the shape is
+ * fixed and documented, not genuinely free-form. */
+function ToleranceRuleFields({
+  type,
+  setType,
+  value,
+  setValue,
+  inclusive,
+  setInclusive,
+}: {
+  type: string;
+  setType: (v: string) => void;
+  value: string;
+  setValue: (v: string) => void;
+  inclusive: string;
+  setInclusive: (v: string) => void;
+}) {
+  return (
+    <>
+      <Field label="Tolerance type" required>
+        <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
+          <option value="percentage">Percentage</option>
+          <option value="absolute">Absolute</option>
+        </select>
+      </Field>
+      <Field label="Tolerance value" required>
+        <Input value={value} onChange={(e) => setValue(e.target.value)} required />
+      </Field>
+      <Field label="Inclusive?" required>
+        <select className="input" value={inclusive} onChange={(e) => setInclusive(e.target.value)}>
+          <option value="true">Yes</option>
+          <option value="false">No</option>
+        </select>
+      </Field>
+    </>
+  );
+}
+
+function EvaluatePotencyCard({
+  onEvaluated,
+  defaultBatchId,
+  entities,
+}: {
+  onEvaluated: () => void;
+  defaultBatchId: string;
+  entities: ReturnType<typeof useEntityOptions>;
+}) {
+  const [batchId, setBatchId] = useState(defaultBatchId);
+  const [phaseCode, setPhaseCode] = useState("");
+  const [ruleId, setRuleId] = useState("");
+  const [inputs, setInputs] = useState<KvRow[]>([]);
+  const [uom, setUom] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setDone(false);
+    try {
+      await api.post<MutationReceipt>("/manufacturing-calculations/v1/potency/evaluate", {
+        idempotency_key: newIdempotencyKey(),
+        batch_id: batchId.trim(),
+        scope_type: "BATCH",
+        phase_code: phaseCode.trim() || null,
+        rule_id: ruleId.trim(),
+        inputs: buildKvObject(inputs),
+        uom: uom.trim() || null,
+      });
+      setDone(true);
+      onEvaluated();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Evaluation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card pad>
+      <CardHeader title="Evaluate potency" />
+      <p className="fs-2 text-muted mb-3">
+      Runs a customer-authored, released potency rule - there is no default pharmaceutical
+        formula in this codebase. The rule must already be released at the given rule ID (see /rules).
+      </p>
+      <form onSubmit={submit} className="grid grid-cols-3 gap-4">
+        <EntityPickerField
+          label="Batch"
+          required
+          value={batchId}
+          onChange={setBatchId}
+          options={entities.batches}
+          status={entities.batchesStatus}
+          kind="batch"
+        />
+        <Field label="Phase code" hint="Optional - omit for a whole-batch calculation.">
+          <Input value={phaseCode} onChange={(e) => setPhaseCode(e.target.value)} />
+        </Field>
+        <Field label="Rule ID" required>
+          <Input value={ruleId} onChange={(e) => setRuleId(e.target.value)} required />
+        </Field>
+        <Field label="UOM" hint="Optional.">
+          <Input value={uom} onChange={(e) => setUom(e.target.value)} />
+        </Field>
+      </form>
+      <div className="mt-3">
+        <KeyValueRows
+          label="Rule inputs"
+          hint="The exact inputs the released rule expects. At least one is required."
+          value={inputs}
+          onChange={setInputs}
+        />
+      </div>
+      {error && <p className="error-text mt-2">{error}</p>}
+      {done && <p className="fs-2 mt-2">Potency evaluated - see the calculations table above.</p>}
+      <div className="mt-3">
+        <Button
+          type="submit"
+          variant="primary"
+          onClick={submit}
+          disabled={busy || !batchId.trim() || !ruleId.trim() || inputs.length === 0}
+        >
+          {busy ? "Evaluating…" : "Evaluate potency"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/** Material and packaging reconciliation are the same `EvaluateReconciliationCommand` shape end to end —
+ * only the endpoint path and the required `reconciliation_type` value differ (the backend rejects a
+ * mismatch) — so one component covers both rather than two near-duplicate ones. */
+function ReconciliationCard({
+  title,
+  postPath,
+  reconciliationType,
+  onEvaluated,
+  defaultBatchId,
+  entities,
+}: {
+  title: string;
+  postPath: string;
+  reconciliationType: "MATERIAL" | "PACKAGING";
+  onEvaluated: () => void;
+  defaultBatchId: string;
+  entities: ReturnType<typeof useEntityOptions>;
+}) {
+  const [batchId, setBatchId] = useState(defaultBatchId);
+  const [itemRef, setItemRef] = useState<KvRow[]>([]);
+  const [quantities, setQuantities] = useState<KvRow[]>([]);
+  const [uom, setUom] = useState("");
+  const [toleranceType, setToleranceType] = useState("percentage");
+  const [toleranceValue, setToleranceValue] = useState("");
+  const [toleranceInclusive, setToleranceInclusive] = useState("true");
+  const [lossReasons, setLossReasons] = useState<RepeatRow[]>([]);
+  const [linkedDeviationId, setLinkedDeviationId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setDone(false);
+    try {
+      await api.post<MutationReceipt>(postPath, {
+        idempotency_key: newIdempotencyKey(),
+        batch_id: batchId.trim(),
+        reconciliation_type: reconciliationType,
+        item_ref: buildKvObject(itemRef),
+        quantities: buildKvObject(quantities),
+        uom: uom.trim(),
+        tolerance_rule: { type: toleranceType, value: toleranceValue.trim(), inclusive: toleranceInclusive === "true" },
+        loss_reasons: lossReasons.length > 0 ? buildRepeatArray(LOSS_REASON_SUBFIELDS, lossReasons) : null,
+        linked_deviation_id: linkedDeviationId.trim() || null,
+      });
+      setDone(true);
+      onEvaluated();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Evaluation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card pad>
+      <CardHeader title={title} />
+      <form onSubmit={submit} className="grid grid-cols-3 gap-4">
+        <EntityPickerField
+          label="Batch"
+          required
+          value={batchId}
+          onChange={setBatchId}
+          options={entities.batches}
+          status={entities.batchesStatus}
+          kind="batch"
+        />
+        <Field label="UOM" required>
+          <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
+        </Field>
+        <Field label="Linked deviation ID" hint="An existing QMS deviation - only relevant alongside an approved_loss quantity.">
+          <Input value={linkedDeviationId} onChange={(e) => setLinkedDeviationId(e.target.value)} />
+        </Field>
+        <ToleranceRuleFields
+          type={toleranceType}
+          setType={setToleranceType}
+          value={toleranceValue}
+          setValue={setToleranceValue}
+          inclusive={toleranceInclusive}
+          setInclusive={setToleranceInclusive}
+        />
+      </form>
+      <div className="grid grid-cols-2 gap-4 mt-3">
+        <KeyValueRows label="Item reference" hint="What is being reconciled, e.g. material_lot_id → a lot ID." value={itemRef} onChange={setItemRef} />
+        <KeyValueRows
+          label="Quantities"
+          hint="e.g. issued, consumed, returned, samples, rejected, destroyed, approved_loss."
+          value={quantities}
+          onChange={setQuantities}
+        />
+      </div>
+      <div className="mt-3">
+        <RepeatableRows
+          label="Loss reasons"
+          hint="Required when a non-zero approved_loss quantity is entered above - each entry needs a category and description."
+          itemLabel="Loss reason"
+          subFields={LOSS_REASON_SUBFIELDS}
+          value={lossReasons}
+          onChange={setLossReasons}
+        />
+      </div>
+      {error && <p className="error-text mt-2">{error}</p>}
+      {done && <p className="fs-2 mt-2">Reconciliation evaluated - see the reconciliations table above.</p>}
+      <div className="mt-3">
+        <Button
+          type="submit"
+          variant="primary"
+          onClick={submit}
+          disabled={busy || !batchId.trim() || !uom.trim() || itemRef.length === 0 || quantities.length === 0 || !toleranceValue.trim()}
+        >
+          {busy ? "Evaluating…" : "Evaluate reconciliation"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function EvaluateLabelReconciliationCard({ onEvaluated }: { onEvaluated: () => void }) {
+  const [packagingRunId, setPackagingRunId] = useState("");
+  const [toleranceType, setToleranceType] = useState("percentage");
+  const [toleranceValue, setToleranceValue] = useState("");
+  const [toleranceInclusive, setToleranceInclusive] = useState("true");
+  const [lossReasons, setLossReasons] = useState<RepeatRow[]>([]);
+  const [linkedDeviationId, setLinkedDeviationId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setDone(false);
+    try {
+      await api.post<MutationReceipt>("/reconciliation/v1/labels/evaluate", {
+        idempotency_key: newIdempotencyKey(),
+        packaging_run_id: packagingRunId.trim(),
+        tolerance_rule: { type: toleranceType, value: toleranceValue.trim(), inclusive: toleranceInclusive === "true" },
+        loss_reasons: lossReasons.length > 0 ? buildRepeatArray(LOSS_REASON_SUBFIELDS, lossReasons) : null,
+        linked_deviation_id: linkedDeviationId.trim() || null,
+      });
+      setDone(true);
+      onEvaluated();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Evaluation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card pad>
+      <CardHeader title="Evaluate label reconciliation" />
+      <p className="fs-2 text-muted mb-3">
+        Recomputes the mass balance from the packaging run&apos;s own label counts under your
+        tolerance rule - the batch and quantities are derived from the packaging run, not entered here.
+      </p>
+      <form onSubmit={submit} className="grid grid-cols-3 gap-4">
+        <Field label="Packaging run ID" required>
+          <Input value={packagingRunId} onChange={(e) => setPackagingRunId(e.target.value)} required />
+        </Field>
+        <Field label="Linked deviation ID" hint="An existing QMS deviation - only relevant alongside an approved_loss quantity.">
+          <Input value={linkedDeviationId} onChange={(e) => setLinkedDeviationId(e.target.value)} />
+        </Field>
+        <div />
+        <ToleranceRuleFields
+          type={toleranceType}
+          setType={setToleranceType}
+          value={toleranceValue}
+          setValue={setToleranceValue}
+          inclusive={toleranceInclusive}
+          setInclusive={setToleranceInclusive}
+        />
+      </form>
+      <div className="mt-3">
+        <RepeatableRows
+          label="Loss reasons"
+          hint="Required when a non-zero approved_loss quantity applies - each entry needs a category and description."
+          itemLabel="Loss reason"
+          subFields={LOSS_REASON_SUBFIELDS}
+          value={lossReasons}
+          onChange={setLossReasons}
+        />
+      </div>
+      {error && <p className="error-text mt-2">{error}</p>}
+      {done && <p className="fs-2 mt-2">Label reconciliation evaluated - see the reconciliations table above.</p>}
+      <div className="mt-3">
+        <Button type="submit" variant="primary" onClick={submit} disabled={busy || !packagingRunId.trim() || !toleranceValue.trim()}>
+          {busy ? "Evaluating…" : "Evaluate label reconciliation"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function EvaluateComponentReconciliationCard({
+  onEvaluated,
+  defaultBatchId,
+  entities,
+}: {
+  onEvaluated: () => void;
+  defaultBatchId: string;
+  entities: ReturnType<typeof useEntityOptions>;
+}) {
+  const [batchId, setBatchId] = useState(defaultBatchId);
+  const [deviceUnitId, setDeviceUnitId] = useState("");
+  const [itemRef, setItemRef] = useState<KvRow[]>([]);
+  const [quantities, setQuantities] = useState<KvRow[]>([]);
+  const [uom, setUom] = useState("");
+  const [toleranceType, setToleranceType] = useState("percentage");
+  const [toleranceValue, setToleranceValue] = useState("");
+  const [toleranceInclusive, setToleranceInclusive] = useState("true");
+  const [lossReasons, setLossReasons] = useState<RepeatRow[]>([]);
+  const [linkedDeviationId, setLinkedDeviationId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setDone(false);
+    try {
+      await api.post<MutationReceipt>("/reconciliation/v1/components/evaluate", {
+        idempotency_key: newIdempotencyKey(),
+        batch_id: batchId.trim(),
+        reconciliation_type: "COMPONENT",
+        device_unit_id: deviceUnitId.trim() || null,
+        item_ref: buildKvObject(itemRef),
+        quantities: buildKvObject(quantities),
+        uom: uom.trim(),
+        tolerance_rule: { type: toleranceType, value: toleranceValue.trim(), inclusive: toleranceInclusive === "true" },
+        loss_reasons: lossReasons.length > 0 ? buildRepeatArray(LOSS_REASON_SUBFIELDS, lossReasons) : null,
+        linked_deviation_id: linkedDeviationId.trim() || null,
+      });
+      setDone(true);
+      onEvaluated();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Evaluation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card pad>
+      <CardHeader title="Evaluate component reconciliation" />
+      <p className="fs-2 text-muted mb-3">
+      Serialized or critical-component accountability. Set a device unit ID for a
+        serialized case; leave it blank for a batch-level critical-component reconciliation.
+      </p>
+      <form onSubmit={submit} className="grid grid-cols-3 gap-4">
+        <EntityPickerField
+          label="Batch"
+          required
+          value={batchId}
+          onChange={setBatchId}
+          options={entities.batches}
+          status={entities.batchesStatus}
+          kind="batch"
+        />
+        <Field label="Device unit ID" hint="Optional - only for a serialized case; must belong to this batch.">
+          <Input value={deviceUnitId} onChange={(e) => setDeviceUnitId(e.target.value)} />
+        </Field>
+        <Field label="UOM" required>
+          <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
+        </Field>
+        <ToleranceRuleFields
+          type={toleranceType}
+          setType={setToleranceType}
+          value={toleranceValue}
+          setValue={setToleranceValue}
+          inclusive={toleranceInclusive}
+          setInclusive={setToleranceInclusive}
+        />
+        <Field label="Linked deviation ID" hint="An existing QMS deviation - only relevant alongside an approved_loss quantity.">
+          <Input value={linkedDeviationId} onChange={(e) => setLinkedDeviationId(e.target.value)} />
+        </Field>
+      </form>
+      <div className="grid grid-cols-2 gap-4 mt-3">
+        <KeyValueRows label="Item reference" value={itemRef} onChange={setItemRef} />
+        <KeyValueRows
+          label="Quantities"
+          hint="e.g. issued, assembled, rejected, scrapped, returned, samples, destroyed, approved_loss."
+          value={quantities}
+          onChange={setQuantities}
+        />
+      </div>
+      <div className="mt-3">
+        <RepeatableRows
+          label="Loss reasons"
+          hint="Required when a non-zero approved_loss quantity is entered above - each entry needs a category and description."
+          itemLabel="Loss reason"
+          subFields={LOSS_REASON_SUBFIELDS}
+          value={lossReasons}
+          onChange={setLossReasons}
+        />
+      </div>
+      {error && <p className="error-text mt-2">{error}</p>}
+      {done && <p className="fs-2 mt-2">Component reconciliation evaluated - see the reconciliations table above.</p>}
+      <div className="mt-3">
+        <Button
+          type="submit"
+          variant="primary"
+          onClick={submit}
+          disabled={busy || !batchId.trim() || !uom.trim() || itemRef.length === 0 || quantities.length === 0 || !toleranceValue.trim()}
+        >
+          {busy ? "Evaluating…" : "Evaluate component reconciliation"}
         </Button>
       </div>
     </Card>

@@ -370,7 +370,7 @@ function TransitionModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={`${LABEL[transition]} — ${complaint.complaint_number}`} large={transition === "reportability"}>
+    <Modal open onClose={onClose} title={`${LABEL[transition]} - ${complaint.complaint_number}`} large={transition === "reportability"}>
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(transition) && (
           <Banner tone="warn" title="This transition requires an electronic signature">

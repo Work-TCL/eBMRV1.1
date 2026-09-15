@@ -179,7 +179,7 @@ export function SignatureCeremony({
       )}
 
       <p className="fs-2 text-muted mb-2">
-        Fresh authentication is required to sign — re-enter your password (21 CFR Part 11 step-up).
+        Fresh authentication is required to sign - re-enter your password (21 CFR Part 11 step-up).
         This signature is attributable to you and bound to this record and version.
       </p>
       <Field label="Password" required>

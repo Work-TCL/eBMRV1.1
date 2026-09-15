@@ -89,6 +89,45 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** `GET /evidence/v1/{evidence_id}/download` returns raw bytes with a `Content-Disposition` header, not
+ * JSON — `request()` above always parses a JSON body, so this is a separate helper rather than another
+ * `api.*` method. Auth still needs the bearer header (this endpoint isn't cookie-authenticated), so a
+ * plain `<a href>` can't be used directly — fetch with the token, then hand the browser a blob URL to
+ * save under the server's own suggested filename. */
+export async function downloadEvidence(evidenceId: string, purpose = "inspection"): Promise<void> {
+  const token = getToken();
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(
+    `${apiBase()}/evidence/v1/${encodeURIComponent(evidenceId)}/download?purpose=${encodeURIComponent(purpose)}`,
+    { headers }
+  );
+  if (!res.ok) {
+    let body: { code?: string; message?: string; details?: Record<string, unknown> } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // non-JSON error body
+    }
+    throw new ApiError(res.status, body.code ?? "UNKNOWN_ERROR", body.message ?? res.statusText, body.details ?? {});
+  }
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const filenameMatch = /filename="?([^";]+)"?/.exec(disposition);
+  const filename = filenameMatch?.[1] ?? evidenceId;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
@@ -214,8 +253,19 @@ export function isLoggedIn(): boolean {
   return !!getToken();
 }
 
-export function logout() {
-  setToken(null);
+/** Revokes the session server-side (`POST /auth/logout` — `iam/router.py`'s `logout()` builds the
+ * `RevokeSessionCommand` itself from the token's own `session_id`, no body needed) before clearing the
+ * local token, so a "logged out" session doesn't stay ACTIVE server-side until natural expiry. The local
+ * token is always cleared, even if the network call fails, so the user is never stuck unable to log out. */
+export async function logout(): Promise<void> {
+  try {
+    await api.post("/auth/logout");
+  } catch {
+    // Best-effort server-side revoke — clear the local token regardless (e.g. token already expired,
+    // or this token was never session-tracked, per that endpoint's own "nothing to log out" case).
+  } finally {
+    setToken(null);
+  }
 }
 
 // --- Domain types -----------------------------------------------------

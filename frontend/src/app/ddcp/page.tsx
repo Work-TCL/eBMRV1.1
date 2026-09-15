@@ -88,18 +88,18 @@ export default function DdcpPage() {
       )}
       {!canAuthorProfile && canExecute && (
         <Banner tone="info" title="Profile designer hidden">
-        Authoring and releasing profiles needs the DDCP Engineer role — you can still record batch
+        Authoring and releasing profiles needs the DDCP Engineer role - you can still record batch
           execution and evaluate release readiness below.
         </Banner>
       )}
       {canAuthorProfile && !canExecute && (
         <Banner tone="info" title="Execution hidden">
-        Recording batch execution and evaluating release readiness needs the DDCP Operator role — you
+        Recording batch execution and evaluating release readiness needs the DDCP Operator role - you
           can still design and release profiles above.
         </Banner>
       )}
 
-      {/* Tabs instead of three stacked cards — the page was a long scroll even for a single family, and
+      {/* Tabs instead of three stacked cards - the page was a long scroll even for a single family, and
        * a role missing one capability (§4 of the Gujarati test guide) used to leave a visible gap where
        * that card would have been instead of just not offering that tab. `Tabs` keeps every panel
        * mounted (only toggling CSS visibility), so form state in a background tab survives a switch.
@@ -136,6 +136,15 @@ export default function DdcpPage() {
                   content: (
                     <ExecutionCard key={`exec-${family.key}`} family={family} entities={entities} defaultProfileId={lastProfileId} />
                   ),
+                },
+              ]
+            : []),
+          ...(family.hasChangeLinkage || family.hasComplaintTraceBySerial || family.hasComplaintTraceByBatch
+            ? [
+                {
+                  id: "diagnostics",
+                  label: "Diagnostics",
+                  content: <DiagnosticsCard key={`diag-${family.key}`} family={family} />,
                 },
               ]
             : []),
@@ -288,7 +297,7 @@ function ProfileCard({
     <Card pad className="mb-4">
       <CardHeader title="Profile designer" />
       <p className="fs-2 text-muted mb-3">
-        Define this product&rsquo;s recipe before any batch can use it — what constituents it needs, and what state each must be
+        Define this product&rsquo;s recipe before any batch can use it - what constituents it needs, and what state each must be
         in. A profile starts as a DRAFT you can still edit; releasing it locks it and makes it available to batches.
       </p>
       <form onSubmit={submitCreate}>
@@ -328,7 +337,7 @@ function ProfileCard({
           }
         >
           <p className="fs-2">
-                Profile code <strong className="tabular">{state.profile_code as string}</strong> already has a version — the
+                Profile code <strong className="tabular">{state.profile_code as string}</strong> already has a version - the
             latest is <strong>v{duplicateConfirm.latestVersion}</strong> ({duplicateConfirm.latestState}). Creating now adds{" "}
             <strong>v{duplicateConfirm.latestVersion + 1}</strong> as a new DRAFT alongside it; it won&rsquo;t replace or
             affect the existing version until that new one is released.
@@ -340,7 +349,7 @@ function ProfileCard({
         <p className="fs-1 text-muted mb-1">Release a profile version</p>
         <p className="fs-2 text-muted mb-2">
           Releasing locks this version and makes it available to batches; any previously released version of the same
-          profile code is superseded. Needs an electronic signature policy — if none is configured for DDCP release yet,
+          profile code is superseded. Needs an electronic signature policy - if none is configured for DDCP release yet,
           this will be blocked by design, not by a bug.
         </p>
         {/* items-start, not items-end: the profile picker's "Can't find it? Enter ID manually" toggle is
@@ -427,6 +436,8 @@ function BatchCard({
   const [readiness, setReadiness] = useState<Record<string, unknown> | null>(null);
   const [genealogy, setGenealogy] = useState<Record<string, unknown> | null>(null);
   const [reviewSummary, setReviewSummary] = useState<Record<string, unknown> | null>(null);
+  const [serializationCompliance, setSerializationCompliance] = useState<Record<string, unknown> | null>(null);
+  const [stepSyncStatus, setStepSyncStatus] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -441,6 +452,8 @@ function BatchCard({
     setReadiness(null);
     setGenealogy(null);
     setReviewSummary(null);
+    setSerializationCompliance(null);
+    setStepSyncStatus(null);
     setLoading(true);
     const payload = buildPayload(readinessFields, state);
     const { batch_id, ...query } = payload as Record<string, unknown>;
@@ -452,6 +465,13 @@ function BatchCard({
       if (family.hasGenealogy) setGenealogy(await api.get<Record<string, unknown>>(`${family.prefix}/batches/${batchId}/genealogy`).catch(() => null));
       if (family.hasReviewSummary)
         setReviewSummary(await api.get<Record<string, unknown>>(`${family.prefix}/batches/${batchId}/review-summary`).catch(() => null));
+      // SG-180: same batch/profile query readiness already required — reused rather than asked for twice.
+      if (family.hasSerializationCompliance)
+        setSerializationCompliance(
+          await api.get<Record<string, unknown>>(`${family.prefix}/batches/${batchId}/serialization-compliance?${q.toString()}`).catch(() => null)
+        );
+      if (family.hasStepSyncStatus)
+        setStepSyncStatus(await api.get<Record<string, unknown>>(`${family.prefix}/batches/${batchId}/step-sync-status`).catch(() => null));
     } catch (err) {
       setError(friendlyDdcpError(err, "Couldn't load batch readiness."));
     } finally {
@@ -519,6 +539,16 @@ function BatchCard({
               <ReviewSummaryPanel summary={reviewSummary} />
             </div>
           )}
+          {serializationCompliance && (
+            <div className="mt-4" style={{ borderTop: "1px solid var(--border-hairline)", paddingTop: "var(--space-3)" }}>
+            <JsonPanel title="Serialization compliance" value={serializationCompliance} />
+            </div>
+          )}
+          {stepSyncStatus && (
+            <div className="mt-4" style={{ borderTop: "1px solid var(--border-hairline)", paddingTop: "var(--space-3)" }}>
+            <JsonPanel title="Batch / DDCP step sync status" value={stepSyncStatus} />
+            </div>
+          )}
           {canAuthor && (
             <div className="flex gap-2 mt-3">
               <Button variant="primary" onClick={() => runBatchAction("release-readiness", "Release-readiness assessment")}>
@@ -531,6 +561,105 @@ function BatchCard({
           )}
           {actionMsg && <p className="fs-2 mt-2">{actionMsg}</p>}
         </>
+      )}
+    </Card>
+  );
+}
+
+// --- Diagnostics: read-only cross-reference lookups (change-linkage, complaint-trace) ----------------
+
+function DiagnosticsCard({ family }: { family: DdcpFamily }) {
+  const [objectType, setObjectType] = useState("");
+  const [objectId, setObjectId] = useState("");
+  const [finishedSerial, setFinishedSerial] = useState("");
+  const [batchId, setBatchId] = useState("");
+  const [result, setResult] = useState<{ label: string; data: unknown } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function run(label: string, path: string) {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      setResult({ label, data: await api.get<unknown>(path) });
+    } catch (err) {
+      setError(friendlyDdcpError(err, "Lookup failed."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="Diagnostics" />
+      <p className="fs-2 text-muted mb-3">Read-only cross-reference lookups - nothing here records or changes anything.</p>
+
+      {family.hasChangeLinkage && (
+        <div className="mb-4" style={{ borderBottom: "1px solid var(--border-hairline)", paddingBottom: "var(--space-3)" }}>
+          <p className="fs-3 font-semibold mb-2">Change linkage</p>
+          <div className="grid grid-cols-2 gap-4 mb-3">
+            <Field label="Object type" hint="e.g. ddcp_profile_version, pfs_fill_operation.">
+              <Input value={objectType} onChange={(e) => setObjectType(e.target.value)} />
+            </Field>
+            <Field label="Object ID">
+              <Input value={objectId} onChange={(e) => setObjectId(e.target.value)} />
+            </Field>
+          </div>
+          <Button
+            variant="secondary"
+            disabled={busy || !objectType.trim() || !objectId.trim()}
+            onClick={() =>
+              run(
+                "Change linkage",
+                `${family.prefix}/change-linkage?object_type=${encodeURIComponent(objectType.trim())}&object_id=${encodeURIComponent(objectId.trim())}`
+              )
+            }
+          >
+            <Icon name="search" /> Look up
+          </Button>
+        </div>
+      )}
+
+      {family.hasComplaintTraceBySerial && (
+        <div className="mb-4" style={{ borderBottom: "1px solid var(--border-hairline)", paddingBottom: "var(--space-3)" }}>
+          <p className="fs-3 font-semibold mb-2">Complaint trace</p>
+          <Field label="Finished device serial">
+            <Input value={finishedSerial} onChange={(e) => setFinishedSerial(e.target.value)} style={{ maxWidth: 320 }} />
+          </Field>
+          <Button
+            variant="secondary"
+            className="mt-2"
+            disabled={busy || !finishedSerial.trim()}
+            onClick={() => run("Complaint trace", `${family.prefix}/complaint-trace/${encodeURIComponent(finishedSerial.trim())}`)}
+          >
+            <Icon name="search" /> Look up
+          </Button>
+        </div>
+      )}
+
+      {family.hasComplaintTraceByBatch && (
+        <div className="mb-4" style={{ borderBottom: "1px solid var(--border-hairline)", paddingBottom: "var(--space-3)" }}>
+          <p className="fs-3 font-semibold mb-2">Complaint trace</p>
+          <Field label="Batch ID">
+            <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} style={{ maxWidth: 320 }} />
+          </Field>
+          <Button
+            variant="secondary"
+            className="mt-2"
+            disabled={busy || !batchId.trim()}
+            onClick={() => run("Complaint trace", `${family.prefix}/batches/${encodeURIComponent(batchId.trim())}/complaint-trace`)}
+          >
+            <Icon name="search" /> Look up
+          </Button>
+        </div>
+      )}
+
+      {error && <p className="error-text mt-2">{error}</p>}
+      {result && (
+        <div className="mt-3">
+          <JsonPanel title={result.label} value={result.data} />
+        </div>
       )}
     </Card>
   );
@@ -614,19 +743,19 @@ function ExecutionCard({
     pfs_handoff: (g) =>
       ((g.incoming_constituents as Record<string, unknown>[] | undefined) ?? []).map((c) => ({
         value: String(c.id),
-        label: `${String(c.id).slice(0, 8)}… — ${c.from_constituent}/${c.to_constituent} (${c.state})`,
+        label: `${String(c.id).slice(0, 8)}… - ${c.from_constituent}/${c.to_constituent} (${c.state})`,
         version: Number(c.version ?? 1),
       })),
     pfs_assembly_record: (g) =>
       ((g.device_assembly_chain as Record<string, unknown>[] | undefined) ?? []).map((a) => ({
         value: String(a.id),
-        label: `${String(a.id).slice(0, 8)}… — ${a.assembly_step} (${a.result})`,
+        label: `${String(a.id).slice(0, 8)}… - ${a.assembly_step} (${a.result})`,
         version: Number(a.version ?? 1),
       })),
     pfs_fill_operation: (g) =>
       ((g.fill_operations as Record<string, unknown>[] | undefined) ?? []).map((f) => ({
         value: String(f.id),
-        label: `${String(f.id).slice(0, 8)}… — ${f.fill_program_id} (${f.state})`,
+        label: `${String(f.id).slice(0, 8)}… - ${f.fill_program_id} (${f.state})`,
         version: Number(f.version ?? 1),
       })),
   };
@@ -709,7 +838,7 @@ function ExecutionCard({
         const kind = op.producesRecordKind;
         const option: SelectOption = {
           value: receipt.aggregate_id,
-          label: `${receipt.aggregate_id.slice(0, 8)}… — ${op.label} (${new Date().toLocaleTimeString()})`,
+          label: `${receipt.aggregate_id.slice(0, 8)}… - ${op.label} (${new Date().toLocaleTimeString()})`,
         };
         setRecentRecords((r) => ({ ...r, [kind]: [option, ...(r[kind] ?? [])] }));
       }
@@ -793,7 +922,7 @@ function ExecutionCard({
       <CardHeader title="Execution & result records" />
       <p className="fs-2 text-muted mb-3">
  Record what actually happened during batch production handoffs, fills, assembly steps, tests, counts and
-        dispositions — pick the action, fill it in, then confirm before it&rsquo;s sent.
+        dispositions - pick the action, fill it in, then confirm before it&rsquo;s sent.
       </p>
 
       <Stepper>
@@ -888,7 +1017,7 @@ function ExecutionCard({
                 <div style={{ flex: 1 }}>
                   <p className="font-semibold">Refreshed the page? Look up the batch here first</p>
                   <p className="fs-3 mt-1 mb-2">
-                    The picker below only remembers records created since your last page load — it goes empty
+                    The picker below only remembers records created since your last page load - it goes empty
                     on refresh even though the records themselves are still saved. Pick the batch here to
                     reload them from its real history.
                   </p>
@@ -897,7 +1026,7 @@ function ExecutionCard({
                       name: "_lookup_batch",
                       label: "Batch",
                       type: "batchSelect",
-                      hint: "Not submitted — just refills the picker below. Genealogy doesn't carry a record's version, though, so picking one this way won't auto-fill Expected version below — check the record's actual current version before submitting.",
+                      hint: "Not submitted - just refills the picker below. Genealogy doesn't carry a record's version, though, so picking one this way won't auto-fill Expected version below - check the record's actual current version before submitting.",
                     }}
                     value={lookupBatchId}
                     onChange={(v) => void lookupByBatch(v as string)}
@@ -936,7 +1065,7 @@ function ExecutionCard({
               <p className="fs-5" style={{ fontWeight: "var(--fw-bold)" }}>
                 {op.label}
               </p>
-              <p className="fs-2 text-muted mt-1">Check what will be sent before submitting — Back to edit any field.</p>
+              <p className="fs-2 text-muted mt-1">Check what will be sent before submitting - Back to edit any field.</p>
             </div>
 
             <dl className="review-list mb-3">

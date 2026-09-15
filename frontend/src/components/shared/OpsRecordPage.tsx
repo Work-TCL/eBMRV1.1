@@ -404,7 +404,7 @@ export function OpsRecordPage<T extends { id: string; version: number }>({
 
       {!collapseCreate && config.create && !config.create.can(me) && (
         <Banner tone="info" title="Read-only">
-                {config.create.label} needs additional access — the lookup below still works for everyone.
+                {config.create.label} needs additional access - the lookup below still works for everyone.
         </Banner>
       )}
 
@@ -529,7 +529,7 @@ export function OpsRecordPage<T extends { id: string; version: number }>({
           }}
           challengePath={`${config.apiRoot}/${record.id}/signature-challenges`}
           action={sigTransition.challengeAction ?? sigTransition.key}
-          title={`${sigTransition.label} — ${config.numberOf(record)}`}
+          title={`${sigTransition.label} - ${config.numberOf(record)}`}
           summary={sigTransition.summary}
           submitVariant={sigTransition.variant === "danger" ? "danger" : sigTransition.variant === "success" ? "success" : "primary"}
           extraFields={
@@ -577,7 +577,7 @@ function UnsignedTransition<T extends { id: string; version: number }>({
   return (
     <WorkflowActionButton
       label={transition.label}
-      title={`${transition.label} — ${config.numberOf(record)}`}
+      title={`${transition.label} - ${config.numberOf(record)}`}
       summary={transition.summary}
       confirmLabel={transition.label}
       variant={transition.variant ?? "secondary"}

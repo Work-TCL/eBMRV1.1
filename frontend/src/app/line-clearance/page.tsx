@@ -49,7 +49,7 @@ const config: OpsRecordConfig<LineClearanceRecord> = {
       { name: "checklist_version", label: "Checklist / procedure version", placeholder: "e.g. LC-CHK-001", hint: "Reference to the line-clearance checklist or procedure version used." },
       {
         name: "items", label: "Checklist items", type: "repeat", itemLabel: "item",
- hint: "Optional. Only “Equipment” items are cross-checked automatically completing this clearance as Pass will fail if any listed equipment asset isn't currently qualified, calibrated and clean (CLN-FR-019).",
+        hint: "Optional. Only “Equipment” items are cross-checked automatically completing this clearance as Pass will fail if any listed equipment asset isn't currently qualified, calibrated and clean.",
         subFields: [
           {
             name: "item_type", label: "Item type", type: "select", required: true,
@@ -92,7 +92,7 @@ const config: OpsRecordConfig<LineClearanceRecord> = {
       can: canClear,
       show: (r) => r.state === "IN_PROGRESS" || r.state === "VERIFICATION_PENDING",
       summary:
- "Attests the area has been cleared of the previous batch's identity and materials signed per Document 106 row 111. Passing sets the area's clearance state to CLEARED (what downstream readiness checks look for); failing resets it to NOT_STARTED.",
+      "Attests the area has been cleared of the previous batch's identity and materials. Passing sets the area's clearance state to CLEARED (what downstream readiness checks look for); failing resets it to NOT_STARTED.",
       fields: [
         {
           name: "passed", label: "Result", required: true, type: "select",
@@ -169,7 +169,7 @@ function ClearanceListCard({ siteId, reloadToken, onOpen }: { siteId: string | n
           fetchPage={fetchClearances}
           rowKey={(r) => r.id}
           searchPlaceholder="Search state…"
-          emptyMessage={<>No line clearances yet — use &quot;Start line clearance&quot; above to add one.</>}
+          emptyMessage={<>No line clearances yet - use &quot;Start line clearance&quot; above to add one.</>}
           defaultSort={{ by: "created_at", dir: "desc" }}
           onRowClick={(r) => onOpen(r.id)}
           reloadToken={reloadToken}

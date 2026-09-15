@@ -33,6 +33,7 @@ import { Icon } from "@/components/ui/Icon";
 import { StatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { StringListRows, buildStringList } from "@/components/shared/RepeatableFields";
 
 interface AvailabilityRow {
   material_lot_id: string;
@@ -96,7 +97,7 @@ function adjustmentColumns(
       sortable: true,
       render: (r) => (
         <span className="tabular fs-2">
-        {r.internal_lot} — <span className="text-muted">{r.material_code}</span>
+        {r.internal_lot} - <span className="text-muted">{r.material_code}</span>
         </span>
       ),
     },
@@ -162,7 +163,7 @@ function adjustmentColumns(
         if (!canApprove) return null;
         const isSelf = myUsername != null && r.requested_by === myUsername;
         return (
-        <Button size="sm" variant="primary" disabled={isSelf} onClick={() => onApprove(r)} title={isSelf ? "You requested this — an independent QA Releaser must approve it" : undefined}>
+        <Button size="sm" variant="primary" disabled={isSelf} onClick={() => onApprove(r)} title={isSelf ? "You requested this - an independent QA Releaser must approve it" : undefined}>
             Approve
           </Button>
         );
@@ -196,6 +197,9 @@ export default function InventoryPage() {
   const [approvingAdjustment, setApprovingAdjustment] = useState<AdjustmentRequestRow | null>(null);
   const [locations, setLocations] = useState<WarehouseLocation[]>([]);
   const [newLocationOpen, setNewLocationOpen] = useState(false);
+  const [splittingContainer, setSplittingContainer] = useState<AvailabilityRow | null>(null);
+  const [mergeSelection, setMergeSelection] = useState<Set<string>>(new Set());
+  const [mergeOpen, setMergeOpen] = useState(false);
 
   const canMove = holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
   const canApprove = holdsAnyRole(me, ["Admin", "QA Releaser"]);
@@ -243,8 +247,12 @@ export default function InventoryPage() {
     };
   }, [siteId, reloadToken]);
 
-  async function loadAvailability(e: React.FormEvent) {
+  function loadAvailability(e: React.FormEvent) {
     e.preventDefault();
+    void refreshAvailability();
+  }
+
+  async function refreshAvailability() {
     if (!siteId || !materialId) return;
     setLoading(true);
     setError(null);
@@ -338,12 +346,12 @@ export default function InventoryPage() {
                  * the button down below the input it belongs beside. RowButtonSlot gives the button a
                  * same-height invisible label so it still lines up with the select. */}
                 <form onSubmit={loadAvailability} className="flex flex-wrap items-start gap-4 mb-4">
-                  <Field label="Material" hint="Lots are ordered FEFO — earliest expiry first.">
+                  <Field label="Material" hint="Lots are ordered FEFO - earliest expiry first.">
                     <Select value={materialId} onChange={(e) => setMaterialId(e.target.value)} style={{ minWidth: 200, maxWidth: 320, width: "100%" }}>
                       <option value="">Select a material…</option>
                       {materials.map((m) => (
                         <option key={m.id} value={m.id}>
-                          {m.code} — {m.name}
+                          {m.code} - {m.name}
                         </option>
                       ))}
                     </Select>
@@ -363,47 +371,89 @@ export default function InventoryPage() {
 
                 {availability && (
                   <Card>
-                    <CardHeader title="Available stock" meta={`${availability.length} container(s)`} />
+                    <CardHeader
+                      title="Available stock"
+                      meta={`${availability.length} container(s)`}
+                    />
                     {availability.length === 0 ? (
                       <EmptyState icon="inbox">
-                        No eligible stock — every container is expired, quarantined, reserved or empty.
+                        No eligible stock - every container is expired, quarantined, reserved or empty.
                       </EmptyState>
                     ) : (
-                      <Table>
-                        <thead>
-                          <tr>
-                            <th>Lot</th>
-                            <th>Location</th>
-                            <th style={{ textAlign: "right" }}>Available</th>
-                            <th>Expiry</th>
-                            <th></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {availability.map((row) => (
-                            <tr key={row.container_id}>
-                              <td className="font-semibold tabular">{row.internal_lot}</td>
-                              <td className="fs-2">{row.location_code}</td>
-                              <td className="tabular" style={{ textAlign: "right" }}>
-                                {row.available} {row.uom}
-                              </td>
-                              <td className="tabular fs-2">{row.expiry_date ?? "—"}</td>
-                              <td style={{ textAlign: "right" }}>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setLedgerLotId(row.material_lot_id);
-                                    setActiveLedgerLot(row.material_lot_id);
-                                  }}
-                                >
-                                  Ledger
-                                </Button>
-                              </td>
+                      <>
+                        <Table>
+                          <thead>
+                            <tr>
+                              <th></th>
+                              <th>Lot</th>
+                              <th>Location</th>
+                              <th style={{ textAlign: "right" }}>Available</th>
+                              <th>Expiry</th>
+                              <th></th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </Table>
+                          </thead>
+                          <tbody>
+                            {availability.map((row) => (
+                              <tr key={row.container_id}>
+                                <td>
+                                  {canMove && (
+                                    <input
+                                      type="checkbox"
+                                      checked={mergeSelection.has(row.container_id)}
+                                      onChange={(e) =>
+                                        setMergeSelection((cur) => {
+                                          const next = new Set(cur);
+                                          if (e.target.checked) next.add(row.container_id);
+                                          else next.delete(row.container_id);
+                                          return next;
+                                        })
+                                      }
+                                    />
+                                  )}
+                                </td>
+                                <td className="font-semibold tabular">{row.internal_lot}</td>
+                                <td className="fs-2">{row.location_code}</td>
+                                <td className="tabular" style={{ textAlign: "right" }}>
+                                  {row.available} {row.uom}
+                                </td>
+                                <td className="tabular fs-2">{row.expiry_date ?? "—"}</td>
+                                <td style={{ textAlign: "right" }}>
+                                  <div className="flex gap-2 justify-end">
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        setLedgerLotId(row.material_lot_id);
+                                        setActiveLedgerLot(row.material_lot_id);
+                                      }}
+                                    >
+                                      Ledger
+                                    </Button>
+                                    {canMove && (
+                                      <Button size="sm" variant="secondary" onClick={() => setSplittingContainer(row)}>
+                                        Split
+                                      </Button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </Table>
+                        {canMove && (
+                          <div className="flex items-center gap-3 mt-3" style={{ padding: "0 var(--space-4) var(--space-3)" }}>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={mergeSelection.size < 2}
+                              onClick={() => setMergeOpen(true)}
+                            >
+                              Merge selected ({mergeSelection.size})
+                            </Button>
+                            <p className="hint">Select at least two containers of the same lot to merge.</p>
+                          </div>
+                        )}
+                      </>
                     )}
                   </Card>
                 )}
@@ -433,7 +483,7 @@ export default function InventoryPage() {
                       <option value="">Select a lot…</option>
                       {materialLots.map((l) => (
                         <option key={l.id} value={l.id}>
-                  {l.internal_lot} — {l.material_code} ({l.status})
+                  {l.internal_lot} - {l.material_code} ({l.status})
                         </option>
                       ))}
                     </Select>
@@ -476,8 +526,8 @@ export default function InventoryPage() {
                 <Card pad className="mb-4">
                   <p className="fact-k mb-2">Exceptional inventory adjustment</p>
                   <p className="hint mb-3">
-                  An adjustment is an exception, not a correction path — it needs a stated reason and an
-                    independent approver (CON-FR-013/014). Cycle counts are the routine mechanism.
+                  An adjustment is an exception, not a correction path - it needs a stated reason and an
+                  independent approver. Cycle counts are the routine mechanism.
                   </p>
                   <div className="flex gap-2">
                     {canMove && (
@@ -487,7 +537,7 @@ export default function InventoryPage() {
                     )}
                     {!canApprove && (
                       <p className="hint">
-                      Approving an adjustment requires QA Releaser — you can raise one but not approve it.
+                      Approving an adjustment requires QA Releaser - you can raise one but not approve it.
                       </p>
                     )}
                   </div>
@@ -553,8 +603,7 @@ export default function InventoryPage() {
               <strong>{approvingAdjustment.observed_quantity}</strong> (variance{" "}
  <strong>{approvingAdjustment.variance}</strong>) requested by{" "}
               <strong>{approvingAdjustment.requested_by}</strong>: “{approvingAdjustment.reason}”. This cannot be
-              undone by re-approving; a further correction needs its own new adjustment request
-              (CON-FR-013/014).
+              undone by re-approving; a further correction needs its own new adjustment request.
             </>
           }
           reason="required"
@@ -577,6 +626,29 @@ export default function InventoryPage() {
           onDone={() => {
             setNewLocationOpen(false);
             setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
+
+      {splittingContainer && (
+        <SplitContainerModal
+          container={splittingContainer}
+          onClose={() => setSplittingContainer(null)}
+          onDone={() => {
+            setSplittingContainer(null);
+            refreshAvailability();
+          }}
+        />
+      )}
+
+      {mergeOpen && (
+        <MergeContainersModal
+          containerIds={Array.from(mergeSelection)}
+          onClose={() => setMergeOpen(false)}
+          onDone={() => {
+            setMergeOpen(false);
+            setMergeSelection(new Set());
+            refreshAvailability();
           }}
         />
       )}
@@ -726,7 +798,7 @@ function ActionModal({
         {action === "reserve" && (
           <>
             <p className="hint mb-3">
-              Reservation selects source lots server-side by FEFO (INV-FR-010/012) — you name the material
+ Reservation selects source lots server-side by FEFO - you name the material
               and quantity, not the lot.
             </p>
             <Field label="Batch" required>
@@ -734,7 +806,7 @@ function ActionModal({
                 <option value="">Select a batch…</option>
                 {batches.map((b) => (
                   <option key={b.id} value={b.id}>
-                  {b.batch_number} — {b.product_code} ({b.status})
+                  {b.batch_number} - {b.product_code} ({b.status})
                   </option>
                 ))}
               </Select>
@@ -743,7 +815,7 @@ function ActionModal({
               <Select value={materialId} onChange={(e) => setMaterialId(e.target.value)} required>
                 {materials.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.code} — {m.name}
+                    {m.code} - {m.name}
                   </option>
                 ))}
               </Select>
@@ -767,7 +839,7 @@ function ActionModal({
                   <option value="">Select a lot…</option>
                   {materialLots.map((l) => (
                     <option key={l.id} value={l.id}>
-                  {l.internal_lot} — {l.material_code} ({l.status})
+                  {l.internal_lot} - {l.material_code} ({l.status})
                     </option>
                   ))}
                 </Select>
@@ -777,7 +849,7 @@ function ActionModal({
                 required
                 hint={
                   lotId && !containersLoading && currentContainers.length === 0
-                    ? "No containers exist for this lot — it was created via the 'Receive lot' quick shortcut, which doesn't create one. Transfer needs a lot received via Material Receipts → Examine."
+                    ? "No containers exist for this lot - it was created via the 'Receive lot' quick shortcut, which doesn't create one. Transfer needs a lot received via Material Receipts → Examine."
                     : undefined
                 }
               >
@@ -790,7 +862,7 @@ function ActionModal({
                   <option value="">{containersLoading ? "Loading…" : "Select a container…"}</option>
                   {currentContainers.map((c) => (
                     <option key={c.id} value={c.id}>
-                    {c.container_code} — {c.current_quantity} {c.uom}
+                    {c.container_code} - {c.current_quantity} {c.uom}
                     </option>
                   ))}
                 </Select>
@@ -832,17 +904,17 @@ function ActionModal({
                   <option value="">Select a lot…</option>
                   {materialLots.map((l) => (
                     <option key={l.id} value={l.id}>
-                  {l.internal_lot} — {l.material_code} ({l.status})
+                  {l.internal_lot} - {l.material_code} ({l.status})
                     </option>
                   ))}
                 </Select>
               </Field>
-              <Field label="Container" hint="Optional — leave blank to count the lot's un-containerized balance at this location.">
+              <Field label="Container" hint="Optional - leave blank to count the lot's un-containerized balance at this location.">
                 <Select value={containerId} onChange={(e) => setContainerId(e.target.value)} disabled={!lotId}>
                   <option value="">{containersLoading ? "Loading…" : "(none)"}</option>
                   {currentContainers.map((c) => (
                     <option key={c.id} value={c.id}>
-                    {c.container_code} — {c.current_quantity} {c.uom}
+                    {c.container_code} - {c.current_quantity} {c.uom}
                     </option>
                   ))}
                 </Select>
@@ -887,17 +959,17 @@ function ActionModal({
                   <option value="">Select a lot…</option>
                   {materialLots.map((l) => (
                     <option key={l.id} value={l.id}>
-                  {l.internal_lot} — {l.material_code} ({l.status})
+                  {l.internal_lot} - {l.material_code} ({l.status})
                     </option>
                   ))}
                 </Select>
               </Field>
-              <Field label="Container" hint="Optional — leave blank to adjust the lot's un-containerized balance at this location.">
+              <Field label="Container" hint="Optional - leave blank to adjust the lot's un-containerized balance at this location.">
                 <Select value={containerId} onChange={(e) => setContainerId(e.target.value)} disabled={!lotId}>
                   <option value="">{containersLoading ? "Loading…" : "(none)"}</option>
                   {currentContainers.map((c) => (
                     <option key={c.id} value={c.id}>
-                    {c.container_code} — {c.current_quantity} {c.uom}
+                    {c.container_code} - {c.current_quantity} {c.uom}
                     </option>
                   ))}
                 </Select>
@@ -1003,7 +1075,7 @@ function NewLocationModal({
     <Modal open onClose={onClose} title="New warehouse location">
       <form onSubmit={submit}>
         <p className="hint mb-3">
-          Master data (INV-FR-001/002) — no signature, but permanent once created (no delete/rename UI
+ Master data - no signature, but permanent once created (no delete/rename UI
           exists yet). Used as the From/To location on Transfer, Cycle count and Adjustment.
         </p>
         <div className="grid grid-cols-2 gap-4">
@@ -1017,7 +1089,7 @@ function NewLocationModal({
         <Field
           label="Zone type"
           required
-          hint="released/quarantine/rejected drive the Transfer zone-compatibility check — pick the one matching what this location is actually for."
+          hint="released/quarantine/rejected drive the Transfer zone-compatibility check - pick the one matching what this location is actually for."
         >
           <Select value={zoneType} onChange={(e) => setZoneType(e.target.value)} required>
             {ZONE_TYPES.map((z) => (
@@ -1035,6 +1107,113 @@ function NewLocationModal({
           </Button>
           <Button type="submit" variant="primary" disabled={busy || !siteId}>
             {busy ? "Saving…" : "Create location"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** No container-detail-by-id GET exists anywhere (verified against `material/router.py` — availability
+ * and the lot-containers list both omit `version`), so `expected_version` has to be entered by hand
+ * here rather than looked up — same honest "no read exists" shape as OOT/sampling-orders earlier this
+ * session. */
+function SplitContainerModal({
+  container,
+  onClose,
+  onDone,
+}: {
+  container: AvailabilityRow;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { busy, error, run } = useCommand(onDone);
+  const [expectedVersion, setExpectedVersion] = useState("1");
+  const [splitQuantities, setSplitQuantities] = useState<string[]>([]);
+
+  const quantities = buildStringList(splitQuantities);
+
+  return (
+    <Modal open onClose={onClose} title={`Split container - ${container.internal_lot}`}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(() =>
+            api.post(`/inventory/v1/containers/${container.container_id}/split`, {
+              idempotency_key: newIdempotencyKey(),
+              container_id: container.container_id,
+              expected_version: Number(expectedVersion),
+              split_quantities: quantities,
+            })
+          );
+        }}
+      >
+        <p className="fs-3 mb-3">
+          Splits {container.available} {container.uom} across the child quantities below - at least two
+          required, and they should sum to the container&apos;s current quantity.
+        </p>
+        <Field label="Expected version" required hint="No lookup exists for this - check the audit ledger if unsure.">
+          <Input type="number" value={expectedVersion} onChange={(e) => setExpectedVersion(e.target.value)} required />
+        </Field>
+        <StringListRows
+          label="Split quantities"
+          required
+          itemLabel="Quantity"
+          placeholder={`e.g. half of ${container.available}`}
+          value={splitQuantities}
+          onChange={setSplitQuantities}
+        />
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || quantities.length < 2}>
+            {busy ? "Splitting…" : "Split container"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function MergeContainersModal({
+  containerIds,
+  onClose,
+  onDone,
+}: {
+  containerIds: string[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { busy, error, run } = useCommand(onDone);
+  const [newContainerCode, setNewContainerCode] = useState("");
+
+  return (
+    <Modal open onClose={onClose} title="Merge containers">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(() =>
+            api.post("/inventory/v1/containers/merge", {
+              idempotency_key: newIdempotencyKey(),
+              source_container_ids: containerIds,
+              new_container_code: newContainerCode.trim(),
+            })
+          );
+        }}
+      >
+        <p className="fs-3 mb-3">Merging {containerIds.length} selected containers into one new container.</p>
+        <Field label="New container code" required>
+          <Input value={newContainerCode} onChange={(e) => setNewContainerCode(e.target.value)} required autoFocus />
+        </Field>
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !newContainerCode.trim()}>
+            {busy ? "Merging…" : "Merge"}
           </Button>
         </div>
       </form>

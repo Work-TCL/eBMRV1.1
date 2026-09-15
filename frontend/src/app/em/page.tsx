@@ -69,9 +69,13 @@ export default function EmPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 mb-4">
+        {canCollect(me) && <CreateProgramCard siteId={siteId} />}
         {canCollect(me) && <CreateTaskCard siteId={siteId} onCreated={(id) => load(id)} />}
         {canCollect(me) && <RecordResultCard onDone={() => load()} />}
+        {canReview(me) && <RecordExcursionImpactCard onDone={() => load()} />}
       </div>
+
+      <TrendsCard />
 
       <Card pad className="mb-4">
         <form
@@ -144,7 +148,7 @@ export default function EmPage() {
           }}
           challengePath={`/em/v1/results/${sample.id}/signature-challenges`}
           action="review"
-          title={`Review EM result — ${sample.id.slice(0, 8)}…`}
+          title={`Review EM result - ${sample.id.slice(0, 8)}…`}
           summary="Independent microbiological review of this EM result, including any excursion assessment."
           submitLabel="Sign & review"
           submitVariant="success"
@@ -210,6 +214,181 @@ function CreateTaskCard({ siteId, onCreated }: { siteId: string | null; onCreate
           {busy ? "Creating…" : "Schedule task"}
         </Button>
       </form>
+    </Card>
+  );
+}
+
+function CreateProgramCard({ siteId }: { siteId: string | null }) {
+  const [programNumber, setProgramNumber] = useState("");
+  const [methodVersion, setMethodVersion] = useState("");
+  const [monitoringTypes, setMonitoringTypes] = useState<KvRow[]>([]);
+  const [alertLimits, setAlertLimits] = useState<KvRow[]>([]);
+  const [actionLimits, setActionLimits] = useState<KvRow[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    try {
+      const receipt = await api.post<MutationReceipt>("/em/v1/programs", {
+        idempotency_key: newIdempotencyKey(),
+        site_id: siteId,
+        program_number: programNumber.trim(),
+        method_version: methodVersion.trim() || null,
+        monitoring_types: Object.keys(buildKvObject(monitoringTypes)).length ? buildKvObject(monitoringTypes) : null,
+        alert_limits: Object.keys(buildKvObject(alertLimits)).length ? buildKvObject(alertLimits) : null,
+        action_limits: Object.keys(buildKvObject(actionLimits)).length ? buildKvObject(actionLimits) : null,
+      });
+      setDone(receipt.aggregate_id);
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Create failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card pad>
+      <CardHeader title="Create an EM program" />
+      <form onSubmit={submit} className="mt-3">
+        <Field label="Program number" required>
+          <Input value={programNumber} onChange={(e) => setProgramNumber(e.target.value)} required />
+        </Field>
+        <Field label="Method version" hint="Optional.">
+          <Input value={methodVersion} onChange={(e) => setMethodVersion(e.target.value)} />
+        </Field>
+        <KeyValueRows label="Monitoring types" hint='Optional, e.g. "viable_air" → "true".' value={monitoringTypes} onChange={setMonitoringTypes} />
+        <KeyValueRows label="Alert limits" hint="Optional, per monitoring type." value={alertLimits} onChange={setAlertLimits} />
+        <KeyValueRows label="Action limits" hint="Optional, per monitoring type." value={actionLimits} onChange={setActionLimits} />
+        {error && <p className="error-text mt-2">{error}</p>}
+        {done && <p className="fs-2 mt-2">Program created - {done}.</p>}
+        <Button type="submit" variant="primary" disabled={busy || !programNumber.trim()} className="mt-2">
+          {busy ? "Creating…" : "Create program"}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+function RecordExcursionImpactCard({ onDone }: { onDone: () => void }) {
+  const [excursionId, setExcursionId] = useState("");
+  const [expectedVersion, setExpectedVersion] = useState("");
+  const [affectedTimeStart, setAffectedTimeStart] = useState("");
+  const [affectedTimeEnd, setAffectedTimeEnd] = useState("");
+  const [affectedBatchIds, setAffectedBatchIds] = useState<KvRow[]>([]);
+  const [disposition, setDisposition] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setDone(false);
+    try {
+      await api.post<MutationReceipt>(`/em/v1/excursions/${excursionId.trim()}/impact`, {
+        idempotency_key: newIdempotencyKey(),
+        excursion_id: excursionId.trim(),
+        expected_version: Number(expectedVersion),
+        affected_time_start: affectedTimeStart ? new Date(affectedTimeStart).toISOString() : null,
+        affected_time_end: affectedTimeEnd ? new Date(affectedTimeEnd).toISOString() : null,
+        affected_batch_ids: Object.keys(buildKvObject(affectedBatchIds)).length ? buildKvObject(affectedBatchIds) : null,
+        disposition: disposition.trim() || null,
+      });
+      setDone(true);
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Record failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card pad>
+      <CardHeader title="Record excursion impact" />
+      <form onSubmit={submit} className="mt-3">
+        <Field label="Excursion ID" required>
+          <Input value={excursionId} onChange={(e) => setExcursionId(e.target.value)} required />
+        </Field>
+        <Field label="Expected version" required>
+          <Input type="number" value={expectedVersion} onChange={(e) => setExpectedVersion(e.target.value)} required />
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Affected time start">
+            <Input type="datetime-local" value={affectedTimeStart} onChange={(e) => setAffectedTimeStart(e.target.value)} />
+          </Field>
+          <Field label="Affected time end">
+            <Input type="datetime-local" value={affectedTimeEnd} onChange={(e) => setAffectedTimeEnd(e.target.value)} />
+          </Field>
+        </div>
+        <KeyValueRows
+          label="Affected batches"
+          hint='Optional, e.g. a batch ID → "true".'
+          value={affectedBatchIds}
+          onChange={setAffectedBatchIds}
+        />
+        <Field label="Disposition" hint="Optional.">
+          <Input value={disposition} onChange={(e) => setDisposition(e.target.value)} />
+        </Field>
+        {error && <p className="error-text mt-2">{error}</p>}
+        {done && <p className="fs-2 mt-2">Impact recorded.</p>}
+        <Button type="submit" variant="primary" disabled={busy || !excursionId.trim() || !expectedVersion.trim()} className="mt-2">
+          {busy ? "Recording…" : "Record impact"}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+function TrendsCard() {
+  const [locationId, setLocationId] = useState("");
+  const [monitoringType, setMonitoringType] = useState("");
+  const [trends, setTrends] = useState<Record<string, unknown> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function lookup(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setTrends(null);
+    try {
+      const q = new URLSearchParams({ location_id: locationId.trim() });
+      if (monitoringType.trim()) q.set("monitoring_type", monitoringType.trim());
+      setTrends(await api.get<Record<string, unknown>>(`/em/v1/trends?${q.toString()}`));
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Lookup failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="EM trends" />
+      <form onSubmit={lookup} className="flex flex-wrap items-end gap-3">
+        <Field label="Location ID" required>
+          <Input value={locationId} onChange={(e) => setLocationId(e.target.value)} style={{ minWidth: 220 }} required />
+        </Field>
+        <Field label="Monitoring type" hint="Optional.">
+          <Input value={monitoringType} onChange={(e) => setMonitoringType(e.target.value)} />
+        </Field>
+        <Button type="submit" variant="secondary" disabled={busy || !locationId.trim()}>
+          <Icon name="search" /> {busy ? "Loading…" : "Show trends"}
+        </Button>
+      </form>
+      {error && <p className="error-text mt-3">{error}</p>}
+      {trends && (
+        <div className="mt-3">
+          <JsonPanel title="Trends" value={trends} />
+        </div>
+      )}
     </Card>
   );
 }

@@ -274,7 +274,7 @@ function AuditActionModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={`${title} — ${audit.audit_number}`} large={action === "add_finding"}>
+    <Modal open onClose={onClose} title={`${title} - ${audit.audit_number}`} large={action === "add_finding"}>
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(action) && (
           <Banner tone="warn" title="This transition requires an electronic signature">
@@ -310,7 +310,7 @@ function AuditActionModal({
             <Field label="Requirement reference" required hint="The clause or procedure the finding is against.">
               <Input value={requirementRef} onChange={(e) => setRequirementRef(e.target.value)} required />
             </Field>
-            <Field label="Observation" required hint="What was seen — factual, not the conclusion drawn from it.">
+            <Field label="Observation" required hint="What was seen - factual, not the conclusion drawn from it.">
               <textarea className="input" rows={3} value={observation} onChange={(e) => setObservation(e.target.value)} required />
             </Field>
             <EntityPickerField
@@ -445,8 +445,8 @@ function FindingActionModal({
             </Field>
             <Field label="Effective">
               <Select value={effective ? "yes" : "no"} onChange={(e) => setEffective(e.target.value === "yes")}>
-                <option value="yes">Yes — finding can close</option>
-                <option value="no">No — response was not effective</option>
+                <option value="yes">Yes - finding can close</option>
+                <option value="no">No - response was not effective</option>
               </Select>
             </Field>
           </>

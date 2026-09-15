@@ -259,7 +259,7 @@ function TraceTable({
       <CardHeader title={`${trace.nodes.length} node(s)`} meta={`${trace.edge_ids.length} edge(s)`} />
       {trace.truncated && (
         <Banner tone="warn" title="Trace truncated">
-          The graph exceeded the traversal limit, so this is a partial view — not the complete genealogy.
+          The graph exceeded the traversal limit, so this is a partial view - not the complete genealogy.
         </Banner>
       )}
       {trace.nodes.length === 0 ? (

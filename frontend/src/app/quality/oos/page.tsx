@@ -205,7 +205,7 @@ export default function OosPage() {
           }}
           challengePath={`/quality/oos/v1/${oos.id}/signature-challenges`}
           action="extended_investigation"
-          title={`Start extended investigation — ${oos.oos_number}`}
+          title={`Start extended investigation - ${oos.oos_number}`}
           summary="Escalates the OOS to a full manufacturing / extended investigation. Requires your signature."
           extraFields={
             <Field label="Investigation notes">
@@ -235,7 +235,7 @@ export default function OosPage() {
           }}
           challengePath={`/quality/oos/v1/${oos.id}/signature-challenges`}
           action="disposition"
-          title={`Approve disposition — ${oos.oos_number}`}
+          title={`Approve disposition - ${oos.oos_number}`}
           summary="Records the final classification of this OOS result. This is a released quality decision."
           submitLabel="Sign & approve"
           extraFields={
@@ -267,7 +267,7 @@ export default function OosPage() {
           }}
           challengePath={`/quality/oos/v1/${oos.id}/signature-challenges`}
           action="close"
-          title={`Close OOS — ${oos.oos_number}`}
+          title={`Close OOS - ${oos.oos_number}`}
           summary="Closes the investigation. All required phases and the disposition must already be complete."
           submitLabel="Sign & close"
           submitVariant="success"
@@ -282,7 +282,101 @@ export default function OosPage() {
           }
         />
       )}
+
+      <OotCard />
     </div>
+  );
+}
+
+/** Document 25 (SPEC-QC-003) OOT lifecycle — `app/modules/qc/router.py`'s `oos_router`, `/quality/oot/v1`.
+ * No `GET /oot/v1/{oot_id}` exists (verified: only `evaluate`, `signature-challenges` and `close` are
+ * declared) — evaluating captures the record's id/version straight from the mutation receipt, exactly
+ * like `OpenFromResultCard` does for OOS above; closing a record from a prior session (its version not
+ * held in this page's state) has no way to re-fetch that version, so the id/version fields are left
+ * editable rather than silently wrong. Known limitation, not a SPEC_GAP (no requirement calls for OOT
+ * browse/detail read, only evaluate/close). */
+function OotCard() {
+  const { me } = useMe();
+  const [sourceResultId, setSourceResultId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ootRecordId, setOotRecordId] = useState("");
+  const [expectedVersion, setExpectedVersion] = useState("");
+  const [closing, setClosing] = useState(false);
+
+  async function evaluate(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const receipt = await api.post<MutationReceipt>("/quality/oot/v1/evaluate", {
+        idempotency_key: newIdempotencyKey(),
+        source_result_id: sourceResultId.trim(),
+      });
+      setOotRecordId(receipt.aggregate_id);
+      setExpectedVersion(String(receipt.resulting_version));
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not evaluate OOT");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="Out-of-trend (OOT)" />
+      <p className="fs-2 text-muted mb-3">
+        Evaluates a result against its test definition&apos;s trend rule and, if triggered, opens an OOT
+        record. There is no OOT browse/detail read in this deployment - the id and version below come
+        straight from the evaluate response, or can be entered directly if already known.
+      </p>
+      <form onSubmit={evaluate} className="flex flex-wrap items-end gap-3 mb-3">
+        <Field label="Source QC result ID" required>
+          <Input value={sourceResultId} onChange={(e) => setSourceResultId(e.target.value)} style={{ minWidth: 260 }} required />
+        </Field>
+        <Button type="submit" variant="primary" disabled={busy || !sourceResultId.trim()}>
+          {busy ? "Evaluating…" : "Evaluate for OOT"}
+        </Button>
+      </form>
+      {error && <p className="error-text mb-3">{error}</p>}
+
+      <div className="grid grid-cols-2 gap-4 items-end">
+        <Field label="OOT record ID">
+          <Input value={ootRecordId} onChange={(e) => setOotRecordId(e.target.value)} />
+        </Field>
+        <Field label="Expected version">
+          <Input type="number" value={expectedVersion} onChange={(e) => setExpectedVersion(e.target.value)} />
+        </Field>
+      </div>
+      {canDispositionOos(me) && (
+        <Button variant="success" className="mt-3" disabled={!ootRecordId.trim() || !expectedVersion.trim()} onClick={() => setClosing(true)}>
+          Close OOT
+        </Button>
+      )}
+
+      {closing && (
+        <SignatureCeremony
+          open
+          onClose={() => setClosing(false)}
+          onDone={() => setClosing(false)}
+          challengePath={`/quality/oot/v1/${ootRecordId.trim()}/signature-challenges`}
+          action="close"
+          title="Close OOT"
+          summary="Closes the out-of-trend record. This cannot be undone."
+          submitLabel="Sign & close"
+          submitVariant="success"
+          onSign={(p) =>
+            api.post<MutationReceipt>(`/quality/oot/v1/${ootRecordId.trim()}/close`, {
+              idempotency_key: p.idempotency_key,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+              oot_record_id: ootRecordId.trim(),
+              expected_version: Number(expectedVersion),
+            })
+          }
+        />
+      )}
+    </Card>
   );
 }
 
@@ -346,7 +440,7 @@ function LabInvestigationButton({ oos, onDone }: { oos: OosRecord; onDone: () =>
   return (
     <WorkflowActionButton
       label="Record lab investigation"
-      title={`Lab investigation — ${oos.oos_number}`}
+      title={`Lab investigation - ${oos.oos_number}`}
       summary="Records one Phase 1a laboratory-investigation activity against this OOS."
       confirmLabel="Record"
       onDone={onDone}
@@ -383,7 +477,7 @@ function ClassifyLabCauseButton({ oos, onDone }: { oos: OosRecord; onDone: () =>
   return (
     <WorkflowActionButton
       label="Classify lab cause"
-      title={`Assignable-cause decision — ${oos.oos_number}`}
+      title={`Assignable-cause decision - ${oos.oos_number}`}
       summary="Records whether the lab investigation found an assignable cause. If assignable, the original result can be invalidated."
       confirmLabel="Record decision"
       onDone={onDone}
@@ -420,7 +514,7 @@ function RetestPlanButton({ oos, onDone }: { oos: OosRecord; onDone: () => void 
   return (
     <WorkflowActionButton
       label="Authorize retest plan"
-      title={`Retest plan — ${oos.oos_number}`}
+      title={`Retest plan - ${oos.oos_number}`}
       summary="Authorizes a pre-defined retest scheme. The number of retests and interpretation rule are fixed before any retest is run."
       confirmLabel="Authorize"
       onDone={onDone}
@@ -456,7 +550,7 @@ function ResamplePlanButton({ oos, onDone }: { oos: OosRecord; onDone: () => voi
   return (
     <WorkflowActionButton
       label="Authorize resample plan"
-      title={`Resample plan — ${oos.oos_number}`}
+      title={`Resample plan - ${oos.oos_number}`}
       summary="Authorizes drawing a fresh sample. Requires a documented scientific rationale (resampling is not a retest)."
       confirmLabel="Authorize"
       onDone={onDone}
@@ -488,7 +582,7 @@ function ImpactButton({ oos, onDone }: { oos: OosRecord; onDone: () => void }) {
   return (
     <WorkflowActionButton
       label="Record impact assessment"
-      title={`Impact assessment — ${oos.oos_number}`}
+      title={`Impact assessment - ${oos.oos_number}`}
       summary="Records the assessed impact on other batches, lots and released product, and the resulting hold status."
       confirmLabel="Record"
       onDone={onDone}

@@ -9,7 +9,7 @@ import { Table, EmptyState } from "@/components/ui/Table";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Banner } from "@/components/ui/Banner";
 import { Tabs } from "@/components/ui/Tabs";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
@@ -19,6 +19,8 @@ import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 import { RepeatableRows, buildRepeatArray, type RepeatRow, type RepeatSubField } from "@/components/shared/RepeatableFields";
 
 interface TestOrder {
@@ -87,8 +89,9 @@ export default function QcPage() {
   const [acting, setActing] = useState<{ order: TestOrder; action: OrderAction } | null>(null);
   const [recordingData, setRecordingData] = useState<TestOrder | null>(null);
   const [recordingResult, setRecordingResult] = useState<TestOrder | null>(null);
-  const [oosFrom, setOosFrom] = useState<string | null>(null);
   const [newSpecOpen, setNewSpecOpen] = useState(false);
+  const [newMethodOpen, setNewMethodOpen] = useState(false);
+  const [methodLookupToken, setMethodLookupToken] = useState(0);
   const [releasingSpec, setReleasingSpec] = useState<Specification | null>(null);
   const [specsReloadToken, setSpecsReloadToken] = useState(0);
   const [samplesReloadToken, setSamplesReloadToken] = useState(0);
@@ -132,6 +135,11 @@ export default function QcPage() {
               </Button>
             )}
             {canAnalyse && (
+              <Button variant="secondary" onClick={() => setNewMethodOpen(true)}>
+                <Icon name="plus" /> New method draft
+              </Button>
+            )}
+            {canAnalyse && (
               <Button variant="primary" onClick={() => setCreateSampleOpen(true)}>
                 <Icon name="plus" /> New sample
               </Button>
@@ -144,6 +152,37 @@ export default function QcPage() {
         canRelease={canReview}
         onRelease={setReleasingSpec}
         reloadToken={specsReloadToken}
+      />
+
+      <MethodMasterCard canRelease={canReview} reloadToken={methodLookupToken} />
+
+      <SignedJsonForm
+        title="QC result correction - signed"
+        subtitle="Requesting a correction and approving it are independent signatures - the approver must differ from whoever requested the correction (SoD)."
+        root="/qc/v1"
+        ops={[
+          {
+            postPath: "results/{result_id}/correct",
+            challengePath: "results/{result_id}/signature-challenges",
+            action: "correct_request",
+            label: "Request a result correction",
+            fields: [
+              { name: "result_id", label: "QC result ID", required: true },
+              { name: "reason_text", label: "Reason", type: "textarea", required: true },
+              { name: "corrected_value_decimal", label: "Corrected value (numeric)", hint: "Fill exactly one of the three corrected-value fields, matching the result's data type." },
+              { name: "corrected_value_text", label: "Corrected value (text)" },
+              { name: "corrected_value_json", label: "Corrected value (structured)", type: "kv" },
+            ],
+          },
+          {
+            postPath: "corrections/{correction_id}/approve",
+            challengePath: "results/{result_id}/signature-challenges",
+            action: "correct_approve",
+            label: "Approve a result correction",
+            about: "The signature challenge is requested against the original QC result, not the correction record - both IDs are needed below.",
+            fields: [{ name: "correction_id", label: "Correction ID", required: true }],
+          },
+        ]}
       />
 
       <SamplesCard onOpen={setActiveSample} reloadToken={samplesReloadToken} />
@@ -307,17 +346,9 @@ export default function QcPage() {
                                     </Button>
                                   )}
                                   {o.results.some((r) => r.outcome === "fail" || r.outcome === "oos") && (
-                                    <Button
-                                      size="sm"
-                                      variant="danger"
-                                      onClick={() =>
-                                        setOosFrom(
-                                          o.results.find((r) => r.outcome === "fail" || r.outcome === "oos")!.id
-                                        )
-                                      }
-                                    >
+                                    <LinkButton size="sm" variant="danger" href="/quality/oos">
                                       Open OOS
-                                    </Button>
+                                    </LinkButton>
                                   )}
                                 </div>
                               </td>
@@ -413,6 +444,15 @@ export default function QcPage() {
           }}
         />
       )}
+      {newMethodOpen && (
+        <NewQcMethodDraftModal
+          onClose={() => setNewMethodOpen(false)}
+          onDone={() => {
+            setNewMethodOpen(false);
+            setMethodLookupToken((n) => n + 1);
+          }}
+        />
+      )}
       {acting && (
         <OrderActionModal
           order={acting.order}
@@ -440,16 +480,6 @@ export default function QcPage() {
           onClose={() => setRecordingResult(null)}
           onDone={() => {
             setRecordingResult(null);
-            reload();
-          }}
-        />
-      )}
-      {oosFrom && (
-        <OpenOosModal
-          resultId={oosFrom}
-          onClose={() => setOosFrom(null)}
-          onDone={() => {
-            setOosFrom(null);
             reload();
           }}
         />
@@ -577,7 +607,7 @@ function CreateSampleModal({ onClose, onDone }: { onClose: () => void; onDone: (
         ) : (
           <Field
             label="Source reference"
-            hint="No record list exists for this source type yet (environment/stability study) — enter a free-text reference."
+            hint="No record list exists for this source type yet (environment/stability study) - enter a free-text reference."
           >
             <Input value={sourceId} onChange={(e) => setSourceId(e.target.value)} />
           </Field>
@@ -626,10 +656,10 @@ function CreateOrderModal({
 
   const definitionOptions = specifications
     .filter((s) => s.status === "released")
-    .flatMap((s) => s.test_definitions.map((d) => ({ value: d.id, label: `${s.spec_code} v${s.version_no} — ${d.test_code} (${d.test_name})` })));
+    .flatMap((s) => s.test_definitions.map((d) => ({ value: d.id, label: `${s.spec_code} v${s.version_no} - ${d.test_code} (${d.test_name})` })));
 
   return (
-    <Modal open onClose={onClose} title={`Add test order — ${sample.sample_number}`}>
+    <Modal open onClose={onClose} title={`Add test order - ${sample.sample_number}`}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -658,7 +688,7 @@ function CreateOrderModal({
           <Field
             label="Test definition ID"
             required
-            hint="No released test specification exists yet — use “New test specification” above, or enter an id directly."
+            hint="No released test specification exists yet - use “New test specification” above, or enter an id directly."
           >
             <Input value={testDefinitionId} onChange={(e) => setTestDefinitionId(e.target.value)} required autoFocus />
           </Field>
@@ -697,41 +727,36 @@ function OrderActionModal({
   onDone: () => void;
 }) {
   const { me } = useMe();
-  const { busy, error, setError, run } = useCommand(onDone);
-  const [password, setPassword] = useState("");
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [meaning, setMeaning] = useState("");
+  const { busy, error, run } = useCommand(onDone);
 
   // Only second-person review is a signed act here (Document 106 row for qc_test_order.review).
-  const signed = action === "review";
-
-  useEffect(() => {
-    if (!signed) return;
-    let cancelled = false;
-    api
-      .post<{ challenge_id: string; meaning: string }>(
-        `/qc/v1/test-orders/${order.id}/signature-challenges`,
-        { action: "review" }
-      )
-      .then((c) => {
-        if (cancelled) return;
-        setChallengeId(c.challenge_id);
-        setMeaning(c.meaning);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not request a signature challenge");
+  if (action === "review") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`/qc/v1/test-orders/${order.id}/signature-challenges`}
+        action="review"
+        title="Second-person review"
+        summary="Second-person review must be performed by someone other than the analyst who produced the result - the backend enforces this."
+        submitLabel="Sign & review"
+        onSign={(p) =>
+          api.post(`/qc/v1/test-orders/${order.id}/review`, {
+            idempotency_key: p.idempotency_key,
+            test_order_id: order.id,
+            expected_version: order.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+          })
         }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [order.id, signed, setError]);
+      />
+    );
+  }
 
-  const TITLE: Record<OrderAction, string> = {
+  const TITLE: Record<Exclude<OrderAction, "review">, string> = {
     start: "Start test order",
     complete: "Complete test order",
-    review: "Second-person review",
   };
 
   return (
@@ -744,59 +769,24 @@ function OrderActionModal({
             test_order_id: order.id,
             expected_version: order.version,
           };
-          run(() => {
-            if (action === "start") {
-              return api.post(`/qc/v1/test-orders/${order.id}/start`, {
-                ...base,
-                analyst_id: me?.user_id ?? null,
-              });
-            }
-            if (action === "complete") {
-              return api.post(`/qc/v1/test-orders/${order.id}/complete`, base);
-            }
-            return api.post(`/qc/v1/test-orders/${order.id}/review`, {
-              ...base,
-              challenge_id: challengeId,
-              reauth_password: password,
-            });
-          });
+          run(() =>
+            action === "start"
+              ? api.post(`/qc/v1/test-orders/${order.id}/start`, { ...base, analyst_id: me?.user_id ?? null })
+              : api.post(`/qc/v1/test-orders/${order.id}/complete`, base)
+          );
         }}
       >
-        {signed && (
-          <>
-            {meaning && (
-              <p className="fs-3 mb-2">
-                Meaning: <span className="font-semibold">{meaning}</span>
-              </p>
-            )}
-            <div className="sig-hint mb-3">
-              Second-person review must be performed by someone other than the analyst who produced the
-              result — the backend enforces this.
-            </div>
-            <Field label="Password" required>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
-            </Field>
-          </>
-        )}
-        {!signed && (
-          <p className="fs-3 mb-3">
-            {action === "start"
-              ? "Starting the order records you as the analyst and opens it for raw data entry."
-              : "Completing the order closes analyst entry and sends it for second-person review."}
-          </p>
-        )}
+        <p className="fs-3 mb-3">
+          {action === "start"
+            ? "Starting the order records you as the analyst and opens it for raw data entry."
+            : "Completing the order closes analyst entry and sends it for second-person review."}
+        </p>
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-3">
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || (signed && (!challengeId || !password))}>
+          <Button type="submit" variant="primary" disabled={busy}>
             {busy ? "Saving…" : TITLE[action]}
           </Button>
         </div>
@@ -934,7 +924,7 @@ function RecordResultModal({
           </Field>
         )}
         <p className="hint mb-2">
-          Evaluated against the test definition&rsquo;s own acceptance rule, if one is released — otherwise the
+          Evaluated against the test definition&rsquo;s own acceptance rule, if one is released - otherwise the
           result stays &ldquo;pending&rdquo;, a normal outcome, not an error.
         </p>
         {error && <p className="error-text mb-2">{error}</p>}
@@ -944,61 +934,6 @@ function RecordResultModal({
           </Button>
           <Button type="submit" variant="primary" disabled={busy || !testRunId || (resultType === "numeric" ? !valueDecimal.trim() : !valueText.trim())}>
             {busy ? "Recording…" : "Record result"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function OpenOosModal({
-  resultId,
-  onClose,
-  onDone,
-}: {
-  resultId: string;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const { busy, error, run } = useCommand(onDone);
-  const [oosNumber, setOosNumber] = useState("");
-  const [severity, setSeverity] = useState("major");
-
-  return (
-    <Modal open onClose={onClose} title="Open an OOS investigation">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(() =>
-            api.post(`/oos/v1/from-result/${resultId}`, {
-              idempotency_key: newIdempotencyKey(),
-              source_result_id: resultId,
-              oos_number: oosNumber,
-              severity,
-            })
-          );
-        }}
-      >
-        <Banner tone="warn" title="An OOS result cannot simply be retested">
-          211.192 requires a documented investigation before any retest or resample decision.
-        </Banner>
-        <Field label="OOS number" required>
-          <Input value={oosNumber} onChange={(e) => setOosNumber(e.target.value)} placeholder="OOS-0001" required autoFocus />
-        </Field>
-        <Field label="Severity" required>
-          <Select value={severity} onChange={(e) => setSeverity(e.target.value)}>
-            <option value="critical">critical</option>
-            <option value="major">major</option>
-            <option value="minor">minor</option>
-          </Select>
-        </Field>
-        {error && <p className="error-text mb-2">{error}</p>}
-        <div className="flex justify-between gap-3 mt-3">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="danger" disabled={busy || !oosNumber.trim()}>
-            {busy ? "Opening…" : "Open OOS"}
           </Button>
         </div>
       </form>
@@ -1065,7 +1000,7 @@ function SpecificationsCard({
         rowKey={(s) => s.id}
         searchPlaceholder="Search spec code…"
         emptyIcon="flask"
-        emptyMessage='No test specifications yet — use "New test specification" above to add one.'
+        emptyMessage='No test specifications yet - use "New test specification" above to add one.'
         defaultSort={{ by: "created_at", dir: "desc" }}
         reloadToken={reloadToken}
       />
@@ -1117,7 +1052,7 @@ function SamplesCard({
         rowKey={(s) => s.id}
         searchPlaceholder="Search sample number…"
         emptyIcon="flask"
-        emptyMessage='No samples yet — use "New sample" above to add one.'
+        emptyMessage='No samples yet - use "New sample" above to add one.'
         defaultSort={{ by: "created_at", dir: "desc" }}
         onRowClick={(s) => onOpen(s.id)}
         reloadToken={reloadToken}
@@ -1168,9 +1103,9 @@ function NewSpecificationModal({ onClose, onDone }: { onClose: () => void; onDon
           required
           hint={
             scopeType === "product"
-              ? "The product version this specification governs — find it on /product-master."
+              ? "The product version this specification governs - find it on /product-master."
               : scopeType === "in_process"
-                ? "The recipe version this specification governs — find it on /recipe-master."
+                ? "The recipe version this specification governs - find it on /recipe-master."
                 : "The device version this specification governs."
           }
         >
@@ -1179,7 +1114,7 @@ function NewSpecificationModal({ onClose, onDone }: { onClose: () => void; onDon
         <RepeatableRows
           label="Test definitions"
           itemLabel="Test definition"
-          hint="Every test this specification defines — at least one is required for a test order to ever be created against it."
+          hint="Every test this specification defines - at least one is required for a test order to ever be created against it."
           subFields={TEST_DEFINITION_SUBFIELDS}
           value={definitions}
           onChange={setDefinitions}
@@ -1207,77 +1142,253 @@ function ReleaseSpecificationModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { busy, error, setError, run } = useCommand(onDone);
-  const [password, setPassword] = useState("");
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [meaning, setMeaning] = useState("");
+  return (
+    <SignatureCeremony
+      open
+      onClose={onClose}
+      onDone={onDone}
+      challengePath={`/qc/v1/specifications/${specification.id}/signature-challenges`}
+      action="release"
+      title={`Release - ${specification.spec_code} v${specification.version_no}`}
+      summary="Releasing makes every test definition on this specification usable for a real test order - this cannot be undone by unreleasing it."
+      submitLabel="Sign & release"
+      submitVariant="success"
+      onSign={(p) =>
+        api.post(`/qc/v1/specifications/${specification.id}/release`, {
+          idempotency_key: p.idempotency_key,
+          specification_id: specification.id,
+          expected_version: specification.version,
+          challenge_id: p.challenge_id,
+          reauth_password: p.reauth_password,
+        })
+      }
+    />
+  );
+}
+
+const QC_METHOD_TYPES = ["compendial", "internal", "validated"];
+
+interface QcMethodVersion {
+  method_version_id: string;
+  method_code: string;
+  version_no: number;
+  name: string;
+  method_type: string;
+  lifecycle_state: string;
+  version: number;
+}
+
+/** No `GET /qc/v1/methods` list-all endpoint exists (verified against `router.py` — only
+ * "versions by method_code" and "single by id") — a code lookup is the honest UI, same pattern as
+ * `platform/page.tsx`'s `GetCard` rather than a browsable table this backend can't serve. */
+function MethodMasterCard({ canRelease, reloadToken }: { canRelease: boolean; reloadToken: number }) {
+  const [methodCode, setMethodCode] = useState("");
+  const [versions, setVersions] = useState<QcMethodVersion[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [releasing, setReleasing] = useState<QcMethodVersion | null>(null);
+
+  async function lookup() {
+    if (!methodCode.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setVersions(await api.get<QcMethodVersion[]>(`/qc/v1/methods/${encodeURIComponent(methodCode.trim())}/versions`));
+    } catch (err) {
+      setVersions(null);
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not load method versions");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
-    let cancelled = false;
-    api
-      .post<{ challenge_id: string; meaning: string }>(
-        `/qc/v1/specifications/${specification.id}/signature-challenges`,
-        { action: "release" }
-      )
-      .then((c) => {
-        if (cancelled) return;
-        setChallengeId(c.challenge_id);
-        setMeaning(c.meaning);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Could not request a signature challenge");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [specification.id, setError]);
+    if (reloadToken === 0) return;
+    // Deferred a tick so `lookup`'s own synchronous setBusy(true) doesn't run inside this effect body
+    // (react-hooks/set-state-in-effect) — only re-runs the lookup already in progress for the
+    // currently-entered code, not on every keystroke.
+    const id = setTimeout(() => void lookup(), 0);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadToken]);
 
   return (
-    <Modal open onClose={onClose} title={`Release — ${specification.spec_code} v${specification.version_no}`}>
+    <Card pad className="mb-4">
+      <CardHeader title="QC method master" meta="" />
+      <p className="fs-2 text-muted mb-3">
+        Look up a method&apos;s versions by its method code. No signature policy is configured yet for
+        <code> qc_method_version/release</code> - the challenge below is real, but the actual
+        release will correctly fail closed until a policy is added.
+      </p>
+      <div className="flex gap-2 items-end mb-3">
+        <div style={{ flex: 1 }}>
+          <Field label="Method code">
+            <Input value={methodCode} onChange={(e) => setMethodCode(e.target.value)} placeholder="e.g. HPLC-ASSAY-001" />
+          </Field>
+        </div>
+        <Button variant="secondary" disabled={busy || !methodCode.trim()} onClick={() => lookup()}>
+          <Icon name="search" /> Look up
+        </Button>
+      </div>
+      {error && <p className="error-text mb-2">{error}</p>}
+      {versions &&
+        (versions.length === 0 ? (
+          <EmptyState icon="flask">No versions exist for this method code yet.</EmptyState>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <th>Version</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>State</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {versions.map((v) => (
+                <tr key={v.method_version_id}>
+                  <td className="tabular">v{v.version_no}</td>
+                  <td className="fs-2">{v.name}</td>
+                  <td className="fs-2">{v.method_type}</td>
+                  <td>
+                    <WorkflowStatePill state={v.lifecycle_state} />
+                  </td>
+                  <td style={{ textAlign: "right" }}>
+                    {canRelease && v.lifecycle_state === "draft" && (
+                      <Button size="sm" variant="success" onClick={() => setReleasing(v)}>
+                        <Icon name="pen" /> Release
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        ))}
+
+      {releasing && (
+        <ReleaseQcMethodModal
+          method={releasing}
+          onClose={() => setReleasing(null)}
+          onDone={() => {
+            setReleasing(null);
+            void lookup();
+          }}
+        />
+      )}
+    </Card>
+  );
+}
+
+function NewQcMethodDraftModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const { busy, error, run } = useCommand(onDone);
+  const [methodCode, setMethodCode] = useState("");
+  const [methodType, setMethodType] = useState("internal");
+  const [name, setName] = useState("");
+  const [siteId, setSiteId] = useState("");
+  const [validationEvidenceReference, setValidationEvidenceReference] = useState("");
+  const [modificationReason, setModificationReason] = useState("");
+
+  return (
+    <Modal open onClose={onClose} title="New QC method draft">
       <form
         onSubmit={(e) => {
           e.preventDefault();
           run(() =>
-            api.post(`/qc/v1/specifications/${specification.id}/release`, {
+            api.post("/qc/v1/methods/drafts", {
               idempotency_key: newIdempotencyKey(),
-              specification_id: specification.id,
-              expected_version: specification.version,
-              challenge_id: challengeId,
-              reauth_password: password,
+              method_code: methodCode,
+              method_type: methodType,
+              name,
+              site_id: siteId,
+              validation_evidence_reference: validationEvidenceReference || null,
+              modification_reason: modificationReason || null,
             })
           );
         }}
       >
-        {meaning && (
-          <p className="fs-3 mb-2">
-            Meaning: <span className="font-semibold">{meaning}</span>
-          </p>
-        )}
-        <p className="fs-3 mb-3">
-          Releasing makes every test definition on this specification usable for a real test order — this
-          cannot be undone by unreleasing it.
-        </p>
-        <Field label="Password" required>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Method code" required>
+            <Input value={methodCode} onChange={(e) => setMethodCode(e.target.value)} placeholder="e.g. HPLC-ASSAY-001" required autoFocus />
+          </Field>
+          <Field label="Method type" required>
+            <Select value={methodType} onChange={(e) => setMethodType(e.target.value)}>
+              {QC_METHOD_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Name" required>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required />
+          </Field>
+          <Field label="Site ID" required>
+            <Input value={siteId} onChange={(e) => setSiteId(e.target.value)} required />
+          </Field>
+        </div>
+        <Field label="Validation evidence reference" hint="Required in practice for a validated method - not enforced client-side.">
+          <Input value={validationEvidenceReference} onChange={(e) => setValidationEvidenceReference(e.target.value)} />
+        </Field>
+        <Field label="Modification reason" hint="Set when this draft supersedes a prior released version.">
+          <textarea className="input" rows={2} value={modificationReason} onChange={(e) => setModificationReason(e.target.value)} />
         </Field>
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-3">
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="success" disabled={busy || !challengeId || !password}>
-            {busy ? "Releasing…" : "Release"}
+          <Button type="submit" variant="primary" disabled={busy || !methodCode.trim() || !name.trim() || !siteId.trim()}>
+            {busy ? "Creating…" : "Create draft"}
           </Button>
         </div>
       </form>
     </Modal>
+  );
+}
+
+function ReleaseQcMethodModal({
+  method,
+  onClose,
+  onDone,
+}: {
+  method: QcMethodVersion;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <SignatureCeremony
+      open={open}
+      onClose={() => {
+        setOpen(false);
+        onClose();
+      }}
+      onDone={onDone}
+      challengePath={`/qc/v1/methods/${method.method_version_id}/signature-challenges`}
+      action="release"
+      title={`Release - ${method.method_code} v${method.version_no}`}
+      summary={
+        <>
+          You are about to release <strong>{method.method_code} v{method.version_no}</strong> for use by
+          test orders.
+        </>
+      }
+      reason="none"
+      onSign={async (payload) => {
+        try {
+          return await api.post(`/qc/v1/methods/drafts/${method.method_version_id}/release`, {
+            idempotency_key: payload.idempotency_key,
+            method_version_id: method.method_version_id,
+            expected_version: method.version,
+            challenge_id: payload.challenge_id,
+            reauth_password: payload.reauth_password,
+          });
+        } catch (err) {
+          throw err instanceof ApiError ? err : new Error("Request failed");
+        }
+      }}
+    />
   );
 }

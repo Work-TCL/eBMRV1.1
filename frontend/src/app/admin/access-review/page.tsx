@@ -112,7 +112,7 @@ export default function AccessReviewPage() {
       <Card pad>
         <CardHeader title="Authorization decision check" />
         <p className="fs-2 text-muted mb-3">
-          Evaluates whether <strong>you</strong> are currently authorized for an action at a site — the same
+          Evaluates whether <strong>you</strong> are currently authorized for an action at a site - the same
           policy the mutation gateway enforces. Read-only; nothing is written.
         </p>
         <form onSubmit={runDecision} className="flex items-end gap-4" style={{ flexWrap: "wrap" }}>
@@ -127,7 +127,7 @@ export default function AccessReviewPage() {
           </Field>
           <Field label="Site" hint="Leave blank for a site-independent action.">
             <Select value={siteId} onChange={(e) => setSiteId(e.target.value)} style={{ minWidth: 180 }}>
-              <option value="">— none —</option>
+              <option value="">- none -</option>
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.code}
@@ -148,12 +148,12 @@ export default function AccessReviewPage() {
               state={decision.decision === "ALLOW" ? "accepted" : "failed"}
               icon={decision.decision === "ALLOW" ? "check-circle" : "x"}
             >
-              {`${decision.decision} — ${decision.action}`}
+              {`${decision.decision} - ${decision.action}`}
             </StatePill>
             {decision.reason && (
               <p className="fs-2 mt-2">
                 Reason: <span className="tabular">{decision.reason}</span>
-                {decision.message ? ` — ${decision.message}` : ""}
+                {decision.message ? ` - ${decision.message}` : ""}
               </p>
             )}
             <p className="fs-2 text-muted mt-2">

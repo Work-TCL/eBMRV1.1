@@ -303,7 +303,7 @@ function TransitionModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={`${LABEL[transition]} — ${ncr.ncr_number}`}>
+    <Modal open onClose={onClose} title={`${LABEL[transition]} - ${ncr.ncr_number}`}>
       <form onSubmit={submit}>
         {SIGNATURE_GATED.includes(transition) && (
           <Banner tone="warn" title="This transition requires an electronic signature">
