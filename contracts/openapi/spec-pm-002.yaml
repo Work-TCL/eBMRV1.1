@@ -66,6 +66,23 @@ paths:
         '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
         '422': { description: "VALIDATION_FAILED (missing duration_days/agency_due_at, unrecognized calendar_type).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
 
+  /regulatory/v1/tracks/{track_id}/decision-signature-challenges:
+    post:
+      operationId: postDecideReportabilitySignatureChallenge
+      tags: [postmarket-regulatory]
+      summary: Create the signature challenge for `reportability_track.decide` (SG-157 follow-up)
+      description: >
+        Closes the CTRC-FR-001 gap for `postDecideReportability`'s signature. Bound to the track's own
+        content hash (`_track_hash`) at its current version, recomputed identically at consume time.
+      x-requirement-ids: [REG-FR-004, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: track_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Challenge created., content: { application/json: { schema: { $ref: '#/components/schemas/RegulatorySignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
   /regulatory/v1/tracks/{track_id}/decisions:
     post:
       operationId: postDecideReportability
@@ -104,6 +121,24 @@ paths:
         '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
         '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
         '422': { description: "VALIDATION_FAILED (not REPORTABLE, empty content) or SIGNATURE_POLICY_UNRESOLVED.", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /regulatory/v1/reports/{report_id}/approval-signature-challenges:
+    post:
+      operationId: postApproveReportSignatureChallenge
+      tags: [postmarket-regulatory]
+      summary: Create the signature challenge for `regulatory_report.approve` (SG-157 follow-up)
+      description: >
+        Closes the CTRC-FR-001 gap for `postApproveRegulatoryReport`'s signature. Bound to
+        `sha256(report.content)` at the report's current `report_version`, recomputed identically at
+        consume time.
+      x-requirement-ids: [REG-FR-017, SIG-FR-005, SIG-FR-010]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: report_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Challenge created., content: { application/json: { schema: { $ref: '#/components/schemas/RegulatorySignatureChallengeResponse' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '422': { description: SIGNATURE_POLICY_UNRESOLVED., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
 
   /regulatory/v1/reports/{report_id}/approve:
     post:
@@ -240,6 +275,16 @@ components:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
 
   schemas:
+    RegulatorySignatureChallengeResponse:
+      type: object
+      description: The challenge receipt returned by both regulatory signature-challenge endpoints (response schema, not closed).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
+
     CreateReportabilityTracksCommand:
       type: object
       additionalProperties: false

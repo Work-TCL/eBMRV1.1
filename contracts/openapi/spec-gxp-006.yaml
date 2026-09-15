@@ -411,6 +411,42 @@ paths:
         '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
         '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
 
+  /rules/v1/uom/{uom_id}/signature-challenges:
+    parameters:
+      - name: uom_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postUomReleaseSignatureChallenge
+      tags: [rules]
+      summary: Create the Part 11 signature challenge for `uom/release` (Document 110 §3)
+      description: >
+        Closes the CTRC-FR-001 gap: `postReleaseUom` was already coded to consume a signature challenge,
+        but no endpoint existed anywhere that could ever issue one for `record_type="uom"`, so a draft
+        UOM could never actually be released even once a Document 106 policy row exists for it. Bound to
+        the identical canonical (code, dimension, base_unit, factor, offset, precision_dp, version) hash
+        `release_uom()` recomputes at consume time.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012, CALC-FR-006]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UomReleaseSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the UOM does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not a signed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
   /rules/v1/uom/{code}/versions:
     parameters:
       - name: code
@@ -502,6 +538,43 @@ paths:
         '428': { $ref: 'spec-gxp-001.yaml#/components/responses/MissingSignature' }
         '503': { $ref: 'spec-gxp-001.yaml#/components/responses/DependencyUnavailable' }
 
+  /rules/v1/uom-conversions/{conversion_id}/signature-challenges:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: postUomConversionReleaseSignatureChallenge
+      tags: [rules]
+      summary: Create the Part 11 signature challenge for `uom_conversion/release` (Document 110 §3)
+      description: >
+        Same "mechanism exists, no endpoint could ever issue a challenge for it" gap as
+        `postUomReleaseSignatureChallenge` above, for `record_type="uom_conversion"`. Bound to the
+        identical canonical (from_code, to_code, factor, rounding_stage, version, effective_from) hash
+        `release_uom_conversion()` recomputes at consume time — note that hash calls `.isoformat()` on
+        `effective_from` unconditionally, so a conversion drafted without one can never actually be
+        released (pre-existing behaviour, not introduced by this endpoint).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, SIG-FR-012, CALC-FR-006]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UomConversionReleaseSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — the UOM conversion does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not a signed action for this record.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
   /rules/v1:
     get:
       operationId: getReleasedRules
@@ -528,6 +601,24 @@ components:
       type: object
       additionalProperties: false
       description: Body of the rule signature-challenge endpoint (SG-035).
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [release], default: release }
+
+    UomReleaseSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Body of the UOM signature-challenge endpoint.
+      x-requirement-ids: [SIG-FR-005]
+      required: [action]
+      properties:
+        action: { type: string, enum: [release], default: release }
+
+    UomConversionReleaseSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Body of the UOM conversion signature-challenge endpoint.
       x-requirement-ids: [SIG-FR-005]
       required: [action]
       properties:
