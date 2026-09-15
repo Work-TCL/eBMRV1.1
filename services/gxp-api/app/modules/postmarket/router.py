@@ -11,15 +11,44 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pydantic import BaseModel
+
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy
 from app.modules.postmarket import commands
+from app.modules.postmarket.commands import _signal_hash
 from app.modules.postmarket.models import SafetyCase, SafetySignal
+from app.modules.signature.service import create_challenge, resolve_signature_requirement
 from app.mutation.errors import NotFoundError, ValidationFailedError
+from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/postmarket/v1", tags=["postmarket"])
+
+
+async def _create_signature_challenge(
+    session: AsyncSession, *, actor: AuthenticatedActor, record_type: str, record_id: uuid.UUID,
+    record_version: int, record_hash: str, action: str,
+) -> dict:
+    """Same shape as `app.modules.security.router._create_signature_challenge`, but resolves `meaning`
+    from the Document 106 policy row instead of hardcoding it, so the challenge can never advertise a
+    meaning the policy doesn't actually require (`app.modules.validation.signature_support` precedent)."""
+    policy = await resolve_signature_requirement(session, record_type=record_type, action=action)
+    challenge = await create_challenge(
+        session, user_id=actor.user_id, record_type=record_type, record_id=record_id,
+        record_version=record_version, record_hash=record_hash, meaning=policy.meaning,
+    )
+    return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
+
+
+class OpenSignalChallengeRequest(BaseModel):
+    """`safety_signal.open` signs a not-yet-created record (SG-156): the challenge binds to
+    `sha256_hex({"signal_code": ...})` and `record_version=1`, exactly the hash
+    `commands.open_safety_signal()` recomputes at consume time -- so the caller must supply the
+    `signal_code` it is about to open before the record exists to load."""
+
+    signal_code: str
 
 
 @router.post("/sources", response_model=MutationReceipt)
@@ -134,6 +163,17 @@ async def post_evaluate_signal_rules(
         return await commands.evaluate_signal_rules(session, cmd)
 
 
+@router.post("/signals/signature-challenges")
+async def post_open_signal_signature_challenge(
+    body: OpenSignalChallengeRequest, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        return await _create_signature_challenge(
+            session, actor=actor, record_type="safety_signal", record_id=uuid.uuid4(),
+            record_version=1, record_hash=sha256_hex({"signal_code": body.signal_code}), action="open",
+        )
+
+
 @router.post("/signals", response_model=MutationReceipt)
 async def post_open_signal(
     cmd: commands.OpenSafetySignalCommand, session: AsyncSession = Depends(get_session),
@@ -142,6 +182,20 @@ async def post_open_signal(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="safety_signal.open", site_id=cmd.site_id)
         return await commands.open_safety_signal(session, cmd, actor.user_id)
+
+
+@router.post("/signals/{signal_id}/assessment-signature-challenges")
+async def post_assess_signal_signature_challenge(
+    signal_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        signal = await session.get(SafetySignal, signal_id)
+        if signal is None:
+            raise NotFoundError("Safety signal not found")
+        return await _create_signature_challenge(
+            session, actor=actor, record_type="safety_signal", record_id=signal.id,
+            record_version=signal.version, record_hash=_signal_hash(signal), action="assess",
+        )
 
 
 @router.post("/signals/{signal_id}/assessments", response_model=MutationReceipt)
@@ -157,6 +211,20 @@ async def post_assess_signal(
             raise NotFoundError("Safety signal not found")
         await evaluate_policy(session, actor.user_id, action="safety_signal.assess", site_id=signal.site_id)
         return await commands.assess_safety_signal(session, cmd, actor.user_id)
+
+
+@router.post("/signals/{signal_id}/escalation-signature-challenges")
+async def post_escalate_signal_signature_challenge(
+    signal_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        signal = await session.get(SafetySignal, signal_id)
+        if signal is None:
+            raise NotFoundError("Safety signal not found")
+        return await _create_signature_challenge(
+            session, actor=actor, record_type="safety_signal", record_id=signal.id,
+            record_version=signal.version, record_hash=_signal_hash(signal), action="escalate",
+        )
 
 
 @router.post("/signals/{signal_id}/escalations", response_model=MutationReceipt)

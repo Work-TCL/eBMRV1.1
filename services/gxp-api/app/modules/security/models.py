@@ -47,13 +47,15 @@ fields/append-only JSONB history on the 4 owned tables rather than invented tabl
   deployment_profile -- no write, no owned table, same shape as postmarket's
   `get_postmarket_dashboard()`.
 
-**`security_exception`'s single Document 106 signature row (row 133, `POST /security/v1/exceptions` ->
-`Approved`, "Elevated authority defined by the record class", 1, "MUST be independent of the requester",
-required=yes) is ALSO left unresolved.** "Elevated authority defined by the record class" names no actual
-role and no dispatch table exists anywhere in this codebase to resolve it -- this is the exact same shape
-Document 106 uses for row 131 (`regulatory_obligation.override_deadline`, tracked under SG-160) and row 141
-(vulnerability exceptions, Document 68, out of scope this pass). `open_security_exception()` calls
-`_resolve_signature()` unconditionally and fails closed the same way. See SG-161.
+**`security_exception`'s Document 106 row 133 (`POST /security/v1/exceptions` -> `Approved`, "Elevated
+authority defined by the record class", 1, "MUST be independent of the requester", required=yes) is
+RESOLVED_APPROVED 2026-09-14 (project-owner-directed).** "Elevated authority" resolves to the "Security
+Risk Approver" role (already seeded anticipating exactly this gap); independence has no meaning in a
+single-step create+sign command, so the endpoint was split into an unsigned `requestSecurityException()`
+(records the requester) and a signed `approveSecurityException()` (independence-checked against that
+requester) -- see `commands.py`'s module docstring. Row 141 (vulnerability exceptions, Document 68) is
+the same "elevated authority" shape but remains its own, separately-tracked unresolved gap (SG-165, out
+of scope this pass). See SG-161.
 
 **Threat state model** (Doc 61 `# 5` gives a *pipeline*-level diagram -- THREAT_MODEL_DRAFT -> THREATS +
 CONTROLS + TESTS -> RISK_REVIEW -> MITIGATE/ACCEPT/EXCEPTION -> APPROVED SECURITY BASELINE -- not a
@@ -172,7 +174,13 @@ class SecurityControl(Base):
 
 
 class SecurityException(Base):
-    """`openSecurityException()` -- SEC-THR-023."""
+    """`requestSecurityException()` / `approveSecurityException()` -- SEC-THR-023.
+
+    SG-161 RESOLVED_APPROVED 2026-09-14: split into an unsigned request (`state=PENDING_APPROVAL`,
+    `opened_by` records the requester) and a signed approval by the "Security Risk Approver" role,
+    independent of `opened_by`, that moves the record to `state=OPEN`. `signature_id` and `approvers`
+    are populated only at approval, never at request.
+    """
 
     __tablename__ = "security_exception"
     __table_args__ = (
@@ -189,11 +197,10 @@ class SecurityException(Base):
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     effective_from: Mapped[datetime] = mapped_column(server_default=func.now())
     expiry: Mapped[datetime] = mapped_column(nullable=False)
-    # SEC-THR-023: approvers + remediation target; `approvers` populated once the SG-161 signature gap
-    # is resolved and a real signature_id exists.
+    # SEC-THR-023: approvers + remediation target.
     approvers: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     remediation_target: Mapped[dict | None] = mapped_column(JSONB)
-    state: Mapped[str] = mapped_column(String(30), nullable=False, default="OPEN")
+    state: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING_APPROVAL")
     signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     opened_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)

@@ -18,8 +18,15 @@ info:
     `mapSecurityControl()`, `calculateSecurityRisk()`, `acceptResidualSecurityRisk()` and
     `triggerThreatModelReview()` have no dedicated owned table (only 4 entities exist for 8 functions) —
     see `app/modules/security/models.py`'s module docstring for how each is represented on the 4 owned
-    tables instead. `acceptResidualSecurityRisk` and `openSecurityException` have no usable Document 106
-    signature resolution and always return `SIGNATURE_POLICY_UNRESOLVED` in this baseline (SG-161).
+    tables instead.
+
+
+    SG-161 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): `acceptResidualSecurityRisk` and the
+    former `openSecurityException` now resolve to a real "Security Risk Approver" signature, independent
+    of whoever's judgment is being approved. Independence has no meaning in a single-step create+sign
+    command, so `openSecurityException` was split into an unsigned `requestSecurityException()`
+    (`POST /security/v1/exceptions`, records the requester) and a signed `approveSecurityException()`
+    (`POST /security/v1/exceptions/{exception_id}/approve`, independence-checked against that requester).
 tags:
   - name: security
 
@@ -139,7 +146,7 @@ paths:
       operationId: postAcceptResidualSecurityRisk
       tags: [security]
       summary: Accept residual security risk (SEC-THR-015)
-      description: risk_id is the owning security_threat id (no separate SecurityRiskAssessment table). SG-161— no Document 106 row exists for this operation; always returns SIGNATURE_POLICY_UNRESOLVED in this baseline.
+      description: risk_id is the owning security_threat id (no separate SecurityRiskAssessment table). SG-161 RESOLVED_APPROVED 2026-09-14 — signed by "Security Risk Approver", independent of residual_risk.calculated_by.
       x-requirement-ids: [SEC-THR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
       security: [{ bearerAuth: [] }]
       parameters: [{ name: risk_id, in: path, required: true, schema: { type: string, format: uuid } }]
@@ -149,29 +156,73 @@ paths:
       responses:
         '200': { description: Residual risk accepted., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
         '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
-        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '403': { description: "FORBIDDEN, ROLE_MISSING (not Security Risk Approver) or SOD_INDEPENDENCE_REQUIRED (same actor calculated the risk).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
         '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
-        '409': { description: "STALE_VERSION or SIGNATURE_POLICY_UNRESOLVED (SG-161).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '409': { description: STALE_VERSION., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
         '422': { description: SECURITY_RISK_INPUT_INCOMPLETE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
         '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
 
+  /security/v1/risks/{risk_id}/accept-signature-challenges:
+    post:
+      operationId: postAcceptRiskSignatureChallenge
+      tags: [security]
+      summary: Create the signature challenge for accepting a residual security risk (SIG-FR-005)
+      x-requirement-ids: [SEC-THR-015, SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: risk_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Challenge created., content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
   /security/v1/exceptions:
     post:
-      operationId: postOpenSecurityException
+      operationId: postRequestSecurityException
       tags: [security]
-      summary: Open a time-bounded security exception (SEC-THR-023)
-      description: SG-161 — Document 106 row 133 names "Elevated authority defined by the record class" with no dispatch table; always returns SIGNATURE_POLICY_UNRESOLVED in this baseline.
-      x-requirement-ids: [SEC-THR-023, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      summary: Request a time-bounded security exception (SEC-THR-023)
+      description: SG-161 RESOLVED_APPROVED 2026-09-14 — unsigned request half (records the requester); see postApproveSecurityException for the signed approval half.
+      x-requirement-ids: [SEC-THR-023, MUT-FR-005, MUT-FR-010, MUT-FR-015, MUT-FR-018]
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/OpenSecurityExceptionCommand' } } }
+        content: { application/json: { schema: { $ref: '#/components/schemas/RequestSecurityExceptionCommand' } } }
       responses:
-        '200': { description: Exception opened., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '200': { description: Exception requested (state PENDING_APPROVAL)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
         '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
-        '409': { description: "SIGNATURE_POLICY_UNRESOLVED (SG-161).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
         '422': { description: "VALIDATION_FAILED (e.g. expiry in the past).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+
+  /security/v1/exceptions/{exception_id}/approval-signature-challenges:
+    post:
+      operationId: postApproveExceptionSignatureChallenge
+      tags: [security]
+      summary: Create the signature challenge for approving a requested security exception (SIG-FR-005)
+      x-requirement-ids: [SEC-THR-023, SIG-FR-005]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: exception_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Challenge created., content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResult' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+
+  /security/v1/exceptions/{exception_id}/approve:
+    post:
+      operationId: postApproveSecurityException
+      tags: [security]
+      summary: Approve a requested security exception (SEC-THR-023)
+      description: SG-161 RESOLVED_APPROVED 2026-09-14 — signed by "Security Risk Approver", independent of the exception's opened_by (the requester). Moves state PENDING_APPROVAL -> OPEN.
+      x-requirement-ids: [SEC-THR-023, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: exception_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApproveSecurityExceptionCommand' } } }
+      responses:
+        '200': { description: Exception approved (state OPEN)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { description: "FORBIDDEN, ROLE_MISSING (not Security Risk Approver) or SOD_INDEPENDENCE_REQUIRED (same actor requested it).", content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
+        '404': { $ref: 'spec-gxp-001.yaml#/components/responses/NotFound' }
+        '409': { description: STALE_VERSION or wrong state (not PENDING_APPROVAL)., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
         '428': { description: MISSING_SIGNATURE., content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } } }
 
   /security/v1/exceptions/{exception_id}:
@@ -290,11 +341,11 @@ components:
         challenge_id: { type: [string, "null"], format: uuid }
         reauth_password: { type: [string, "null"] }
 
-    OpenSecurityExceptionCommand:
+    RequestSecurityExceptionCommand:
       type: object
       additionalProperties: false
-      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
-      x-requirement-ids: [SEC-THR-023, MUT-FR-005, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Unsigned request half of the SG-161 request/approve split.
+      x-requirement-ids: [SEC-THR-023, MUT-FR-005, MUT-FR-010]
       required: [idempotency_key, control_or_requirement, reason, expiry]
       properties:
         idempotency_key: { type: string, maxLength: 200 }
@@ -304,8 +355,28 @@ components:
         risk_assessment_ref: { type: [object, "null"] }
         compensating_controls: { type: [object, "null"] }
         remediation_target: { type: [object, "null"] }
+
+    ApproveSecurityExceptionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6). Signed approval half of the SG-161 request/approve split.
+      x-requirement-ids: [SEC-THR-023, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-012, MUT-FR-013]
+      required: [idempotency_key, expected_version]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        expected_version: { type: integer }
         challenge_id: { type: [string, "null"], format: uuid }
         reauth_password: { type: [string, "null"] }
+
+    SignatureChallengeResult:
+      type: object
+      description: The challenge receipt returned by this module's signature-challenge endpoints (response schema, so not closed).
+      x-requirement-ids: [SIG-FR-005, SIG-FR-027]
+      required: [challenge_id, meaning, expires_at]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        meaning: { type: string }
+        expires_at: { type: string, format: date-time }
 
     SecurityControlMatrix:
       type: object

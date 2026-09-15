@@ -7,12 +7,13 @@ exception/rework/branch entities) is out of scope this pass -- SG-047/SG-048.
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
 from app.core.security import hash_password
 from app.modules.batch_execution.models import Batch
-from app.modules.iam.models import Permission, Role, RolePermission, User, UserSiteRole
+from app.modules.iam.models import Permission, Qualification, Role, RolePermission, User, UserSiteRole
 from app.modules.signature.models import SignaturePolicy
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 
@@ -31,7 +32,10 @@ async def _make_admin(db, seeded, username="admin.batch"):
     return user
 
 
-async def _make_released_product_and_recipe(client, admin_token, site_id, tag, step_a_role=None, step_a_parameters=None):
+async def _make_released_product_and_recipe(
+    client, admin_token, site_id, tag, step_a_role=None, step_a_parameters=None, step_a_evidence=None,
+    step_a_qualification_code=None,
+):
     resp = await client.post(
         "/products/v1/drafts",
         json={
@@ -76,6 +80,8 @@ async def _make_released_product_and_recipe(client, admin_token, site_id, tag, s
                     "stable_step_code": "STEP-A", "section_code": "SEC-1", "step_type": "weigh", "sequence_hint": 1,
                     **({"required_role_code": step_a_role} if step_a_role else {}),
                     **({"parameters": step_a_parameters} if step_a_parameters else {}),
+                    **({"evidence_requirements": step_a_evidence} if step_a_evidence else {}),
+                    **({"required_qualification_code": step_a_qualification_code} if step_a_qualification_code else {}),
                 },
                 {"stable_step_code": "STEP-B", "section_code": "SEC-1", "step_type": "instruction", "sequence_hint": 2},
             ],
@@ -101,14 +107,18 @@ async def _make_released_product_and_recipe(client, admin_token, site_id, tag, s
     return product_version_id, recipe_version_id
 
 
-async def _released_pair(db, client, seeded, tag, step_a_role=None, step_a_parameters=None):
+async def _released_pair(
+    db, client, seeded, tag, step_a_role=None, step_a_parameters=None, step_a_evidence=None,
+    step_a_qualification_code=None,
+):
     async with db.begin():
         await _make_admin(db, seeded, f"admin.batch{tag}")
         db.add(SignaturePolicy(record_type="product_version", action="release", meaning="Released", signature_required=False))
         db.add(SignaturePolicy(record_type="recipe_version", action="release", meaning="Released", signature_required=False))
     admin_token = await login(client, f"admin.batch{tag}")
     product_version_id, recipe_version_id = await _make_released_product_and_recipe(
-        client, admin_token, seeded["site_id"], tag, step_a_role=step_a_role, step_a_parameters=step_a_parameters
+        client, admin_token, seeded["site_id"], tag, step_a_role=step_a_role, step_a_parameters=step_a_parameters,
+        step_a_evidence=step_a_evidence, step_a_qualification_code=step_a_qualification_code,
     )
     return admin_token, product_version_id, recipe_version_id
 
@@ -1154,6 +1164,590 @@ async def test_link_step_evidence_rejects_step_not_in_progress(client, seeded, d
             "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
             "expected_version": ready_step["version"],
             "links": [{"evidence_id": str(uuid.uuid4()), "evidence_sha256": "b" * 64}],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "INVALID_TRANSITION"
+
+
+# ---------------------------------------------------------------------------
+# BAT-FR-015 evidence half -- SG-048 #015 partial resolution (2026-09-14). The parameter half of
+# complete_step's completion gate was already built (test_complete_step_blocked_without_required_
+# parameter_result above); this proves the sibling evidence-count gate against RecipeEvidenceRequirement.
+# ---------------------------------------------------------------------------
+
+
+async def test_complete_step_blocked_without_required_evidence_then_succeeds_after_linking(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "ev1",
+        step_a_evidence=[{"evidence_type": "PHOTO", "required_count": 1}],
+    )
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-EV-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"], "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, ready_step["step_id"], "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": step_version,
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422, resp.text
+    body = resp.json()
+    assert body["code"] == "VALIDATION_FAILED"
+    assert body["details"]["missing_evidence_types"] == ["PHOTO"]
+
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/evidence-links",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": step_version,
+            "links": [{"evidence_id": str(uuid.uuid4()), "evidence_sha256": "c" * 64, "requirement_code": "PHOTO"}],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version += 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, ready_step["step_id"], "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": step_version,
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+# ---------------------------------------------------------------------------
+# BAT-FR-023 -- SG-048 #023 partial resolution (2026-09-14). 2-step, 2-signature correction ceremony,
+# Document 106 row 20 ("Authorized corrector + independent approver", corrector and approver MUST differ,
+# mandatory reason).
+# ---------------------------------------------------------------------------
+
+
+async def _sign_step_result(client, token, batch_id, step_id, result_id, action):
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/results/{result_id}/signature-challenges",
+        json={"action": action},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["challenge_id"]
+
+
+async def test_step_result_correction_two_signature_flow(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "corr1",
+        step_a_parameters=[{"parameter_code": "WEIGHT", "data_type": "numeric", "uom": "kg", "source_type": "manual", "required": True}],
+    )
+    async with db.begin():
+        await _make_user_with_role(db, seeded, "sup.corr1", "Supervisor")
+    sup_token = await login(client, "sup.corr1")
+
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-CORR-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "results")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/results",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": step_version,
+            "results": [{"parameter_code": "WEIGHT", "value_numeric": "1.50000000", "uom": "kg"}],
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version += 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": step_version,
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    result_id = view["results_by_step_id"][step_id][0]["result_id"]
+
+    request_challenge_id = await _sign_step_result(client, admin_token, batch_id, step_id, result_id, "correct_request")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/correct",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "result_id": result_id,
+            "reason_text": "Balance recalibration found the original reading high by 0.2kg",
+            "corrected_value_numeric": "1.30000000",
+            "challenge_id": request_challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    correction_id = resp.json()["aggregate_id"]
+
+    # SoD: the same actor who requested the correction cannot approve it.
+    same_actor_challenge_id = await _sign_step_result(client, admin_token, batch_id, step_id, result_id, "correct_approve")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/corrections/{correction_id}/approve",
+        json={
+            "idempotency_key": idem(), "correction_id": correction_id,
+            "challenge_id": same_actor_challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert "independent" in resp.json()["message"].lower()
+
+    approve_challenge_id = await _sign_step_result(client, sup_token, batch_id, step_id, result_id, "correct_approve")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/corrections/{correction_id}/approve",
+        json={
+            "idempotency_key": idem(), "correction_id": correction_id,
+            "challenge_id": approve_challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(sup_token),
+    )
+    assert resp.status_code == 200, resp.text
+    new_result_id = resp.json()["aggregate_id"]
+    assert new_result_id != result_id
+
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    results = view["results_by_step_id"][step_id]
+    assert len(results) == 2
+    corrected = next(r for r in results if r["result_id"] == new_result_id)
+    assert corrected["value_numeric"] == "1.30000000"
+
+
+async def test_request_step_result_correction_rejected_before_step_is_complete(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "corr2",
+        step_a_parameters=[{"parameter_code": "WEIGHT", "data_type": "numeric", "uom": "kg", "source_type": "manual", "required": True}],
+    )
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-CORR-2"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "results")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/results",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": step_version,
+            "results": [{"parameter_code": "WEIGHT", "value_numeric": "1.50000000", "uom": "kg"}],
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    result_id = view["results_by_step_id"][step_id][0]["result_id"]
+
+    request_challenge_id = await _sign_step_result(client, admin_token, batch_id, step_id, result_id, "correct_request")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/correct",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "result_id": result_id,
+            "reason_text": "attempted correction before completion",
+            "corrected_value_numeric": "1.30000000",
+            "challenge_id": request_challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "INVALID_TRANSITION"
+
+
+async def test_request_step_result_correction_requires_signature(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "corr3",
+        step_a_parameters=[{"parameter_code": "WEIGHT", "data_type": "numeric", "uom": "kg", "source_type": "manual", "required": True}],
+    )
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-CORR-3"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "results")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/results",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": step_version,
+            "results": [{"parameter_code": "WEIGHT", "value_numeric": "1.50000000", "uom": "kg"}],
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version += 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": step_version,
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    result_id = view["results_by_step_id"][step_id][0]["result_id"]
+
+    # No challenge_id/reauth_password supplied -- login/MFA alone is never accepted as a signature.
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/correct",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "result_id": result_id,
+            "reason_text": "attempted correction without a signature",
+            "corrected_value_numeric": "1.30000000",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 428, resp.text
+    assert resp.json()["code"] == "MISSING_SIGNATURE"
+
+
+# ---------------------------------------------------------------------------
+# BAT-FR-014 -- SG-048 #014 partial resolution (2026-09-14). RecipeStep.required_qualification_code,
+# frozen onto BatchStep at issue, enforced against iam.qualifications at both start and complete.
+# ---------------------------------------------------------------------------
+
+
+async def test_start_step_blocked_without_required_qualification_then_succeeds_once_granted(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "qual1", step_a_qualification_code="WEIGH_CERT",
+    )
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-QUAL-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"], "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 403, resp.text
+    body = resp.json()
+    assert body["code"] == "QUALIFICATION_MISSING"
+    assert body["details"]["qualification_code"] == "WEIGH_CERT"
+
+    async with db.begin():
+        admin = (await db.execute(select(User).where(User.username == "admin.batchqual1"))).scalar_one()
+        db.add(Qualification(user_id=admin.id, qualification_code="WEIGH_CERT", expires_at=None))
+
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"], "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_start_step_blocked_when_qualification_expired(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "qual2", step_a_qualification_code="WEIGH_CERT",
+    )
+    async with db.begin():
+        admin = (await db.execute(select(User).where(User.username == "admin.batchqual2"))).scalar_one()
+        db.add(Qualification(
+            user_id=admin.id, qualification_code="WEIGH_CERT",
+            expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+        ))
+
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-QUAL-2"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"], "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["code"] == "QUALIFICATION_EXPIRED"
+
+
+# ---------------------------------------------------------------------------
+# BAT-FR-009/011 -- SG-048 #009/#011 partial resolution (2026-09-14). quality_status computed from the
+# recipe parameter's own min_value/max_value; source_type additionally accepts 'device_transcribed'.
+# ---------------------------------------------------------------------------
+
+
+async def test_record_step_results_computes_quality_status_and_accepts_device_transcribed_source(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "qs1",
+        step_a_parameters=[
+            {
+                "parameter_code": "WEIGHT", "data_type": "numeric", "uom": "kg", "source_type": "manual",
+                "required": True, "min_value": "1.0", "max_value": "2.0",
+            },
+        ],
+    )
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-QS-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "results")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/results",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": step_version,
+            "results": [{"parameter_code": "WEIGHT", "value_numeric": "2.50000000", "uom": "kg", "source_type": "device_transcribed"}],
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    result = view["results_by_step_id"][step_id][0]
+    assert result["quality_status"] == "out_of_range"
+    assert result["source_type"] == "device_transcribed"
+
+
+async def test_record_step_results_rejects_unknown_source_type(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "qs2",
+        step_a_parameters=[{"parameter_code": "WEIGHT", "data_type": "numeric", "uom": "kg", "source_type": "manual", "required": True}],
+    )
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-QS-2"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "results")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/results",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": step_version,
+            "results": [{"parameter_code": "WEIGHT", "value_numeric": "1.50000000", "uom": "kg", "source_type": "edge_automated"}],
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+# ---------------------------------------------------------------------------
+# BAT-FR-034 -- SG-048 #034 partial resolution (2026-09-14). Structured, append-only step comments.
+# ---------------------------------------------------------------------------
+
+
+async def test_add_step_comment_succeeds(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "cmt1")
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-CMT-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/comments",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": ready_step["version"], "comment_text": "Balance recalibrated mid-step per SOP-42.",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is None
+
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    comments = view["comments_by_step_id"][step_id]
+    assert len(comments) == 1
+    assert comments[0]["comment_text"] == "Balance recalibrated mid-step per SOP-42."
+
+
+async def test_add_step_comment_rejects_empty_text(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "cmt2")
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-CMT-2"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/comments",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": ready_step["version"], "comment_text": "   ",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+# ---------------------------------------------------------------------------
+# BAT-FR-025 -- SG-048 #025 partial resolution (2026-09-14, project-owner-directed: unsigned/RBAC-gated
+# interim scope, pending a real Document 106 addendum).
+# ---------------------------------------------------------------------------
+
+
+async def test_handover_step_succeeds_without_changing_prior_attribution(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "ho1")
+    async with db.begin():
+        await _make_user_with_role(db, seeded, "sup.ho1", "Supervisor")
+    async with db.begin():
+        sup = (await db.execute(select(User).where(User.username == "sup.ho1"))).scalar_one()
+        sup_user_id = str(sup.id)
+
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-HO-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/handover",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": step_version, "to_user_id": sup_user_id, "reason": "End of shift",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is None
+
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    step = next(s for s in view["steps"] if s["step_id"] == step_id)
+    assert step["assigned_subject_id"] == sup_user_id
+    handovers = view["handovers_by_step_id"][step_id]
+    assert len(handovers) == 1
+    assert handovers[0]["to_subject_id"] == sup_user_id
+    assert handovers[0]["reason"] == "End of shift"
+
+
+async def test_handover_step_rejected_when_not_in_progress(client, seeded, db):
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "ho2")
+    async with db.begin():
+        await _make_user_with_role(db, seeded, "sup.ho2", "Supervisor")
+        sup = (await db.execute(select(User).where(User.username == "sup.ho2"))).scalar_one()
+        sup_user_id = str(sup.id)
+
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-HO-2"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+
+    # Step is still "ready", never started -- handover only applies to an in-progress step.
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/handover",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": ready_step["version"], "to_user_id": sup_user_id,
         },
         headers=auth_headers(admin_token),
     )

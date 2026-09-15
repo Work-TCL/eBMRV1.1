@@ -205,6 +205,20 @@ _SECURITY_HEADERS = {
 
 
 @app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    """SG-140 (CTR-FR-006/010): every request gets a correlation id up front, before any command runs
+    far enough to mint its own. A rejected command (validation failure, missing signature, stale
+    version, ...) usually fails before `write_audit_event`'s own `correlation_id=uuid.uuid4()` ever
+    runs, so the error path had no id to report at all -- this request-scoped one fills that gap and is
+    the same id echoed on `X-Correlation-Id` and in every error envelope below, letting a client tie a
+    failed request to server-side logs even when no audit/outbox row was ever written for it."""
+    request.state.correlation_id = uuid.uuid4()
+    response = await call_next(request)
+    response.headers.setdefault("X-Correlation-Id", str(request.state.correlation_id))
+    return response
+
+
+@app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     for header, value in _SECURITY_HEADERS.items():
@@ -216,7 +230,10 @@ async def security_headers_middleware(request: Request, call_next):
 async def gxp_error_handler(request: Request, exc: GxPError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
-        content={"code": exc.code, "message": exc.message, "details": exc.details},
+        content={
+            "code": exc.code, "message": exc.message, "details": exc.details,
+            "correlation_id": str(request.state.correlation_id),
+        },
     )
 
 
@@ -237,7 +254,10 @@ async def request_validation_error_handler(request: Request, exc: RequestValidat
     message = f"{field}: {first['msg']}" if field and "msg" in first else (first.get("msg") or "Request validation failed")
     return JSONResponse(
         status_code=422,
-        content={"code": "VALIDATION_FAILED", "message": message, "details": {"errors": errors}},
+        content={
+            "code": "VALIDATION_FAILED", "message": message, "details": {"errors": errors},
+            "correlation_id": str(request.state.correlation_id),
+        },
     )
 
 
@@ -247,7 +267,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     fragment or secret. Any exception that is not a GxPError / OperationalError collapses to a stable
     SYSTEM_FAULT body with a correlation id; the real detail is logged server-side only.
     """
-    correlation_id = uuid.uuid4()
+    # Defensive fallback only: correlation_id_middleware sets this before any route/handler runs, so the
+    # attribute is always present in practice -- the `getattr` guards this last-resort catch-all handler
+    # itself against ever raising a second exception while reporting the first.
+    correlation_id = getattr(request.state, "correlation_id", None) or uuid.uuid4()
     logger.exception("unhandled request error correlation_id=%s path=%s", correlation_id, request.url.path)
     return JSONResponse(
         status_code=500,
@@ -255,6 +278,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
             "code": "SYSTEM_FAULT",
             "message": "An internal error occurred. Contact support with the correlation id.",
             "details": {"correlation_id": str(correlation_id)},
+            "correlation_id": str(correlation_id),
         },
     )
 

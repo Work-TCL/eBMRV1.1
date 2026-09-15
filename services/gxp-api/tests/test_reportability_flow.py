@@ -14,9 +14,11 @@ from app.modules.iam.models import User, UserSiteRole
 from app.modules.postmarket import commands as pm_commands
 from app.modules.postmarket import reportability_commands as commands
 from app.modules.postmarket.reportability_models import RegulatoryReport, RegulatorySubmissionAttempt, ReportabilityTrack
+from app.modules.signature import service as signature_service
 from app.modules.signature.models import SignaturePolicy
-from app.mutation.errors import InvalidTransitionError, SignaturePolicyUnresolvedError, StaleVersionError, ValidationFailedError
-from tests.conftest import DEMO_PASSWORD, idem
+from app.mutation.errors import InvalidTransitionError, MissingSignatureError, StaleVersionError, ValidationFailedError
+from app.mutation.hashing import sha256_hex
+from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 
 
 async def _make_admin(db, seeded, tag):
@@ -42,12 +44,16 @@ def _seed_resolved_policies(db):
         db.add(SignaturePolicy(record_type=record_type, action=action, meaning="Approved", signature_required=False))
 
 
-def _allow_unresolved_decision_actions(db):
-    """SG-157: decideReportability() and approveRegulatoryReport() have no Document 106 resolution --
-    tests that exercise the business logic beyond fail-closed seed a permissive local policy, same
-    precedent used for Document 58's safety_signal actions."""
-    db.add(SignaturePolicy(record_type="reportability_track", action="decide", meaning="Approved", signature_required=False))
-    db.add(SignaturePolicy(record_type="regulatory_report", action="approve", meaning="Approved", signature_required=False))
+async def _sign(db, *, actor_id, record_type, record_version, record_hash):
+    """SG-157 RESOLVED_APPROVED 2026-09-14: decideReportability()/approveRegulatoryReport() now really
+    require a signature (conftest.py's global seed) -- no independence requirement, so the same actor
+    signs throughout."""
+    challenge = await signature_service.create_challenge(
+        db, user_id=actor_id, record_type=record_type, record_id=uuid.uuid4(),
+        record_version=record_version, record_hash=record_hash, meaning="Approved",
+    )
+    await db.flush()
+    return challenge.id
 
 
 async def _get(db, model, obj_id):
@@ -217,7 +223,7 @@ async def test_part4_dedupe_false_because_deadline_differs(db, seeded):
 
 
 @pytest.mark.asyncio
-async def test_decide_reportability_fails_closed_then_signed_not_reportable(db, seeded):
+async def test_decide_reportability_requires_a_real_signature_then_signed_not_reportable(db, seeded):
     async with db.begin():
         owner = await _make_admin(db, seeded, "5")
         _seed_resolved_policies(db)
@@ -229,9 +235,10 @@ async def test_decide_reportability_fails_closed_then_signed_not_reportable(db, 
             ), owner.id,
         )
 
-    # SG-157: no signature policy resolved yet -- fails closed.
+    # SG-157 RESOLVED_APPROVED 2026-09-14: decide_reportability really requires a signature now -- calling
+    # without a challenge/reauth is rejected, not silently accepted.
     async with db.begin():
-        with pytest.raises(SignaturePolicyUnresolvedError):
+        with pytest.raises(MissingSignatureError):
             await commands.decide_reportability(
                 db, commands.DecideReportabilityCommand(
                     idempotency_key=idem(), track_id=receipt.aggregate_id, expected_version=1,
@@ -240,12 +247,14 @@ async def test_decide_reportability_fails_closed_then_signed_not_reportable(db, 
             )
 
     async with db.begin():
-        _allow_unresolved_decision_actions(db)
+        track = await db.get(ReportabilityTrack, receipt.aggregate_id)
+        challenge_id = await _sign(db, actor_id=owner.id, record_type="reportability_track", record_version=track.version, record_hash=commands._track_hash(track))
         await commands.decide_reportability(
             db, commands.DecideReportabilityCommand(
                 idempotency_key=idem(), track_id=receipt.aggregate_id, expected_version=1,
                 decision="NOT_REPORTABLE", rationale="malfunction did not recur and would not cause harm",
                 evidence_refs=[{"type": "engineering_evaluation", "id": str(uuid.uuid4())}],
+                challenge_id=challenge_id, reauth_password=DEMO_PASSWORD,
             ), owner.id,
         )
     track = await _get(db, ReportabilityTrack, receipt.aggregate_id)
@@ -259,7 +268,6 @@ async def test_report_build_requires_reportable_decision_and_stale_version_rejec
     async with db.begin():
         owner = await _make_admin(db, seeded, "6")
         _seed_resolved_policies(db)
-        _allow_unresolved_decision_actions(db)
         case_receipt = await _create_case(db, seeded, owner.id)
         receipt = await commands.create_reportability_tracks(
             db, commands.CreateReportabilityTracksCommand(
@@ -278,10 +286,13 @@ async def test_report_build_requires_reportable_decision_and_stale_version_rejec
             )
 
     async with db.begin():
+        track = await db.get(ReportabilityTrack, receipt.aggregate_id)
+        challenge_id = await _sign(db, actor_id=owner.id, record_type="reportability_track", record_version=track.version, record_hash=commands._track_hash(track))
         await commands.decide_reportability(
             db, commands.DecideReportabilityCommand(
                 idempotency_key=idem(), track_id=receipt.aggregate_id, expected_version=1,
                 decision="REPORTABLE", rationale="death causally linked to device malfunction",
+                challenge_id=challenge_id, reauth_password=DEMO_PASSWORD,
             ), owner.id,
         )
     async with db.begin():
@@ -312,7 +323,6 @@ async def test_approve_generate_payload_and_duplicate_submission_blocked(db, see
     async with db.begin():
         owner = await _make_admin(db, seeded, "7")
         _seed_resolved_policies(db)
-        _allow_unresolved_decision_actions(db)
         case_receipt = await _create_case(db, seeded, owner.id)
         receipt = await commands.create_reportability_tracks(
             db, commands.CreateReportabilityTracksCommand(
@@ -320,10 +330,13 @@ async def test_approve_generate_payload_and_duplicate_submission_blocked(db, see
                 tracks=[{"report_type_code": "MDR_30", "report_type_version": "1.0", "application_context": {"device_application": "K1"}}],
             ), owner.id,
         )
+        track = await db.get(ReportabilityTrack, receipt.aggregate_id)
+        challenge_id = await _sign(db, actor_id=owner.id, record_type="reportability_track", record_version=track.version, record_hash=commands._track_hash(track))
         await commands.decide_reportability(
             db, commands.DecideReportabilityCommand(
                 idempotency_key=idem(), track_id=receipt.aggregate_id, expected_version=1,
                 decision="REPORTABLE", rationale="serious injury",
+                challenge_id=challenge_id, reauth_password=DEMO_PASSWORD,
             ), owner.id,
         )
         report_receipt = await commands.build_regulatory_report(
@@ -334,8 +347,13 @@ async def test_approve_generate_payload_and_duplicate_submission_blocked(db, see
         )
 
     async with db.begin():
+        report = await db.get(RegulatoryReport, report_receipt.aggregate_id)
+        challenge_id = await _sign(db, actor_id=owner.id, record_type="regulatory_report", record_version=report.report_version, record_hash=sha256_hex(report.content))
         await commands.approve_regulatory_report(
-            db, commands.ApproveRegulatoryReportCommand(idempotency_key=idem(), report_id=report_receipt.aggregate_id, expected_version=1), owner.id,
+            db, commands.ApproveRegulatoryReportCommand(
+                idempotency_key=idem(), report_id=report_receipt.aggregate_id, expected_version=1,
+                challenge_id=challenge_id, reauth_password=DEMO_PASSWORD,
+            ), owner.id,
         )
     report = await _get(db, RegulatoryReport, report_receipt.aggregate_id)
     assert report.state == "APPROVED"
@@ -378,7 +396,6 @@ async def test_transport_timeout_then_fda_rejection_creates_resubmission_evidenc
     async with db.begin():
         owner = await _make_admin(db, seeded, "8")
         _seed_resolved_policies(db)
-        _allow_unresolved_decision_actions(db)
         case_receipt = await _create_case(db, seeded, owner.id)
         receipt = await commands.create_reportability_tracks(
             db, commands.CreateReportabilityTracksCommand(
@@ -386,10 +403,13 @@ async def test_transport_timeout_then_fda_rejection_creates_resubmission_evidenc
                 tracks=[{"report_type_code": "DRUG_EXPEDITED_15", "report_type_version": "1.0", "application_context": {"nda": "NDA-1"}}],
             ), owner.id,
         )
+        track = await db.get(ReportabilityTrack, receipt.aggregate_id)
+        challenge_id = await _sign(db, actor_id=owner.id, record_type="reportability_track", record_version=track.version, record_hash=commands._track_hash(track))
         await commands.decide_reportability(
             db, commands.DecideReportabilityCommand(
                 idempotency_key=idem(), track_id=receipt.aggregate_id, expected_version=1,
                 decision="REPORTABLE", rationale="serious unexpected adverse experience",
+                challenge_id=challenge_id, reauth_password=DEMO_PASSWORD,
             ), owner.id,
         )
         report_receipt = await commands.build_regulatory_report(
@@ -398,8 +418,13 @@ async def test_transport_timeout_then_fda_rejection_creates_resubmission_evidenc
                 schema_code="ICSR_E2B", schema_version="R3", content={"event": "sae"}, field_provenance={},
             ), owner.id,
         )
+        report = await db.get(RegulatoryReport, report_receipt.aggregate_id)
+        challenge_id = await _sign(db, actor_id=owner.id, record_type="regulatory_report", record_version=report.report_version, record_hash=sha256_hex(report.content))
         await commands.approve_regulatory_report(
-            db, commands.ApproveRegulatoryReportCommand(idempotency_key=idem(), report_id=report_receipt.aggregate_id, expected_version=1), owner.id,
+            db, commands.ApproveRegulatoryReportCommand(
+                idempotency_key=idem(), report_id=report_receipt.aggregate_id, expected_version=1,
+                challenge_id=challenge_id, reauth_password=DEMO_PASSWORD,
+            ), owner.id,
         )
 
     # No transport_result supplied for a non-MANUAL channel -- honestly TIMEOUT_UNCERTAIN, not SENT.
@@ -439,7 +464,6 @@ async def test_followup_report_task_creates_new_track_linked_to_original(db, see
     async with db.begin():
         owner = await _make_admin(db, seeded, "9")
         _seed_resolved_policies(db)
-        _allow_unresolved_decision_actions(db)
         case_receipt = await _create_case(db, seeded, owner.id)
         receipt = await commands.create_reportability_tracks(
             db, commands.CreateReportabilityTracksCommand(
@@ -447,10 +471,13 @@ async def test_followup_report_task_creates_new_track_linked_to_original(db, see
                 tracks=[{"report_type_code": "MDR_30", "report_type_version": "1.0", "application_context": {"device_application": "K1"}}],
             ), owner.id,
         )
+        track = await db.get(ReportabilityTrack, receipt.aggregate_id)
+        challenge_id = await _sign(db, actor_id=owner.id, record_type="reportability_track", record_version=track.version, record_hash=commands._track_hash(track))
         await commands.decide_reportability(
             db, commands.DecideReportabilityCommand(
                 idempotency_key=idem(), track_id=receipt.aggregate_id, expected_version=1,
                 decision="REPORTABLE", rationale="serious injury",
+                challenge_id=challenge_id, reauth_password=DEMO_PASSWORD,
             ), owner.id,
         )
         report_receipt = await commands.build_regulatory_report(
@@ -536,7 +563,6 @@ async def test_generate_payload_uses_aems_family_for_drug_biologic_tracks(db, se
     async with db.begin():
         owner = await _make_admin(db, seeded, "12")
         _seed_resolved_policies(db)
-        _allow_unresolved_decision_actions(db)
         case_receipt = await _create_case(db, seeded, owner.id)
         receipt = await commands.create_reportability_tracks(
             db, commands.CreateReportabilityTracksCommand(
@@ -544,10 +570,13 @@ async def test_generate_payload_uses_aems_family_for_drug_biologic_tracks(db, se
                 tracks=[{"report_type_code": "BIOLOGIC_EXPEDITED_15", "report_type_version": "1.0", "application_context": {"bla": "BLA-000456"}}],
             ), owner.id,
         )
+        track = await db.get(ReportabilityTrack, receipt.aggregate_id)
+        challenge_id = await _sign(db, actor_id=owner.id, record_type="reportability_track", record_version=track.version, record_hash=commands._track_hash(track))
         await commands.decide_reportability(
             db, commands.DecideReportabilityCommand(
                 idempotency_key=idem(), track_id=receipt.aggregate_id, expected_version=1,
                 decision="REPORTABLE", rationale="serious unexpected biologic adverse experience",
+                challenge_id=challenge_id, reauth_password=DEMO_PASSWORD,
             ), owner.id,
         )
         report_receipt = await commands.build_regulatory_report(
@@ -556,8 +585,13 @@ async def test_generate_payload_uses_aems_family_for_drug_biologic_tracks(db, se
                 schema_code="ICSR_E2B", schema_version="R3", content={"event": "sae"}, field_provenance={},
             ), owner.id,
         )
+        report = await db.get(RegulatoryReport, report_receipt.aggregate_id)
+        challenge_id = await _sign(db, actor_id=owner.id, record_type="regulatory_report", record_version=report.report_version, record_hash=sha256_hex(report.content))
         await commands.approve_regulatory_report(
-            db, commands.ApproveRegulatoryReportCommand(idempotency_key=idem(), report_id=report_receipt.aggregate_id, expected_version=1), owner.id,
+            db, commands.ApproveRegulatoryReportCommand(
+                idempotency_key=idem(), report_id=report_receipt.aggregate_id, expected_version=1,
+                challenge_id=challenge_id, reauth_password=DEMO_PASSWORD,
+            ), owner.id,
         )
 
     async with db.begin():
@@ -567,3 +601,85 @@ async def test_generate_payload_uses_aems_family_for_drug_biologic_tracks(db, se
             ), owner.id,
         )
     assert payload_result["payload"]["family"] == "AEMS"
+
+
+@pytest.mark.asyncio
+async def test_decide_and_approve_report_via_http_signature_challenges(client, db, seeded):
+    """The `decide`/`approve` signature ceremony above is proven at the command layer by every other
+    test in this file, using `signature_service.create_challenge()` directly. This is the one test that
+    exercises the actual HTTP surface a real caller (the frontend) uses: `POST .../decision-signature-
+    challenges` and `POST .../approval-signature-challenges` (added alongside SG-157's resolution --
+    those two actions became real, resolved, signature-required policies, but had no HTTP endpoint a
+    real client could call to obtain a challenge_id for them until now)."""
+    async with db.begin():
+        owner = await _make_admin(db, seeded, "13")
+        _seed_resolved_policies(db)
+        case_receipt = await _create_case(db, seeded, owner.id)
+        receipt = await commands.create_reportability_tracks(
+            db, commands.CreateReportabilityTracksCommand(
+                idempotency_key=idem(), site_id=seeded["site_id"], safety_case_id=case_receipt.aggregate_id,
+                tracks=[{"report_type_code": "MDR_30", "report_type_version": "1.0", "application_context": {"device_application": "K999"}}],
+            ), owner.id,
+        )
+        await commands.calculate_regulatory_deadline(
+            db, commands.CalculateRegulatoryDeadlineCommand(
+                idempotency_key=idem(), track_id=receipt.aggregate_id, expected_version=1,
+                clock_start_basis="COMPANY_AWARENESS", clock_start_at=datetime.now(timezone.utc),
+                clock_start_rationale="date of company awareness", calendar_type="CALENDAR_DAY",
+                calendar_version="v1", rule_version="mdr-30-v1", duration_days=30,
+            ), owner.id,
+        )
+    token = await login(client, "reg.admin13")
+
+    # Unsigned decision attempt is blocked.
+    unsigned = await client.post(
+        f"/regulatory/v1/tracks/{receipt.aggregate_id}/decisions",
+        json={
+            "idempotency_key": idem(), "track_id": str(receipt.aggregate_id), "expected_version": 2,
+            "decision": "REPORTABLE", "rationale": "serious unexpected adverse event",
+        },
+        headers=auth_headers(token),
+    )
+    assert unsigned.status_code == 428, unsigned.text
+    assert unsigned.json()["code"] == "MISSING_SIGNATURE"
+
+    decision_challenge = (
+        await client.post(f"/regulatory/v1/tracks/{receipt.aggregate_id}/decision-signature-challenges", headers=auth_headers(token))
+    ).json()
+    assert decision_challenge["meaning"] == "Approved"
+    decide_resp = await client.post(
+        f"/regulatory/v1/tracks/{receipt.aggregate_id}/decisions",
+        json={
+            "idempotency_key": idem(), "track_id": str(receipt.aggregate_id), "expected_version": 2,
+            "decision": "REPORTABLE", "rationale": "serious unexpected adverse event",
+            "challenge_id": decision_challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(token),
+    )
+    assert decide_resp.status_code == 200, decide_resp.text
+    track = await _get(db, ReportabilityTrack, receipt.aggregate_id)
+    assert track.state == "DECIDED" and track.decision == "REPORTABLE"
+
+    async with db.begin():
+        report_receipt = await commands.build_regulatory_report(
+            db, commands.BuildRegulatoryReportCommand(
+                idempotency_key=idem(), track_id=receipt.aggregate_id, expected_version=track.version,
+                schema_code="ICSR_E2B", schema_version="R3", content={"event": "sae"}, field_provenance={},
+            ), owner.id,
+        )
+
+    approval_challenge = (
+        await client.post(f"/regulatory/v1/reports/{report_receipt.aggregate_id}/approval-signature-challenges", headers=auth_headers(token))
+    ).json()
+    assert approval_challenge["meaning"] == "Approved"
+    approve_resp = await client.post(
+        f"/regulatory/v1/reports/{report_receipt.aggregate_id}/approve",
+        json={
+            "idempotency_key": idem(), "report_id": str(report_receipt.aggregate_id), "expected_version": 1,
+            "challenge_id": approval_challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(token),
+    )
+    assert approve_resp.status_code == 200, approve_resp.text
+    report = await _get(db, RegulatoryReport, report_receipt.aggregate_id)
+    assert report.state == "APPROVED"

@@ -127,18 +127,23 @@ components:
       type: object
       additionalProperties: false
       description: >
-        The canonical error body emitted by the `GxPError` exception handler in `app/main.py`. Clients
-        branch on `code` and never on `message` (CTR-FR-006).
+        The canonical error body emitted by the `GxPError` (and `RequestValidationError`/catch-all)
+        exception handlers in `app/main.py`. Clients branch on `code` and never on `message` (CTR-FR-006).
 
 
-        DIVERGENCE: Document 113 §2 shows `{error_code, message, correlation_id, details}` and Document
-        101 §5 shows a nested `{"error": {code, message, correlation_id, retryable, field_errors}}`. The
-        two source documents disagree with each other, and the built shape matches neither: it is a flat
-        `{code, message, details}` with no `correlation_id` and no `retryable`. The shape is not changed
-        here — all 434 implemented operations already emit it and changing it is a breaking change for
-        every consumer. The three-way conflict is raised as SG-140.
-      x-requirement-ids: [MUT-FR-021, CTR-FR-006, CTRC-FR-004]
-      required: [code, message, details]
+        SG-140, RESOLVED 2026-09-14 (option A): Document 113 §2 shows `{error_code, message,
+        correlation_id, details}` and Document 101 §5 shows a nested `{"error": {code, message,
+        correlation_id, retryable, field_errors}}`; the two source documents disagreed with each other,
+        and the built shape matched neither. Resolution: ratify the built flat `{code, message, details}`
+        shape as canonical (unchanged — a breaking rename would affect all 434 implemented operations'
+        consumers, including the frontend) and add `correlation_id` as a new field, populated from a
+        request-scoped id `correlation_id_middleware` assigns before any route or command runs — every
+        error response now carries one, including a command that fails before it ever reaches the point
+        where it would mint its own audit/outbox `correlation_id`. Echoed on the `X-Correlation-Id`
+        response header too. `retryable` stays out — the `code` itself is sufficient to decide
+        retryability, per that same resolution.
+      x-requirement-ids: [MUT-FR-021, CTR-FR-006, CTR-FR-010, CTRC-FR-004]
+      required: [code, message, details, correlation_id]
       properties:
         code:
           $ref: '#/components/schemas/PlatformErrorCode'
@@ -148,6 +153,13 @@ components:
         details:
           type: object
           description: Structured context for the condition (e.g. `{expected_version, current_version}`).
+        correlation_id:
+          type: string
+          format: uuid
+          description: >
+            Request-scoped id (SG-140), assigned before any route/command runs and echoed on the
+            `X-Correlation-Id` response header. Present on every error response, whether or not the
+            failed command ever reached its own audit/outbox correlation_id.
 
     PlatformErrorCode:
       type: string

@@ -1,8 +1,21 @@
 """Document 61 (SPEC-SEC-001) Mutation Gateway command handlers. See models.py's module docstring for
 why `mapSecurityControl()`, `calculateSecurityRisk()`, `acceptResidualSecurityRisk()` and
 `triggerThreatModelReview()` write onto the 4 owned tables' fields/JSONB history instead of dedicated
-tables, and why `acceptResidualSecurityRisk()` / `openSecurityException()` deliberately fail closed with
-`SIGNATURE_POLICY_UNRESOLVED` (SG-161: no Document 106 resolution exists for either).
+tables.
+
+SG-161 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): Document 106 gets no row at all for risk
+acceptance and only "elevated authority defined by the record class" (no dispatch table) for exception
+opening. Resolution: both use the "Security Risk Approver" role already seeded anticipating exactly this
+gap, and both require a signer independent of whoever's judgment is being approved.
+
+For `acceptResidualSecurityRisk()`, independence is checked against `residual_risk["calculated_by"]`
+(the SEC-THR-014 risk-scoring actor already recorded by `calculate_security_risk()` -- no new column
+needed). For `openSecurityException()`, independence has no meaning in a single-step create+sign command
+(the signer and the record's only stored actor are the same person by construction) -- per project-owner
+direction this pass, the endpoint is split exactly like SG-160's correction-removal fix: an unsigned
+`requestSecurityException()` records who identified the need (`opened_by`), and a new, signed
+`approveSecurityException()` is checked for independence against that requester and moves the record from
+PENDING_APPROVAL to OPEN.
 """
 
 import uuid
@@ -77,10 +90,15 @@ async def _write_receipt(
 async def _resolve_signature(
     session: AsyncSession, *, record_type: str, action: str, actor_user_id: uuid.UUID,
     record_version: int, record_hash: str, challenge_id: uuid.UUID | None, reauth_password: str | None,
+    disqualified_subject_ids: tuple[uuid.UUID | None, ...] = (),
 ) -> uuid.UUID | None:
     policy = await signature_service.resolve_signature_requirement(session, record_type=record_type, action=action)
     if not policy.signature_required:
         return None
+    await signature_service.enforce_signer_policy(
+        session, policy=policy, actor_user_id=actor_user_id, site_id=None,
+        action_label=f"{record_type}.{action}", disqualified_subject_ids=disqualified_subject_ids,
+    )
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"{record_type} '{action}' requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)
@@ -95,6 +113,10 @@ async def _resolve_signature(
 
 def _threat_hash(threat: SecurityThreat) -> str:
     return sha256_hex({"id": str(threat.id), "version": threat.version, "state": threat.state})
+
+
+def _exception_hash(exception: SecurityException) -> str:
+    return sha256_hex({"id": str(exception.id), "version": exception.version, "state": exception.state})
 
 
 async def _get_threat_model_for_update(session: AsyncSession, tmv_id: uuid.UUID, expected_version: int) -> SecurityThreatModelVersion:
@@ -385,8 +407,9 @@ class AcceptResidualSecurityRiskCommand(CommandEnvelope):
 async def accept_residual_security_risk(
     session: AsyncSession, cmd: AcceptResidualSecurityRiskCommand, actor_user_id: uuid.UUID
 ) -> MutationReceipt:
-    """SG-161: no Document 106 row exists for `POST /security/v1/risks/{id}/accept` -- this always fails
-    closed with `SIGNATURE_POLICY_UNRESOLVED` in this baseline (see models.py module docstring)."""
+    """SG-161 RESOLVED_APPROVED 2026-09-14: "Security Risk Approver" signs, independent of whoever
+    calculated the residual risk being accepted (`residual_risk["calculated_by"]` -- SEC-THR-014's own
+    risk-scoring actor, already recorded; no new column needed)."""
     payload_hash = sha256_hex(cmd.model_dump(mode="json"))
     existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
     if existing is not None:
@@ -396,10 +419,12 @@ async def accept_residual_security_risk(
     if threat.residual_risk is None:
         raise SecurityRiskInputIncompleteError("Residual risk must be calculated before it can be accepted")
 
+    calculated_by = threat.residual_risk.get("calculated_by")
     signature_id = await _resolve_signature(
         session, record_type="security_threat", action="accept_risk", actor_user_id=actor_user_id,
         record_version=threat.version, record_hash=_threat_hash(threat), challenge_id=cmd.challenge_id,
         reauth_password=cmd.reauth_password,
+        disqualified_subject_ids=(uuid.UUID(calculated_by) if calculated_by else None,),
     )
 
     old_state = threat.state
@@ -427,23 +452,21 @@ async def accept_residual_security_risk(
 # ---------------------------------------------------------------------------------------------------
 
 
-class OpenSecurityExceptionCommand(CommandEnvelope):
+class RequestSecurityExceptionCommand(CommandEnvelope):
     control_or_requirement: str
     reason: str
     expiry: datetime
     risk_assessment_ref: dict | None = None
     compensating_controls: dict | None = None
     remediation_target: dict | None = None
-    challenge_id: uuid.UUID | None = None
-    reauth_password: str | None = None
 
 
-async def open_security_exception(
-    session: AsyncSession, cmd: OpenSecurityExceptionCommand, actor_user_id: uuid.UUID
+async def request_security_exception(
+    session: AsyncSession, cmd: RequestSecurityExceptionCommand, actor_user_id: uuid.UUID
 ) -> MutationReceipt:
-    """SG-161: Document 106 row 133 names meaning `Approved`/"Elevated authority defined by the record
-    class" for this endpoint but resolves to no actual role or dispatch table (same shape as SG-160's row
-    131) -- this always fails closed with `SIGNATURE_POLICY_UNRESOLVED` in this baseline."""
+    """SG-161 RESOLVED_APPROVED 2026-09-14: unsigned request half of the request/approve split
+    (`signature_required=False` for `security_exception.request`, same "deliberately no signature" data
+    pattern as SG-119). Records `opened_by` as the requester independence is later checked against."""
     payload_hash = sha256_hex(cmd.model_dump(mode="json"))
     existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
     if existing is not None:
@@ -452,17 +475,17 @@ async def open_security_exception(
     if cmd.expiry <= datetime.now(timezone.utc):
         raise ValidationFailedError("expiry must be in the future -- exceptions are time-bounded (SEC-THR-023)")
 
-    signature_id = await _resolve_signature(
-        session, record_type="security_exception", action="open", actor_user_id=actor_user_id, record_version=1,
-        record_hash=sha256_hex({"control_or_requirement": cmd.control_or_requirement, "opened_by": str(actor_user_id)}),
-        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+    await _resolve_signature(
+        session, record_type="security_exception", action="request", actor_user_id=actor_user_id, record_version=1,
+        record_hash=sha256_hex({"control_or_requirement": cmd.control_or_requirement}),
+        challenge_id=None, reauth_password=None,
     )
 
     exception = SecurityException(
         control_or_requirement=cmd.control_or_requirement, risk_assessment_ref=cmd.risk_assessment_ref,
         compensating_controls=cmd.compensating_controls, reason=cmd.reason, expiry=cmd.expiry,
-        remediation_target=cmd.remediation_target, approvers=[{"user_id": str(actor_user_id), "signature_id": str(signature_id) if signature_id else None}],
-        state="OPEN", signature_id=signature_id, opened_by=actor_user_id, version=1,
+        remediation_target=cmd.remediation_target, approvers=[],
+        state="PENDING_APPROVAL", opened_by=actor_user_id, version=1,
     )
     session.add(exception)
     await session.flush()
@@ -470,9 +493,56 @@ async def open_security_exception(
     return await _write_receipt(
         session, cmd=cmd, payload_hash=payload_hash, aggregate_type="security_exception",
         aggregate_id=exception.id, version=exception.version, action="Created", actor_user_id=actor_user_id,
-        reason=cmd.reason, old_state=None, event_type="SecurityExceptionOpened",
+        reason=cmd.reason, old_state=None, event_type="SecurityExceptionRequested",
         event_payload={"exception_id": str(exception.id), "control_or_requirement": exception.control_or_requirement},
-        expected_version=None, command_type="OpenSecurityException", signature_id=signature_id,
+        expected_version=None, command_type="RequestSecurityException",
+    )
+
+
+class ApproveSecurityExceptionCommand(CommandEnvelope):
+    expected_version: int
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+async def approve_security_exception(
+    session: AsyncSession, exception_id: uuid.UUID, cmd: ApproveSecurityExceptionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    """SG-161 RESOLVED_APPROVED 2026-09-14: "Security Risk Approver" signs, independent of whoever
+    requested the exception (`opened_by`) -- Document 106 row 133's "MUST be independent of the
+    requester", now checked, not merely stated."""
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    exception = await session.get(SecurityException, exception_id)
+    if exception is None:
+        raise NotFoundError("Security exception not found")
+    if exception.version != cmd.expected_version:
+        raise StaleVersionError("Security exception changed since this request was prepared", current_version=exception.version)
+    if exception.state != "PENDING_APPROVAL":
+        raise ValidationFailedError(f"Security exception is '{exception.state}', not PENDING_APPROVAL")
+
+    signature_id = await _resolve_signature(
+        session, record_type="security_exception", action="approve", actor_user_id=actor_user_id,
+        record_version=exception.version, record_hash=_exception_hash(exception), challenge_id=cmd.challenge_id,
+        reauth_password=cmd.reauth_password, disqualified_subject_ids=(exception.opened_by,),
+    )
+
+    old_state = exception.state
+    exception.approvers = [*exception.approvers, {"user_id": str(actor_user_id), "signature_id": str(signature_id) if signature_id else None}]
+    exception.state = "OPEN"
+    exception.signature_id = signature_id
+    exception.version += 1
+    await session.flush()
+
+    return await _write_receipt(
+        session, cmd=cmd, payload_hash=payload_hash, aggregate_type="security_exception",
+        aggregate_id=exception.id, version=exception.version, action="Approved", actor_user_id=actor_user_id,
+        reason=None, old_state=old_state, event_type="SecurityExceptionApproved",
+        event_payload={"exception_id": str(exception.id), "state": exception.state},
+        expected_version=cmd.expected_version, command_type="ApproveSecurityException", signature_id=signature_id,
     )
 
 

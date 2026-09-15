@@ -9,7 +9,15 @@ from collections import defaultdict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.batch_execution.models import Batch, BatchStep, StepHold, StepResult
+from app.modules.batch_execution.models import (
+    Batch,
+    BatchStep,
+    StepComment,
+    StepEvidenceLink,
+    StepHandover,
+    StepHold,
+    StepResult,
+)
 from app.modules.recipe_master import service as recipe_master_service
 from app.modules.recipe_master.models import RecipeStepDependency
 from app.mutation.errors import NotFoundError
@@ -89,6 +97,34 @@ async def get_step_results(session: AsyncSession, step_id: uuid.UUID) -> list[St
     )
 
 
+async def get_step_evidence_links(session: AsyncSession, step_id: uuid.UUID) -> list[StepEvidenceLink]:
+    return (
+        (
+            await session.execute(
+                select(StepEvidenceLink).where(StepEvidenceLink.step_id == step_id).order_by(StepEvidenceLink.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def get_step_comments(session: AsyncSession, step_id: uuid.UUID) -> list[StepComment]:
+    return (
+        (await session.execute(select(StepComment).where(StepComment.step_id == step_id).order_by(StepComment.created_at)))
+        .scalars()
+        .all()
+    )
+
+
+async def get_step_handovers(session: AsyncSession, step_id: uuid.UUID) -> list[StepHandover]:
+    return (
+        (await session.execute(select(StepHandover).where(StepHandover.step_id == step_id).order_by(StepHandover.created_at)))
+        .scalars()
+        .all()
+    )
+
+
 async def list_batches(session: AsyncSession, site_id: uuid.UUID, state: str | None = None) -> list[Batch]:
     """BAT-FR-035 (partial): the 'active batches + holds' slice of the production dashboard. Bottlenecks,
     overdue timers and operator-assignment analytics are not built -- they depend on capabilities SG-048
@@ -161,6 +197,32 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
         for h in hold_rows:
             active_hold_by_step_id[h.step_id] = h
 
+    comments_by_step_id: dict[uuid.UUID, list[StepComment]] = defaultdict(list)
+    handovers_by_step_id: dict[uuid.UUID, list[StepHandover]] = defaultdict(list)
+    if steps:
+        comment_rows = (
+            (
+                await session.execute(
+                    select(StepComment).where(StepComment.step_id.in_([s.id for s in steps])).order_by(StepComment.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for c in comment_rows:
+            comments_by_step_id[c.step_id].append(c)
+        handover_rows = (
+            (
+                await session.execute(
+                    select(StepHandover).where(StepHandover.step_id.in_([s.id for s in steps])).order_by(StepHandover.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for h in handover_rows:
+            handovers_by_step_id[h.step_id].append(h)
+
     return {
         "batch": batch,
         "steps": steps,
@@ -172,6 +234,8 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
         "successors_of": successors_of,
         "results_by_step_id": results_by_step_id,
         "active_hold_by_step_id": active_hold_by_step_id,
+        "comments_by_step_id": comments_by_step_id,
+        "handovers_by_step_id": handovers_by_step_id,
         "blockers": [
             {"step_id": str(s.id), "recipe_step_code": s.recipe_step_code, "reason": "predecessor not yet completed"}
             for s in steps

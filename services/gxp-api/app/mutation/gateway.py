@@ -3,6 +3,7 @@ outbox. Every regulated command handler calls these from *inside* the same DB tr
 write — see app/modules/batch/commands.py for the pattern in use.
 """
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -11,8 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.models import AuditEvent
 from app.modules.mutation.models import CommandReceipt, IdempotencyKey, OutboxEvent
+from app.mutation.audit_actions import KNOWN_AUDIT_ACTIONS
 from app.mutation.errors import IdempotencyConflictError
 from app.mutation.hashing import sha256_hex
+
+logger = logging.getLogger(__name__)
 
 
 async def check_idempotency(
@@ -48,6 +52,17 @@ async def write_audit_event(
     new_value: dict | None = None,
     signature_id: uuid.UUID | None = None,
 ) -> AuditEvent:
+    # SG-142 partial resolution (2026-09-14): warn-only, deliberately never rejects the write. Closing
+    # this to a hard-enforced enum immediately would risk a legitimate new action value being rejected
+    # the moment one is needed, which under MUT-FR-015 would roll back the domain mutation with it --
+    # phase 2 (closing the enum) is a separate, later decision. See app/mutation/audit_actions.py.
+    if action not in KNOWN_AUDIT_ACTIONS:
+        logger.warning(
+            "write_audit_event: action=%r is not in the known audit-action registry "
+            "(app/mutation/audit_actions.py) -- aggregate_type=%s aggregate_id=%s",
+            action, aggregate_type, aggregate_id,
+        )
+
     prev = await session.execute(
         select(AuditEvent.event_hash)
         .where(AuditEvent.aggregate_id == aggregate_id)

@@ -19,7 +19,7 @@ from app.modules.rules.commands import (
     simulate_rule,
     validate_rule,
 )
-from app.modules.rules.models import RuleDefinition
+from app.modules.rules.models import RuleDefinition, UnitOfMeasure, UomConversion
 from app.modules.rules.uom_commands import (
     CreateUomConversionDraftCommand,
     CreateUomDraftCommand,
@@ -225,6 +225,41 @@ async def post_release_uom(
         return await release_uom(session, cmd, actor.user_id)
 
 
+class UomReleaseChallengeRequest(BaseModel):
+    action: str = "release"
+
+
+@router.post("/uom/{uom_id}/signature-challenges")
+async def post_uom_release_signature_challenge(
+    uom_id: uuid.UUID,
+    body: UomReleaseChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Same shape as `post_rule_release_signature_challenge` above -- `release_uom()` was already coded
+    to consume a challenge (`_resolve_release_signature`), but no endpoint existed anywhere that could
+    ever issue one for `record_type="uom"`, so a draft UOM could never actually be released even once a
+    Document 106 policy row exists for it. Bound to the identical canonical hash `release_uom()`
+    recomputes at consume time."""
+    if body.action != "release":
+        raise ValidationFailedError("Unknown or unsigned action", action=body.action)
+    async with session.begin():
+        uom = await session.get(UnitOfMeasure, uom_id)
+        if uom is None:
+            raise NotFoundError("UOM not found")
+        policy = await resolve_signature_requirement(session, record_type="uom", action="release")
+        canonical = {
+            "code": uom.code, "dimension": uom.dimension, "base_unit": uom.base_unit,
+            "factor": str(uom.factor), "offset": str(uom.offset), "precision_dp": uom.precision_dp,
+            "version": uom.version,
+        }
+        challenge = await create_challenge(
+            session, user_id=actor.user_id, record_type="uom", record_id=uom.uom_id,
+            record_version=uom.version, record_hash=sha256_hex(canonical), meaning=policy.meaning,
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
+
+
 @router.get("/uom/{code}/versions")
 async def get_uom_versions(
     code: str,
@@ -259,3 +294,38 @@ async def post_release_uom_conversion(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="rules.release", site_id=None)
         return await release_uom_conversion(session, cmd, actor.user_id)
+
+
+class UomConversionReleaseChallengeRequest(BaseModel):
+    action: str = "release"
+
+
+@router.post("/uom-conversions/{conversion_id}/signature-challenges")
+async def post_uom_conversion_release_signature_challenge(
+    conversion_id: uuid.UUID,
+    body: UomConversionReleaseChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Same "mechanism exists, no endpoint could ever issue a challenge for it" gap as
+    `post_uom_release_signature_challenge` above, for `record_type="uom_conversion"`. Bound to the
+    identical canonical hash `release_uom_conversion()` recomputes at consume time -- note that hash
+    calls `.isoformat()` on `effective_from` unconditionally, so (pre-existing behaviour, not new here)
+    a conversion drafted without one can never actually be released."""
+    if body.action != "release":
+        raise ValidationFailedError("Unknown or unsigned action", action=body.action)
+    async with session.begin():
+        conversion = await session.get(UomConversion, conversion_id)
+        if conversion is None:
+            raise NotFoundError("UOM conversion not found")
+        policy = await resolve_signature_requirement(session, record_type="uom_conversion", action="release")
+        canonical = {
+            "from_code": conversion.from_code, "to_code": conversion.to_code, "factor": str(conversion.factor),
+            "rounding_stage": conversion.rounding_stage, "version": conversion.version,
+            "effective_from": conversion.effective_from.isoformat(),
+        }
+        challenge = await create_challenge(
+            session, user_id=actor.user_id, record_type="uom_conversion", record_id=conversion.conversion_id,
+            record_version=conversion.version, record_hash=sha256_hex(canonical), meaning=policy.meaning,
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}

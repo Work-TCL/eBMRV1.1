@@ -9,33 +9,42 @@ from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.batch_execution import service as batch_execution_service
 from app.modules.batch_execution.commands import (
+    AddStepCommentCommand,
+    ApproveStepResultCorrectionCommand,
     BatchTransitionCommand,
     CompleteStepCommand,
     CreateBatchCommand,
+    HandoverStepCommand,
     HoldStepCommand,
     IssueBatchCommand,
     ProductionCompleteBatchCommand,
     LinkStepEvidenceCommand,
     RecordStepResultsCommand,
+    RequestStepResultCorrectionCommand,
     ResumeStepCommand,
     StartStepCommand,
     _batch_record_hash,
     _step_record_hash,
+    _step_result_hash,
     abort_batch,
+    add_step_comment,
+    approve_step_result_correction,
     complete_step,
     create_batch,
+    handover_step,
     hold_batch,
     hold_step,
     issue_batch,
     production_complete_batch,
     link_step_evidence,
     record_step_results,
+    request_step_result_correction,
     resume_batch,
     resume_step,
     start_batch,
     start_step,
 )
-from app.modules.batch_execution.models import Batch, BatchStep
+from app.modules.batch_execution.models import Batch, BatchStep, StepResult
 from app.modules.iam.models import User
 from app.modules.policy.service import evaluate_policy
 from app.modules.product_master.models import ProductVersion
@@ -141,8 +150,11 @@ def _result_dict(r) -> dict:
         "value_text": r.value_text,
         "value_bool": r.value_bool,
         "uom": r.uom,
+        "source_type": r.source_type,
+        "quality_status": r.quality_status,
         "received_at": r.received_at.isoformat() if r.received_at else None,
         "signature_id": str(r.signature_id) if r.signature_id else None,
+        "supersedes_result_id": str(r.supersedes_result_id) if r.supersedes_result_id else None,
     }
 
 
@@ -395,6 +407,104 @@ async def post_resume_step(
         return await resume_step(session, cmd, actor.user_id)
 
 
+@router.post("/{batch_id}/steps/{step_id}/comments", response_model=MutationReceipt)
+async def post_add_step_comment(
+    batch_id: uuid.UUID,
+    step_id: uuid.UUID,
+    cmd: AddStepCommentCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.batch_id != batch_id or cmd.step_id != step_id:
+        raise ValidationFailedError("batch_id/step_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        return await add_step_comment(session, cmd, actor.user_id)
+
+
+@router.post("/{batch_id}/steps/{step_id}/handover", response_model=MutationReceipt)
+async def post_handover_step(
+    batch_id: uuid.UUID,
+    step_id: uuid.UUID,
+    cmd: HandoverStepCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.batch_id != batch_id or cmd.step_id != step_id:
+        raise ValidationFailedError("batch_id/step_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        return await handover_step(session, cmd, actor.user_id)
+
+
+class StepResultSignatureChallengeRequest(BaseModel):
+    action: str  # "correct_request" | "correct_approve" -- Document 106 row 20, both halves same meaning
+
+
+@router.post("/{batch_id}/steps/{step_id}/results/{result_id}/signature-challenges")
+async def post_step_result_signature_challenge(
+    batch_id: uuid.UUID,
+    step_id: uuid.UUID,
+    result_id: uuid.UUID,
+    body: StepResultSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """BAT-FR-023 (SG-048 #023). Same shape as qc's `/results/{id}/signature-challenges` (Document 106
+    row 57's identical 2-signature precedent): bound to the *step result's* own version/hash, not the
+    owning step's, and ungated by RBAC here -- `request_step_result_correction`/
+    `approve_step_result_correction` each enforce `batch_step.correct` themselves before consuming the
+    challenge, same division of responsibility qc.router's equivalent endpoint uses."""
+    if body.action not in ("correct_request", "correct_approve"):
+        raise ValidationFailedError("Unknown action", action=body.action)
+    async with session.begin():
+        step = await session.get(BatchStep, step_id)
+        if step is None or step.batch_id != batch_id:
+            raise NotFoundError("Batch step not found")
+        result = await session.get(StepResult, result_id)
+        if result is None or result.step_id != step.id:
+            raise NotFoundError("Step result not found")
+        challenge = await create_challenge(
+            session,
+            user_id=actor.user_id,
+            record_type="batch_step_result",
+            record_id=result.id,
+            record_version=result.result_version,
+            record_hash=_step_result_hash(result),
+            meaning="Approved",
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
+
+
+@router.post("/{batch_id}/steps/{step_id}/correct", response_model=MutationReceipt)
+async def post_request_step_result_correction(
+    batch_id: uuid.UUID,
+    step_id: uuid.UUID,
+    cmd: RequestStepResultCorrectionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.batch_id != batch_id or cmd.step_id != step_id:
+        raise ValidationFailedError("batch_id/step_id in path and body must match")
+    async with session.begin():
+        return await request_step_result_correction(session, cmd, actor.user_id)
+
+
+@router.post("/{batch_id}/steps/{step_id}/corrections/{correction_id}/approve", response_model=MutationReceipt)
+async def post_approve_step_result_correction(
+    batch_id: uuid.UUID,
+    step_id: uuid.UUID,
+    correction_id: uuid.UUID,
+    cmd: ApproveStepResultCorrectionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.correction_id != correction_id:
+        raise ValidationFailedError("correction_id in path and body must match")
+    async with session.begin():
+        return await approve_step_result_correction(session, cmd, actor.user_id)
+
+
 class BatchSignatureChallengeRequest(BaseModel):
     action: str  # "production_complete" -- Document 106 row 16 (batch/production-complete)
 
@@ -523,5 +633,27 @@ async def get_execution_view(
         "active_hold_by_step_id": {
             str(step_id): {"reason": h.reason, "held_at": h.held_at.isoformat() if h.held_at else None}
             for step_id, h in view["active_hold_by_step_id"].items()
+        },
+        # BAT-FR-034, SG-048 #034 partial resolution.
+        "comments_by_step_id": {
+            str(step_id): [
+                {"comment_id": str(c.id), "comment_text": c.comment_text, "created_by": str(c.created_by), "created_at": c.created_at.isoformat() if c.created_at else None}
+                for c in comments
+            ]
+            for step_id, comments in view["comments_by_step_id"].items()
+        },
+        # BAT-FR-025, SG-048 #025 partial resolution.
+        "handovers_by_step_id": {
+            str(step_id): [
+                {
+                    "handover_id": str(h.id),
+                    "from_subject_id": str(h.from_subject_id) if h.from_subject_id else None,
+                    "to_subject_id": str(h.to_subject_id),
+                    "reason": h.reason,
+                    "created_at": h.created_at.isoformat() if h.created_at else None,
+                }
+                for h in handovers
+            ]
+            for step_id, handovers in view["handovers_by_step_id"].items()
         },
     }

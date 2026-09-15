@@ -3,9 +3,10 @@
 
 `register` and `assess` are RBAC-gated only (no Document 106 row). `approve_vulnerability_exception()`
 is Part 11 signed per Document 106 row 141 -- but that row's role ("Elevated authority defined by the
-record class") is the same unresolvable shape as Document 61 row 133 (SG-161), so **no signature policy
-row is seeded and the call fails closed with SIGNATURE_POLICY_UNRESOLVED**, the exact precedent
-`open_security_exception()` set. See `docs/generated/18_SPEC_GAPS.md` SG-165.
+record class") is the same shape Document 61 row 133 used to be (SG-161, RESOLVED_APPROVED 2026-09-14 for
+row 133 specifically -- see `app/modules/security/models.py` and `commands.py` module docstrings). Row
+141 remains its own, separately-tracked gap: **no signature policy row is seeded and the call fails
+closed with SIGNATURE_POLICY_UNRESOLVED**. See `docs/generated/18_SPEC_GAPS.md` SG-165.
 """
 
 import uuid

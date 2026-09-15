@@ -10,8 +10,12 @@ itself states them as fixed numbers rather than external config.
 (PMO-FR-018: "Use Document 58 immutable interval/cutoff dataset") rather than re-implementing dataset
 freezing -- no second dataset-freezing mechanism is created.
 
-See obligation_models.py's module docstring for SG-160 (missing Document 106 signature resolutions,
-including the unimplementable 2-signature "corrector + independent approver" requirement).
+See obligation_models.py's module docstring for SG-160. The 2-signature "corrector + independent
+approver" ceremony (Document 106 rows 129/130) is now built (2026-09-14, project-owner-directed) --
+`_consume_chain_signature()` reuses `vault/commands.py::complete_correction()`'s own already-reviewed
+chain mechanism, correcting SG-160's original claim that no such mechanism existed. Row 131 (deadline
+override, "elevated authority defined by the record class") remains genuinely blocked -- no dispatch
+table exists to resolve that phrase into an actual role, and this pass does not invent one.
 """
 
 import uuid
@@ -311,9 +315,61 @@ class CreateCorrectionRemovalAssessmentCommand(CommandEnvelope):
     initiation_at: datetime
 
 
+def _field_action_reference_hash(field_action_reference: dict) -> str:
+    return sha256_hex({"field_action_reference": field_action_reference})
+
+
+async def _consume_chain_signature(
+    session: AsyncSession, *, record_type: str, record_id: uuid.UUID, content_hash: str,
+    action_label: str, actor_user_id: uuid.UUID, site_id: uuid.UUID | None,
+    challenge_id: uuid.UUID | None, reauth_password: str | None,
+) -> tuple[uuid.UUID | None, int, int]:
+    """SG-160 partial resolution (2026-09-14): the reusable half of Document 106 rows 129/130's
+    2-signature "Authorized corrector + independent approver" ceremony, mirroring
+    `vault/commands.py::complete_correction()`'s own already-reviewed chain-signature mechanism
+    (`enforce_chain_signer_policy()` + `chain_signatures_so_far()`, SG-035 pair 4) verbatim rather than
+    inventing a new one. Returns (signature_id, position, signature_count); the caller applies its own
+    domain effects only when `position == signature_count`."""
+    policy = await signature_service.resolve_signature_requirement(session, record_type=record_type, action="sign")
+    if not policy.signature_required:
+        return None, 1, 1
+    prior_signatures = await signature_service.chain_signatures_so_far(
+        session, record_type=record_type, record_id=record_id, record_version=1,
+    )
+    position = len(prior_signatures) + 1
+    if position > policy.signature_count:
+        raise ValidationFailedError(
+            f"{action_label} has already collected every required signature", signature_count=policy.signature_count,
+        )
+    if prior_signatures and content_hash != prior_signatures[0].record_hash:
+        raise ValidationFailedError(f"{action_label}: content must match what the earlier signer(s) approved")
+    await signature_service.enforce_chain_signer_policy(
+        session, policy=policy, position=position, actor_user_id=actor_user_id, site_id=site_id,
+        action_label=action_label, prior_signer_ids=[s.user_id for s in prior_signatures],
+    )
+    if challenge_id is None or not reauth_password:
+        raise MissingSignatureError(
+            f"{action_label}: signature {position} of {policy.signature_count} is required", required_meaning=policy.meaning,
+        )
+    actor = await session.get(User, actor_user_id)
+    if actor is None or not verify_password(reauth_password, actor.password_hash):
+        raise MissingSignatureError("Fresh step-up authentication failed")
+    challenge = await signature_service.consume_challenge(
+        session, challenge_id=challenge_id, user_id=actor_user_id, record_version=1, record_hash=content_hash,
+    )
+    signature = await signature_service.sign(session, challenge=challenge, auth_context={"method": "password_reauth"})
+    return signature.id, position, policy.signature_count
+
+
 async def create_correction_removal_assessment(
     session: AsyncSession, cmd: CreateCorrectionRemovalAssessmentCommand, actor_user_id: uuid.UUID
 ) -> MutationReceipt:
+    """Document 106 row 130 ("Authorized corrector + independent approver", count 2, reason mandatory).
+    Unsigned by itself -- matching `vault.request_correction()`'s own split, since a signature challenge
+    must be bound to an existing `record_id` (SIG-FR-005/010) and none exists before this call creates
+    one. `approve_correction_removal_assessment()`, resubmitted twice (positions 1 and 2, corrector then
+    independent approver), carries the actual 2-signature ceremony and is the only place either signature
+    is consumed. SG-160 partial resolution, 2026-09-14, project-owner-directed."""
     payload_hash = sha256_hex(cmd.model_dump(mode="json"))
     existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
     if existing is not None:
@@ -325,7 +381,7 @@ async def create_correction_removal_assessment(
     # PMO-FR-030: references the exact Document 36 field-action/scope snapshot, never duplicated.
     record = CorrectionRemovalRegulatoryRecord(
         site_id=cmd.site_id, field_action_reference=cmd.field_action_reference, initiation_at=cmd.initiation_at,
-        retention_class_code="RC-806", state="OPEN", version=1,
+        retention_class_code="RC-806", state="PENDING_ASSESSMENT_APPROVAL", version=1,
     )
     session.add(record)
     await session.flush()
@@ -333,9 +389,68 @@ async def create_correction_removal_assessment(
     return await _write_receipt(
         session, cmd=cmd, payload_hash=payload_hash, site_id=cmd.site_id, aggregate_type="correction_removal_regulatory_record",
         aggregate_id=record.id, version=record.version, action="Created", actor_user_id=actor_user_id,
-        reason=None, old_state=None, event_type="CorrectionRemovalAssessmentOpened",
+        reason=None, old_state=None, event_type="CorrectionRemovalAssessmentRequested",
         event_payload={"record_id": str(record.id)},
         expected_version=None, command_type="CreateCorrectionRemovalAssessment",
+    )
+
+
+class ApproveCorrectionRemovalAssessmentCommand(CommandEnvelope):
+    record_id: uuid.UUID
+    field_action_reference: dict
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+async def approve_correction_removal_assessment(
+    session: AsyncSession, cmd: ApproveCorrectionRemovalAssessmentCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    """Document 106 row 130, chain position 2+ (independent approver). Not itself a Document 60 §10
+    endpoint name -- same "add the obvious continuation endpoint Document 106 doesn't separately
+    enumerate" precedent already used twice this session (batch_step_result/correct,
+    qc_result/correct) and by `vault.request_correction`/`complete_correction` originally."""
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    record = await session.get(CorrectionRemovalRegulatoryRecord, cmd.record_id)
+    if record is None:
+        raise NotFoundError("Correction/removal regulatory record not found")
+    if record.state != "PENDING_ASSESSMENT_APPROVAL":
+        raise InvalidTransitionError(
+            "Assessment is not awaiting an additional signature", current_state=record.state,
+        )
+    if record.field_action_reference != cmd.field_action_reference:
+        raise ValidationFailedError("field_action_reference must match what the earlier signer(s) approved")
+
+    signature_id, position, signature_count = await _consume_chain_signature(
+        session, record_type="correction_removal_assessment", record_id=record.id,
+        content_hash=_field_action_reference_hash(cmd.field_action_reference),
+        action_label="correction_removal_assessment.create", actor_user_id=actor_user_id, site_id=record.site_id,
+        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+    )
+    record.assessment_approval_signatures = [*record.assessment_approval_signatures, str(signature_id)] if signature_id else record.assessment_approval_signatures
+
+    if position < signature_count:
+        return await _write_receipt(
+            session, cmd=cmd, payload_hash=payload_hash, site_id=record.site_id, aggregate_type="correction_removal_regulatory_record",
+            aggregate_id=record.id, version=record.version, action="Signed", actor_user_id=actor_user_id,
+            reason=None, old_state=None, event_type="CorrectionRemovalAssessmentSigned",
+            event_payload={"record_id": str(record.id), "chain_position": position, "signature_count": signature_count},
+            expected_version=None, command_type="ApproveCorrectionRemovalAssessment", signature_id=signature_id,
+        )
+
+    old_state = record.state
+    record.state = "OPEN"
+    record.version += 1
+    await session.flush()
+    return await _write_receipt(
+        session, cmd=cmd, payload_hash=payload_hash, site_id=record.site_id, aggregate_type="correction_removal_regulatory_record",
+        aggregate_id=record.id, version=record.version, action="Approved", actor_user_id=actor_user_id,
+        reason=None, old_state=old_state, event_type="CorrectionRemovalAssessmentOpened",
+        event_payload={"record_id": str(record.id)},
+        expected_version=None, command_type="ApproveCorrectionRemovalAssessment", signature_id=signature_id,
     )
 
 
@@ -350,9 +465,21 @@ class DecideCorrectionRemovalReportabilityCommand(CommandEnvelope):
     reauth_password: str | None = None
 
 
+def _decision_content_hash(cmd: "DecideCorrectionRemovalReportabilityCommand | ApproveCorrectionRemovalDecisionCommand") -> str:
+    return sha256_hex({
+        "reportable": cmd.reportable, "rationale": cmd.rationale,
+        "calendar_version": cmd.calendar_version, "required_facts": cmd.required_facts,
+    })
+
+
 async def decide_correction_removal_reportability(
     session: AsyncSession, cmd: DecideCorrectionRemovalReportabilityCommand, actor_user_id: uuid.UUID
 ) -> MutationReceipt:
+    """Document 106 row 129 ("Authorized corrector + independent approver", count 2, reason mandatory).
+    This first call consumes chain position 1 -- the decider is the "corrector" -- and stages the
+    decision content without applying it. `approve_correction_removal_decision()` must supply an
+    independent position-2 signature before due_at/regime/state are actually applied. SG-160 partial
+    resolution, 2026-09-14, project-owner-directed."""
     payload_hash = sha256_hex(cmd.model_dump(mode="json"))
     existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
     if existing is not None:
@@ -363,24 +490,114 @@ async def decide_correction_removal_reportability(
         raise NotFoundError("Correction/removal regulatory record not found")
     if record.version != cmd.expected_version:
         raise StaleVersionError("Record version changed since this request was prepared", current_version=record.version)
+    if record.state != "OPEN":
+        raise InvalidTransitionError(
+            "Reportability can only be decided once the assessment is fully approved", current_state=record.state,
+        )
+    if not cmd.rationale or not cmd.rationale.strip():
+        raise ValidationFailedError("rationale is required (Document 106 row 129, mandatory reason-for-change)")
 
-    # Document 106 row 129 names TWO signatures ("Authorized corrector + independent approver") -- no
-    # multi-signature ceremony mechanism exists anywhere in this codebase (SG-160). A single signature is
-    # resolved/enforced here; the independence/second-signer requirement is NOT enforced this pass.
-    signature_id = await _resolve_signature(
-        session, record_type="correction_removal_regulatory_record", action="decide", actor_user_id=actor_user_id,
-        record_version=record.version, record_hash=sha256_hex({"id": str(record.id), "version": record.version}),
+    signature_id, position, signature_count = await _consume_chain_signature(
+        session, record_type="correction_removal_regulatory_record", record_id=record.id,
+        content_hash=_decision_content_hash(cmd),
+        action_label="correction_removal_regulatory_record.decide", actor_user_id=actor_user_id, site_id=record.site_id,
         challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
     )
+    record.decision_approval_signatures = [*record.decision_approval_signatures, str(signature_id)] if signature_id else record.decision_approval_signatures
 
+    if position < signature_count:
+        old_state = record.state
+        record.state = "PENDING_DECISION_APPROVAL"
+        record.version += 1
+        await session.flush()
+        return await _write_receipt(
+            session, cmd=cmd, payload_hash=payload_hash, site_id=record.site_id, aggregate_type="correction_removal_regulatory_record",
+            aggregate_id=record.id, version=record.version, action="Signed", actor_user_id=actor_user_id,
+            reason=cmd.rationale, old_state=old_state, event_type="CorrectionRemovalReportabilitySigned",
+            event_payload={"record_id": str(record.id), "chain_position": position, "signature_count": signature_count},
+            expected_version=cmd.expected_version, command_type="DecideCorrectionRemovalReportability", signature_id=signature_id,
+        )
+
+    return await _apply_correction_removal_decision(
+        session, record=record, reportable=cmd.reportable, rationale=cmd.rationale, calendar_version=cmd.calendar_version,
+        required_facts=cmd.required_facts, actor_user_id=actor_user_id, signature_id=signature_id,
+        payload_hash=payload_hash, cmd=cmd, command_type="DecideCorrectionRemovalReportability",
+        expected_version=cmd.expected_version,
+    )
+
+
+class ApproveCorrectionRemovalDecisionCommand(CommandEnvelope):
+    record_id: uuid.UUID
+    expected_version: int
+    reportable: bool
+    rationale: str
+    calendar_version: str | None = None
+    required_facts: dict = {}
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+async def approve_correction_removal_decision(
+    session: AsyncSession, cmd: ApproveCorrectionRemovalDecisionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    """Document 106 row 129, chain position 2+ (independent approver). Same "obvious continuation
+    endpoint" precedent as `approve_correction_removal_assessment()` above."""
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    record = await session.get(CorrectionRemovalRegulatoryRecord, cmd.record_id)
+    if record is None:
+        raise NotFoundError("Correction/removal regulatory record not found")
+    if record.version != cmd.expected_version:
+        raise StaleVersionError("Record version changed since this request was prepared", current_version=record.version)
+    if record.state != "PENDING_DECISION_APPROVAL":
+        raise InvalidTransitionError(
+            "Decision is not awaiting an additional signature", current_state=record.state,
+        )
+
+    signature_id, position, signature_count = await _consume_chain_signature(
+        session, record_type="correction_removal_regulatory_record", record_id=record.id,
+        content_hash=_decision_content_hash(cmd),
+        action_label="correction_removal_regulatory_record.decide", actor_user_id=actor_user_id, site_id=record.site_id,
+        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+    )
+    record.decision_approval_signatures = [*record.decision_approval_signatures, str(signature_id)] if signature_id else record.decision_approval_signatures
+
+    if position < signature_count:
+        return await _write_receipt(
+            session, cmd=cmd, payload_hash=payload_hash, site_id=record.site_id, aggregate_type="correction_removal_regulatory_record",
+            aggregate_id=record.id, version=record.version, action="Signed", actor_user_id=actor_user_id,
+            reason=cmd.rationale, old_state=None, event_type="CorrectionRemovalReportabilitySigned",
+            event_payload={"record_id": str(record.id), "chain_position": position, "signature_count": signature_count},
+            expected_version=cmd.expected_version, command_type="ApproveCorrectionRemovalDecision", signature_id=signature_id,
+        )
+
+    return await _apply_correction_removal_decision(
+        session, record=record, reportable=cmd.reportable, rationale=cmd.rationale, calendar_version=cmd.calendar_version,
+        required_facts=cmd.required_facts, actor_user_id=actor_user_id, signature_id=signature_id,
+        payload_hash=payload_hash, cmd=cmd, command_type="ApproveCorrectionRemovalDecision",
+        expected_version=cmd.expected_version,
+    )
+
+
+async def _apply_correction_removal_decision(
+    session: AsyncSession, *, record: CorrectionRemovalRegulatoryRecord, reportable: bool, rationale: str,
+    calendar_version: str | None, required_facts: dict, actor_user_id: uuid.UUID, signature_id: uuid.UUID | None,
+    payload_hash: str, cmd: CommandEnvelope, command_type: str, expected_version: int,
+) -> MutationReceipt:
+    """The domain effect Document 106 row 129's signature actually governs -- applied exactly once, on
+    whichever call (first, if signature_count==1; last, once every chain position has signed) completes
+    the ceremony."""
     old_state = record.state
-    record.assessment_state = "REPORTABLE" if cmd.reportable else "NON_REPORTABLE"
-    record.regime = "PART_806_REPORT" if cmd.reportable else "PART_806_20_RECORD"
+    record.assessment_state = "REPORTABLE" if reportable else "NON_REPORTABLE"
+    record.regime = "PART_806_REPORT" if reportable else "PART_806_20_RECORD"
     record.decision_by = actor_user_id
     record.decision_signature_id = signature_id
-    record.required_facts = cmd.required_facts
-    if cmd.reportable:
-        record.calendar_version = cmd.calendar_version
+    record.required_facts = required_facts
+    if reportable:
+        record.calendar_version = calendar_version
         record.due_at = _add_work_days(record.initiation_at, CORRECTION_REMOVAL_WORKING_DAYS)
     record.state = "DECIDED"
     record.version += 1
@@ -389,9 +606,9 @@ async def decide_correction_removal_reportability(
     return await _write_receipt(
         session, cmd=cmd, payload_hash=payload_hash, site_id=record.site_id, aggregate_type="correction_removal_regulatory_record",
         aggregate_id=record.id, version=record.version, action="Changed", actor_user_id=actor_user_id,
-        reason=cmd.rationale, old_state=old_state, event_type="CorrectionRemovalReportabilityDecided",
-        event_payload={"record_id": str(record.id), "reportable": cmd.reportable},
-        expected_version=cmd.expected_version, command_type="DecideCorrectionRemovalReportability", signature_id=signature_id,
+        reason=rationale, old_state=old_state, event_type="CorrectionRemovalReportabilityDecided",
+        event_payload={"record_id": str(record.id), "reportable": reportable},
+        expected_version=expected_version, command_type=command_type, signature_id=signature_id,
     )
 
 

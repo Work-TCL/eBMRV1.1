@@ -360,9 +360,10 @@ paths:
         otherwise. The step must be `ready` — `INVALID_TRANSITION` otherwise; given the predecessor-only
         readiness slice this pass builds (BAT-FR-006), that means only a root step (no predecessor) can
         ever be started. Assigns the calling actor as `assigned_subject_id` and records `started_at`.
-        There is no step-completion endpoint in this contract — completion requires `gxp_step_result`
-        (SG-047), not built this pass.
-      x-requirement-ids: [BAT-FR-007, BAT-FR-008, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+        BAT-FR-014 (SG-048 #014): fails closed with `QUALIFICATION_MISSING`/`QUALIFICATION_EXPIRED` when
+        the step declares a `required_qualification_code` the actor does not currently hold (no override
+        path, unlike the role gate).
+      x-requirement-ids: [BAT-FR-007, BAT-FR-008, BAT-FR-014, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -374,7 +375,9 @@ paths:
           description: Started. `aggregate_id` is the `step_id`.
           content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
         '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
-        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '403':
+          description: FORBIDDEN — missing `batch_execution.execute`, STEP_ROLE_MISMATCH without a valid override, or QUALIFICATION_MISSING/QUALIFICATION_EXPIRED (BAT-FR-014).
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
         '404':
           description: NOT_FOUND — `batch_id` does not exist, or `step_id` does not exist or does not belong to `batch_id`.
           content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
@@ -502,13 +505,18 @@ paths:
     post:
       operationId: postCompleteStepV1
       tags: [batch_execution]
-      summary: Complete a step (BAT-FR-006 / SG-047; role gate SG-178)
+      summary: Complete a step (BAT-FR-006 / SG-047; role gate SG-178; evidence gate + qualification gate SG-048)
       description: >
         Requires `batch_execution.execute`. Fails closed with `STEP_ROLE_MISMATCH` unless the actor
         holds the step's `required_role_code` or supplies `override_reason` plus the
-        `batch_step.role_override` permission. Advances the dependency graph — a `pending` successor
-        becomes `ready` once every predecessor is `complete`.
-      x-requirement-ids: [BAT-FR-006, BAT-FR-007, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+        `batch_step.role_override` permission, and with `QUALIFICATION_MISSING`/`QUALIFICATION_EXPIRED`
+        (BAT-FR-014, SG-048 #014, no override path) if `required_qualification_code` is declared and not
+        currently held. Every required `gxp_recipe_parameter` needs a recorded result
+        (`PARAMETER_REQUIRED`) and every declared `gxp_recipe_evidence_requirement.required_count` needs
+        that many linked `gxp_step_evidence_link` rows (`VALIDATION_FAILED`, BAT-FR-015, SG-048 #015).
+        Advances the dependency graph — a `pending` successor becomes `ready` once every predecessor is
+        `complete`.
+      x-requirement-ids: [BAT-FR-006, BAT-FR-007, BAT-FR-014, BAT-FR-015, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -521,7 +529,7 @@ paths:
           content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
         '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
         '403':
-          description: FORBIDDEN — missing `batch_execution.execute`, or STEP_ROLE_MISMATCH without a valid override.
+          description: FORBIDDEN — missing `batch_execution.execute`, STEP_ROLE_MISMATCH without a valid override, or QUALIFICATION_MISSING/QUALIFICATION_EXPIRED (BAT-FR-014).
           content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
         '404':
           description: NOT_FOUND — `step_id` does not exist or does not belong to `batch_id`.
@@ -530,7 +538,10 @@ paths:
           description: INVALID_TRANSITION — the step is not in a completable state, or a stale-version conflict.
           content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
         '422':
-          description: VALIDATION_FAILED — `batch_id`/`step_id` in path and body do not match.
+          description: >
+            `batch_id`/`step_id` in path and body do not match, or `PARAMETER_REQUIRED` (a required
+            RecipeParameter has no recorded result), or `VALIDATION_FAILED` (BAT-FR-015, SG-048 #015 --
+            declared evidence requirements are not all linked; `details.missing_evidence_types` names them).
           content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
 
   /batches/v1/{batch_id}/steps/{step_id}/hold:
@@ -595,6 +606,186 @@ paths:
           content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
         '422':
           description: VALIDATION_FAILED — `batch_id`/`step_id` in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/v1/{batch_id}/steps/{step_id}/comments:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: step_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postAddStepComment
+      tags: [batch_execution]
+      summary: Add a structured comment to a step (BAT-FR-034, SG-048 #034)
+      description: >
+        Requires `batch_execution.execute`. Persists one append-only `gxp_step_comment` row. Unsigned by
+        design -- Document 106 has no policy row for a comment action (a capture, not a release/
+        disposition decision), same precedent as `postLinkStepEvidence`. Comment corrections are not
+        built -- no correction chain for a comment itself this pass (SG-048 #034 partial resolution).
+      x-requirement-ids: [BAT-FR-034, MUT-FR-005, MUT-FR-009, MUT-FR-010, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddStepCommentCommand' }
+      responses:
+        '200':
+          description: Added. `aggregate_id` is the `step_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `step_id` does not exist or does not belong to `batch_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: A stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — path/body ids mismatch, or `comment_text` is empty.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/v1/{batch_id}/steps/{step_id}/handover:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: step_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postHandoverStep
+      tags: [batch_execution]
+      summary: Hand over an in-progress step's working assignment (BAT-FR-025, SG-048 #025)
+      description: >
+        Requires `batch_execution.execute`. Records a `gxp_step_handover` row and moves
+        `assigned_subject_id` to `to_user_id`, without rewriting `started_at` or the original StepStarted
+        audit event. Unsigned by design, project-owner-directed interim scope -- Document 106 has no
+        policy row for this action; a real signature-policy decision is a human call this pass does not
+        make (SG-048 #025 partial resolution).
+      x-requirement-ids: [BAT-FR-025, MUT-FR-005, MUT-FR-009, MUT-FR-015, MUT-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HandoverStepCommand' }
+      responses:
+        '200':
+          description: Handed over. `aggregate_id` is the `step_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `step_id` does not exist or does not belong to `batch_id`, or `to_user_id` does not reference a known user.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: INVALID_TRANSITION — the step is not in_progress, or a stale-version conflict.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `batch_id`/`step_id` in path and body do not match.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/v1/{batch_id}/steps/{step_id}/results/{result_id}/signature-challenges:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: step_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: result_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postStepResultSignatureChallenge
+      tags: [batch_execution]
+      summary: Create the signature challenge for a step-result correction request/approve (BAT-FR-023, SG-048)
+      description: >
+        `action` is `correct_request` | `correct_approve` -- both select meaning `Approved` (Document 106
+        row 20). Bound to the *step result's* own version/hash, not the owning step's -- the two are
+        independent aggregates. Ungated by RBAC here; `postRequestStepResultCorrection`/
+        `postApproveStepResultCorrection` each enforce `batch_step.correct` before consuming the challenge.
+      x-requirement-ids: [SIG-FR-005, SIG-FR-010, BAT-FR-023]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StepResultSignatureChallengeRequest' }
+      responses:
+        '200':
+          description: Challenge created.
+          content: { application/json: { schema: { $ref: '#/components/schemas/SignatureChallengeResponse' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '404':
+          description: NOT_FOUND — `step_id` does not exist or does not belong to `batch_id`, or `result_id` does not belong to `step_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `action` is not one of correct_request/correct_approve.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/v1/{batch_id}/steps/{step_id}/correct:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: step_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postRequestStepResultCorrection
+      tags: [batch_execution]
+      summary: Request a correction to a completed step's recorded result (BAT-FR-023, SG-048)
+      description: >
+        Requires `batch_step.correct`. First half of the 2-signature ceremony Document 106 row 20 requires
+        ("Authorized corrector + independent approver", corrector and approver MUST differ, mandatory
+        reason). Only a result on a step already in state `complete` can be corrected. Creates a
+        `gxp_step_result_correction` row in status `requested`; the original `gxp_step_result` row is
+        never edited (AG-08) -- `postApproveStepResultCorrection` appends the corrected replacement.
+      x-requirement-ids: [BAT-FR-023, MUT-FR-005, MUT-FR-010, MUT-FR-011, MUT-FR-015, SIG-FR-005, SIG-FR-010, SIG-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequestStepResultCorrectionCommand' }
+      responses:
+        '200':
+          description: Requested. `aggregate_id` is the new `gxp_step_result_correction` id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `step_id` does not exist or does not belong to `batch_id`, or `result_id` does not belong to `step_id`.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: INVALID_TRANSITION — the step is not `complete`, or SIGNATURE_POLICY_UNRESOLVED.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — path/body ids mismatch, or `reason_text` is missing.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+
+  /batches/v1/{batch_id}/steps/{step_id}/corrections/{correction_id}/approve:
+    parameters:
+      - { name: batch_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: step_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: correction_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: postApproveStepResultCorrection
+      tags: [batch_execution]
+      summary: Approve a requested step-result correction (BAT-FR-023, SG-048)
+      description: >
+        Requires `batch_step.correct`. Second half of the 2-signature ceremony. Fails closed with
+        `INVALID_TRANSITION` if the approver is the same actor who requested the correction (SoD, Document
+        106 row 20's "corrector and approver MUST differ"). Appends a new `gxp_step_result` row
+        (`supersedes_result_id` set, `result_version` incremented) -- the original is never edited.
+      x-requirement-ids: [BAT-FR-023, MUT-FR-005, MUT-FR-010, MUT-FR-015, SIG-FR-005, SIG-FR-010, SIG-FR-018]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApproveStepResultCorrectionCommand' }
+      responses:
+        '200':
+          description: Approved. `aggregate_id` is the new, corrected `gxp_step_result` id.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/MutationReceipt' } } }
+        '401': { $ref: 'spec-gxp-001.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'spec-gxp-001.yaml#/components/responses/Forbidden' }
+        '404':
+          description: NOT_FOUND — `correction_id` does not exist.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '409':
+          description: INVALID_TRANSITION — the correction is not awaiting approval, the approver is not independent of the corrector, or SIGNATURE_POLICY_UNRESOLVED.
+          content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
+        '422':
+          description: VALIDATION_FAILED — `correction_id` in path and body do not match.
           content: { application/json: { schema: { $ref: 'spec-gxp-001.yaml#/components/schemas/ErrorResponse' } } }
 
   /batches/v1/{batch_id}/signature-challenges:
@@ -817,8 +1008,11 @@ components:
     StepResultInput:
       type: object
       additionalProperties: false
-      description: One parameter reading recorded by postRecordStepResults (SG-047).
-      x-requirement-ids: [BAT-FR-006, DATA-FR-019]
+      description: >
+        One parameter reading recorded by postRecordStepResults (SG-047). `quality_status`
+        ('in_range'/'out_of_range'/'not_evaluated', SG-048 #009) is server-computed from the recipe
+        parameter's own min_value/max_value and returned on read, never accepted on input.
+      x-requirement-ids: [BAT-FR-006, BAT-FR-009, BAT-FR-011, DATA-FR-019]
       required: [parameter_code]
       properties:
         parameter_code: { type: string }
@@ -826,6 +1020,7 @@ components:
         value_text: { type: [string, "null"] }
         value_bool: { type: [boolean, "null"] }
         uom: { type: [string, "null"] }
+        source_type: { type: string, enum: [manual, device_transcribed], default: manual, description: "SG-048 #011 -- both are human-entered; true automated device/edge ingestion is not built." }
         source_timestamp: { type: [string, "null"], format: date-time }
 
     RecordStepResultsCommand:
@@ -930,6 +1125,72 @@ components:
         idempotency_key: { type: string, maxLength: 200 }
         batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
         expected_version: { type: integer, minimum: 1 }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], description: Present only when a signature is required; never logged. }
+
+    AddStepCommentCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [BAT-FR-034, MUT-FR-005, MUT-FR-009]
+      required: [idempotency_key, batch_id, step_id, expected_version, comment_text]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        step_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        comment_text: { type: string, minLength: 1, maxLength: 2000 }
+
+    HandoverStepCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [BAT-FR-025, MUT-FR-005, MUT-FR-009]
+      required: [idempotency_key, batch_id, step_id, expected_version, to_user_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        step_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        expected_version: { type: integer, minimum: 1 }
+        to_user_id: { type: string, format: uuid }
+        reason: { type: [string, "null"], description: Optional; recorded on the audit event when supplied. }
+
+    StepResultSignatureChallengeRequest:
+      type: object
+      additionalProperties: false
+      description: Body of postStepResultSignatureChallenge.
+      x-requirement-ids: [SIG-FR-005, BAT-FR-023]
+      required: [action]
+      properties:
+        action: { type: string, enum: [correct_request, correct_approve] }
+
+    RequestStepResultCorrectionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [BAT-FR-023, MUT-FR-005, MUT-FR-010, MUT-FR-011]
+      required: [idempotency_key, batch_id, step_id, result_id, reason_text]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        batch_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        step_id: { type: string, format: uuid, description: Must equal the path parameter. }
+        result_id: { type: string, format: uuid, description: The gxp_step_result row being corrected. }
+        reason_text: { type: string, minLength: 1, description: Required (MUT-FR-011 / Document 106 row 20). }
+        corrected_value_numeric: { type: [string, "null"], description: Decimal string (Document 110 — never a binary float). }
+        corrected_value_text: { type: [string, "null"] }
+        corrected_value_bool: { type: [boolean, "null"] }
+        challenge_id: { type: [string, "null"], format: uuid }
+        reauth_password: { type: [string, "null"], description: Present only when a signature is required; never logged. }
+
+    ApproveStepResultCorrectionCommand:
+      type: object
+      additionalProperties: false
+      description: Closed command payload (MUT-FR-005 / Document 113 §3 F6).
+      x-requirement-ids: [BAT-FR-023, MUT-FR-005, MUT-FR-010, SIG-FR-018]
+      required: [idempotency_key, correction_id]
+      properties:
+        idempotency_key: { type: string, maxLength: 200 }
+        correction_id: { type: string, format: uuid, description: Must equal the path parameter. }
         challenge_id: { type: [string, "null"], format: uuid }
         reauth_password: { type: [string, "null"], description: Present only when a signature is required; never logged. }
 
