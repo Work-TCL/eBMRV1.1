@@ -26,7 +26,7 @@ permission લખતા પહેલા actual backend code અને frontend U
 13. [CAPA — Deviation પછીનું પગલું](#13-capa--deviation-પછીનું-પગલું)
 14. [QC Testing — Batch ના sample/result કેવી રીતે જોડાય](#14-qc-testing--batch-ના-sampleresult-કેવી-રીતે-જોડાય)
 15. [Cleaning Execution + Line Clearance — Batch શરૂ કરતાં પહેલાં](#15-cleaning-execution--line-clearance--batch-શરૂ-કરતાં-પહેલાં)
-16. [નવો Multi-step Recipe — `RCP-MJ-PFS-V1` v2 (2026-09-17)](#16-નવો-multi-step-recipe--rcp-mj-pfs-v1-v2-2026-09-17)
+16. [નવો Multi-step Recipe — `RCP-MJ-PFS-V1` v4, full execution worked example](#16-નવો-multi-step-recipe--rcp-mj-pfs-v1-v4-2026-09-17-released-full-execution-live-verified)
 17. [જાણીતી મર્યાદાઓ (honest gaps)](#17-જાણીતી-મર્યાદાઓ-honest-gaps)
 
 ---
@@ -207,6 +207,11 @@ sequence બતાવવા માટે છે, backend technically ફરજ�
 | View batch/steps | `batch_execution.view` | Admin, Supervisor, Operator, QA Reviewer, QA Releaser, QC Reviewer | ના |
 | QA Review | (training/qms review permission) | QA Reviewer | ✅ |
 | QA Release | (release permission) | QA Releaser (≠ Reviewer) | ✅ |
+
+**⚠️ "recipe એ declare કરેલો role" નો સાચો અર્થ:** ફક્ત Admin/Supervisor/Operator જ ખરેખર `batch_
+execution.execute` ધરાવે છે — recipe નો `required_role_code` બીજા કોઈ role (QC Reviewer/QA Reviewer/
+Sanitation Operator વગેરે) ને point કરે તો એ step **કોઈનાથી પણ ક્યારેય execute ના જ થઈ શકે** (Supervisor/
+Admin override સિવાય). પૂરી વિગત + real finding → §16.1.
 
 ---
 
@@ -401,15 +406,43 @@ cross-module link હજુ નથી, §17 જુઓ). Realistic sequence: `/li
 
 ---
 
-## 16. નવો Multi-step Recipe — `RCP-MJ-PFS-V1` v2 (2026-09-17)
+## 16. નવો Multi-step Recipe — `RCP-MJ-PFS-V1` v4 (2026-09-17, RELEASED, full execution live-verified)
 
 `MERIDIJECT-PFS` product ની `RCP-MJ-PFS-V1` recipe family નું **v1** ફક્ત 1 step (`FILL-01`) નું હતું —
 batch execution ના multi-step/dependency/parallel-testing flow ને પૂરેપૂરું demo/test કરવા માટે અપૂરતું.
-**v2 — RELEASED, 2026-09-17** (`process.engineer` → author → validate → submit; `qa.releaser` → signed
-release, author≠releaser SoD) — 6 section, 9 step, 9 dependency, 5 parameter, 3 material requirement, 6
-equipment requirement, 4 evidence requirement સાથે.
+**v4 — RELEASED** (`process.engineer` → author → validate → submit; `qa.releaser` → signed release,
+author≠releaser SoD) — 6 section, 9 step, 9 dependency, 5 parameter, 3 material requirement, 6 equipment
+requirement, 4 evidence requirement સાથે. **v2 (2026-09-17, ~10:15 UTC) અને v3 (~11:12 UTC) એ જ recipe ના
+પહેલા 2 attempt હતા — બંનેમાં role-assignment ભૂલ મળી (§16.1 જુઓ), v4 એ fix કરીને, **create → issue →
+start → બધા 9 step Complete → Production Complete → QA Review → Release — સંપૂર્ણ chain 1 જ વાર real
+API call દ્વારા ચલાવીને verify કરેલી છે (§16.5).**
 
-### 16.1 Dependency ગ્રાફ (1 નજરમાં)
+### 16.1 ⚠️ મહત્વનું finding — `required_role_code` ફક્ત એ role માટે જ કામ કરે જે પહેલેથી `batch_execution.execute` ધરાવે
+
+Recipe step પર `required_role_code` set કરવાથી **કોઈ પણ role ને batch step execute કરવાની સત્તા મળતી
+નથી** — એ ફક્ત **narrowing** છે. Actual gate 2-સ્તરનું છે (code: `batch_execution/commands.py::_enforce_
+step_role()`):
+
+1. પહેલા actor પાસે **`batch_execution.execute`** permission હોવું જ જોઈએ (base gate, બધા step માટે સમાન).
+2. પછી જ (જો હોય તો) step ના `required_role_code` સાથે actor નો role match ચેક થાય.
+
+**Live-verified (code: `scripts/seed.py::ROLE_PERMISSIONS`) — `batch_execution.execute` ફક્ત આ 3 role
+ધરાવે છે:** Admin, Supervisor, **Operator**. **QC Reviewer, QA Reviewer, Sanitation Operator — આમાંથી
+કોઈ પણ role `batch_execution.execute` ધરાવતો નથી** (ફક્ત `batch_execution.view`) — એટલે આ role નો કોઈ
+પણ user, `required_role_code` ભલે એ role ને point કરે, **Start/Record/Link/Complete કોઈ પણ generic
+batch step action call જ ના કરી શકે** — `403 ROLE_MISSING` (base gate પર જ block, step-level role ચેક
+સુધી પહોંચે એ પહેલાં).
+
+**Practical અસર:** `v2`/`v3` માં `LC-01`→Sanitation Operator, `TEST-CCI-01`/`TEST-VIS-01`→QC Reviewer,
+`HOLD-QA-01`→QA Reviewer રાખેલા — **બધા 4 step કાયમ માટે "stuck" રહી ગયા**, કોઈ પણ real user થી ક્યારેય
+Start ના જ થઈ શકે (Supervisor/Admin `override_reason` થી override કરે તો જ, જે routine flow નથી).
+**v4 માં બધા 9 step નો required role `Operator` છે** — QC/QA-conceptual step (`TEST-CCI-01` વગેરે) નું
+role-label ભલે "QC ચેક" સૂચવે, ખરેખર **Operator** user જ કરી શકે (procedural expectation — QC-trained
+operator હોવો જોઈએ — role enforcement નહીં). **આ platform-level gap છે** — QC Reviewer/QA Reviewer role
+ને `batch_execution.execute` આપવું (અથવા step-level role ને base-gate થી independent બનાવવું) એ regulated
+RBAC ની નવી decision છે, guess નથી કરવો — §17 માં નવો honest gap તરીકે નોંધ્યું છે.
+
+### 16.2 Dependency ગ્રાફ (1 નજરમાં)
 
 ```
 LC-01 → DISP-01 → FILL-01 → FILL-IPC-01 → ASSY-01 → ASSY-VER-01 ─┬→ TEST-CCI-01 ─┐
@@ -419,61 +452,108 @@ LC-01 → DISP-01 → FILL-01 → FILL-IPC-01 → ASSY-01 → ASSY-VER-01 ─┬
 `TEST-CCI-01`/`TEST-VIS-01` — બંને `ASSY-VER-01` complete થાય એટલે **સાથે** `ready` થાય (parallel).
 `HOLD-QA-01` — બંનેમાંથી **બંને** complete થાય પછી જ `ready` (2 predecessor).
 
-### 16.2 Step-by-step field detail
+### 16.3 Step-by-step field detail (v4 — actually executable)
 
 | Step code | Section | Step type | Role | Qualification | Critical | Parameter | Material req. | Equipment req. | Evidence |
 |---|---|---|---|---|---|---|---|---|---|
-| `LC-01` | Line Clearance | `equipment_check` | Sanitation Operator | — | ✅ | — | — | `FILLING_LINE` (cleaning+qualification current) | photo ×1 |
+| `LC-01` | Line Clearance | `equipment_check` | **Operator** | — | ✅ | — | — | `FILLING_LINE` (cleaning+qualification current) | photo ×1 |
 | `DISP-01` | Dispensing | `weigh` | Operator | ASEPTIC_GOWN_CERT_DEMO | ✅ | `DISP_WEIGHT_KG` decimal kg, target 12.500 (12.375–12.625) | Drug spec (`MATSPEC-MERIDIZ-BULK-DS-001`), 12.500 kg, partial_container | `DISPENSING_BALANCE` (calibration current) | — |
 | `FILL-01` | Aseptic Fill | `weigh` | Operator | ASEPTIC_GOWN_CERT_DEMO | ✅ | `FILL_WEIGHT_MG` decimal mg, target 1000 (950–1050), **rule: `FILL-VOLUME-TOLERANCE`** | Drug spec, 1.05 mL, full_container | `FILLING_LINE` | photo ×1 |
 | `FILL-IPC-01` | Aseptic Fill | `ipc_qc` | Operator | ASEPTIC_GOWN_CERT_DEMO | ✅ | `IPC_FILL_WEIGHT_MG` decimal mg, target 1000 (950–1050), **rule: `FILL-VOLUME-TOLERANCE`** | — | — | photo ×1 |
 | `ASSY-01` | Device Assembly | `assembly` | Operator | ASEPTIC_GOWN_CERT_DEMO | ✅ | — | Device spec (`MATSPEC-SYR-1ML-BARREL-001`), 1 EA, full_container | `ASSEMBLY_STATION` (qualification current) | photo ×1 |
 | `ASSY-VER-01` | Device Assembly | `verification` | Operator | ASEPTIC_GOWN_CERT_DEMO | ✅ | — | — | — | — |
-| `TEST-CCI-01` | In-Process Testing | `test` | QC Reviewer | — | ✅ | `CCI_LEAK_TEST_PASS` boolean | — | `CCI_TESTER` (calibration current) | — |
-| `TEST-VIS-01` | In-Process Testing | `test` | QC Reviewer | — | ✅ | `VISUAL_INSPECTION_PASS` boolean | — | `VISUAL_INSPECTION_STATION` | — |
-| `HOLD-QA-01` | QA Hold | `hold_point` | QA Reviewer | — | ✅ | — | — | — | — |
+| `TEST-CCI-01` | In-Process Testing | `test` | **Operator** *(QC ચેક, §16.1 જુઓ)* | — | ✅ | `CCI_LEAK_TEST_PASS` boolean | — | `CCI_TESTER` (calibration current) | — |
+| `TEST-VIS-01` | In-Process Testing | `test` | **Operator** *(QC ચેક)* | — | ✅ | `VISUAL_INSPECTION_PASS` boolean | — | `VISUAL_INSPECTION_STATION` | — |
+| `HOLD-QA-01` | QA Hold | `hold_point` | **Operator** *(QA checkpoint)* | — | ✅ | — | — | — | — |
 
-*(બધા value/rule code real, live DB માં ચેક કરેલા — `FILL-VOLUME-TOLERANCE` rule (tolerance type,
-v1.0.1) પહેલેથી RELEASED છે, અગાઉના doc નો honest gap ("real rule બનાવવો પડશે") હવે બંધ.)*
+*(rule code real, live DB માં ચેક કરેલું — `FILL-VOLUME-TOLERANCE` rule, tolerance type, v1.0.1,
+RELEASED — અગાઉના doc નો honest gap "real rule બનાવવો પડશે" હવે બંધ.)*
 
-### 16.3 આ recipe થી નવો batch કેવી રીતે બનાવવો
+### 16.4 ⚠️ Honest નોંધ — acceptance rule automatic evaluate નથી થતો
 
-1. `supervisor1`/Admin → `/batch-execution` → "New batch" → Product `MJ-PFS-40MG` (business ID
-   `MERIDIJECT-PFS`) v1 (RELEASED) → Recipe `RCP-MJ-PFS-V1` **v2** (dropdown, released first — v1 હજુ પણ
-   list માં દેખાશે, જૂના batch ને અસર નથી, v2 પસંદ કરવું ફરજિયાત multi-step માટે) → નવો Batch number
-   → Target qty/UOM → **Create** → **Issue** → **Start**.
-2. `LC-01` `ready` થશે (0 predecessor) — Sanitation Operator Start→Complete કરે.
-3. ક્રમશઃ `DISP-01` → `FILL-01` → `FILL-IPC-01` → `ASSY-01` → `ASSY-VER-01` — દરેક Operator (ASEPTIC_GOWN
-   qualification સાથે), §6 ના જ Record results/Link evidence/Complete pattern.
-4. `ASSY-VER-01` complete થતાં જ `TEST-CCI-01` **અને** `TEST-VIS-01` બંને `ready` — `qc.reviewer` બંને
-   independently Start→Complete કરે (કોઈ ક્રમ ફરજિયાત નથી, બંને parallel).
-5. બંને complete થાય પછી `HOLD-QA-01` `ready` — `qa.reviewer` Complete કરે.
-6. બધા 9 step complete → **Production Complete** (§7) → **QA Review + Release** (§8).
+`FILL-01`/`FILL-IPC-01` નો acceptance rule (`FILL-VOLUME-TOLERANCE`) parameter સાથે જોડાયેલો છે, પણ rule
+evaluation ખરેખર `rules.evaluate` action દ્વારા **અલગથી invoke કરવો પડે** — `Record results`/`Complete`
+બટન rule ને automatically evaluate નથી કરતું (rule_id ફક્ત metadata તરીકે parameter સાથે સંગ્રહાય છે,
+batch_execution module rule engine ને call નથી કરતું — §17 માં આ ને honest gap તરીકે નોંધ્યું છે).
 
-**⚠️ Honest નોંધ:** `FILL-01`/`FILL-IPC-01` નો acceptance rule (`FILL-VOLUME-TOLERANCE`) parameter સાથે
-જોડાયેલો છે, પણ rule evaluation ખરેખર `rules.evaluate` action દ્વારા **અલગથી invoke કરવો પડે** —
-`Record results`/`Complete` બટન rule ને automatically evaluate નથી કરતું (rule_id ફક્ત metadata તરીકે
-parameter સાથે સંગ્રહાય છે, batch_execution module rule engine ને call નથી કરતું — §17 માં આ ને નવો honest
-gap તરીકે નોંધ્યું છે, guess નથી કરવો પડે એટલે).
+---
 
-### 16.4 ✅ Live-verified, 2026-09-17 — real test batch આ recipe થી બનાવેલો, DB માં હાજર
+### 16.5 ✅ Full worked example — real data, batch RELEASED (2026-09-17, live-verified)
 
-ઉપરનું આખું flow (§16.3 ના પગલાં 1) code-verify કરવા real API call દ્વારા ચલાવ્યું છે — `supervisor1` →
-Create → Issue → Start:
+આખી chain — Create → Issue → Start → 9 step Complete → Production Complete → QA Review → Release — **1
+જ વાર real API call દ્વારા ચલાવીને, દરેક પગલે actual response capture કરીને** verify કરી છે. નીચેની
+બધી value ખરેખર વપરાયેલી છે (guess/example નથી):
+
+#### 16.5.1 Batch — Create/Issue/Start
 
 | Field | Value |
 |---|---|
-| Batch number | `MJ-PFS-B-2801-SMOKE` |
-| Batch ID (UUID) | `cc8c00d8-db80-4760-b60f-637fb3536aad` |
-| Product/Recipe | `MJ-PFS-40MG` v1 / `RCP-MJ-PFS-V1` **v2** |
-| Target qty | `4000 EA` |
-| State | `in_execution` |
+| Batch number | `MJ-PFS-B-2803` |
+| Batch ID (UUID) | `f8ca0896-9bf1-47bf-a0b4-a79a5d25eb00` |
+| Product | `MJ-PFS-40MG` v1 (`MERIDIJECT-PFS`, RELEASED) |
+| Recipe | `RCP-MJ-PFS-V1` **v4** (RELEASED) |
+| Target qty / UOM | `4000` / `EA` |
+| Production order ref | `PO-2026-9003` |
+| Created/Issued/Started by | `supervisor1` (Admin token પણ ચાલે — `batch_execution.create`/`.issue`/`.execute`) |
 
-**Confirmed live (`GET /batches/v1/{id}/execution-view`):** `LC-01` = `ready`, બાકીના 8 step (`DISP-01`,
-`FILL-01`, `FILL-IPC-01`, `ASSY-01`, `ASSY-VER-01`, `TEST-CCI-01`, `TEST-VIS-01`, `HOLD-QA-01`) = `pending`
-— dependency ગ્રાફ (§16.1) બરાબર design પ્રમાણે જ કામ કરે છે. **આ batch client/tester માટે DB માં
-છોડેલો છે** — §16.3 ના પગલાં 2 થી આગળ (LC-01 Start/Complete) **અહીંથી જ ચાલુ રાખી શકાય**, ફરી Create
-કરવાની જરૂર નથી.
+#### 16.5.2 Step-by-step — actual executed values
+
+| Step | Executed by | Action | Real data વપરાયેલો |
+|---|---|---|---|
+| `LC-01` | `operator1` | Start → Link evidence → Complete | Evidence: `image/jpeg`, requirement_code `photo`, evidence object staged+finalized by `qa.reviewer` (owner_type `batch_step`, owner_id = આ step) |
+| `DISP-01` | `operator1` | Start → Record results → Complete | `DISP_WEIGHT_KG` = **12.510** (target 12.500, range 12.375–12.625 — in range) |
+| `FILL-01` | `operator1` | Start → Record results → Link evidence → Complete | `FILL_WEIGHT_MG` = **1002** (target 1000, range 950–1050 — in range); evidence photo |
+| `FILL-IPC-01` | `operator1` | Start → Record results → Link evidence → Complete | `IPC_FILL_WEIGHT_MG` = **998** (in range); evidence photo |
+| `ASSY-01` | `operator1` | Start → Link evidence → Complete | Evidence photo (assembled unit) |
+| `ASSY-VER-01` | `operator1` | Start → Complete | કોઈ parameter/evidence નથી |
+| `TEST-CCI-01` | `operator1` | Start → Record results → Complete | `CCI_LEAK_TEST_PASS` = **true** |
+| `TEST-VIS-01` | `operator1` | Start → Record results → Complete | `VISUAL_INSPECTION_PASS` = **true** |
+| `HOLD-QA-01` | `operator1` | Start → Complete | કોઈ parameter/evidence નથી |
+
+*(દરેક Record results/Complete/Link evidence call પોતાનો challenge_id + `reauth_password=ChangeMe123!`
+લઈને real signature ceremony તરીકે ચાલ્યો — 8 signed action (Complete ×9 − ASSY-VER-01/HOLD-QA-01 ના
+`Performed` signature સહિત, Record results ×5) generate થયા.)*
+
+#### 16.5.3 Production Complete
+
+| Field | Value |
+|---|---|
+| Actor | `operator1` (`batch_execution.execute`) |
+| Signature meaning | `Performed` |
+| Result | `resulting_version: 4`, `signature_id` present — batch state `production_complete` |
+
+#### 16.5.4 QA Review
+
+| Field | Value |
+|---|---|
+| Endpoint | `POST /qa-review/v1/batches/{batch_id}/packages` → `.../packages/{id}/complete` |
+| Actor | `qa.reviewer` (`qa_review.create`/`.execute`) |
+| Package ID | `053f4d71-1c19-459e-9094-436339f1685f` |
+| Signature meaning | `Reviewed` |
+
+#### 16.5.5 Release
+
+| Field | Value |
+|---|---|
+| Evaluate | `POST /release/v1/scopes/batch/{batch_id}/evaluate` — `qa.reviewer` (`release.evaluate`) |
+| Eligibility result | `state: "eligible"`, `blockers: []`, `warnings: []` |
+| Release scope ID | `40dcddcc-6405-419b-9af0-762fa4e246e4` |
+| Release actor | `qa.releaser` (`release.release`, **independent of `qa.reviewer`** — SoD) |
+| Reason | `"All 9 recipe steps complete, QA review complete, no open deviations"` |
+| Signature meaning | `Released` |
+| **Final result** | **Batch `MJ-PFS-B-2803` — fully RELEASED**, `released_vault_object_id` set |
+
+**⚠️ Honest નોંધ (matches §8):** Release eligibility એ ફક્ત QA review completeness + Vault snapshot
+integrity ચેક કરે છે — batch ની `production_complete` state કે DDCP execution/readiness (§10) એ સીધું
+નથી જોતું. આ batch ના કિસ્સામાં production_complete પણ થયેલું જ હતું (realistic sequence follow કરેલો),
+પણ backend ટેકનિકલ રીતે એ ફરજિયાત નથી કરતું.
+
+**નિષ્કર્ષ — client/tester માટે:** `MJ-PFS-B-2803` હવે DB માં **સંપૂર્ણપણે RELEASED batch** તરીકે હાજર
+છે — genealogy/audit/vault બધું real. **નવો multi-step batch જાતે try કરવા** §16.3 ના field detail
+પ્રમાણે **નવો batch Create કરો** (existing v4 recipe વાપરીને) — જૂના `MJ-PFS-B-2801-SMOKE` (v2,
+`cc8c00d8-db80-4760-b60f-637fb3536aad`) અને `MJ-PFS-B-2802` (v3, `8e2a200a-353b-4f1f-9704-b1f68c4f7520`)
+batch ના `LC-01`/`TEST-*`/`HOLD-QA-01` step કાયમ `pending`/stuck રહેશે (§16.1 ના role bug ને લીધે) —
+**એ 2 batch ignore કરવા**, ફક્ત reference/history માટે રાખેલા છે.
 
 ---
 
@@ -488,8 +568,9 @@ Create → Issue → Start:
 | Step correction/rework | હજુ open — Complete થયેલો step પછી ભૂલ સુધારવાનો controlled flow નથી (regulated correction/audit semantics ની decision જરૂરી, SG-048 #023/#024) |
 | Timer/duration enforcement | હજુ open — Hold-time limit આપોઆપ ચેક નથી થતું (Temporal integration જરૂરી, આ platform માં હજુ નથી) |
 | `/batch-execution` ↔ `/ddcp` auto-sync | હજુ open (ઉપર §10 જુઓ) — ફક્ત read-only "sync status" view. Auto-complete કરવું એ regulated signature/authority ની નવી decision માંગે છે (SG-180), guess નથી કરવો |
-| Parameter `rule_id` નું automatic evaluation | **નવું finding, 2026-09-17 (code-verified, `batch_execution/commands.py` — grep 0 match `rules_service.evaluate_rule`)** — Recipe parameter (§16.2 ના `FILL_WEIGHT_MG`/`IPC_FILL_WEIGHT_MG`) પર `rule_id` set કરી શકાય છે, પણ Record results/Complete એ rule ને actually evaluate **નથી** કરતું — ફક્ત parameter ના પોતાના `min_value`/`max_value` સામે check થાય છે (§6.5). Rule evaluation ફક્ત `/rules` પેજ પર manually (`rules.evaluate`) અથવા DDCP module ના પોતાના rule-evaluated ops (`DDCP_Client_Demo_Guide_Gujarati.md` §21.3.3) દ્વારા થાય છે. Batch execution ને rule engine સાથે જોડવું એ regulated acceptance-logic ની નવી decision છે — guess નથી કરવો, નવો SPEC_GAP તરીકે યોગ્ય |
+| Parameter `rule_id` નું automatic evaluation | **નવું finding, 2026-09-17 (code-verified, `batch_execution/commands.py` — grep 0 match `rules_service.evaluate_rule`)** — Recipe parameter (§16.3 ના `FILL_WEIGHT_MG`/`IPC_FILL_WEIGHT_MG`) પર `rule_id` set કરી શકાય છે, પણ Record results/Complete એ rule ને actually evaluate **નથી** કરતું — ફક્ત parameter ના પોતાના `min_value`/`max_value` સામે check થાય છે (§6.5). Rule evaluation ફક્ત `/rules` પેજ પર manually (`rules.evaluate`) અથવા DDCP module ના પોતાના rule-evaluated ops (`DDCP_Client_Demo_Guide_Gujarati.md` §21.3.3) દ્વારા થાય છે. Batch execution ને rule engine સાથે જોડવું એ regulated acceptance-logic ની નવી decision છે — guess નથી કરવો, નવો SPEC_GAP તરીકે યોગ્ય |
 | `LC-01` (recipe step) ↔ `/line-clearance` (real attestation) | Batch execution નો `LC-01` step અને `/line-clearance` નું real pass/fail attestation record — **2 અલગ, જોડાયેલા નથી** records (§15 જુઓ). `LC-01` Complete કરવાથી `/line-clearance` નો કોઈ record આપોઆપ નથી બનતો, અને ઊલટું — બંને manually જ ચલાવવા પડે, ફક્ત `batch_id` common context છે (SG-180 ના જ class નું finding, DDCP execution vs batch execution ની જેમ) |
+| `required_role_code` ને non-execute role point કરવો | **નવું, મહત્વનું finding, 2026-09-17 (code-verified — §16.1 માં પૂરી વિગત)** — QC Reviewer/QA Reviewer/Sanitation Operator (અને `batch_execution.execute` ના ધરાવતો કોઈ પણ role) ને recipe step નો `required_role_code` બનાવવાથી એ step **કાયમ માટે execute ના જ થઈ શકે** તેવો — base permission gate (`batch_execution.execute`) role-check પહેલાં જ 403 આપે. Recipe author ને UI માં કોઈ warning નથી મળતું (કોઈ પણ role name ટાઈપ/પસંદ કરી શકાય, ભલે એ role batch execute ના કરી શકે). `RCP-MJ-PFS-V1` ના v2/v3 attempt આ જ ભૂલ સાથે release થયા હતા (§16 ની શરૂઆતની નોંધ) — v4 એ fix કર્યું. **Fix વિકલ્પો (project-owner decision જરૂરી, guess નથી કરવો):** (a) QC Reviewer/QA Reviewer ને `batch_execution.execute` આપવું (broader scope change), (b) Recipe Master ના "Required role" picker ને ફક્ત `batch_execution.execute`-ધારક roles સુધી મર્યાદિત કરવું (UI-level guard), (c) જેમ છે એમ રાખવું, દસ્તાવેજીકરણ સાથે |
 
 **વધુ detail/history માટે:** `docs/generated/18_SPEC_GAPS.md` (SG-045, SG-047, SG-048, SG-056,
 SG-180) અને `DDCP_Client_Demo_Guide_Gujarati.md` §11-12.

@@ -106,7 +106,7 @@ main guide માં diagram). **Readiness rule (BAT-FR-006):** predecessor-free
 
 | Field | Source entity | Type |
 |---|---|---|
-| `step_type` | `RecipeStep.step_type` | enum (16 value — §16.2 ના `weigh`/`assembly`/`test`/વગેરે) |
+| `step_type` | `RecipeStep.step_type` | enum (16 value — Batch_Create_Execution_Process_Guide_Gujarati.md §16.3 ના `weigh`/`assembly`/`test`/વગેરે) |
 | `instruction_text` | `RecipeStep.instruction_text` | text |
 | `is_critical` | `RecipeStep.is_critical` | boolean |
 | `sequence_hint` | `RecipeStep.sequence_hint` | int |
@@ -183,10 +183,19 @@ code`, `data_type` (decimal/integer/text/boolean), `uom`, `target_value`/`min_va
 | `GET /{id}` (Detail) | `batch_execution.view` | ઉપર મુજબ |
 | `GET /{id}/execution-view` | `batch_execution.view` | ઉપર મુજબ |
 
-**Step-level override:** `required_role_code` set હોય (§16.2 ના recipe ના દરેક step એ set કરેલો છે) તો
-Operator/QC Reviewer/QA Reviewer સિવાયનો actor Start/Complete/Record કરવાનો પ્રયત્ન કરે → `STEP_ROLE_
-MISMATCH` (403), Supervisor/Admin `override_reason` આપીને જ proceed કરી શકે (documented override,
-audit trail માં reason જાય).
+**⚠️ Step-level role — 2-સ્તરનું gate, ગૂંચવાવ નહીં (code-verified, `_enforce_step_role()`):**
+1. પહેલા actor પાસે **`batch_execution.execute`** હોવું જ જોઈએ — આ ફક્ત **Admin/Supervisor/Operator**
+   ધરાવે છે. QC Reviewer/QA Reviewer/Sanitation Operator (કે બીજો કોઈ પણ role) **ધરાવતા નથી** — આ
+   role નો actor કોઈ પણ step action call કરે તો **base gate પર જ** `403 ROLE_MISSING` આવે, step ના
+   `required_role_code` સુધી પહોંચ્યા વગર.
+2. Base gate pass થાય પછી જ `required_role_code` (set હોય તો) સામે ચેક થાય — match ના થાય તો
+   `STEP_ROLE_MISMATCH` (403), Supervisor/Admin `override_reason` આપીને જ proceed કરી શકે.
+
+**વ્યવહારુ અસર:** Recipe author કોઈ પણ role name `required_role_code` તરીકે પસંદ/ટાઈપ કરી શકે (UI કોઈ
+warning નથી આપતું) — પણ Admin/Supervisor/Operator સિવાયનો role point કરે તો એ step **કાયમ માટે execute
+ના જ થઈ શકે** (override સિવાય). પૂરી વિગત + real finding →
+`Batch_Create_Execution_Process_Guide_Gujarati.md` §16.1 (`RCP-MJ-PFS-V1` v2/v3 આ જ ભૂલ સાથે બન્યા
+હતા, v4 એ fix કર્યું — §16.3 નું field table).
 
 ---
 
