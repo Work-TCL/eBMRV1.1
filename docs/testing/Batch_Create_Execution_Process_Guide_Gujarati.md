@@ -490,7 +490,22 @@ value real/tested છે (તમે same recipe ના parameter range સામ
 number તમારો પોતાનો નવો રાખો** (દા.ત. `MJ-PFS-B-2900` — `MJ-PFS-B-2803` નામ પહેલેથી બીજા code-testing
 pass માં વપરાઈ ચૂક્યું છે, ફરી ના વાપરવું, unique constraint error આવશે).
 
+**કોણ શું કરે — 1 નજરમાં (login username, demo password બધા માટે `ChangeMe123!`):**
+
+| # | પગલું | Login કરવો | Role | Page |
+|---|---|---|---|---|
+| 1 | Create batch | `supervisor1` | Supervisor | `/batch-execution` |
+| 2 | Issue batch | `supervisor1` (એ જ session) | Supervisor | `/batch-execution` |
+| 3 | Start batch | `operator1` (અથવા `supervisor1` — બંને `batch_execution.execute` ધરાવે) | Operator | `/batch-execution` |
+| 4 | બધા 9 step — Start/Record results/Link evidence/Complete | `operator1` | Operator *(§16.1 ના finding પ્રમાણે — QC/QA role થી ના જ થાય)* | `/batch-execution` |
+| 5 | Evidence stage/finalize (Platform ops) | `qa.reviewer` (**`operator1` થી નથી થતું — Operator role `evidence.upload` ધરાવતો નથી, ફક્ત Admin/QA Reviewer ધરાવે છે**) | QA Reviewer | Platform ops → Evidence operations |
+| 6 | Production Complete | `operator1` | Operator | `/batch-execution` |
+| 7 | QA Review (create package + Complete review) | `qa.reviewer` | QA Reviewer | `/qa-review` |
+| 8 | Release (Evaluate + Release) | `qa.releaser` (**qa.reviewer થી અલગ user ફરજિયાત — SoD**) | QA Releaser | `/release` |
+
 #### 16.5.1 `/batch-execution` → "New batch" — શું ભરવું
+
+**કોણ:** `supervisor1` login કરો (Admin થી પણ ચાલે, પણ realistic role demo માટે `supervisor1` વાપરો).
 
 | Field | શું પસંદ/ટાઈપ કરવું |
 |---|---|
@@ -501,13 +516,17 @@ pass માં વપરાઈ ચૂક્યું છે, ફરી ના �
 | Target UOM | `EA` |
 | Production order ref (optional) | `PO-2026-9010` (અથવા તમારો પોતાનો) |
 
-→ **Create** → batch detail ખૂલશે → **Issue** બટન → **Start** બટન (§3-§5 ના જ pattern).
+→ **Create** → batch detail ખૂલશે → **Issue** બટન (એ જ `supervisor1` session) → **Start** બટન (`operator1`
+થી — logout/login કરીને, અથવા `supervisor1` થી પણ ચાલે, §3-§5 ના જ pattern).
 
 #### 16.5.2 Step-by-step — Record results માં શું ટાઈપ કરવું
 
+**કોણ:** `operator1` login કરો — બધા 9 step આ 1 જ user થી થાય (§16.5 ની ઉપરની "કોણ શું કરે" table
+પ્રમાણે, §16.1 ના finding ને લીધે QC Reviewer/QA Reviewer થી step execute ના જ થાય).
+
 Start થયા પછી `LC-01` `ready` થશે (§16.2 ના dependency ગ્રાફ પ્રમાણે). દરેક step: **Start** → (નીચે
 મુજબ Record results/Link evidence) → **Complete** — §6.3/§6.4 ના જ button pattern, password ceremony
-દરેક signed action પર.
+દરેક signed action પર (`operator1` નો પોતાનો password `ChangeMe123!`).
 
 | Step | Record results — parameter | ટાઈપ કરવાની value | Evidence જોઈએ? |
 |---|---|---|---|
@@ -525,6 +544,10 @@ Start થયા પછી `LC-01` `ready` થશે (§16.2 ના dependency �
 Complete કરી શકાય. `HOLD-QA-01` બંને complete થાય પછી જ `ready` થશે.
 
 #### 16.5.3 Evidence — `LC-01`/`FILL-01`/`FILL-IPC-01`/`ASSY-01` માટે
+
+**કોણ — 2 અલગ user જોઈએ:** Stage/Finalize (પગલું 1) → `qa.reviewer` (**`operator1` થી નથી થતું** —
+Operator role `evidence.upload` ધરાવતો નથી, ફક્ત Admin/QA Reviewer ધરાવે છે). Link evidence (પગલું 2,
+step પર) → `operator1` (એ જ step-execute session, `batch_execution.execute`).
 
 Evidence ફાઈલ સીધી step પરથી upload નથી થતી (§6.4). પહેલા:
 
