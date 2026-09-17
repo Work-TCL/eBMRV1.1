@@ -436,3 +436,68 @@ async def test_duplicate_idempotency_key_returns_same_receipt(client, seeded):
     second = await client.post("/filtration/v1/filters/install", json=payload, headers=auth_headers(op_token))
     assert first.status_code == 200 and second.status_code == 200
     assert first.json()["aggregate_id"] == second.json()["aggregate_id"]
+
+
+# ---------------------------------------------------------------------------
+# SG-203: CreateProcessCycleProfileVersion (added 2026-09-16) -- QA Reviewer authors, direct-to-RELEASED,
+# no signature. `seeded["sterilization_profile"]` (used by every test above) is inserted directly via the
+# DB fixture, predating this command -- these tests exercise the real HTTP path instead.
+# ---------------------------------------------------------------------------
+
+
+async def test_create_process_cycle_profile_version_succeeds_and_is_usable(client, seeded):
+    qa_token = await login(client, "qa.reviewer")
+    site_id = seeded["site_id"]
+    resp = await client.post(
+        "/sterilization/v1/profiles",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "profile_number": "STR-PROC-NEW-001",
+            "version_no": 1, "process_type": "steam_autoclave",
+            "critical_parameters": {"temperature_c": {"min": 121, "target": 121.5}},
+            "indicator_requirements": {"biological_indicator": "required"},
+            "validation_reference": "PQ-STR-TEST-001", "sterile_status_validity_hours": 720,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert resp.status_code == 200, resp.text
+    profile_id = resp.json()["aggregate_id"]
+
+    # Immediately usable as a real cycle's profile_version_id -- not just stored, actually wired.
+    listing = await client.get(f"/sterilization/v1/profiles?site_id={site_id}")
+    assert any(p["id"] == profile_id and p["profile_number"] == "STR-PROC-NEW-001" for p in listing.json()["items"])
+
+    equipment_id = await _create_equipment(client, None, site_id, code="EQP-STR-NEWPROF")
+    op_token = await login(client, "sterilization.operator")
+    cycle_id = await _create_cycle(client, op_token, site_id, equipment_id, profile_id)
+    assert cycle_id
+
+
+async def test_create_process_cycle_profile_version_requires_role(client, seeded):
+    op_token = await login(client, "sterilization.operator")
+    site_id = seeded["site_id"]
+    resp = await client.post(
+        "/sterilization/v1/profiles",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "profile_number": "STR-PROC-DENIED-001",
+            "version_no": 1, "process_type": "steam_autoclave",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+
+async def test_create_process_cycle_profile_version_rejects_duplicate(client, seeded):
+    qa_token = await login(client, "qa.reviewer")
+    site_id = seeded["site_id"]
+    payload = {
+        "idempotency_key": idem(), "site_id": str(site_id), "profile_number": "STR-PROC-DUP-001",
+        "version_no": 1, "process_type": "steam_autoclave",
+    }
+    first = await client.post("/sterilization/v1/profiles", json=payload, headers=auth_headers(qa_token))
+    assert first.status_code == 200, first.text
+
+    dup_payload = dict(payload, idempotency_key=idem())
+    second = await client.post("/sterilization/v1/profiles", json=dup_payload, headers=auth_headers(qa_token))
+    assert second.status_code == 422
+    assert second.json()["code"] == "VALIDATION_FAILED"

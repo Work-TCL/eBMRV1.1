@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { api, ApiError, canInvestigateQms, formatDate, newIdempotencyKey, type SupplierCase } from "@/lib/api";
-import { useMe, useSiteId } from "@/lib/hooks";
+import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -81,6 +82,7 @@ export default function SupplierCasesPage() {
 function OpenCaseModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { siteId } = useSiteId();
   const { me } = useMe();
+  const entities = useEntityOptions();
   const [caseNumber, setCaseNumber] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [materialId, setMaterialId] = useState("");
@@ -138,12 +140,23 @@ function OpenCaseModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Supplier ID" required hint="From the supplier register.">
-            <Input value={supplierId} onChange={(e) => setSupplierId(e.target.value)} required />
-          </Field>
-          <Field label="Material ID">
-            <Input value={materialId} onChange={(e) => setMaterialId(e.target.value)} />
-          </Field>
+          <EntityPickerField
+            label="Supplier ID"
+            required
+            value={supplierId}
+            onChange={setSupplierId}
+            options={entities.suppliers}
+            status={entities.suppliersStatus}
+            kind="supplier"
+          />
+          <EntityPickerField
+            label="Material ID"
+            value={materialId}
+            onChange={setMaterialId}
+            options={entities.materials}
+            status={entities.materialsStatus}
+            kind="material"
+          />
         </div>
         <Field label="Affected lot" hint="The supplier lot this case concerns.">
           <Input value={affectedLot} onChange={(e) => setAffectedLot(e.target.value)} />

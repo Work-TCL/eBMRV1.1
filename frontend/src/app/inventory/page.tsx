@@ -80,15 +80,19 @@ interface AdjustmentRequestRow {
 const ADJUSTMENT_STATUS: Record<string, { state: "missing" | "accepted" | "failed"; label: string }> = {
  requested: { state: "missing", label: "Requested pending approval" },
   approved: { state: "accepted", label: "Approved" },
+  // Until this pass, reject_inventory_adjustment_request didn't exist at all — a wrong/unwanted request
+  // just sat in "requested" forever with no way out (DDCP_Client_Demo_Guide_Gujarati.md §19 #7).
+  rejected: { state: "failed", label: "Rejected" },
 };
 
-// CON-FR-014: the approver must be independent of the requester — enforced server-side
-// (approve_inventory_adjustment_request rejects a self-approval), mirrored here so the button is
-// disabled with an explanation rather than letting the user submit into a guaranteed rejection.
+// CON-FR-014: the approver/rejecter must be independent of the requester — enforced server-side
+// (approve/reject_inventory_adjustment_request both refuse a self-decision), mirrored here so the buttons
+// are disabled with an explanation rather than letting the user submit into a guaranteed rejection.
 function adjustmentColumns(
   canApprove: boolean,
   myUsername: string | null,
-  onApprove: (row: AdjustmentRequestRow) => void
+  onApprove: (row: AdjustmentRequestRow) => void,
+  onReject: (row: AdjustmentRequestRow) => void
 ): DataTableColumn<AdjustmentRequestRow>[] {
   return [
     {
@@ -148,8 +152,9 @@ function adjustmentColumns(
       header: "Status",
       render: (r) => {
         const s = ADJUSTMENT_STATUS[r.status] ?? { state: "missing" as const, label: r.status };
+        const icon = r.status === "approved" ? "check-circle" : r.status === "rejected" ? "alert-triangle" : "clock";
         return (
-          <StatePill state={s.state} icon={r.status === "approved" ? "check-circle" : "clock"}>
+          <StatePill state={s.state} icon={icon}>
             {s.label}
           </StatePill>
         );
@@ -162,10 +167,16 @@ function adjustmentColumns(
         if (r.status !== "requested") return null;
         if (!canApprove) return null;
         const isSelf = myUsername != null && r.requested_by === myUsername;
+        const title = isSelf ? "You requested this - an independent QA Releaser must approve or reject it" : undefined;
         return (
-        <Button size="sm" variant="primary" disabled={isSelf} onClick={() => onApprove(r)} title={isSelf ? "You requested this - an independent QA Releaser must approve it" : undefined}>
-            Approve
-          </Button>
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="secondary" disabled={isSelf} onClick={() => onReject(r)} title={title}>
+              Reject
+            </Button>
+            <Button size="sm" variant="primary" disabled={isSelf} onClick={() => onApprove(r)} title={title}>
+              Approve
+            </Button>
+          </div>
         );
       },
     },
@@ -195,6 +206,7 @@ export default function InventoryPage() {
   const [activeLedgerLot, setActiveLedgerLot] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [approvingAdjustment, setApprovingAdjustment] = useState<AdjustmentRequestRow | null>(null);
+  const [rejectingAdjustment, setRejectingAdjustment] = useState<AdjustmentRequestRow | null>(null);
   const [locations, setLocations] = useState<WarehouseLocation[]>([]);
   const [newLocationOpen, setNewLocationOpen] = useState(false);
   const [splittingContainer, setSplittingContainer] = useState<AvailabilityRow | null>(null);
@@ -546,7 +558,7 @@ export default function InventoryPage() {
                 <Card>
                   <CardHeader title="Adjustment requests" />
                   <DataTable
-                    columns={adjustmentColumns(canApprove, me?.username ?? null, setApprovingAdjustment)}
+                    columns={adjustmentColumns(canApprove, me?.username ?? null, setApprovingAdjustment, setRejectingAdjustment)}
                     fetchPage={pagedFetcher<AdjustmentRequestRow>("/inventory/v1/adjustments")}
                     rowKey={(r) => r.id}
                     searchPlaceholder="Search by lot or material…"
@@ -613,6 +625,38 @@ export default function InventoryPage() {
               challenge_id: p.challenge_id,
               reauth_password: p.reauth_password,
               expected_version: approvingAdjustment.version,
+              reason: p.reason,
+            })
+          }
+        />
+      )}
+
+      {rejectingAdjustment && (
+        <SignatureCeremony
+          open
+          onClose={() => setRejectingAdjustment(null)}
+          onDone={() => {
+            setRejectingAdjustment(null);
+            setReloadToken((n) => n + 1);
+          }}
+          challengePath={`/inventory/v1/adjustments/${rejectingAdjustment.id}/signature-challenges`}
+          action="reject"
+          title={`Reject adjustment ${rejectingAdjustment.internal_lot}`}
+          summary={
+            <>
+              Rejecting this leaves the recorded stock at <strong>{rejectingAdjustment.location_code}</strong>{" "}
+              unchanged — no inventory transaction is created. Requested by{" "}
+              <strong>{rejectingAdjustment.requested_by}</strong>: “{rejectingAdjustment.reason}”. A wrong
+              adjustment can still be re-requested from scratch afterward.
+            </>
+          }
+          reason="required"
+          onSign={(p) =>
+            api.post<MutationReceipt>(`/inventory/v1/adjustments/${rejectingAdjustment.id}/reject`, {
+              idempotency_key: p.idempotency_key,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+              expected_version: rejectingAdjustment.version,
               reason: p.reason,
             })
           }

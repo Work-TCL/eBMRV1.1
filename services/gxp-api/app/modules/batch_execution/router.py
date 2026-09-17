@@ -46,6 +46,7 @@ from app.modules.batch_execution.commands import (
 )
 from app.modules.batch_execution.models import Batch, BatchStep, StepResult
 from app.modules.iam.models import User
+from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import evaluate_policy
 from app.modules.product_master.models import ProductVersion
 from app.modules.recipe_master.models import RecipeFamily, RecipeParameter, RecipeVersion
@@ -116,6 +117,9 @@ def _step_dict(step, assigned_user: User | None = None) -> dict:
         "batch_id": str(step.batch_id),
         "recipe_step_code": step.recipe_step_code,
         "required_role_code": step.required_role_code,
+        "required_qualification_code": step.required_qualification_code,
+        "scope_type": step.scope_type,
+        "scope_id": str(step.scope_id) if step.scope_id else None,
         "state": step.state,
         "version": step.version,
         "assigned_subject_id": str(step.assigned_subject_id) if step.assigned_subject_id else None,
@@ -167,11 +171,62 @@ def _evidence_requirement_dict(e) -> dict:
     }
 
 
+def _material_requirement_dict(m, material_spec: MaterialSpecificationVersion | None) -> dict:
+    """SG-048 #012/#013's display-only half -- shows what the recipe already declares (SG-045's own
+    tolerance/consume-mode/substitution shape) without adding a lot-consumption/reservation capability,
+    which stays open pending SG-045's still-unresolved schema question."""
+    return {
+        "material_spec_version_id": str(m.material_spec_version_id),
+        "material_spec_business_id": material_spec.material_spec_business_id if material_spec else None,
+        "material_name": material_spec.name if material_spec else None,
+        "target_value": str(m.target_value) if m.target_value is not None else None,
+        "min_value": str(m.min_value) if m.min_value is not None else None,
+        "max_value": str(m.max_value) if m.max_value is not None else None,
+        "uom": m.uom,
+        "consume_mode": m.consume_mode,
+        "substitution_allowed": m.substitution_allowed,
+        "genealogy_required": m.genealogy_required,
+    }
+
+
+def _correction_dict(c, original_result, requested_user: User | None, approved_user: User | None) -> dict:
+    return {
+        "correction_id": str(c.id),
+        "original_result_id": str(c.original_result_id),
+        "parameter_code": original_result.parameter_code if original_result else None,
+        "reason_text": c.reason_text,
+        "corrected_value_numeric": str(c.corrected_value_numeric) if c.corrected_value_numeric is not None else None,
+        "corrected_value_text": c.corrected_value_text,
+        "corrected_value_bool": c.corrected_value_bool,
+        "status": c.status,
+        "requested_by_user_id": str(c.requested_by_user_id),
+        "requested_by_username": requested_user.username if requested_user else None,
+        "approved_by_user_id": str(c.approved_by_user_id) if c.approved_by_user_id else None,
+        "approved_by_username": approved_user.username if approved_user else None,
+        "resulting_result_id": str(c.resulting_result_id) if c.resulting_result_id else None,
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+        "completed_at": c.completed_at.isoformat() if c.completed_at else None,
+    }
+
+
+def _equipment_requirement_dict(eq) -> dict:
+    return {
+        "equipment_class": eq.equipment_class,
+        "exact_equipment_optional": eq.exact_equipment_optional,
+        "require_current_calibration": eq.require_current_calibration,
+        "require_current_qualification": eq.require_current_qualification,
+        "require_current_cleaning": eq.require_current_cleaning,
+    }
+
+
 # BAT-FR-005 ("execution has immutable parent instruction") + Document 11 §9's execution-UI field list
 # (instruction, section, target/limits context) -- the "step detail" view, read from the live recipe
 # graph (display-only; not used for any regulated decision -- the frozen execution snapshot in Vault
 # remains the authoritative instruction record, VLT-FR-006/007).
-def _step_detail_dict(step, recipe_step, section, predecessors: list[str], successors: list[str], evidence: list) -> dict:
+def _step_detail_dict(
+    step, recipe_step, section, predecessors: list[str], successors: list[str], evidence: list,
+    material_requirements: list, equipment_requirements: list, material_specs_by_id: dict,
+) -> dict:
     return {
         "step_type": recipe_step.step_type if recipe_step else None,
         "instruction_text": recipe_step.instruction_text if recipe_step else None,
@@ -179,9 +234,14 @@ def _step_detail_dict(step, recipe_step, section, predecessors: list[str], succe
         "sequence_hint": recipe_step.sequence_hint if recipe_step else None,
         "section_code": section.stable_section_code if section else None,
         "section_name": section.name if section else None,
+        "expected_hold_duration_minutes": recipe_step.expected_hold_duration_minutes if recipe_step else None,
         "predecessor_codes": predecessors,
         "successor_codes": successors,
         "evidence_requirements": [_evidence_requirement_dict(e) for e in evidence],
+        "material_requirements": [
+            _material_requirement_dict(m, material_specs_by_id.get(m.material_spec_version_id)) for m in material_requirements
+        ],
+        "equipment_requirements": [_equipment_requirement_dict(eq) for eq in equipment_requirements],
     }
 
 
@@ -601,6 +661,18 @@ async def get_execution_view(
     product_version = await session.get(ProductVersion, view["batch"].product_version_id)
     recipe_contexts = await _recipe_context_by_id(session, [view["batch"]])
     assigned_users = await _users_by_id(session, {s.assigned_subject_id for s in view["steps"]})
+    material_spec_ids = {m.material_spec_version_id for reqs in view["material_requirements_by_code"].values() for m in reqs}
+    material_specs_by_id: dict = {}
+    if material_spec_ids:
+        rows = (
+            await session.execute(select(MaterialSpecificationVersion).where(MaterialSpecificationVersion.id.in_(material_spec_ids)))
+        ).scalars().all()
+        material_specs_by_id = {ms.id: ms for ms in rows}
+    results_by_id = {r.id: r for rows in view["results_by_step_id"].values() for r in rows}
+    correction_user_ids = {c.requested_by_user_id for cs in view["corrections_by_step_id"].values() for c in cs} | {
+        c.approved_by_user_id for cs in view["corrections_by_step_id"].values() for c in cs if c.approved_by_user_id
+    }
+    correction_users = await _users_by_id(session, correction_user_ids)
     return {
         "batch": _batch_dict(view["batch"], product_version, recipe_contexts.get(view["batch"].recipe_version_id)),
         "steps": [_step_dict(s, assigned_users.get(s.assigned_subject_id)) for s in view["steps"]],
@@ -626,12 +698,18 @@ async def get_execution_view(
                 view["predecessors_of"].get(s.recipe_step_code, []),
                 view["successors_of"].get(s.recipe_step_code, []),
                 view["evidence_by_code"].get(s.recipe_step_code, []),
+                view["material_requirements_by_code"].get(s.recipe_step_code, []),
+                view["equipment_requirements_by_code"].get(s.recipe_step_code, []),
+                material_specs_by_id,
             )
             for s in view["steps"]
         },
         # Active step-level hold, if any (BAT-FR-020 step scope, SG-047 further partial resolution).
         "active_hold_by_step_id": {
-            str(step_id): {"reason": h.reason, "held_at": h.held_at.isoformat() if h.held_at else None}
+            str(step_id): {
+                "id": str(h.id), "reason": h.reason, "held_at": h.held_at.isoformat() if h.held_at else None,
+                "held_by": str(h.held_by), "hold_signature_id": str(h.hold_signature_id) if h.hold_signature_id else None,
+            }
             for step_id, h in view["active_hold_by_step_id"].items()
         },
         # BAT-FR-034, SG-048 #034 partial resolution.
@@ -655,5 +733,27 @@ async def get_execution_view(
                 for h in handovers
             ]
             for step_id, handovers in view["handovers_by_step_id"].items()
+        },
+        # SG-047 (gxp_step_evidence_link half) -- written by link_step_evidence(), read internally by
+        # complete_step()'s evidence-count gate but never surfaced in this view until now.
+        "evidence_links_by_step_id": {
+            str(step_id): [
+                {
+                    "id": str(e.id), "evidence_id": str(e.evidence_id), "evidence_version": e.evidence_version,
+                    "evidence_sha256": e.evidence_sha256, "media_type": e.media_type,
+                    "requirement_code": e.requirement_code, "linked_by": str(e.linked_by),
+                    "created_at": e.created_at.isoformat() if e.created_at else None,
+                }
+                for e in links
+            ]
+            for step_id, links in view["evidence_links_by_step_id"].items()
+        },
+        # SG-048 #023's own gap: the correct/approve flow existed with no read-side visibility at all.
+        "corrections_by_step_id": {
+            str(step_id): [
+                _correction_dict(c, results_by_id.get(c.original_result_id), correction_users.get(c.requested_by_user_id), correction_users.get(c.approved_by_user_id))
+                for c in corrections
+            ]
+            for step_id, corrections in view["corrections_by_step_id"].items()
         },
     }

@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
@@ -23,6 +24,84 @@ from app.mutation.errors import EvidenceAccessDeniedError, EvidenceMissingError,
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/evidence/v1", tags=["evidence"])
+
+
+def _evidence_object_dict(obj: EvidenceObject) -> dict:
+    return {
+        "id": str(obj.id),
+        "site_id": str(obj.site_id) if obj.site_id else None,
+        "owner_type": obj.owner_type,
+        "owner_id": str(obj.owner_id),
+        "owner_version": obj.owner_version,
+        "provider": obj.provider,
+        "bucket": obj.bucket,
+        "object_key": obj.object_key,
+        "provider_version_id": obj.provider_version_id,
+        "size_bytes": obj.size_bytes,
+        "mime_type": obj.mime_type,
+        "filename": obj.filename,
+        "hash_algorithm": obj.hash_algorithm,
+        "expected_hash": obj.expected_hash,
+        "content_hash": obj.content_hash,
+        "state": obj.state,
+        "retention_policy_id": str(obj.retention_policy_id) if obj.retention_policy_id else None,
+        "retention_until": obj.retention_until.isoformat() if obj.retention_until else None,
+        "legal_hold": obj.legal_hold,
+        "legal_hold_ref": obj.legal_hold_ref,
+        "provenance": obj.provenance,
+        "superseded_by": str(obj.superseded_by) if obj.superseded_by else None,
+        "signature_id": str(obj.signature_id) if obj.signature_id else None,
+        "version": obj.version,
+        "created_at": obj.created_at.isoformat(),
+        "updated_at": obj.updated_at.isoformat(),
+    }
+
+
+@router.get("/objects")
+async def list_evidence_objects(
+    owner_type: str,
+    owner_id: uuid.UUID,
+    limit: int = 50,
+    session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Owner-filtered list, added so a caller (e.g. batch-execution's "Link evidence" step action) can
+    offer a picker of evidence already staged for a specific owner instead of requiring a pasted raw
+    UUID + hash. Same `evidence.download` read-gate precedent as `get_evidence_object()` below (Document
+    72 declares no dedicated view/list operation either) -- always owner-scoped, never an unfiltered
+    listing of the whole table."""
+    await evaluate_policy(session, actor.user_id, action="evidence.download", site_id=None)
+    limit = max(1, min(limit, 200))
+    rows = (
+        (
+            await session.execute(
+                select(EvidenceObject)
+                .where(EvidenceObject.owner_type == owner_type, EvidenceObject.owner_id == owner_id)
+                .order_by(EvidenceObject.created_at.desc())
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {"evidence_objects": [_evidence_object_dict(obj) for obj in rows]}
+
+
+@router.get("/{evidence_id}")
+async def get_evidence_object(
+    evidence_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Metadata-only read (no bytes -- see `GET /{evidence_id}/download` for that), gated by the same
+    `evidence.download` permission since there is no dedicated `evidence.view` code (Document 72 declares
+    no view/list operation of its own -- same SG-081 read-side precedent used elsewhere: a plain read-only
+    GET does not conflict with any write/CRUD contract). Not state-restricted, unlike download -- seeing
+    *that* an object is STAGED/QUARANTINE/PURGED, and its legal_hold/signature_id, is exactly what a
+    caller needs regardless of whether the bytes themselves are downloadable right now."""
+    await evaluate_policy(session, actor.user_id, action="evidence.download", site_id=None)
+    obj = await session.get(EvidenceObject, evidence_id)
+    if obj is None:
+        raise NotFoundError("Evidence object not found")
+    return _evidence_object_dict(obj)
 
 
 @router.post("/uploads", response_model=MutationReceipt)

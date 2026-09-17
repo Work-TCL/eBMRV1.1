@@ -17,6 +17,7 @@ from app.modules.batch_execution.models import (
     StepHandover,
     StepHold,
     StepResult,
+    StepResultCorrection,
 )
 from app.modules.recipe_master import service as recipe_master_service
 from app.modules.recipe_master.models import RecipeStepDependency
@@ -161,6 +162,21 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
         if code:
             evidence_by_code[code].append(e)
 
+    # Display-only, same precedent as evidence_by_code above (SG-048 #012/#013's own gap note: these
+    # were declared/gathered by the recipe editor already but never surfaced in the execution-side step
+    # Detail view). Read-only visibility, not a step towards the still-open lot/asset-linking question.
+    material_requirements_by_code: dict[str, list] = defaultdict(list)
+    for m in graph["material_requirements"]:
+        code = code_by_step_id.get(m.step_id)
+        if code:
+            material_requirements_by_code[code].append(m)
+
+    equipment_requirements_by_code: dict[str, list] = defaultdict(list)
+    for eq in graph["equipment_requirements"]:
+        code = code_by_step_id.get(eq.step_id)
+        if code:
+            equipment_requirements_by_code[code].append(eq)
+
     predecessors_of: dict[str, list[str]] = defaultdict(list)
     successors_of: dict[str, list[str]] = defaultdict(list)
     for dep in graph["dependencies"]:
@@ -223,6 +239,44 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
         for h in handover_rows:
             handovers_by_step_id[h.step_id].append(h)
 
+    evidence_links_by_step_id: dict[uuid.UUID, list[StepEvidenceLink]] = defaultdict(list)
+    if steps:
+        evidence_link_rows = (
+            (
+                await session.execute(
+                    select(StepEvidenceLink).where(StepEvidenceLink.step_id.in_([s.id for s in steps])).order_by(StepEvidenceLink.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for e in evidence_link_rows:
+            evidence_links_by_step_id[e.step_id].append(e)
+
+    # SG-048 #023's own gap: the request/approve flow (commands.py) has always existed, but nothing
+    # ever surfaced a pending/completed correction back to a caller — added so the UI can show "there's
+    # a correction awaiting an independent approver" and who may act on it (SoD: not the requester).
+    corrections_by_step_id: dict[uuid.UUID, list] = defaultdict(list)
+    if steps and results_by_step_id:
+        result_ids = [r.id for rows in results_by_step_id.values() for r in rows]
+        result_to_step = {r.id: r.step_id for rows in results_by_step_id.values() for r in rows}
+        if result_ids:
+            correction_rows = (
+                (
+                    await session.execute(
+                        select(StepResultCorrection)
+                        .where(StepResultCorrection.original_result_id.in_(result_ids))
+                        .order_by(StepResultCorrection.created_at)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for c in correction_rows:
+                step_id = result_to_step.get(c.original_result_id)
+                if step_id:
+                    corrections_by_step_id[step_id].append(c)
+
     return {
         "batch": batch,
         "steps": steps,
@@ -230,12 +284,16 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
         "section_by_id": section_by_id,
         "parameters_by_code": parameters_by_code,
         "evidence_by_code": evidence_by_code,
+        "material_requirements_by_code": material_requirements_by_code,
+        "equipment_requirements_by_code": equipment_requirements_by_code,
         "predecessors_of": predecessors_of,
         "successors_of": successors_of,
         "results_by_step_id": results_by_step_id,
         "active_hold_by_step_id": active_hold_by_step_id,
         "comments_by_step_id": comments_by_step_id,
         "handovers_by_step_id": handovers_by_step_id,
+        "evidence_links_by_step_id": evidence_links_by_step_id,
+        "corrections_by_step_id": corrections_by_step_id,
         "blockers": [
             {"step_id": str(s.id), "recipe_step_code": s.recipe_step_code, "reason": "predecessor not yet completed"}
             for s in steps

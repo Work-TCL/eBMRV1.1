@@ -149,6 +149,9 @@ class StepInput(BaseModel):
     signature_policy_id: uuid.UUID | None = None
     exception_policy_id: uuid.UUID | None = None
     is_critical: bool = False
+    # SG-048 #018, visibility-only slice -- optional; unset means no "overdue hold" flag is ever
+    # computed for this step at execution time.
+    expected_hold_duration_minutes: int | None = None
     parameters: list[ParameterInput] = []
     evidence_requirements: list[EvidenceRequirementInput] = []
     material_requirements: list[MaterialRequirementInput] = []
@@ -249,6 +252,7 @@ async def _replace_graph(
             signature_policy_id=st.signature_policy_id,
             exception_policy_id=st.exception_policy_id,
             is_critical=st.is_critical,
+            expected_hold_duration_minutes=st.expected_hold_duration_minutes,
         )
         session.add(row)
         await session.flush()

@@ -55,7 +55,7 @@ const config: OpsRecordConfig<LineClearanceRecord> = {
             name: "item_type", label: "Item type", type: "select", required: true,
             options: [{ value: "material", label: "Material" }, { value: "label", label: "Label" }, { value: "equipment", label: "Equipment" }],
           },
-          { name: "equipment_id", label: "Equipment asset ID (if item type is Equipment)", placeholder: "e.g. equipment asset UUID" },
+          { name: "equipment_id", label: "Equipment asset (if item type is Equipment)", type: "equipmentSelect" },
         ],
       },
       { name: "critical", label: "Critical clearance", type: "bool", hint: "A critical clearance requires a reason when it's completed." },

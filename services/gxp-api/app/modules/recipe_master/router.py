@@ -75,7 +75,9 @@ def _step_dict(s) -> dict:
         "instruction_text": s.instruction_text,
         "sequence_hint": s.sequence_hint,
         "required_role_code": s.required_role_code,
+        "required_qualification_code": s.required_qualification_code,
         "is_critical": s.is_critical,
+        "expected_hold_duration_minutes": s.expected_hold_duration_minutes,
     }
 
 
@@ -100,9 +102,22 @@ def _parameter_dict(p) -> dict:
         "target_value": str(p.target_value) if p.target_value is not None else None,
         "min_value": str(p.min_value) if p.min_value is not None else None,
         "max_value": str(p.max_value) if p.max_value is not None else None,
+        "precision_digits": p.precision_digits,
         "required": p.required,
         "rule_id": p.rule_id,
         "rule_version": p.rule_version,
+        "manual_fallback_policy": p.manual_fallback_policy,
+    }
+
+
+def _evidence_requirement_dict(e) -> dict:
+    return {
+        "id": str(e.id),
+        "step_id": str(e.step_id),
+        "evidence_type": e.evidence_type,
+        "required_count": e.required_count,
+        "allowed_mime_types": e.allowed_mime_types,
+        "retention_class": e.retention_class,
     }
 
 
@@ -276,6 +291,7 @@ async def get_version_detail(
     body["steps"] = [_step_dict(s) for s in graph["steps"]]
     body["dependencies"] = [_dependency_dict(d) for d in graph["dependencies"]]
     body["parameters"] = [_parameter_dict(p) for p in graph["parameters"]]
+    body["evidence_requirements"] = [_evidence_requirement_dict(e) for e in graph["evidence"]]
     body["material_requirements"] = [_material_requirement_dict(m) for m in graph["material_requirements"]]
     body["equipment_requirements"] = [_equipment_requirement_dict(e) for e in graph["equipment_requirements"]]
     return body

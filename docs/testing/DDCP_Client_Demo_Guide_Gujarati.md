@@ -10,13 +10,25 @@ pharma કંપની ભાગ ભજવીને (role-play), શરૂઆત
 દાખલ કરેલો નથી** — તમારે (કે તમારી ટીમે) browser માં ખરેખર દરેક સ્ટેપ કરવો પડશે. કંઈ પણ "already tested,
 PASS" તરીકે claim નથી કરેલું.
 
-**તારીખ:** 2026-09-03 | **Frontend:** `http://88.99.15.183:4101` | **Backend:** `http://88.99.15.183:8010`
-| **Site:** `SITE1` | **Password (બધા demo user માટે):** `ChangeMe123!`
+**તારીખ:** 2026-09-03 (§1-§20 મૂળ; §21 2026-09-16 નવેસરથી ઉમેર્યું) | **Frontend:**
+`http://88.99.15.183:4101` | **Backend:** `http://88.99.15.183:8010` | **Site:** `SITE1` | **Password
+(બધા demo user માટે):** `ChangeMe123!`
 
 **Session expiry:** આજથી login token / idle timeout / absolute session timeout ત્રણેય **1 દિવસ (1440
 મિનિટ)** કરી દીધા છે (`services/gxp-api/app/core/config.py`, `pm2 restart ebmr-new-api` કરેલું) — demo
 દરમિયાન વારંવાર logout નહીં થાય. *(આ engineering default છે, કોઈ approved regulated value નથી — SG-163,
 production પહેલા review કરવું.)*
+
+**⚠️⚠️ 2026-09-16 — સૌથી અગત્યની નોંધ, પહેલાં આ વાંચો:** §5-§16 માં નીચે જે `MJ-PFS-B-2601` batch ડેટા
+દેખાય છે એ હવે ડેમો સૂચન **નથી** — એ ખરેખર live DB માં **સંપૂર્ણપણે execute થઈને Released સુધી પહોંચી
+ગયેલો છે** (બધા 8 recipe step complete, DDCP evidence 2 વાર freeze, 2 deviation closed, QA review
+complete, batch release = `released`). એ જ batch number, receipt number, lot number, deviation number
+ફરી વાપરવાની કોશિશ કરશો તો unique-constraint error અથવા "wrong state" error આવશે. **હાથોહાથ
+browser-testing માટે નવો, અડ્યા વગરનો ડેટા જોઈએ છે** — એ **[§21 — નવું Test Cycle, 2026-09-16](#21-નવું-test-cycle-round-2-2026-09-16-real-live-data)**
+માં છે, code-verified સામે current live DB (batch/lot/receipt/deviation numbers, RBAC roles, field
+list — બધું ફરી ચકાસેલું). §5-§20 હજુ પણ સાચા છે concept/field/RBAC સમજવા માટે — ફક્ત એમાં લખેલા
+literal batch/lot/receipt/deviation **numbers** હવે consumed છે, નવા demo run માટે §21 ના numbers
+વાપરવા.
 
 ---
 
@@ -42,6 +54,7 @@ production પહેલા review કરવું.)*
 18. [Client demo — શું emphasize કરવું](#18-client-demo--શું-emphasize-કરવું)
 19. [જાણીતી મર્યાદાઓ (પ્રામાણિકતા)](#19-જાણીતી-મર્યાદાઓ-પ્રામાણિકતા)
 20. [સંદર્ભ](#20-સંદર્ભ)
+21. [નવું Test Cycle (Round 2, 2026-09-16) — Real Live Data](#21-નવું-test-cycle-round-2-2026-09-16-real-live-data)
 
 ---
 
@@ -621,19 +634,39 @@ limitation. Full detail: `18_SPEC_GAPS.md` SG-081.
 
 ---
 
-## 7. Phase 3 — Equipment + Device Lot (મશીન + ડિવાઇસ)
+## 7. Phase 3 — Equipment Area + Equipment Asset + Device Lot + Sterilization (જગ્યા + મશીન + ડિવાઇસ + Sterilization)
 
-**કોણ:** `equipment.admin` (asset create + qualify) → `calibration.tech` (calibrate) → `supervisor1`
-(device lot create). **ક્યાં:** `/equipment`, `/devices`. **Backend:** `POST /equipment/v1/assets`,
-`.../qualifications`, `.../calibrations`; `POST /devices/v1/lots`. **Doc:** 38 (equipment), 12 (device).
+**કોણ:** `equipment.admin` (area + asset create + qualify) → `calibration.tech` (calibrate) →
+`supervisor1` (device lot create) → `qa.reviewer` (cycle **profile** author, SG-203) →
+`sterilization.operator` (cycle create/start/data) → `qa.reviewer` (cycle review, **સહી**). **ક્યાં:**
+`/equipment`, `/devices`, `/sterilization`. **Backend:** `POST /equipment/v1/areas`, `/assets`,
+`.../qualifications`, `.../calibrations`; `POST /devices/v1/lots`, `/devices/v1/units/bulk-create`;
+`POST /sterilization/v1/profiles`, `/cycles`, `.../start`, `.../data`, `.../review`. **Doc:** 38
+(equipment), 12 (device), 42 (sterilization).
 
-### 7.0 Equipment અને Device Lot કેમ જરૂરી? (સાદી ભાષામાં)
+**⚠️ 2026-09-16 fix — આ Phase પહેલાં Equipment **Area** ક્યાંય બનતું જ નહોતું:** આ section પહેલાં ફક્ત
+Equipment **Asset** (§7.2, `LINE-PFS-01`) ની detail આપતું હતું, "Equipment area/line" field (§12.1 Op3,
+§15.1) અને Line Clearance (§14) બંને એ જ `LINE-PFS-01` code વાપરતા હતા — પણ **Equipment Area એ
+`equipment.equipment_areas` નામનું સાવ અલગ table/FK છે, Equipment Asset (`equipment.equipment_assets`)
+નહીં** — `LINE-PFS-01` એ asset code છે, કોઈ area એ નામનું exist જ નથી કરતું (live DB માં ચકાસેલું). હવે
+§7.1 એ ખૂટતું Equipment Area પગલું ઉમેરે છે; §7.2/§14/§15.1/§12.1 Op3 બધા ઠીક કર્યા.
 
-**Equipment Asset** = મશીન/લાઇનનું master data — રિયલ વર્લ્ડમાં ફેક્ટરીના દરેક મશીનનું પોતાનું "ID કાર્ડ"
-હોય (કયું મશીન, કયો manufacturer/model, ક્યાં install થયું).
+### 7.0 Equipment Area, Equipment Asset અને Device Lot કેમ જરૂરી? (સાદી ભાષામાં)
+
+**Equipment Area** = ભૌતિક **જગ્યા/ઓરડો** (cleanroom, fill suite, warehouse) — રિયલ વર્લ્ડ ઉદાહરણ:
+ફેક્ટરીના નકશા પર દોરેલો "Room 204 — Grade A Fill Suite" એ ઝોન. Line Clearance (§14) અને DDCP readiness
+નું "Equipment area/line" ચેક (§15.1) **આ જ table** સામે થાય છે — machine સામે નહીં.
+
+**Equipment Asset** = ચોક્કસ **મશીન/લાઇન** નું master data — રિયલ વર્લ્ડમાં ફેક્ટરીના દરેક મશીનનું પોતાનું
+"ID કાર્ડ" હોય (કયું મશીન, કયો manufacturer/model, ક્યાં install થયું). **Area ≠ Asset** — એક area (room)
+માં ઘણા asset (machines) હોઈ શકે, પણ code માં આ 2 જુદા table છે, કોઈ automatic link નથી (asset ને
+`location_id` field છે, પણ demo data માં set નથી કરવું જરૂરી).
 
 | Field | મતલબ | ઉદાહરણ |
 |---|---|---|
+| Area code | જગ્યાનું unique ID | `AREA-GRADE-A` |
+| Area type | કયા પ્રકારની જગ્યા (free text) | `cleanroom` |
+| Classification | Cleanroom grade | `ISO_5` |
 | Equipment code | મશીનનું unique ID | `LINE-PFS-01` |
 | Manufacturer/Model | મશીન કોણે બનાવ્યું, કયું મોડેલ | `Groninger` / `KFL-100` |
 | Dedicated | આ મશીન **ફક્ત એક જ પ્રોડક્ટ** માટે વપરાય છે, કે multiple products માટે shared છે | `No` — shared line, એટલે દરેક પ્રોડક્ટ બદલાય ત્યારે cleaning validation જરૂરી (Dedicated = `Yes` હોય તો cross-contamination risk ઓછું, કારણ કે બીજું કોઈ પ્રોડક્ટ ક્યારેય એ મશીનમાં ગયું જ નથી) |
@@ -657,7 +690,20 @@ bind ના કરાય.
 | Product version | કયા RELEASED product version માટે આ device lot છે (Phase 4 release પછી જ ઉપલબ્ધ) |
 | UDI-DI | **Unique Device Identifier** — US FDA નો ફરજિયાત device-identification કોડ, દરેક product version માટે unique (બારકોડ જેવું, પણ regulatory requirement) |
 
-### 7.1 Equipment Asset — Fill/Assembly Line
+### 7.1 Equipment Area — Grade A Fill Suite (`equipment.admin`, `/equipment` → "New area")
+
+**⚠️ આ પગલું પહેલાં ક્યાંય નહોતું — ખૂટતું હતું (2026-09-16 fix).** Line Clearance (§14) અને DDCP
+readiness ના "Equipment area/line" ચેક (§15.1, §12.1 Op3) ને આ area ફરજિયાત જોઈએ.
+
+| Field | Data | ફરજિયાત? |
+|---|---|---|
+| Area code | `AREA-GRADE-A` | ✅ — site-wide unique |
+| Area type | `fill_suite` | — free text |
+| Classification | `ISO_5` | — cleanroom grade |
+| Criticality | `high` | — free text |
+| Cleanliness status | ખાલી (§14 નું line clearance પછીથી update કરશે) | — |
+
+### 7.2 Equipment Asset — Fill/Assembly Line (`equipment.admin` → `/equipment` → "New asset")
 
 | Field | Data |
 |---|---|
@@ -665,18 +711,159 @@ bind ના કરાય.
 | Manufacturer/Model | `Groninger` / `KFL-100` |
 | Dedicated | `No` |
 
-`equipment.admin` → qualify (IQ/OQ/PQ record) → `calibration.tech` → calibrate → **eligible for use**
-(DDCP readiness check આ status ને `LINE_NOT_READY` blocker તરીકે વાપરે છે — Phase 11).
-
-### 7.2 Device Lot
-
-Device lot **released Product Version** સામે જ બની શકે (`_assert_product_version_released` — code
-verified) — એટલે આ step Phase 4 (Product Master release) **પછી જ** થાય:
+**Record qualification** (`equipment.admin` → equipment detail → "Record qualification" — **⚠️
+`Equipment Administrator` role જ આ બટન જુએ છે**, code-verified `canCreateEquipment`):
 
 | Field | Data |
 |---|---|
-| Product version | MeridiJect PFS v1 (Phase 4 release પછી) |
-| UDI-DI | `(01)00812345678901` |
+| Qualification status | `qualified` |
+| Qualified | ✅ Yes |
+| Effective date | આજ |
+| Expiry date | +2 વર્ષ |
+
+**Record calibration** (**⚠️ અલગ role — `calibration.tech` (Calibration Technician) જ આ બટન જુએ છે,
+`equipment.admin` ને નહીં — code-verified `canCalibrateEquipment`, frontend+backend બંનેમાં same split,
+§ ની નીચે honest નોંધ જુઓ**): `calibration.tech` login → એ જ equipment detail → "Record calibration":
+
+| Field | Data |
+|---|---|
+| Performed date | આજ |
+| Next due date | +1 વર્ષ |
+| Result | `pass` |
+| Standard reference | `NIST-TRACE-2026` |
+
+બંને પૂરા થાય પછી → **eligible for use** (DDCP readiness check §15.1 નું `LINE_NOT_READY`/"Filler
+equipment not eligible" blocker આ જ 2 status (qualification+calibration) વાપરે છે — code:
+`equipment_commands._ineligibility_reasons()`).
+
+**⚠️ પ્રામાણિકતા નોંધ — "Calibrate"/"Maintenance" બટન equipment.admin ને કેમ નથી દેખાતું (bug નથી, SoD
+by design):** `Equipment Administrator` role ને ફક્ત `equipment_asset.create`/`.qualify` permission છે
+(`scripts/seed.py` `ROLE_PERMISSIONS`) — `.calibrate` ફક્ત `Calibration Technician` ને, `.maintain` ફક્ત
+`Maintenance Technician` ને, અલગ-અલગ demo user (`calibration.tech`/`maintenance.tech`,
+`ChangeMe123!`). Frontend બટન (`canCalibrateEquipment`/`canMaintainEquipment`) role ના હોય તો **દેખાય જ
+નહીં** (disabled નહીં, hide) — DDCP Engineer/Operator, Aseptic Operator/Supervisor જેવો જ SoD pattern:
+"કોણ install કરે" ≠ "કોણ calibrate/maintain કરે". `admin` (બધા role ધરાવે) થી 1 જ session માં demo
+ચલાવવું હોય તો ચાલે, પણ real SoD demo બતાવવો હોય તો role બદલવો.
+
+**⚠️ Area (§7.1) અને Asset (§7.2) — 2 જુદા master data, 2 જુદો purpose:** §15.1 નું "Equipment area/line"
+field `AREA-GRADE-A` (§7.1) લે છે, "Filler equipment" field `LINE-PFS-01` (§7.2) લે છે — બંને field ને
+**એક જ code આપવો ખોટો છે** (પહેલાં આ doc ની ભૂલ હતી — હવે ઠીક).
+
+### 7.4 Sterilization Cycle — Needle Component ને "Ready to Use" કરવું
+
+**કોણ:** `qa.reviewer` (cycle profile author — SG-203) → `sterilization.operator` (cycle create/start/data)
+→ `qa.reviewer` (review). **⚠️ same-actor rule ફક્ત cycle start ≠ cycle review વચ્ચે છે** (profile author
+અને cycle reviewer બંને `qa.reviewer` હોય તો પણ કોઈ conflict નથી — SIG-FR-018 ફક્ત
+`cycle.started_by_user_id` ને ચેક કરે છે, profile author ને નહીં). **ક્યાં:** `/sterilization`. **Doc:**
+42 (SPEC-EQP-005). **Full field/RBAC/state-machine reference:**
+`Sterilization_Aseptic_Comprehensive_Test_Manual_Gujarati.md`.
+
+**કેમ જરૂરી? (સાદી ભાષામાં):** §10.1 નું DDCP profile needle constituent ને `required_state = Ready to
+use` માંગે છે — આ સ્થિતિ ખાલી declare કરવાથી નથી મળતી, ખરેખર **sterilization cycle run કરીને, independent
+QA reviewer એ accept કરે** ત્યારે જ મળે છે (§12.1 Op 2 નો "Sterilization/depyrogenation reference" field
+આ જ cycle ના load item ID માંગે છે).
+
+**✅ 2026-09-16 RESOLVED — Sterilization cycle profile ને હવે real create UI છે (SG-203).** પહેલાં ફક્ત
+direct SQL insert workaround હતો (backend command જ નહોતું) — **project-owner-directed, પૂછીને 2 નિર્ણય
+લીધા:** (1) profile ને **QA Reviewer** authorize કરે (Sterilization Operator નહીં — જે role પછીથી cycle
+data ને independent review કરે એ જ role spec પણ define કરે, "કોણ define કરે ≠ કોણ execute કરે" split
+યથાવત્ રાખવા), (2) **direct-to-RELEASED** (aseptic profile ના §8.1 જેવો જ, draft/review stage નહીં).
+
+`qa.reviewer` login → `/sterilization` → "New sterilization cycle profile" button:
+
+| Field | Data | ફરજિયાત? |
+|---|---|---|
+| Profile number | `STR-PROC-001` | ✅ |
+| Version no. | `1` | ✅ |
+| Process type | `steam_autoclave` (dropdown) | ✅ |
+| Validation reference | `PQ-STR-2026-004` | — |
+| Sterile status validity (hours) | `720` (= 30 દિવસ — cycle ACCEPTED થયા પછી load item કેટલો સમય "eligible" રહે) | — |
+| Critical parameters (kv, flat) | `temperature_c_min` → `121`; `hold_minutes_min` → `15` | — |
+| Indicator requirements (kv) | `biological_indicator` → `required` | — |
+
+Submit → સીધું state **RELEASED** — "Cycle profile version" dropdown માં `STR-PROC-001 v1 -
+steam_autoclave` તરત દેખાશે. **⚠️ Sterilization Operator (`sterilization.operator`) થી આ બટન કરવાનો
+પ્રયત્ન** → button જ ના દેખાય (frontend `canCreateCycleProfile`), raw API call કરો તો `403 ROLE_MISSING`
+— code-verified negative test.
+
+**Create process cycle** (`sterilization.operator` → `/sterilization` → "Create process cycle"):
+
+| Field | Data |
+|---|---|
+| Process type | `steam_autoclave` |
+| Equipment | `LINE-PFS-01` (§7.2 — qualified + calibrated હોવું જ જોઈએ, નહીં તો `422 STERILIZER_INELIGIBLE`) |
+| Cycle profile version | `STR-PROC-001 v1` |
+| Batch | ખાલી |
+| Load items — Row 1 | Item type `component`; Item reference `LOT-DEV-2601` (**Phase 2 નો real released device material lot** — manual entry, dropdown નથી); Position `Tray 1` |
+
+Submit → state **DRAFT**.
+
+**Start cycle (સહી)** — "Start cycle (sign)" → password → state **CYCLE_STARTED**.
+
+**Record cycle data (2 વાર):**
+
+*પહેલી વાર (running):*
+
+| Field | Data |
+|---|---|
+| Controller cycle ID | `CTRL-STR-2601-01` |
+| Parameter data | `temperature_c` → `121.4`; `pressure_bar` → `2.05` |
+| Critical alarm | `No` |
+| Final batch of data | `No` |
+
+Submit → state **CYCLE_RUNNING**.
+
+*બીજી વાર (final):*
+
+| Field | Data |
+|---|---|
+| Controller cycle ID | `CTRL-STR-2601-01` |
+| Parameter data | `hold_minutes` → `16` |
+| Indicator results | `BI_1` → `negative` |
+| Critical alarm | `No` |
+| Final batch of data | **Yes** |
+
+Submit → state **REVIEW_PENDING**.
+
+**Review (સહી, independent — `qa.reviewer` login, `sterilization.operator` થી અલગ user):**
+
+| Field | Data |
+|---|---|
+| Decision | `Accept` |
+
+Submit → password → state **ACCEPTED**, `LOT-DEV-2601` ના load item નો `sterile_status = eligible` (+
+expiry, profile ના `sterile_status_validity_hours=720` = 30 દિવસ). **Cycle detail ના "Load items" ટેબલ
+માંથી આ item ની ID copy કરો** — §12.1 Op 2 ના DEVICE handoff Accept ના "Sterilization/depyrogenation
+reference" field માં આ જ ID પેસ્ટ કરવાની છે.
+
+**Client demo moment:** `sterilization.operator` (જેણે start કર્યું) થી review કરવાનો પ્રયત્ન — **fail
+થશે** (SIG-FR-018, same-actor block, code-verified `cycle.started_by_user_id == actor_user_id`).
+`qa.reviewer` (અલગ user) → succeed.
+
+### 7.3 Device Lot + Device Units (`supervisor1`/`admin` → `/devices` → "Device lot & unit assembly")
+
+Device lot **released Product Version** સામે જ બની શકે (`_assert_product_version_released` — code
+verified) — એટલે આ step Phase 4 (Product Master release, §8) **પછી જ** થાય. **2 અલગ સ્ટેપ** (backend 2
+અલગ endpoint છે — `POST /devices/v1/lots` પછી `POST /devices/v1/units/bulk-create`):
+
+**સ્ટેપ 1 — Lot બનાવવો:**
+
+| Field | Data | ફરજિયાત? |
+|---|---|---|
+| Product version | MeridiJect PFS v1 (dropdown, Phase 4 release પછી જ RELEASED list માં દેખાય) | ✅ |
+| Batch | ખાલી (optional — dropdown, producing batch જોડવું હોય તો, Phase 7 create પછી જ ઉપલબ્ધ) | — |
+| UDI-DI | `(01)00812345678901` | — Unique Device Identifier, US FDA ફરજિયાત device-identification કોડ |
+
+Submit → "Device lot created" banner, Lot ID દેખાય.
+
+**સ્ટેપ 2 — Serial units ઉમેરવા (એ જ lot ID પર, તરત નીચે ફોર્મ ખૂલે છે):**
+
+| Field | Data |
+|---|---|
+| Serials (એક લાઇન દીઠ 1, અથવા comma-separated) | `MJ-DEV-0001`<br>`MJ-DEV-0002`<br>`MJ-DEV-0003` |
+
+Submit → `POST /devices/v1/units/bulk-create` → એ lot સાથે જોડાયેલા real device unit (per-serial) records
+બને છે — "3 units created" જેવો count દેખાય.
 
 ---
 
@@ -892,7 +1079,8 @@ detail: `18_SPEC_GAPS.md` SG-035.
 `.../simulate`, `.../submit`, `.../signature-challenges` + `.../release`. **List:** `GET
 /recipes/v2/families` → `GET /recipes/v2/{recipe_family_id}/versions`. **Doc:** 10 (SPEC-EBMR-002).
 *(બધા fields code-verified 2026-09-08 against `frontend/src/app/recipe-master/page.tsx` (`DraftModal`)
-અને `services/gxp-api/app/modules/recipe_master/{commands,router,models}.py`.)*
+અને `services/gxp-api/app/modules/recipe_master/{commands,router,models}.py`; **2026-09-16 update** —
+create હવે popup modal નથી, પોતાનું **full page** છે, નીચે §9.1 જુઓ.)*
 
 **કેમ જરૂરી? (સાદી ભાષામાં):** Product Master "શું બનાવવું" કહે છે, Recipe Master **"કેવી રીતે
 બનાવવું"** કહે છે — batch execution વખતે operator ને step-by-step બતાવવાનું master ટેમ્પલેટ (જેમ
@@ -902,8 +1090,13 @@ draft→under_review→released જીવનચક્ર ધરાવે.
 
 ### 9.1 "New recipe draft" — top-level fields (frontend ↔ backend, code-verified)
 
-`process.engineer` → `/recipe-master` → **"New draft"** button → modal ખૂલે. Modal ના 6 top-level field
-(**બધા real dropdown — 2026-09-08 થી કોઈ free-text/raw-UUID નથી**):
+`process.engineer` → `/recipe-master` → **"New draft"** button → **`/recipe-master/new` પર જાય, popup
+નહીં** (2026-09-16, project-owner-directed: Sections/Steps/Dependencies graph editor + એના 4 per-step
+sub-editor, §9.3.1-9.3.4, modal માં ફિટ થવા માટે બહુ મોટા હતા — `DraftModal` retired, form/logic
+`recipe-master/shared.tsx` માં move કર્યું જેથી list page (`page.tsx`) અને નવું create page બંને same
+`RecipeGraphEditor` વાપરે, code duplicate ના થાય). Page ના top-level field
+(**6 dropdown/required field — 2026-09-08 થી કોઈ free-text/raw-UUID નથી — + 2 optional free-text field,
+2026-09-16 code-verified against current `/recipe-master/new`**) બરાબર એ જ રહ્યા છે, ફક્ત container બદલાયું:
 
 | Frontend field | Backend field (`CreateRecipeDraftCommand`) | Type / UI control | Reference / dropdown data | ફરજિયાત? | ઉદાહરણ |
 |---|---|---|---|---|---|
@@ -913,6 +1106,11 @@ draft→under_review→released જીવનચક્ર ધરાવે.
 | **Product version** | `product_version_id` | **dependent `<select>` dropdown** (Product પસંદ કરો પછી enable) | **`GET /products/v1/{business_id}/versions`** — એ product ના બધા versions, `v{n} — {name} ({lifecycle_state})`; **released first**. Non-released પસંદ કરો તો warning hint (batch creation ને released જોઈએ). Backend હવે unknown UUID ને `NOT_FOUND` (404) આપે, પહેલાં opaque 500 હતું | હા | `v1 — MeridiJect PFS (released)` |
 | Site | `site_id` | **`<select>` dropdown** | **`GET /sites`** — registered sites. Product version પસંદ કરો એટલે એની `site_id` auto-fill થાય (editable) | હા | `Demo Site 1` (`SITE1`) |
 | Manufacturing profile | `manufacturing_profile_code` | **`<select>` dropdown** | Product Master ના જ 5 values (`pharma` / `device` / `injectable_ddcp` / `inhalation_ddcp` / `drug_eluting_device`). Product version પસંદ કરો એટલે એનો profile auto-fill થાય (editable). MeridiJect PFS = `injectable_ddcp` | હા | `injectable_ddcp` |
+| Batch size | `batch_size_value` | free-text `Input` | — **✅ 2026-09-16 code-verified: હવે form માં real field છે** (પહેલાં §9.5 "backend-only" કહેતું હતું — તે હવે stale/ખોટું છે). Numeric string, દા.ત. `4000` | ના | `4000` |
+| Batch size UOM | `batch_size_uom` | free-text `Input` | — free text, **dropdown/picker નથી** (UOM picker `rules.gxp_uom` સામે ક્યાંય resolve નથી થતું frontend માં) | ના | `EA` |
+
+**Edit** (`EditGraphModal`, `PUT /recipes/v2/drafts/{id}`) ના પણ એ જ 2 batch-size field છે, existing version ના
+`batch_size_value`/`batch_size_uom` થી pre-filled.
 
 નીચે 3 repeatable editors: **Sections**, **Steps**, **Dependencies** (§9.2–9.4).
 
@@ -941,17 +1139,89 @@ auto-fill થાય — બંને પછી પણ editable છે, પણ de
 | Step code | `stable_step_code` | text | — (version અંદર unique; dependencies આ code વાપરે) | હા | `FILL-01` |
 | Section code | `section_code` | text | **ઉપરના કોઈ section નો `stable_section_code`** સાથે બરાબર match થવો જોઈએ (ના થાય તો create rejects) | હા | `SEC-FILL` |
 | Step type | `step_type` | **`<select>` dropdown** | **16 controlled values** (code `STEP_TYPES`): `instruction`, `data_entry`, `scan`, `weigh`, `equipment_check`, `calculation`, `ipc_qc`, `signature`, `verification`, `timer`, `hold_point`, `material_consume`, `assembly`, `test`, `packaging`, `custom_approved_type` | હા | `weigh` |
+| Instruction text | `instruction_text` | **free-text `<textarea>`** (2 rows) | — **✅ 2026-09-16 code-verified: real field, §9.5 નું "backend-only" claim હવે stale છે.** Operator batch execution વખતે આ જ text step Detail modal માં વાંચે (§11.3) — rich-text/markdown નથી, plain text જ | ના | `Balance ને tare કરો, drug substance ne filler hopper માં ધીમે-ધીમે dispense કરો, target weight cross ના થાય એની કાળજી રાખો.` |
 | Sequence hint | `sequence_hint` | number | — (readiness/ordering hint) | ના (પણ ભરવો) | `1` |
 | Critical step | `is_critical` | **`<select>` Yes/No** | — (critical step ભૂલ = deviation-tracking કડક) | ના (default No) | `Yes` |
 | Required role | `required_role_code` | **`<select>` dropdown** | **`GET /roles`** — બધા seeded roles. Demo-relevant: `Operator`, `DDCP Operator`, `QC Reviewer`, `Sanitation Operator`, `Aseptic Operator`. **ખાલી = કોઈ પણ `batch_execution.execute` holder** | ના | `Operator` |
+| Required qualification code | `required_qualification_code` | free-text `Input` **+ `<datalist>` suggestions** (2026-09-16 ઉમેર્યું) | **`GET /training/v1/qualification-codes`** — `qms.qualification_record` (Document 31) માંથી distinct granted code, suggestion list તરીકે. **⚠️ formal FK નથી** — કોઈ qualification-code catalog table જ નથી (SG-086). Typing કોઈ પણ નવો code હજુ સ્વીકારાય | ના | `ASEPTIC_GOWN_CERT_DEMO` |
+
+**🛑 CRITICAL — 2026-09-16 code-verified, પહેલાં આ doc એ "enforce નથી" ખોટું કહ્યું હોત, ખરેખર ઊંધું છે (fields ગોઠવતા ગોઠવતા આ મળ્યું):**
+`batch_execution/commands.py::_enforce_step_qualification()` આ field ને batch step **start** વખતે **hard
+enforce** કરે છે (`QUALIFICATION_MISSING`/`QUALIFICATION_EXPIRED`, `required_role_code`/SG-178 થી પણ
+કડક — **કોઈ override path જ નથી**, Supervisor/Admin પણ bypass ના કરી શકે) — પણ **iam.qualifications**
+table સામે ચેક કરે છે, **qms.qualification_record નહીં** (જ્યાં ઉપરનો dropdown સૂચન લાવે છે એ table). Code
+grep-verified: **`iam.qualifications` માં ક્યાંય, કોઈ પણ endpoint/script/seed થી, row insert થવાનો રસ્તો જ
+નથી** (`session.add(Qualification` — 0 match આખા codebase માં) — matches the same table `material/
+commands.py`'s dispensing-qualification ચેક પણ વાપરે છે, જે એ જ કારણથી કાયમ fail થાય. **પરિણામ: કોઈ પણ
+recipe step પર `required_qualification_code` set કરો તો — Admin સહિત **કોઈ પણ** user એ step ક્યારેય start
+નહીં કરી શકે** (`QUALIFICATION_MISSING`, કાયમ, કોઈ escape hatch નહીં). Demo/testing માટે: **આ field હાલ
+ખાલી જ રાખો** જ્યાં સુધી `iam.qualifications` ને populate કરવાનો કોઈ રસ્તો (નવો IAM endpoint, અથવા
+SG-086 ના resolution પ્રમાણે `qms.qualification_record` → `iam.qualifications` write-through) ના બને —
+§9.7 નું MeridiJect worked example ઈરાદાપૂર્વક કોઈ step પર આ field set નથી કરતું, બરાબર આ કારણથી.
 
 **`required_role_code` નું enforcement (SG-178, §9.6 જુઓ):** ખાલી ના હોય તો — batch issue વખતે એ role
 step પર **freeze** થાય, અને batch execution વખતે એ role વગરનો user step start કરે તો
 **`STEP_ROLE_MISMATCH` (403)**.
 
-*(Backend `StepInput` વધુ સ્વીકારે — `instruction_text`, per-step `parameters[]` (target/min/max/uom/rule),
-`evidence_requirements[]`, `qualification_policy_id`, `signature_policy_id`, `exception_policy_id` — પણ
-frontend form માં આ 6 જ છે; બાકીના roadmap/API-only, §9.5.)*
+દરેક step ની નીચે 4 વધુ repeatable sub-editor છે — **બધા 2026-09-16 code-verified real UI editor છે**
+(§9.3.1–9.3.4). §9.5 માં હજુ genuinely backend-only રહેલા 4 field ની honest list છે.
+
+### 9.3.1 Parameters (`step.parameters[]` → `ParameterInput`) — step પર શું measure/record થાય
+
+| Sub-field | Backend | Type / UI control | Reference / dropdown | ફરજિયાત? | ઉદાહરણ |
+|---|---|---|---|---|---|
+| Parameter code | `parameter_code` | free-text `Input` | — (batch execution "Record results" આ code થી જ ઓળખે, §11.3) | હા | `FILL_WEIGHT_MG` |
+| Data type | `data_type` | free-text `Input` (placeholder સૂચવે: `decimal`/`integer`/`text`/`boolean`) | — **dropdown નથી**, તમારે placeholder ના suggested string માંથી જ ટાઈપ કરવાનું (typo ચેક નથી) | હા | `decimal` |
+| Source | `source_type` | free-text `Input` (placeholder સૂચવે: `manual_entry`/`equipment_reading`/`calculated`/`scan`) | — **dropdown નથી**, same pattern | હા | `manual_entry` |
+| UOM | `uom` | free-text `Input` | — **dropdown/UOM picker નથી** (backend server-side `rules_service.resolve_uom` થી resolve કરે, પણ frontend raw string જ મોકલે) | ના | `mg` |
+| Target | `target_value` | free-text `Input` | — | ના | `1000` |
+| Min | `min_value` | free-text `Input` | — | ના | `950` |
+| Max | `max_value` | free-text `Input` | — | ના | `1050` |
+| Precision (decimal digits) | `precision_digits` | `Input type="number" min={0}` | — | ના | `1` |
+| Validation rule | `rule_id` | **`<select>` dropdown** | **`GET /rules/v1`** — currently-effective released rules (DDCP ના IPC field જેવો જ linked acceptance-rule picker), `rule_id - rule_type v{semantic_version}`. **⚠️ 2026-09-16 live DB status: DB reset (§ Phase 0) પછી 0 released rule છે** — dropdown ખાલી દેખાશે જ્યાં સુધી `/rules` (Document 22, `rules.author`/`.release`) પર જઈને પહેલા rule author+release ના કરો — tolerance value ખરેખર QA/client નિર્ણય છે (§19 ના જ pattern), guess ના કરાય | ના | *(ખાલી — rule ના હોય ત્યાં સુધી)* |
+| Rule version pin (rule_id સેટ હોય તો જ દેખાય) | `rule_version` | free-text `Input` | ખાલી = issue વખતની effective released version | ના | `1.0.0` |
+| Manual fallback policy (rule_id સેટ હોય તો જ દેખાય) | `manual_fallback_policy` | free-text `Input` | — | ના | `Rule engine ડાઉન હોય તો QC Reviewer manual pass/fail આપે` |
+| Required | `required` | checkbox (default checked) | — Complete step માટે server ચેક કરે કે required parameter નો result record થયેલો છે (§11.3 `PARAMETER_REQUIRED`) | — | ✅ checked |
+
+### 9.3.2 Material requirements (`step.material_requirements[]` → `MaterialRequirementInput`) — step પર શું material consume થાય
+
+| Sub-field | Backend | Type / UI control | Reference / dropdown | ફરજિયાત? | ઉદાહરણ |
+|---|---|---|---|---|---|
+| Material | `material_spec_version_id` | **બે linked `<select>` dropdown** (Business ID → Version) — **Material Specification** picker, **raw `/materials` list નહીં** | **`GET /material-specifications/v1/business-ids`** (Business ID પસંદ કરો) → **`GET /material-specifications/v1/{business_id}/versions`** (એ business ID ના versions, released first). **⚠️ 2026-09-16 live DB status: DB reset પછી 0 material spec version છે** — બંને dropdown ખાલી દેખાશે જ્યાં સુધી `/material-specifications` પર જઈને પહેલા spec author+release ના કરો | હા | `MJ-DRUGSUB-01 v1 (released)` |
+| Target qty | `target_value` | free-text `Input` | — | ના | `1.05` |
+| Min qty | `min_value` | free-text `Input` | — | ના | `1.00` |
+| Max qty | `max_value` | free-text `Input` | — | ના | `1.10` |
+| UOM | `uom` | free-text `Input` | — dropdown નથી (parameter UOM જેવો જ pattern) | ના | `mL` |
+| Substitution allowed | `substitution_allowed` | checkbox (default unchecked) | checked કરો તો નીચે "Alternative material" dropdown pair દેખાય | — | ☐ unchecked |
+| Alternative material (substitution_allowed checked હોય તો જ) | `alternative_material_spec_version_id` | બીજી Material Spec Business ID → Version dropdown pair | same 2 endpoints ઉપર | ના | — |
+| Consume mode | `consume_mode` | free-text `Input` | — dropdown નથી | ના | `full_container` |
+| Genealogy required | `genealogy_required` | checkbox (default **checked**) | — batch genealogy/traceability (Document 03 MAT-021) આ material lot ને track કરશે કે નહીં | — | ✅ checked |
+
+### 9.3.3 Equipment requirements (`step.equipment_requirements[]` → `EquipmentRequirementInput`) — step પર શું equipment class જોઈએ
+
+**નોંધ:** આ ફક્ત equipment **class** (string) declare કરે છે — ચોક્કસ equipment asset/serial picker નથી
+(equipment master પર કોઈ link જ નથી, code-verified).
+
+| Sub-field | Backend | Type / UI control | Reference / dropdown | ફરજિયાત? | ઉદાહરણ |
+|---|---|---|---|---|---|
+| Equipment class | `equipment_class` | free-text `Input` | — dropdown/equipment-asset picker નથી; તમે class-name string ટાઈપ કરો | હા | `FILLING_LINE` |
+| Any unit of this class is fine | `exact_equipment_optional` | checkbox (default **checked**) | — | — | ✅ checked |
+| Requires current calibration | `require_current_calibration` | checkbox (default unchecked) | — | — | ☐ unchecked |
+| Requires current qualification | `require_current_qualification` | checkbox (default unchecked) | — | — | ☐ unchecked |
+| Requires current cleaning | `require_current_cleaning` | checkbox (default unchecked) | — | — | ☐ unchecked |
+
+### 9.3.4 Evidence requirements (`step.evidence_requirements[]` → `EvidenceRequirementInput`) — step પર શું evidence ફરજિયાત
+
+| Sub-field | Backend | Type / UI control | Reference / dropdown | ફરજિયાત? | ઉદાહરણ |
+|---|---|---|---|---|---|
+| Evidence type | `evidence_type` | free-text `Input` (placeholder સૂચવે: photo/scan/printout) | — dropdown નથી | હા | `photo` |
+| Required count | `required_count` | `Input type="number" min={1}` (default `1`) | — | ના (default 1) | `1` |
+| Allowed MIME types | `allowed_mime_types` | free-text `Input` | — dropdown નથી | ના | `image/jpeg,image/png` |
+| Retention class | `retention_class` | free-text `Input` | — dropdown નથી | ના | `GXP_PERMANENT` |
+
+**Batch execution (§11.3) આ requirement list step Detail modal માં બતાવે છે (read-only)** — actual
+photo/file **upload કરવાની UI/API હજુ નથી** (SG-047, §11.3 ના known-gaps table જુઓ). એટલે આ editor થી
+declare કરેલી requirement, batch execution વખતે ફક્ત "શું ફરજિયાત છે" તરીકે વંચાય, enforce નથી થતી.
 
 ### 9.4 Dependencies (repeatable — `dependencies[]` → `DependencyInput`)
 
@@ -966,18 +1236,29 @@ frontend form માં આ 6 જ છે; બાકીના roadmap/API-only, �
 
 *(Detail modal પણ હવે **Dependencies** table બતાવે — predecessor → successor + condition rule.)*
 
-### 9.5 Backend-only fields (form માં નથી — honest)
+### 9.5 Backend-only fields (form માં નથી — honest, 2026-09-16 re-verified)
+
+**મહત્વનું update (2026-09-16):** આ list પહેલાં `batch_size_value`/`batch_size_uom`, per-step `parameters[]`
+અને per-step `evidence_requirements[]` ને પણ "backend-only" ગણાવતી હતી — એ **stale/ખોટું** હતું.
+`frontend/src/app/recipe-master/page.tsx` ના direct code-read (2026-09-16) એ પુષ્ટિ કરી કે batch size
+(§9.1), parameters (§9.3.1), material requirements (§9.3.2), equipment requirements (§9.3.3), evidence
+requirements (§9.3.4), અને instruction text (§9.3) — **બધા real, code-verified UI editor** ધરાવે છે. નીચેની
+list હવે ફક્ત genuinely બાકી રહેલા fields ની છે:
 
 | Field | ક્યાં accept થાય | નોંધ |
 |---|---|---|
-| `batch_size_value` / `batch_size_uom` | `CreateRecipeDraftCommand` / `UpdateRecipeDraftCommand` | form send જ નથી કરતું → recipe version પર NULL રહે; batch create વખતે target qty અલગથી અપાય (§11) |
-| per-step `parameters[]` (target/min/max, uom, rule_id) | `StepInput.parameters` | fill weight tolerance જેવા in-process limits — API થી જ, UI editor roadmap |
-| per-step `evidence_requirements[]` | `StepInput.evidence_requirements` | step પર કેટલા/કયા-mime evidence ફરજિયાત — API થી જ |
-| `qualification_policy_id` / `signature_policy_id` / `exception_policy_id` (per step) | `StepInput` | step-level qualification/signature/exception override — API થી જ |
+| `qualification_policy_id` (per step) | `StepInput` | step-level qualification-policy FK override — form માં કોઈ field/dropdown નથી (grep: 0 match), `required_qualification_code` (§9.3, plain string) થી અલગ | API થી જ |
+| `signature_policy_id` (per step) | `StepInput` | step-level signature-policy FK override — form માં કોઈ field નથી | API થી જ |
+| `exception_policy_id` (per step) | `StepInput` | step-level exception-policy FK override — form માં કોઈ field નથી | API થી જ |
+| `area_requirement_id` (per section) | `SectionInput` | section ને ચોક્કસ area FK સાથે bind કરવાનો field — form માં `parallel_group`/`expected_duration_minutes` (§9.2) છે પણ આ નથી | API થી જ |
+
+આ 4 field ને UI editor આપવો પોતે એક design decision છે (policy-picker source, area-picker source —
+guess ના કરાય); હાલ પૂરતું open item, નવો SPEC_GAP જરૂર જણાય તો raise કરવો.
 
 ### 9.6 Reference-table dropdowns — સારાંશ
 
-**બધા 8 reference field હવે real dropdown છે** (2026-09-08 થી — કોઈ free-text/raw-UUID નથી):
+**10 reference field real dropdown છે** (2026-09-08 થી top-level 8; 2026-09-16 code-verified 2 વધુ
+per-step sub-editor picker મળ્યા — parameter acceptance rule, material spec version):
 
 | Field | Dropdown endpoint / source |
 |---|---|
@@ -989,6 +1270,11 @@ frontend form માં આ 6 જ છે; બાકીના roadmap/API-only, �
 | Required role | `GET /roles` |
 | Critical step | Yes/No |
 | Dependency condition rule | `GET /rules/v1` — effective released rules (નવો endpoint, `rules.evaluate`-gated) |
+| Parameter validation/acceptance rule (§9.3.1) | `GET /rules/v1` — **dependency-condition rule dropdown જ list reuse કરે છે** (same `ruleOptions`, same endpoint, બે જુદા fields માટે) |
+| Material requirement → Material (§9.3.2) | `GET /material-specifications/v1/business-ids` → `GET /material-specifications/v1/{business_id}/versions` — 2-step cascading picker, **raw `/materials` list નહીં, Material Specification master** |
+
+**UOM ક્યાંય dropdown નથી** (parameter, material, batch-size — ત્રણેય જગ્યાએ free-text `Input`) — આ 1
+consistent gap, `rules.gxp_uom` picker ક્યાંય frontend માં wire નથી થયેલો.
 
 ### 9.7 પૂરું worked example — MeridiJect PFS recipe (`RCP-MJ-PFS-V1`)
 
@@ -1039,6 +1325,38 @@ frontend form માં આ 6 જ છે; બાકીના roadmap/API-only, �
 | `TEST-CCI-01` | `TEST-VIS-01` |
 | `TEST-VIS-01` | `HOLD-QA-01` |
 
+**Parameters / Material / Equipment / Evidence — 3 key step માટે (§9.3.1–9.3.4, 2026-09-16 ઉમેર્યું):**
+
+**⚠️ પ્રામાણિકતા:** `rule_id` (§9.3.1) અને Material Specification (§9.3.2) ના dropdown 2026-09-16 એ live DB
+માં **ખાલી** છે (DB reset પછી કોઈ released rule/material spec version નથી, §19/§21 જુઓ). નીચેની table
+માં એ 2 field ને લગતાં columns **ખાલી** રાખ્યા છે — `/rules` અને `/material-specifications` પર પહેલા
+master data author+release કરવું એ પોતે એક જુદો client/QA નિર્ણય છે (tolerance value, spec limit —
+guess ના કરાય). બાકીના (target/min/max/uom/equipment class/evidence type) manual-entry fields છે,
+directly ભરી શકાય.
+
+*`DISP-01` (weigh — bulk drug substance dispense):*
+
+| Sub-editor | Field → Value |
+|---|---|
+| Parameter | `DISP_WEIGHT_KG` · data type `decimal` · source `manual_entry` · UOM `kg` · target `12.500` · min `12.375` · max `12.625` · precision `3` · rule *(ખાલી)* · required ✅ |
+| Material requirement | Material *(ખાલી — spec author કરવો પડશે)* · target `12.5` · UOM `kg` · substitution ☐ · consume mode `full_container` · genealogy ✅ |
+| Equipment requirement | class `DISPENSING_BOOTH` · any-unit ✅ · calibration ✅ required · qualification ☐ · cleaning ✅ required |
+
+*`FILL-01` (custom_approved_type — aseptic fill run):*
+
+| Sub-editor | Field → Value |
+|---|---|
+| Parameter | `FILL_WEIGHT_MG` · data type `decimal` · source `equipment_reading` · UOM `mg` · target `1000` · min `950` · max `1050` · precision `1` · rule *(ખાલી)* · required ✅ |
+| Material requirement | Material *(ખાલી)* — primary container (syringe barrel + stopper) · target `1` · UOM `EA` · substitution ☐ · genealogy ✅ |
+| Equipment requirement | class `FILLING_LINE` · any-unit ✅ · calibration ✅ required · qualification ✅ required · cleaning ✅ required |
+
+*`FILL-IPC-01` (ipc_qc — in-process fill-weight check):*
+
+| Sub-editor | Field → Value |
+|---|---|
+| Parameter | `IPC_FILL_WEIGHT_MG` · data type `decimal` · source `manual_entry` · UOM `mg` · target `1000` · min `950` · max `1050` · precision `1` · rule *(ખાલી)* · required ✅ |
+| Evidence requirement | type `photo` · required count `1` · MIME `image/jpeg,image/png` · retention `GXP_PERMANENT` (IPC reading નું balance-display photo) |
+
 **API એ જે body receive કરે (create draft):**
 
 ```jsonc
@@ -1059,9 +1377,16 @@ POST /recipes/v2/drafts
   ],
   "steps": [
     {"stable_step_code": "LC-01",       "section_code": "SEC-DISP", "step_type": "equipment_check",      "sequence_hint": 1, "is_critical": true,  "required_role_code": "Sanitation Operator"},
-    {"stable_step_code": "DISP-01",     "section_code": "SEC-DISP", "step_type": "weigh",                "sequence_hint": 2, "is_critical": true,  "required_role_code": "Operator"},
-    {"stable_step_code": "FILL-01",     "section_code": "SEC-FILL", "step_type": "custom_approved_type", "sequence_hint": 3, "is_critical": true,  "required_role_code": "Operator"},
-    {"stable_step_code": "FILL-IPC-01", "section_code": "SEC-FILL", "step_type": "ipc_qc",              "sequence_hint": 4, "is_critical": true,  "required_role_code": "QC Reviewer"},
+    {"stable_step_code": "DISP-01",     "section_code": "SEC-DISP", "step_type": "weigh",                "sequence_hint": 2, "is_critical": true,  "required_role_code": "Operator",
+      "instruction_text": "Balance ne tare karo, drug substance ne filler hopper ma dhime-dhime dispense karo.",
+      "parameters": [{"parameter_code": "DISP_WEIGHT_KG", "data_type": "decimal", "source_type": "manual_entry", "uom": "kg", "target_value": "12.500", "min_value": "12.375", "max_value": "12.625", "precision_digits": 3, "required": true}],
+      "equipment_requirements": [{"equipment_class": "DISPENSING_BOOTH", "exact_equipment_optional": true, "require_current_calibration": true, "require_current_qualification": false, "require_current_cleaning": true}]},
+    {"stable_step_code": "FILL-01",     "section_code": "SEC-FILL", "step_type": "custom_approved_type", "sequence_hint": 3, "is_critical": true,  "required_role_code": "Operator",
+      "parameters": [{"parameter_code": "FILL_WEIGHT_MG", "data_type": "decimal", "source_type": "equipment_reading", "uom": "mg", "target_value": "1000", "min_value": "950", "max_value": "1050", "precision_digits": 1, "required": true}],
+      "equipment_requirements": [{"equipment_class": "FILLING_LINE", "exact_equipment_optional": true, "require_current_calibration": true, "require_current_qualification": true, "require_current_cleaning": true}]},
+    {"stable_step_code": "FILL-IPC-01", "section_code": "SEC-FILL", "step_type": "ipc_qc",              "sequence_hint": 4, "is_critical": true,  "required_role_code": "QC Reviewer",
+      "parameters": [{"parameter_code": "IPC_FILL_WEIGHT_MG", "data_type": "decimal", "source_type": "manual_entry", "uom": "mg", "target_value": "1000", "min_value": "950", "max_value": "1050", "precision_digits": 1, "required": true}],
+      "evidence_requirements": [{"evidence_type": "photo", "required_count": 1, "allowed_mime_types": "image/jpeg,image/png", "retention_class": "GXP_PERMANENT"}]},
     {"stable_step_code": "ASSY-01",     "section_code": "SEC-ASSY", "step_type": "assembly",            "sequence_hint": 5, "is_critical": true,  "required_role_code": "DDCP Operator"},
     {"stable_step_code": "ASSY-VER-01", "section_code": "SEC-ASSY", "step_type": "verification",        "sequence_hint": 6, "is_critical": true,  "required_role_code": "DDCP Operator"},
     {"stable_step_code": "TEST-CCI-01", "section_code": "SEC-TEST", "step_type": "test",                "sequence_hint": 7, "is_critical": true,  "required_role_code": "QC Reviewer"},
@@ -1451,6 +1776,32 @@ kg`), "Record results" માં `WEIGHT` field ભરે → sign (password) �
 `FILL-01` step "ready" થાય. આ બે અલગ signed action છે (reading capture ≠ step completion) — બંને
 Document 106 પ્રમાણે.
 
+**પૂરેપૂરો data-entry chain — MeridiJect PFS batch (§9.7 ના recipe parameters વાપરીને, 2026-09-16 ઉમેર્યું):**
+
+`MJ-PFS-B-2601` batch માટે, જ્યારે §9.7 ના `DISP-01`/`FILL-01`/`FILL-IPC-01` steps sequentially ready
+થાય, દરેક પર "Record results" માં આ ચોક્કસ ડેટા ભરો (parameter code recipe એ જ declare કરેલો, §9.3.1
+પ્રમાણે — random field name નહીં):
+
+| Step | Parameter code (recipe-declared) | Record results માં ભરવાનું value | Target/Min/Max (Detail modal માં દેખાય, hint તરીકે) | Result |
+|---|---|---|---|---|
+| `DISP-01` | `DISP_WEIGHT_KG` | `12.510` | `12.500` / `12.375` / `12.625` | ✅ within range → Complete OK |
+| `FILL-01` | `FILL_WEIGHT_MG` | `1002` | `1000` / `950` / `1050` | ✅ within range → Complete OK |
+| `FILL-IPC-01` | `IPC_FILL_WEIGHT_MG` | `998` | `1000` / `950` / `1050` | ✅ within range → Complete OK |
+
+**નોંધ — min/max ની બહાર value ભરો તો શું (code-verified `commands.py::_step_result_quality_status`):**
+Backend **`in_range`/`out_of_range`/`not_evaluated`** compute કરીને `StepResult.quality_status` column માં
+store કરે છે, અને `GET .../results` response એ field **પાછું આપે છે** (`router.py` line 157) — પણ
+**save/commit ને block નથી કરતું** (docstring: "informational only, never blocks the command"), અને
+frontend `StepResultRow` type એ field **read જ નથી કરતું/UI માં ક્યાંય show નથી થતું** (grep-verified 0
+match). એટલે: `FILL-01` પર ઈરાદાપૂર્વક `1200` (max 1050 થી ઉપર) ભરો → save થઈ જશે, `Complete` પણ થઈ જશે,
+UI માં કોઈ visible warning નહીં — પણ API response/DB row માં `quality_status = "out_of_range"` ખરેખર
+હાજર છે, ફક્ત screen પર દેખાતું નથી. Client demo માટે સારો honest point: "ડેટા capture થાય છે અને flag
+થાય છે, પણ UI હજુ એ flag બતાવતું નથી" — deviation trigger manual/§13 થી જ કરવો પડે, automatic નથી.
+
+**દરેક step નું "Detail" બટન ખોલીને ચકાસો** (§11.3 ઉપર) — `instruction_text` (§9.3 એ authored કરેલી),
+parameter list target/min/max સાથે, અને `FILL-IPC-01` ના `evidence_requirements` (photo, required count
+1) list — બધું recipe એ §9.7 માં declare કરેલા પ્રમાણે જ exactly દેખાવું જોઈએ (round-trip verify).
+
 **✅ 2026-09-09 — "Detail" બટન (દરેક step row પર):** step ની પૂરી વિગત — instruction text, section,
 critical flag, predecessor/successor steps, દરેક parameter નો target/range + અત્યાર સુધીનો recorded
 result, અને declared evidence requirement (upload હજુ નથી, ફક્ત list) — બધું 1 જ modal માં. Recipe એ
@@ -1463,10 +1814,59 @@ declare કરેલી instruction હવે ક્યાંય UI માં �
 |---|---|
 | Step-level hold (signed reason સાથે) | **✅ FIXED 2026-09-09** — §11.4 જુઓ |
 | Production Complete state | **✅ FIXED 2026-09-09** — §11.5 જુઓ |
-| Evidence (photo/file) attach કરવું | હજુ open — Step પર file/photo upload કરવાની UI/API નથી (`gxp_step_evidence_link` — SG-047) |
+| Evidence (photo/file) attach કરવું | **✅ 2026-09-17 CORRECTED — ઉપરનું વાક્ય stale/ખોટું હતું.** UI/API બંને code-verified હાજર છે — `gxp_step_evidence_link` ("Link evidence" બટન, §11.3.1 જુઓ). File પોતે અહીંથી upload નથી થતું (Platform ops → Evidence operations પર પહેલા stage કરવું પડે), પણ link કરવાની capability existing SG-047 scope ની અંદર જ પહેલેથી બની ગયેલી — આ guide માં ફક્ત mention નહોતું. |
 | Step correction/rework | હજુ open — Complete થયેલો step પછી ભૂલ સુધારવાનો controlled correction flow નથી (SG-048 #023/#024) |
 | Timer/duration enforcement | હજુ open — Hold-time/duration limit આપોઆપ ચેક નથી થતું (SG-048 #018, Temporal જરૂરી — આ platform માં ક્યાંય integrate નથી) |
-| Material/Equipment link | હજુ open, **પણ હવે સ્પષ્ટ કારણ ખબર છે**: recipe step એ કયો material/equipment વાપરવો એ declare જ કરી શકતું નથી (કોઈ field જ નથી) — આ ખૂટતી field ની ડિઝાઇન પોતે એક જુદો, હજુ ખુલ્લો નિર્ણય છે (SG-045, "tolerance rule"/"consume mode"/"calibration policy" જેવા શબ્દો ambiguous છે, guess ના કરાય). SG-048 #012/#013 |
+| Material/Equipment link at execution time | **✅ 2026-09-16 CORRECTED — ઉપરનું વાક્ય stale/ખોટું હતું.** Recipe step **હવે** material/equipment requirement declare કરી શકે છે — real UI editor છે (§9.3.2/§9.3.3, code-verified 2026-09-16). **ખરો ખૂટતો ભાગ**: batch execution ની side — `/batch-execution` ના step Detail modal (§11.3) `material_requirements`/`equipment_requirements` બતાવતું જ નથી (ફક્ત `instruction_text`/`parameters`/`evidence_requirements` — `execution-view` ના `StepDetail` type માં એ 2 field code-verified ગેરહાજર), અને batch execution પાસે material-lot consumption/reservation અથવા specific-equipment-asset link કરવાની કોઈ UI/API step level પર નથી. SG-048 #012/#013 |
+
+### 11.3.1 Link Evidence / Hand Over — બે વધારાનાં step-level બટન (✅ 2026-09-17 ડોક્યુમેન્ટ થયું)
+
+**અગત્યનું:** આ 2 બટન UI માં પહેલેથી હતાં (SG-047 scope, code-verified) — ફક્ત આ guide માં ક્યાંય લખ્યાં
+નહોતાં, એટલે testers ને "આ શું છે?" confusion થતું હતું. §11.3 ના Record results/Complete ની જેમ જ,
+આ પણ step "in_progress" હોય ત્યારે row માં દેખાય છે — પણ બંને **optional** છે, દરેક step પર જરૂરી નથી.
+
+**Link evidence** — **કોણ:** `batch_execution.execute` (Operator, Supervisor, Admin — Start/Record
+results/Complete જેવો જ permission). **ક્યાં:** step row → "Link evidence" બટન. **Backend:**
+`POST /batches/v1/{batch_id}/steps/{step_id}/evidence-links`. **સહી?** ના — unsigned (Document 106 માં
+evidence-link માટે કોઈ policy row નથી, એટલે intentionally unsigned રાખ્યું છે, guess નથી કર્યો).
+
+**પહેલા શું કરવું પડે:** આ બટન ફાઈલ upload નથી કરતું — ફક્ત પહેલેથી staged evidence ને step સાથે "link"
+કરે છે. ફાઈલ પહેલા **Platform ops → Evidence operations** (sidebar → "Platform ops") પર "Stage an
+evidence upload" થી ચડાવવી પડે — ત્યાંથી મળતો Evidence object ID અને SHA-256 hash અહીં પેસ્ટ કરવાના.
+
+| Field (modal માં ક્રમમાં) | મતલબ | જરૂરી? |
+|---|---|---|
+| Evidence object ID | Platform ops પરથી મળેલો ID | ✅ ફરજિયાત |
+| Evidence SHA-256 | એ જ પેજ પરથી મળેલો content hash | ✅ ફરજિયાત |
+| Media type | દા.ત. `image/jpeg` | optional |
+| Requirement code | Recipe એ §9.3 માં declare કરેલા evidence requirement સાથે match કરવા (દા.ત. `FILL-IPC-01` નો "photo, required count 1") | optional, પણ Complete વખતે count આ code પરથી જ ગણાય |
+
+**ચેતવણી:** Link Evidence modal માં "1 of 2 required" જેવું કોઈ live progress નથી. Recipe એ કેટલા/કયા
+type evidence માંગ્યા છે એ જોવા step ના "Detail" બટન (§11.3) ખોલવું પડે — ત્યાં "Evidence requirements"
+ટેબલ (type + required count) અલગથી દેખાય. Complete દબાવતા પહેલા ત્યાં ચકાસી લેવું.
+
+**જો required evidence link કર્યા વગર Complete દબાવો:** `VALIDATION_FAILED` (422) — "Required evidence
+has not been linked" + missing type ની list. (`PARAMETER_REQUIRED` જેવો ડેડિકેટેડ error code evidence
+માટે નથી — generic `ValidationFailedError` વાપર્યો છે.)
+
+**Hand over** — **કોણ:** `batch_execution.execute` (same roles). **ક્યાં:** step row → "Hand over"
+બટન. **Backend:** `POST /batches/v1/{batch_id}/steps/{step_id}/handover`. **સહી?** ના — unsigned
+(આ action માટે પણ Document 106 માં કોઈ policy row નથી).
+
+**શું કરે:** ફક્ત step નું "assigned to" operator બદલે છે, બીજું કંઈ નહીં — step ની state `in_progress`
+જ રહે છે, original start time/audit event યથાવત રહે છે.
+
+| Field | મતલબ | જરૂરી? |
+|---|---|---|
+| Hand over to | User picker (dropdown) | ✅ ફરજિયાત |
+| Reason | Free text, audit trail માં જાય | optional |
+
+**રિયલ વર્લ્ડ ઉદાહરણ:** `operator1` નો shift પૂરો થાય, `FILL-01` step હજુ `in_progress` છે —
+supervisor "Hand over" દબાવે, નવો operator પસંદ કરે, reason લખે ("shift change") → save (password નથી
+જોઈતો) → step હવે નવા operator ના નામે, કામ ત્યાં જ ચાલુ રહે.
+
+**બંને માટે common rule:** step `in_progress` સિવાય બીજી કોઈ state (pending/complete/on_hold) માં call
+કરો તો `INVALID_TRANSITION` (409, `current_state` detail સાથે) આવે.
 
 ### 11.4 Step-level Hold / Resume — signed, ફક્ત એ 1 step અટકે (✅ 2026-09-09 નવું)
 
@@ -1607,7 +2007,26 @@ DEVICE constituent માટે એ જ op ફરી: Constituent type `Device`,
 | Decision | `Accept` |
 | Rejection reason | ખાલી (Reject વખતે જ ફરજિયાત) |
 | Profile (optional check) | **✅ FIXED 2026-09-08 — હવે real dropdown** (Op 3 ના "Released profile" જેવો જ `profileSelect`, પહેલાં free text UUID હતું), RELEASED PFS profile માંથી પસંદ કરો — આપો તો preparation-status/attributes એની requirement સામે પણ ચેક થાય |
-| Sterilization/depyrogenation reference | ખાલી (profile ને sterilized/depyrogenated/ready-to-use component જોઈએ ત્યારે જ ફરજિયાત) |
+| Sterilization/depyrogenation reference | **DRUG handoff માટે ખાલી** (required_state=`Released`, trigger set માં નથી); **DEVICE handoff માટે ફરજિયાત** (નીચે જુઓ) |
+
+**⚠️ 2026-09-16 clarification (code-verified, `ddcp/commands.py` L520-527) — "ક્યારે ફરજિયાત" ને ચોક્કસ
+કરેલું, પહેલાં ફક્ત "profile ને જોઈએ ત્યારે" જ લખેલું હતું:** Trigger `required_state ∈ {STERILIZED,
+DEPYROGENATED, READY_TO_USE}` — **§10.1 ના Row 2 (Device/needle) નું required_state `Ready to use` જ
+છે**, એટલે **આ ચોક્કસ ડેમોમાં DEVICE handoff Accept ને આ field ફરજિયાત છે** (ખાલી છોડો તો
+`SterileComponentIneligibleError`, 422). DRUG (Row 1, required_state=`Released`) trigger set માં નથી,
+ખાલી છોડવું સાચું જ છે.
+
+**આ reference ક્યાંથી મળે?** આ field માં **sterilization load item ID** જોઈએ — **§7.4 (Phase 3, ✅
+2026-09-16 થી આ જ document માં ઉમેર્યું)** પૂરું sequence આપે છે: Equipment qualify+calibrate (§7.2) →
+Sterilization cycle profile (workaround) → cycle create→start→data→**review/Accept** (§7.4) → `LOT-DEV-
+2601` નો load item **ACCEPTED**, `sterile_status = eligible` થાય. Cycle detail ના "Load items" ટેબલ
+માંથી એ item ID copy કરીને **અહીં** પેસ્ટ કરો — DEVICE handoff Accept ત્યારે જ pass થશે. *(વધુ ઊંડું
+field/RBAC/state-machine સંદર્ભ, અથવા 4th product family (Autoinjector/Inhalation/Coated) માટે —
+`Sterilization_Aseptic_Comprehensive_Test_Manual_Gujarati.md`.)*
+
+**Sequence અગત્યની:** આ Phase 8 ના DEVICE handoff Accept **પહેલાં** sterilization cycle પૂરું (ACCEPTED)
+થયેલું હોવું જ જોઈએ — નહીં તો કોઈ valid load item ID જ નહીં હોય. Story-level ક્રમ: Sterilization Phase 1-4
+→ પાછા આ DDCP guide ના Phase 8, Op 1 (handoff record) → Op 2 (Accept, sterilization reference સાથે).
 
 DRUG અને DEVICE — બંને handoff ને અલગ-અલગ Accept કરવા (2 વાર આ op).
 
@@ -1627,8 +2046,8 @@ backend એ lot_id ને DRUG/BIOLOGIC માટે ક્યારેય ચ�
 |---|---|
 | Batch | `MJ-PFS-B-2601` |
 | Released profile | `PFS-MERIDIJECT-001 v1` (§10.1) |
-| Equipment area/line | `LINE-PFS-01` (Phase 3, §7.1) |
-| Filler equipment | `LINE-PFS-01` (આ ડેમોમાં એ જ asset — fill-line અને filler equipment અલગ master data હોય તો client ના real layout પ્રમાણે અલગ code) |
+| Equipment area/line | `AREA-GRADE-A` (Phase 3, §7.1 — equipment **area**, asset નહીં) |
+| Filler equipment | `LINE-PFS-01` (Phase 3, §7.2 — equipment **asset**) |
 | Fill program ID / version | `PROG-FILL-001` / `1` |
 | Product contact path (kv, free-form) | `path` → `standard` |
 | Target fill quantity / uom | `1.000000` / `mL` |
@@ -1781,7 +2200,18 @@ training entity નથી), એ SG-060 નો scope છે, UI gap નહીં.
 બનાવતાં પહેલાં ઓટલો સાફ કરવો, જેથી પાછલી વાનગીનો કોઈ ટુકડો ભળી ના જાય (mix-up/cross-contamination
 અટકાવવા). "Start" (unsigned — ચેક શરૂ કરવું) → "Complete" (**સહી-required**, password re-entry —
 "line ખરેખર clear છે" એ next batch શરૂ કરવાની પૂર્વશરત છે, એટલે real e-signature). DDCP batch readiness
-(Phase 11) ને `LINE-PFS-01` equipment area માટે clear line જોઈએ.
+(Phase 11, §15.1) ને `AREA-GRADE-A` **equipment area** (§7.1 — asset `LINE-PFS-01` નહીં) માટે clear line
+જોઈએ.
+
+| Field | Data | ફરજિયાત? |
+|---|---|---|
+| Equipment area/line | `AREA-GRADE-A` (dropdown, §7.1) | ✅ |
+| Previous batch | ખાલી (optional — પાછલો batch, જો હોય તો) | — |
+| Next batch | `MJ-PFS-B-2601` (optional — Phase 7 create પછી જ dropdown માં) | — |
+| Checklist items | ખાલી (optional — Equipment-type item આપો તો એ asset ની qualification/calibration પણ cross-check થાય) | — |
+
+"Start" → "Complete (sign)" → **Result** `Pass — area is clear` → password → area `AREA-GRADE-A` state
+`CLEARED` થાય (§15.1 નો `LINE_NOT_READY` blocker હવે clear).
 
 ---
 
@@ -1801,8 +2231,8 @@ training entity નથી), એ SG-060 નો scope છે, UI gap નહીં.
 |---|---|
 | Batch | `MJ-PFS-B-2601` |
 | Released profile version | `PFS-MERIDIJECT-001 v1` (§10.1) |
-| Equipment area/line (optional) | `LINE-PFS-01` — આપો તો line clearance/EM status પણ ચેક થાય |
-| Filler equipment (optional) | `LINE-PFS-01` — આપો તો એ equipment ની eligibility પણ ચેક થાય |
+| Equipment area/line (optional) | `AREA-GRADE-A` (§7.1, **equipment area** — `LINE-PFS-01` નહીં) — આપો તો line clearance/EM status પણ ચેક થાય |
+| Filler equipment (optional) | `LINE-PFS-01` (§7.2, **equipment asset**) — આપો તો એ equipment ની eligibility પણ ચેક થાય |
 
 **4 શક્ય blocker:**
 
@@ -1810,8 +2240,8 @@ training entity નથી), એ SG-060 નો scope છે, UI gap નહીં.
 |---|---|---|
 | `BULK_NOT_RELEASED` | Drug/biologic constituent handoff હજુ Accept નથી થયો | §12.1 Op 1+2 — DRUG handoff record + Accept |
 | `PRIMARY_COMPONENT_NOT_RELEASED` | Device/packaging/label constituent handoff હજુ Accept નથી થયો | §12.1 Op 1+2 — DEVICE handoff record + Accept |
-| `LINE_NOT_READY` ("Line clearance NOT_STARTED") | `LINE-PFS-01` પર line clearance Complete (signed) નથી થયું | §14 (Phase 10) — Start → Complete (સહી) |
-| `LINE_NOT_READY` ("Filler equipment not eligible") | Equipment qualify/calibrate નથી થયું | `/equipment/{id}` → Qualify → Calibrate → Return to service |
+| `LINE_NOT_READY` ("Line clearance NOT_STARTED") | `AREA-GRADE-A` (equipment area) પર line clearance Complete (signed) નથી થયું | §14 (Phase 10) — Start → Complete (સહી) |
+| `LINE_NOT_READY` ("Filler equipment not eligible") | `LINE-PFS-01` (equipment asset) qualify/calibrate નથી થયું | §7.2 — Qualify → Calibrate |
 
 Phase 5-10 (§9-14) બધું પૂરું થયું હોય તો બધા 4 blocker clear દેખાય.
 
@@ -1962,12 +2392,19 @@ row — Section "Session expiry" ઉપર).
 | 30 | **✅ 2026-09-09, found answering a client question (not yet resolved — SG-180 open, project-owner decision needed).** "Batch Execution" (generic recipe-step chain, `/batch-execution`) and "DDCP Execution" (`/ddcp`'s constituent-handoff/fill/assembly records) both point at the same `ebmr.gxp_batch` row (since migration `0090`'s cutover, #27 above) but **neither reads nor writes the other** — confirmed by exhaustive grep, zero call sites. Completing DDCP's execution tabs does not complete/unblock the matching generic recipe step (`DISP-01`/`FILL-01`/`ASSY-01`/…) and vice versa. Separately (already SG-056, not new): the actual `/release` eligibility check reads **neither** DDCP execution nor DDCP's own "release-readiness"/evidence-freeze (§15) — only QA-review-package completeness and Vault snapshot integrity — so a batch can in principle be Released while DDCP execution/readiness is incomplete. See §12.0 above for the full 4-way comparison table and the recommended demo sequence. Three fix options recorded in `18_SPEC_GAPS.md` SG-180, none chosen yet — this is a scope decision for the project owner, not something guessed here. |
 | 31 | **✅ 2026-09-09, client-requested ("show detail of step") — built same day as #29.** Step rows on `/batch-execution` only ever showed code/role/state/assigned/started — the recipe's own instruction text, section, dependency graph and declared evidence requirements were nowhere in the UI. New "Detail" button on every step row (any state, not just running) opens a read-only view: step type, section, instruction text, critical flag, predecessors/successors, every parameter with its target/range and currently recorded value, and declared evidence requirements (upload still not built, SG-047 — shown for visibility only). Backend: `GET /batches/v1/{id}/execution-view`'s new `step_detail_by_step_id`, read from the live recipe graph (display-only, not a regulated decision — the frozen execution snapshot in Vault remains the authoritative instruction record). §11.3 above. |
 | 32 | **✅ 2026-09-09, project-owner-directed (client asked to fix the §11.3 "what's missing" gap table; asked which of six items to prioritize — chose step-level hold + Production Complete, explicitly declined material/equipment linkage once it turned out blocked on SG-045) — SG-047/SG-048 further partial resolution.** Two new capabilities: (a) step-scoped hold/resume (`StepHold`, migration `a6d525b2d585_0093`) — signed `POST .../steps/{id}/hold`/`.../resume` (Document 106 row 14/17's shapes reused, no step-scoped row exists in Document 106 itself), holds exactly one step without stopping the batch or any other step; (b) `production_complete` batch state (BAT-FR-026, steps-completeness sub-clause only) — signed `POST /batches/v1/{id}/production-complete` (Document 106 row 16), refuses with `PRODUCTION_NOT_COMPLETE` + the list of unfinished step codes until every `gxp_batch_step` is `complete`; a `production_complete` batch can still be pulled into Hold if a problem is found late. §11.4/§11.5 above. **Material/Equipment linkage (BAT-FR-012/013) was NOT built** — considered directly, but `RecipeStep` has no field anywhere declaring which material lot or equipment class a step needs, and defining that field is itself SG-045's own still-open, unresolved schema question ("tolerance rule"/"consume mode"/"calibration policy" are policy concepts, not typed columns) — building it now would mean guessing exactly the schema SG-045 already declined to guess. Verified: `test_batch_execution.py` 27/27 (4 new tests: hold+resume happy path, hold-requires-reason, hold-requires-signature, production-complete happy path + blocked-until-complete + wrong-state) plus `test_batch_flow.py`/`test_release.py`/`test_qa_review.py` as an untouched-module control, 34/34. Full detail: `18_SPEC_GAPS.md` SG-047, SG-048, SG-045 (the last updated with a "not a resolution" note only). |
+| 33 | **✅ 2026-09-16, નવું finding (code-verified, `frontend/src/app/{ddcp,batch-execution}/page.tsx`) — `/batch-execution` અને `/ddcp` વચ્ચે કોઈ navigation link, query param કે UUID copy-button નથી.** Sidebar માં બંને અલગ-અલગ, batch-context-free static entry. `/batch-execution` ના batch detail view માં Batch ID plain, selectable UUID text તરીકે દેખાય છે (`IdFact` component, `frontend/src/components/ui/FactGrid.tsx`) — copy-button નથી, href નથી. `/ddcp` ના batch પસંદગી field (`batchSelect`) ક્યારેય URL query param (દા.ત. `?batch_id=`) થી auto-fill નથી થતા — tester એ manually UUID select/copy કરીને, sidebar થી `/ddcp` પર જઈને, સાચી "Product family" પસંદ કરીને (batch ના product પરથી ખબર પડવી જોઈએ — family auto-detect નથી થતી), પછી paste કરવું પડે. §12.0 એ already સમજાવેલું છે કે batch execution અને DDCP execution 2 સ્વતંત્ર progress-track છે (SG-180) — આ finding એ જ વાતનો UI-mechanics-level પુરાવો છે: કોડ પણ બંને પાનાં વચ્ચે કોઈ programmatic bridge બનાવતો નથી, ફક્ત common `batch_id` FK data-level જોડે છે. §21.3 નીચે આ manual-copy પગલું જ demo-step તરીકે લખ્યું છે. Roadmap item, bug નથી. |
+| 34 | **✅ 2026-09-16, નવું finding (code-verified, `services/gxp-api/app/modules/ddcp/{router,commands}.py`, uncommitted diff).** 2 નાના backend-only addition, હજુ frontend માં વપરાયા નથી: (a) `GET /ddcp/v1/prefilled-syringe/constituent-handoffs/{id}` અને `GET .../batches/{batch_id}/constituent-handoffs` — handoff ને સીધું ID/batch થી read કરવાના નવા endpoint (અત્યાર સુધી ફક્ત genealogy view થી જ handoff data મળતું, હવે એક વધારાનો direct રસ્તો પણ છે); (b) profile GET/list response હવે વધુ fields પરત કરે છે — `site_id`, `dosage_form`, `presentation`, `constituent_architecture`, `required_controls`, `release_checkpoint_set`, `vault_object_id`, `released_by`, `release_signature_id`, `effective_from`, `created_at` (પહેલાં ફક્ત id/profile_code/subtype/version/state/product_version_id જ આવતા — બીજા 49 modules માં પકડાયેલા "GET serializer drops field" bug pattern નું જ DDCP-side fix, code-testing repo-wide sweep). PFS ના "Look up a profile version" panel (§10.1, ફક્ત PFS family ને છે) હવે વધુ ડેટા બતાવશે — UI code બદલાયો નથી, JSON panel raw response જ બતાવે છે એટલે આપોઆપ વધુ fields દેખાશે. |
+| 35 | **✅ 2026-09-16, Recipe Master "New draft" popup → full page** (project-owner-directed, asked directly — "1 small change... make new screen for it... so there will be things easy for user"). `DraftModal` retired; `process.engineer` → `/recipe-master` → "New draft" now navigates to `/recipe-master/new`, a dedicated page with the same fields/validation/submit call, just more room for the Sections/Steps/Dependencies graph editor and its 4 per-step sub-editors (§9.3.1-9.3.4) than a `Modal` had. Shared code (~800 lines: all draft-editing types, `emptySection`/`buildGraphPayload`/`sectionsFromVersion`, `useRoleAndRuleOptions`, `MaterialSpecVersionPicker`, `RecipeGraphEditor`/`StepBlock`) moved to a new `frontend/src/app/recipe-master/shared.tsx` so the list page's `EditGraphModal` (unchanged, still a modal — only *create* moved) and the new create page both use the one graph editor, no duplication. On successful create, the new page redirects to `/recipe-master?openFamily=<id>`, which the list page reads (via `window.location.search`, not `next/navigation`'s `useSearchParams()` — avoids a Suspense-boundary requirement this page had no other reason for) to auto-jump straight to the new family's versions, same behavior the old modal's `onDone` callback gave. `tsc --noEmit` and `eslint` both clean; both routes live-verified 200 via pm2/curl. |
 
 ---
 
 ## 20. સંદર્ભ
 
 - **Exhaustive role-wise test cases (dev/QA માટે):** `docs/testing/DDCP_Comprehensive_Test_Manual_Gujarati.md`
+- **Sterilization/Aseptic — DDCP ના DEVICE constituent handoff ને જોઈતો "Sterilization reference" ક્યાંથી
+  મળે (§12.1 Op 2):** `docs/testing/Sterilization_Aseptic_Client_Demo_Guide_Gujarati.md` (real data-entry)
+  + `docs/testing/Sterilization_Aseptic_Comprehensive_Test_Manual_Gujarati.md` (field/RBAC/state-machine
+  reference)
 - **સાદી ભાષામાં DDCP concept (non-technical):** `eBMR-ui/DDCP-GUIDE-GUJARATI.md` *(⚠️ એ design-preview
   reference માટે છે, વાસ્તવિક backend/frontend સાથે નથી — ફક્ત concept સમજવા)*
 - **Permission / signature-policy / SoD-matrix live sync:** `scripts/sync_permissions.py`,
@@ -2034,3 +2471,127 @@ project-owner-directed (asked to prioritize among six gaps; material/equipment l
 explicitly declined once found blocked on SG-045's own open schema question, not silently skipped),
 verified with `test_batch_execution.py` 27/27 (4 new tests) plus the same 34/34 control. Demo data
 fictional; roles/endpoints/signature-requirements real.*
+
+---
+
+## 21. નવું Test Cycle (Round 2, 2026-09-16) — Real Live Data
+
+### 21.0 આ section કેમ ઉમેર્યું — live DB સામે ચકાસેલી હકીકત
+
+Live `ebmr_new_gxp` DB સીધું query કરીને ચકાસ્યું (2026-09-16):
+
+| શું | DB સ્થિતિ |
+|---|---|
+| Batch `MJ-PFS-B-2601` | state = `production_complete`; **બધા 8 recipe step** (`LC-01`/`DISP-01`/`FILL-01`/`FILL-IPC-01`/`ASSY-01`/`ASSY-VER-01`/`TEST-CCI-01`/`TEST-VIS-01`/`HOLD-QA-01`) `complete`; `qa_review_package.state = REVIEW_COMPLETE`; `release_scope.state = released` — **batch આખેઆખો released છે, ફરી create/issue/start ના જ થઈ શકે** |
+| Batch `RCP-MJ-PFS-DEMO` | એ જ સ્થિતિ — `production_complete`, review complete, **released** |
+| DDCP evidence (`MJ-PFS-B-2601` પર) | `batch_evidence_manifest` ના 2 row — v1 અને v2, બંને `FROZEN` |
+| Deviation | `DEV-2026-0141` અને `DEV-2026-0143` — બંને `MJ-PFS-B-2601` પર, બંને `CLOSED` — **આ 2 number ફરી વાપરવાનો પ્રયત્ન કરશો તો `deviation_number` unique constraint error** |
+| Material lot `LOT-DRUG-2601` | status `released`, `available_quantity = 12.500 ML` — **હજુ consumed નથી** (DDCP handoff lot ની quantity ઘટાડતું નથી, §12.1 Op1 ની ડેમો data હજુ technically ફરી વાપરી શકાય, પણ receipt/lot number પોતે unique છે) |
+| Material lot `LOT-DEV-2601` | status `released`, `available_quantity = 4200.000000 EA` — એ જ વાત |
+| Line clearance (`equipment.cleaning_executions`) | **0 row** — Phase 10 ક્યારેય ખરેખર execute નથી થયું આ DB માં (§19 ના honest history માં ક્યાંય line-clearance-execute confirm નથી કરેલું) — સારો fresh-test candidate |
+| `LINE-PFS-01` equipment | `qualification_status = QUALIFIED`, `calibration_status = NULL` (= eligible, code: `equipment/commands.py::_ineligibility_reasons()` — `state` column literally `VERIFICATION` છે પણ એ field eligibility check માં વપરાતું જ નથી) — **readiness માટે equipment પહેલેથી eligible છે, કંઈ પ્રિપેર કરવાની જરૂર નથી** |
+| Rules module (`rules.gxp_rule_definition`) | ફક્ત 3 rule — `SMOKE-ASSAY` (eligibility, validated), `yield_percent` (CALCULATION, released), 1 draft. **`FILL-WEIGHT-RULE-01` નામનો rule ક્યારેય exist જ નથી કર્યો** — §12.1 Op4/Op10 ના જૂના ડેમો data માં આ ID એક placeholder હતો, ખરેખર rules engine સામે ક્યારેય evaluate નથી થયો (`rules.gxp_rule_evaluation` માં કુલ 1 જ historical evaluation છે, `yield_percent` સામે, outcome = `ERROR`) |
+
+**નિષ્કર્ષ:** Master data (suppliers, materials, `MJ-PFS-40MG` Product, `RCP-MJ-PFS-V1` Recipe, `PFS-MERIDIJECT-001` DDCP profile) **બધું RELEASED અને reusable છે** — ફરી બનાવવાની જરૂર નથી, real GxP practice માં પણ master data batch-દીઠ ફરી નથી બનતું. ફક્ત **batch-specific અને lot-specific numbers** નવા જોઈએ. નીચેનું cycle એ જ આપે છે.
+
+### 21.1 શું reuse કરવું, શું નવું જોઈએ
+
+| Master/Record | Code | Reuse કરવું કે નવું? |
+|---|---|---|
+| Supplier (drug) | `SUP-BIO-001` | **Reuse** — released, qualified |
+| Supplier (device) | `SUP-DEV-001` | **Reuse** |
+| Material master (drug) | `MAT-DRUG-MERIDIZ` | **Reuse** |
+| Material master (device) | `MAT-DEV-SYR-1ML` | **Reuse** |
+| Product Master | `MERIDIJECT-PFS` → `MJ-PFS-40MG` v1 | **Reuse** — RELEASED |
+| Recipe Master | `RCP-MJ-PFS-V1` v1 | **Reuse** — RELEASED |
+| DDCP Profile | `PFS-MERIDIJECT-001` v1 | **Reuse** — RELEASED |
+| Equipment (line/asset) | `LINE-PFS-01` | **Reuse** — already QUALIFIED, eligible |
+| Equipment area | `AREA-GRADE-A` | **નવેસરથી વાપરવું** — §21.2 ની નોંધ જુઓ, જૂનો doc `LINE-PFS-01` ને area તરીકે વાપરતો હતો, જે ખોટું હતું (asset code, area code નહીં) |
+| Material receipt | `RCPT-DRUG-2601`/`RCPT-DEV-2601` | **નવો number જોઈએ** (unique constraint) |
+| Material lot (internal) | `LOT-DRUG-2601`/`LOT-DEV-2601` | **નવો number જોઈએ** (`internal_lot` globally unique) — *(જૂના lot ટેકનિકલ રીતે reuse-eligible છે, released + available quantity બાકી છે, પણ fresh receiving path વધુ realistic demo છે — §21.3.1)* |
+| Batch | `MJ-PFS-B-2601` | **નવો number જોઈએ** — જૂનો batch released થઈ ચૂક્યો |
+| Deviation | `DEV-2026-0141`/`0143` | **નવો number જોઈએ** |
+| Acceptance rule (IPC/dose/closure/loading) | `FILL-WEIGHT-RULE-01` | **⚠️ Real rule બનાવવો પડશે પહેલા** — §21.3.3 ની honest નોંધ જુઓ |
+
+### 21.2 નવો data map — 1 નજરમાં (batch cycle "2701")
+
+| Field | નવો Value |
+|---|---|
+| Batch number | **`MJ-PFS-B-2701`** |
+| Production order ref | `PO-2026-4472` |
+| Receipt — drug | `RCPT-DRUG-2701` |
+| Receipt — device | `RCPT-DEV-2701` |
+| PO reference — drug/device | `PO-MAT-2026-1287` / `PO-MAT-2026-1288` |
+| Supplier's lot — drug/device | `SUP-LOT-2701-D` / `SUP-LOT-2701-V` |
+| Carrier ref — drug/device | `FEDEX-8851190` / `FEDEX-8851191` |
+| Internal lot (examine પછી) — drug/device | **`LOT-DRUG-2701`** / **`LOT-DEV-2701`** |
+| Deviation number | **`DEV-2026-0201`** |
+| Source event ID (production count) | `EVT-COUNT-2701-01` |
+| Fill cycle group | `CYCLE-B` |
+| Assembly unit identifier | `MJ-UNIT-2701-0001` |
+| Stability plan | `STAB-PLAN-MERIDIJECT-01` (reuse — master reference, no uniqueness constraint) |
+
+*(બધા code-verified against live DB — 2026-09-16 ના રોજ કોઈ પણ collision નથી, `SELECT ... WHERE ... LIKE '%2701%'` run કરીને ચકાસેલું.)*
+
+### 21.3 Step-by-step — શું નવેસરથી કરવું
+
+Field-level meaning/UI location માટે દરેક પગલે મૂળ Phase section refer કરેલો છે — અહીં ફક્ત **નવો data** અને **જે બદલાયું** આપ્યું છે, ડુપ્લિકેટ નથી કર્યું.
+
+#### 21.3.1 Phase 2 ફરી — નવો receipt/lot (§6.2 ના fields, નવો data)
+
+`operator1` → `/material-receipts` → "Log a receipt" → §21.2 ના drug/device receipt data ભરો (received qty gross `12.500`/`L` drug, `4200`/`EA` device — §6.2 જેવું જ) → Submit → **"Examine"** → §6.2 ના જ 5 Yes/No ચેક (Identity/Labeling/Damage/Seal/Contamination) → Internal lot ફિલ્ડમાં `LOT-DRUG-2701`/`LOT-DEV-2701` → Submit → lot **Quarantine** માં બને.
+
+`qc.reviewer` → `/material-lots` → બંને lot ને **Disposition → Released** (સહી — §6.3).
+
+*(Optional, skip કરી શકાય: §6.4 નો પૂરો inventory put-away/reserve/cycle-count/adjustment walkthrough — એ mechanics પહેલેથી `LOT-DRUG-2601` પર 2026-09-07 ના રોજ demo/verify થયેલ છે, ફરી જરૂરી નથી. DDCP constituent handoff — §21.3.2 — lot ને directly reference કરે છે, inventory transfer/reserve independent છે.)*
+
+#### 21.3.2 Phase 7+8 ફરી — નવો batch, DDCP execution (§11/§12 ના fields, નવો data)
+
+1. `supervisor1` → `/batch-execution` → "New batch" → Product `MJ-PFS-40MG` v1 (dropdown, RELEASED) → Recipe `RCP-MJ-PFS-V1` v1 (dropdown, RELEASED) → Batch number `MJ-PFS-B-2701` → Target qty `4000` / `EA` → Production order ref `PO-2026-4472` → **Create**.
+2. **Issue** → **Start** (§11.1-11.2, roles unchanged).
+3. `ddcp.operator` → sidebar → `/ddcp` → ટોચે "Product family" = **Prefilled syringe / injectable** (default) → "Execution & result records" tab:
+   - Op 1 (×2): Constituent handoff — Batch `MJ-PFS-B-2701` (manual paste, §21.4 જુઓ), Drug/`bulk_drug`/lot `LOT-DRUG-2701`; Device/`needle`/lot `LOT-DEV-2701`.
+   - Op 2 (×2): Accept બંને (Profile dropdown = `PFS-MERIDIJECT-001 v1`).
+   - Op 3: Fill start — Batch `MJ-PFS-B-2701`, Profile `PFS-MERIDIJECT-001 v1`, Line/area **`AREA-GRADE-A`** *(§21.1 ની correction — જૂનો doc ભૂલથી `LINE-PFS-01` ને area field માં પણ વાપરતો હતો; `LINE-PFS-01` equipment asset છે, area નથી — `equipment.equipment_areas` માં એ code exist જ નથી કરતો)*, Filler equipment `LINE-PFS-01`, Fill program `PROG-FILL-001`/`1`, Target fill `1.000000`/`mL`, Cycle group `CYCLE-B`.
+   - Op 7: Production count — Batch `MJ-PFS-B-2701`, `FILLED`/`MANUAL`/`4000`/`EA`, Source event ID `EVT-COUNT-2701-01`.
+   - Op 6: Complete fill — Machine count end `4000`.
+   - Op 8: Device assembly — Batch `MJ-PFS-B-2701`, `Needle install`, Component lot `LOT-DEV-2701`, Unit identifier `MJ-UNIT-2701-0001`, Equipment `LINE-PFS-01`, Result `Pass`.
+   - Op 9: `ddcp.operator2` login → Independently verify Op 8's record (IND-001 — same-user attempt fails first, live demo moment, §12 ના જ pattern).
+   - Op 10: Functional test — Batch `MJ-PFS-B-2701`, `CCI`, QC result ref (`/qc` નો કોઈ result — ના હોય તો ખાલી છોડી શકાય, field required નથી ref હોવા છતાં backend JSONB free-form ચેક કરે છે), Result `Pass`.
+
+#### 21.3.3 ⚠️ Honest નોંધ — Op 4 (Fill IPC) અત્યારે real acceptance rule વગર **fail થશે**
+
+`FILL-WEIGHT-RULE-01` (જૂના doc નો ડેમો ડેટા) **ક્યારેય DB માં બન્યો જ નથી** — `acceptance_rule_id` field ખરેખર `ruleSelect` dropdown છે (`GET /rules/v1` માંથી), free text નથી. Live DB માં ફક્ત 2 non-draft rule છે: `SMOKE-ASSAY` (eligibility) અને `yield_percent` (CALCULATION, ને 1 જ historical evaluation `ERROR` outcome સાથે). કોઈ પણ ફિલ-વેઇટ/ડોઝ/ક્લોઝર/કોટિંગ-ટોલરન્સ rule હજુ author+release નથી થયો.
+
+**અસર:** Op 4 (fill IPC), autoinjector ના dose-delivery, inhalation ના crimp/closure, coated-device ના drug-loading — આ **બધા rule-evaluated ops** dropdown માં ખાલી અથવા mismatched rule જ બતાવશે; `yield_percent` પસંદ કરીને submit કરશો તો ઈનપુટ-કોન્ટ્રાક્ટ mismatch ને લીધે evaluation error આવવાની શક્યતા છે (code-verified: આ rule CALCULATION type છે, fill-weight acceptance-check નથી).
+
+**સાચી રીત (roadmap, guessed નથી):** `/rules` (Document 22, `rules.author`/`rules.release` permission) પર જઈને એક ખરેખરો fill-weight tolerance rule (દા.ત. `rule_id = FILL-WEIGHT-RULE-01`, `rule_type = eligibility` અથવા યોગ્ય પ્રકાર, target `1.000 mL ± 5%` જેવો tolerance) draft → validate → release કરવો પડશે, પછી જ Op 4 ને real acceptance rule મળશે. આ પોતે client/QA ની ટેકનિકલ નિર્ણય (tolerance value) છે — CLAUDE.md §4 પ્રમાણે guess નથી કરવાનું, `docs/generated/18_SPEC_GAPS.md` માં નવો SPEC_GAP તરીકે record કરવા યોગ્ય. **Op 4-9 વગર પણ Op 1/2/3/6/7/8/9/10/11 (rule-evaluated ના હોય એવા) સંપૂર્ણ ચાલશે** — batch readiness ના blocker rule-evaluated ops પર depend નથી કરતા (§15.1 ના 4 blocker rule-independent છે).
+
+#### 21.3.4 Phase 9 ફરી — નવો deviation (§13 ના fields, નવો data)
+
+`operator1` → `/deviations` → Create → `deviation_number = DEV-2026-0201`, `source_type = batch`, Source record dropdown → `MJ-PFS-B-2701`, severity/type — બાકી §13 ના જ ટેબલ પ્રમાણે (Triage → Contain → Investigation → Impact → Disposition (સહી) → Close (સહી)).
+
+#### 21.3.5 Phase 10 — Line Clearance (પહેલી વાર ખરેખર execute — live DB માં 0 row હતા)
+
+`sanitation.operator` → `/line-clearance` → area = **`AREA-GRADE-A`** (or `AREA-FILL-SUITE-2`, બંને ISO-classified cleanroom/fill-suite છે — client ના real layout પ્રમાણે client નક્કી કરે) → Start → Complete (સહી). આ platform પર પહેલી real line-clearance execution હશે (`equipment.cleaning_executions` હાલ 0 row) — §15.1 ના `LINE_NOT_READY` blocker ને hands-on ચકાસવાની સાચી તક.
+
+#### 21.3.6 Phase 11 + 12 — Readiness, Freeze, QA Review, Release (§15/§16, નવો batch)
+
+બધું §15/§16 પ્રમાણે જ, batch = `MJ-PFS-B-2701`, profile = `PFS-MERIDIJECT-001 v1`. Op4 ના rule gap (§21.3.3) ને લીધે fill operation `HOLD` state માં અટકે તો પણ **§15.1 ના blocker ચેક એને directly નથી જોતા** — production count (Op 7) + constituent handoff (Op 1/2) જ ચેક થાય છે, એટલે readiness છતાં pass થવી જોઈએ; ફક્ત fill operation પોતે `COMPLETE` ના થઈ શકે જ્યાં સુધી rule gap ઠીક ના થાય (§21.3.3 ના Op 6 ને પણ અસર કરે — `complete_filling_stage()` ને ≥1 `FILLED` count જોઈએ, rule hold નહીં, એટલે **Op 7 પહેલાં કર્યું હોય તો Op 6 ચાલશે**, ક્રમ ઊલટાવવો પડે — ઉપર 21.3.2 માં Op 7 ને Op 6 પહેલાં જ મૂક્યું છે, ધ્યાન રાખવું).
+
+### 21.4 DDCP ↔ Batch — કેવી રીતે "compatible" છે (સીધો જવાબ)
+
+**Database level — હા, સીધું જોડાયેલા છે:** DDCP ના દરેક execution table (`constituent_handoff`, `fill_operation`, `device_assembly_record`, વગેરે — §12.0 ની table) `batch_id` column થી `ebmr.gxp_batch` (એ જ table જે `/batch-execution` વાપરે છે) ને directly point કરે છે — migration `0090` પછી (§19 #27) આ **એક જ, unified** batch store છે, 2 જુદા table નથી.
+
+**UI/Navigation level — ના, કોઈ automatic link નથી (નવું finding, §19 #33):**
+
+| | |
+|---|---|
+| `/batch-execution` થી `/ddcp` પર જવું | કોઈ button/link નથી. Batch ID plain, selectable UUID text તરીકે batch detail પર દેખાય (copy-button નથી) — manually select/copy કરવું પડે |
+| `/ddcp` પર એ batch ID વાપરવું | Sidebar → `/ddcp` → સાચી "Product family" જાતે પસંદ કરવી (batch ના product પરથી auto-detect નથી થતું) → "Batch readiness" કે "Execution" tab ના Batch field માં UUID paste કરવું |
+| URL query param | કોઈ `?batch_id=` સપોર્ટ નથી — બંને દિશામાં |
+| Progress sync | §12.0 એ પહેલેથી કહ્યું છે — Batch Execution ના generic step complete/DDCP execution ops **એકબીજાને touch જ નથી કરતા** (SG-180 open) |
+
+**વ્યવહારુ (practical) સલાહ:** Batch create/issue/start (§11) પછી, batch ID copy કરીને note કરી રાખવો (દા.ત. `MJ-PFS-B-2701` ની સાથે UUID) — DDCP execution tab (§12/§21.3.2) અને readiness tab (§15) બંનેમાં એ જ UUID manually paste કરવાનો રહેશે, દરેક વખતે.
+
+---

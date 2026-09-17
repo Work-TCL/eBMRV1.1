@@ -52,6 +52,46 @@ async def post_create_draft(
         return await create_draft(session, cmd, actor.user_id)
 
 
+@router.get("/business-ids")
+async def get_business_ids(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Real picker data for any field that references a Material Specification by its own Business ID
+    (e.g. recipe_master's per-step material_requirements) -- same SG-081 read-side precedent as
+    product_master's `GET /products/v1/business-ids`: a plain read-only GET listing does not conflict
+    with any future write/CRUD contract, it only replaces free-text Business-ID entry with a real picker.
+    Registered ahead of the single-segment `/{material_spec_version_id}` GET below so "business-ids" is
+    never parsed as a version id. Returns one row per distinct material_spec_business_id -- the highest
+    version_no for that id -- the caller still uses `GET /{business_id}/versions` for the full history."""
+    await evaluate_policy(session, actor.user_id, action="material_spec.view", site_id=None)
+    rows = (
+        (
+            await session.execute(
+                select(MaterialSpecificationVersion).order_by(
+                    MaterialSpecificationVersion.material_spec_business_id,
+                    MaterialSpecificationVersion.version_no.desc(),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    latest: dict[str, MaterialSpecificationVersion] = {}
+    for row in rows:
+        latest.setdefault(row.material_spec_business_id, row)
+    return [
+        {
+            "material_spec_version_id": str(v.id),
+            "material_spec_business_id": v.material_spec_business_id,
+            "name": v.name,
+            "version_no": v.version_no,
+            "lifecycle_state": v.lifecycle_state,
+        }
+        for v in sorted(latest.values(), key=lambda v: v.material_spec_business_id)
+    ]
+
+
 @router.get("/{material_spec_business_id}/versions")
 async def get_versions(
     material_spec_business_id: str,

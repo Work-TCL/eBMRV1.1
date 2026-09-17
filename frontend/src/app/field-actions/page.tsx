@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { api, ApiError, canApproveQms, canInvestigateQms, formatDate, newIdempotencyKey, type FieldAction } from "@/lib/api";
-import { useMe, useSiteId } from "@/lib/hooks";
+import { useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -26,6 +27,20 @@ const FIELD_ACTION_STATES = [
 ];
 const ACTION_TYPES = ["recall", "correction", "removal", "field_action", "customer_advisory", "stock_recovery"];
 const TRIGGER_TYPES = ["complaint", "deviation", "capa", "trend", "regulatory_request", "management_decision"];
+
+// complaint/deviation/capa are real browsable QMS record types (`entities.complaints`/`.deviations`/
+// `.capas`); trend/regulatory_request/management_decision are category labels, not a record type with
+// its own list. Same honest split as `deviations/page.tsx`'s SOURCE_PICKER_KIND/SOURCE_MANUAL_HINT.
+const TRIGGER_PICKER_KIND: Partial<Record<string, string>> = {
+  complaint: "complaint",
+  deviation: "deviation",
+  capa: "CAPA",
+};
+const TRIGGER_MANUAL_HINT: Partial<Record<string, string>> = {
+  trend: "No single record for a trend trigger — describe/reference the trend analysis that triggered this action.",
+  regulatory_request: "No single record for a regulatory-request trigger — the relevant correspondence/reference ID.",
+  management_decision: "No single record for a management-decision trigger — the relevant meeting/decision reference.",
+};
 
 export default function FieldActionsPage() {
   const { me } = useMe();
@@ -99,10 +114,29 @@ export default function FieldActionsPage() {
 
 function RaiseFieldActionModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { siteId } = useSiteId();
+  const entities = useEntityOptions();
   const [actionNumber, setActionNumber] = useState("");
   const [actionType, setActionType] = useState(ACTION_TYPES[0]);
   const [triggerType, setTriggerType] = useState(TRIGGER_TYPES[0]);
   const [triggerId, setTriggerId] = useState("");
+
+  function changeTriggerType(value: string) {
+    setTriggerType(value);
+    setTriggerId("");
+  }
+
+  const triggerPicker: { options: EntityOption[]; status: EntityOptionsStatus } | null = (() => {
+    switch (triggerType) {
+      case "complaint":
+        return { options: entities.complaints, status: entities.complaintsStatus };
+      case "deviation":
+        return { options: entities.deviations, status: entities.deviationsStatus };
+      case "capa":
+        return { options: entities.capas, status: entities.capasStatus };
+      default:
+        return null;
+    }
+  })();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -148,7 +182,7 @@ function RaiseFieldActionModal({ onClose, onDone }: { onClose: () => void; onDon
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Trigger type" required>
-            <Select value={triggerType} onChange={(e) => setTriggerType(e.target.value)}>
+            <Select value={triggerType} onChange={(e) => changeTriggerType(e.target.value)}>
               {TRIGGER_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {t}
@@ -156,9 +190,21 @@ function RaiseFieldActionModal({ onClose, onDone }: { onClose: () => void; onDon
               ))}
             </Select>
           </Field>
-          <Field label="Trigger record ID" required>
-            <Input value={triggerId} onChange={(e) => setTriggerId(e.target.value)} required />
-          </Field>
+          {triggerPicker ? (
+            <EntityPickerField
+              label="Trigger record"
+              required
+              value={triggerId}
+              onChange={setTriggerId}
+              options={triggerPicker.options}
+              status={triggerPicker.status}
+              kind={TRIGGER_PICKER_KIND[triggerType]!}
+            />
+          ) : (
+            <Field label="Trigger record ID" required hint={TRIGGER_MANUAL_HINT[triggerType]}>
+              <Input value={triggerId} onChange={(e) => setTriggerId(e.target.value)} required />
+            </Field>
+          )}
         </div>
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-2">

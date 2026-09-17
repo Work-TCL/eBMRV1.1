@@ -133,6 +133,10 @@ class RecipeStep(Base):
     signature_policy_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     exception_policy_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     is_critical: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # SG-048 #018, visibility-only slice (migration 09322681e7ac_0110). Opt-in and unenforced -- unset
+    # (the default) means no "overdue" flag is ever computed for a hold on this step; exceeding it
+    # triggers no automatic action (BAT-FR-021 exception generation stays unbuilt).
+    expected_hold_duration_minutes: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

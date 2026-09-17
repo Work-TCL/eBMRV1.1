@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { useApiResource, useMe } from "@/lib/hooks";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
+import { RiskMethodologyPickerField } from "@/components/shared/RiskMethodologyPicker";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/Table";
@@ -289,13 +290,12 @@ function TransitionModal({
 
         {transition === "assessment" && (
           <>
-            <Field
-              label="Methodology ID"
+            <RiskMethodologyPickerField
+              value={methodologyId}
+              onChange={setMethodologyId}
               required
               hint="A released rule of type risk_methodology (see the Rules page) - required for the first assessment of a cycle."
-            >
-              <Input value={methodologyId} onChange={(e) => setMethodologyId(e.target.value)} required />
-            </Field>
+            />
             <div className="grid grid-cols-3 gap-4">
               <Field label="Severity" required>
                 <Input type="number" min={1} max={10} value={severity} onChange={(e) => setSeverity(e.target.value)} required />

@@ -179,6 +179,13 @@ async def get_security_exception(
             raise NotFoundError("Security exception not found")
         return {
             "id": str(exception.id), "control_or_requirement": exception.control_or_requirement,
+            "risk_assessment_ref": exception.risk_assessment_ref,
+            "compensating_controls": exception.compensating_controls,
+            "reason": exception.reason,
+            "effective_from": exception.effective_from.isoformat(),
             "state": exception.state, "expiry": exception.expiry.isoformat(),
-            "reason": exception.reason, "version": exception.version,
+            "approvers": exception.approvers, "remediation_target": exception.remediation_target,
+            "signature_id": str(exception.signature_id) if exception.signature_id else None,
+            "opened_by": str(exception.opened_by),
+            "version": exception.version, "created_at": exception.created_at.isoformat(),
         }

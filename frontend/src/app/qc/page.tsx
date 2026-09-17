@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, ApiError, holdsAnyRole, newIdempotencyKey, pagedFetcher } from "@/lib/api";
-import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -19,6 +19,8 @@ import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { ProductVersionPickerField } from "@/components/shared/ProductVersionPicker";
+import { RecipeVersionPickerField } from "@/components/shared/RecipeVersionPicker";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 import { RepeatableRows, buildRepeatArray, type RepeatRow, type RepeatSubField } from "@/components/shared/RepeatableFields";
@@ -1089,7 +1091,13 @@ function NewSpecificationModal({ onClose, onDone }: { onClose: () => void; onDon
             <Input value={specCode} onChange={(e) => setSpecCode(e.target.value)} placeholder="e.g. QC-SPEC-PFS-001" required autoFocus />
           </Field>
           <Field label="Scope type" required>
-            <Select value={scopeType} onChange={(e) => setScopeType(e.target.value)}>
+            <Select
+              value={scopeType}
+              onChange={(e) => {
+                setScopeType(e.target.value);
+                setScopeVersionId("");
+              }}
+            >
               {SCOPE_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {t}
@@ -1098,19 +1106,27 @@ function NewSpecificationModal({ onClose, onDone }: { onClose: () => void; onDon
             </Select>
           </Field>
         </div>
-        <Field
-          label="Scope version ID"
-          required
-          hint={
-            scopeType === "product"
-              ? "The product version this specification governs - find it on /product-master."
-              : scopeType === "in_process"
-                ? "The recipe version this specification governs - find it on /recipe-master."
-                : "The device version this specification governs."
-          }
-        >
-          <Input value={scopeVersionId} onChange={(e) => setScopeVersionId(e.target.value)} required />
-        </Field>
+        {scopeType === "product" ? (
+          <ProductVersionPickerField
+            label="Scope version ID"
+            required
+            hint="The product version this specification governs."
+            value={scopeVersionId}
+            onChange={setScopeVersionId}
+          />
+        ) : scopeType === "in_process" ? (
+          <RecipeVersionPickerField
+            label="Scope version ID"
+            required
+            hint="The recipe version this specification governs."
+            value={scopeVersionId}
+            onChange={setScopeVersionId}
+          />
+        ) : (
+          <Field label="Scope version ID" required hint="The device version this specification governs.">
+            <Input value={scopeVersionId} onChange={(e) => setScopeVersionId(e.target.value)} required />
+          </Field>
+        )}
         <RepeatableRows
           label="Test definitions"
           itemLabel="Test definition"
@@ -1283,10 +1299,10 @@ function MethodMasterCard({ canRelease, reloadToken }: { canRelease: boolean; re
 
 function NewQcMethodDraftModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { busy, error, run } = useCommand(onDone);
+  const { siteId } = useSiteId();
   const [methodCode, setMethodCode] = useState("");
   const [methodType, setMethodType] = useState("internal");
   const [name, setName] = useState("");
-  const [siteId, setSiteId] = useState("");
   const [validationEvidenceReference, setValidationEvidenceReference] = useState("");
   const [modificationReason, setModificationReason] = useState("");
 
@@ -1295,6 +1311,7 @@ function NewQcMethodDraftModal({ onClose, onDone }: { onClose: () => void; onDon
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (!siteId) return;
           run(() =>
             api.post("/qc/v1/methods/drafts", {
               idempotency_key: newIdempotencyKey(),
@@ -1324,9 +1341,6 @@ function NewQcMethodDraftModal({ onClose, onDone }: { onClose: () => void; onDon
           <Field label="Name" required>
             <Input value={name} onChange={(e) => setName(e.target.value)} required />
           </Field>
-          <Field label="Site ID" required>
-            <Input value={siteId} onChange={(e) => setSiteId(e.target.value)} required />
-          </Field>
         </div>
         <Field label="Validation evidence reference" hint="Required in practice for a validated method - not enforced client-side.">
           <Input value={validationEvidenceReference} onChange={(e) => setValidationEvidenceReference(e.target.value)} />
@@ -1339,7 +1353,7 @@ function NewQcMethodDraftModal({ onClose, onDone }: { onClose: () => void; onDon
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !methodCode.trim() || !name.trim() || !siteId.trim()}>
+          <Button type="submit" variant="primary" disabled={busy || !methodCode.trim() || !name.trim() || !siteId}>
             {busy ? "Creating…" : "Create draft"}
           </Button>
         </div>

@@ -180,9 +180,13 @@ async def get_gateway(gateway_id: uuid.UUID, session: AsyncSession = Depends(get
         "site_id": str(gateway.site_id),
         "host_identity": gateway.host_identity,
         "certificate_fingerprint": gateway.certificate_fingerprint,
+        "certificate_expires_at": gateway.certificate_expires_at.isoformat() if gateway.certificate_expires_at else None,
+        "enrolled_by_user_id": str(gateway.enrolled_by_user_id),
         "lifecycle_state": gateway.lifecycle_state,
         "last_reported_operational_state": gateway.last_reported_operational_state,
+        "active_config_version_id": str(gateway.active_config_version_id) if gateway.active_config_version_id else None,
         "last_health_at": gateway.last_health_at.isoformat() if gateway.last_health_at else None,
         "last_observation_sequence": gateway.last_observation_sequence,
         "version": gateway.version,
+        "created_at": gateway.created_at.isoformat(),
     }

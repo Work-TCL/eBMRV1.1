@@ -1,24 +1,182 @@
 "use client";
 
 import { useState } from "react";
-import { api, holdsAnyRole, pagedFetcher, type Me } from "@/lib/api";
-import { useSiteId } from "@/lib/hooks";
+import { api, holdsAnyRole, newIdempotencyKey, pagedFetcher, type Me, type MutationReceipt, type Paged } from "@/lib/api";
+import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { useCommand } from "@/components/shared/RecordDetailShell";
 import { Fact, OpsRecordPage, type OpsRecordConfig } from "@/components/shared/OpsRecordPage";
 import { FormConsole } from "@/components/shared/FormConsole";
 import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
+import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
+import { Select } from "@/components/ui/Select";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
-import { Table } from "@/components/ui/Table";
+import { Table, EmptyState } from "@/components/ui/Table";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 
 const PROCESS_TYPES = [
   "steam_autoclave", "dry_heat", "depyrogenation", "gas", "radiation", "external_reference", "SIP", "CIP", "sterile_filtration",
 ];
+
+// Document 42's own 9-op API list has no create operation for the cycle *profile* itself (only the
+// *cycle* that runs against one) — POST /sterilization/v1/profiles was added 2026-09-16 (SG-203),
+// project-owner-directed: asked directly who should author a profile's critical parameters, chosen as
+// QA Reviewer rather than Sterilization Operator specifically so the role that later independently
+// reviews a cycle's data is not the same role that could have authored the spec it's reviewed against
+// (scripts/seed.py process_cycle_profile_version.create) — same "who defines vs who executes" split as
+// aseptic's own canCreateProfile.
+const canCreateCycleProfile = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer"]);
+
+// Matches app/modules/equipment/sterilization_router.py::_profile_summary_dict.
+interface CycleProfile {
+  id: string;
+  profile_number: string;
+  version: number;
+  process_type: string;
+  state: string;
+  sterile_status_validity_hours: number | null;
+}
+
+function NewCycleProfileModal({ siteId, onClose, onDone }: { siteId: string | null; onClose: () => void; onDone: () => void }) {
+  const { busy, error, run } = useCommand(onDone);
+  const [profileNumber, setProfileNumber] = useState("");
+  const [versionNo, setVersionNo] = useState("1");
+  const [processType, setProcessType] = useState(PROCESS_TYPES[0]);
+  const [validationReference, setValidationReference] = useState("");
+  const [validityHours, setValidityHours] = useState("");
+  const [criticalParameters, setCriticalParameters] = useState<KvRow[]>([]);
+  const [indicatorRequirements, setIndicatorRequirements] = useState<KvRow[]>([]);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!siteId) return;
+    run(() =>
+      api.post<MutationReceipt>("/sterilization/v1/profiles", {
+        idempotency_key: newIdempotencyKey(),
+        site_id: siteId,
+        profile_number: profileNumber,
+        version_no: Number(versionNo) || 1,
+        process_type: processType,
+        validation_reference: validationReference || null,
+        sterile_status_validity_hours: validityHours.trim() ? Number(validityHours) : null,
+        critical_parameters: criticalParameters.length ? buildKvObject(criticalParameters) : null,
+        indicator_requirements: indicatorRequirements.length ? buildKvObject(indicatorRequirements) : null,
+      })
+    );
+  }
+
+  return (
+    <Modal open onClose={onClose} title="New sterilization cycle profile">
+      <form onSubmit={submit}>
+        <p className="hint mb-3">
+          Master data - created directly as RELEASED (no draft/review stage exists for this record,
+          same shape as the Aseptic module&apos;s own sterile process profile). Used as the &quot;Cycle
+          profile version&quot; a real process cycle (above) runs against.
+        </p>
+        <p className="hint mb-3">
+          <strong>Not the same record</strong> as Product Master&apos;s &quot;Sterile process
+          profile&quot; field - that one is authored on the <strong>Aseptic</strong> page
+          (<code>/aseptic</code> - &quot;New sterile process profile&quot;) and lives in a different
+          table. A profile created here only appears in this page&apos;s own &quot;Cycle profile
+          version&quot; picker, never in Product Master&apos;s dropdown.
+        </p>
+        <div className="grid grid-cols-3 gap-4">
+          <Field label="Profile number" required hint="Unique together with version below, across all sites.">
+            <Input value={profileNumber} onChange={(e) => setProfileNumber(e.target.value)} required autoFocus placeholder="STR-PROC-002" />
+          </Field>
+          <Field label="Version no." required>
+            <Input type="number" min={1} value={versionNo} onChange={(e) => setVersionNo(e.target.value)} required />
+          </Field>
+          <Field label="Process type" required>
+            <Select value={processType} onChange={(e) => setProcessType(e.target.value)}>
+              {PROCESS_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Validation reference" hint="Optional - e.g. a PQ/qualification protocol ID.">
+            <Input value={validationReference} onChange={(e) => setValidationReference(e.target.value)} />
+          </Field>
+          <Field label="Sterile status validity (hours)" hint="Optional - how long a load item stays 'eligible' after an ACCEPTED cycle, e.g. 720 for 30 days.">
+            <Input type="number" min={0} value={validityHours} onChange={(e) => setValidityHours(e.target.value)} />
+          </Field>
+        </div>
+        <KeyValueRows
+          label="Critical parameters"
+          hint="Optional - free-form key/value only (e.g. temperature_c → 121.5). A nested shape like {min, target} per parameter can't be entered here - use the raw API for that, this editor only produces flat values."
+          value={criticalParameters}
+          onChange={setCriticalParameters}
+        />
+        <KeyValueRows
+          label="Indicator requirements"
+          hint="Optional - e.g. biological_indicator → required."
+          value={indicatorRequirements}
+          onChange={setIndicatorRequirements}
+        />
+
+        {error && <p className="error-text mb-2 mt-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !siteId || !profileNumber.trim()}>
+            {busy ? "Saving…" : "Create profile"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function CycleProfileListCard({ profiles, loading }: { profiles: CycleProfile[] | null; loading: boolean }) {
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="Sterilization cycle profiles" meta="" />
+      {loading ? (
+        <p className="hint">Loading…</p>
+      ) : !profiles || profiles.length === 0 ? (
+        <EmptyState>No sterilization cycle profiles yet - use &quot;New sterilization cycle profile&quot; above to add one.</EmptyState>
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <th>Profile number</th>
+              <th>Version</th>
+              <th>Process type</th>
+              <th>State</th>
+              <th>Sterile status validity</th>
+            </tr>
+          </thead>
+          <tbody>
+            {profiles.map((p) => (
+              <tr key={p.id}>
+                <td className="fs-2">{p.profile_number}</td>
+                <td className="tabular fs-2">v{p.version}</td>
+                <td className="fs-2">{p.process_type}</td>
+                <td>
+                  <StatePill state={p.state === "RELEASED" ? "accepted" : "unknown"} icon={p.state === "RELEASED" ? "check-circle" : "slash-circle"}>
+                    {p.state}
+                  </StatePill>
+                </td>
+                <td className="fs-2">{p.sterile_status_validity_hours != null ? `${p.sterile_status_validity_hours} h` : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </Card>
+  );
+}
 
 interface LoadItem {
   id: string;
@@ -297,8 +455,16 @@ function CycleListCard({ siteId, reloadToken, onOpen }: { siteId: string | null;
 }
 
 export default function SterilizationPage() {
+  const { me } = useMe();
   const { siteId } = useSiteId();
   const [reloadToken, setReloadToken] = useState(0);
+  const [newProfileOpen, setNewProfileOpen] = useState(false);
+  const {
+    data: cycleProfilesPage,
+    loading: profilesLoading,
+    reload: reloadProfiles,
+  } = useApiResource<Paged<CycleProfile>>("/sterilization/v1/profiles?state=&page_size=100");
+  const cycleProfiles = cycleProfilesPage?.items ?? null;
 
   return (
     <div>
@@ -307,12 +473,32 @@ export default function SterilizationPage() {
         collapseCreate
         detailInModal
         hideLookup
+        headerAction={
+          canCreateCycleProfile(me) ? (
+            <Button variant="secondary" onClick={() => setNewProfileOpen(true)}>
+              <Icon name="plus" /> New sterilization cycle profile
+            </Button>
+          ) : undefined
+        }
         afterHeader={(openRecord) => (
-          <CycleListCard siteId={siteId} reloadToken={reloadToken} onOpen={openRecord} />
+          <>
+            <CycleProfileListCard profiles={cycleProfiles} loading={profilesLoading} />
+            <CycleListCard siteId={siteId} reloadToken={reloadToken} onOpen={openRecord} />
+          </>
         )}
         onCreated={() => setReloadToken((n) => n + 1)}
       />
-      <FiltrationSection />
+      {newProfileOpen && (
+        <NewCycleProfileModal
+          siteId={siteId}
+          onClose={() => setNewProfileOpen(false)}
+          onDone={() => {
+            setNewProfileOpen(false);
+            reloadProfiles();
+          }}
+        />
+      )}
+      <FiltrationSection siteId={siteId} />
     </div>
   );
 }
@@ -324,7 +510,7 @@ export default function SterilizationPage() {
  * prefixes) — `OpsRecordPage` assumes one `apiRoot` for every record-scoped action, so a plain
  * `FormConsole` + `SignedJsonForm` pair (each free to declare its own full path) fits this backend's
  * actual shape without changing a component every other WP-06 page depends on. */
-function FiltrationSection() {
+function FiltrationSection({ siteId }: { siteId: string | null }) {
   return (
     <>
       <FormConsole
@@ -335,7 +521,7 @@ function FiltrationSection() {
             path: "filters/install",
             label: "Install a filter",
             fields: [
-              { name: "site_id", label: "Site ID", required: true },
+              { name: "site_id", label: "Site ID", required: true, hint: `This deployment's site ID: ${siteId ?? "loading…"}` },
               { name: "filter_serial", label: "Filter serial", required: true },
               { name: "filter_lot", label: "Filter lot" },
               { name: "filter_type", label: "Filter type" },

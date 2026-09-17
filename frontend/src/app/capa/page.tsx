@@ -10,8 +10,9 @@ import {
   newIdempotencyKey,
   type Capa,
 } from "@/lib/api";
-import { useMe, useSiteId } from "@/lib/hooks";
+import { useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -40,6 +41,26 @@ const SOURCE_TYPES = [
   "deviation", "oos", "oot", "ncr", "complaint", "audit", "supplier", "risk", "trend", "security",
   "validation",
 ];
+
+// Not every source_type has a browsable list behind it yet — same honest split `deviations/page.tsx`'s
+// own SOURCE_PICKER_KIND/SOURCE_MANUAL_HINT pair already established. `oos`/`oot` have no list endpoint
+// (`qc/router.py`'s oos_router only has get-by-id); `trend`/`security`/`validation` aren't real
+// browsable record types in this system at all (proactive/category labels, not entities with a list).
+const SOURCE_PICKER_KIND: Partial<Record<string, string>> = {
+  deviation: "deviation",
+  ncr: "nonconformance",
+  complaint: "complaint",
+  audit: "internal audit",
+  supplier: "supplier",
+  risk: "risk",
+};
+const SOURCE_MANUAL_HINT: Partial<Record<string, string>> = {
+  oos: "No OOS record browse list in this deployment yet — the OOS record's ID.",
+  oot: "No OOT record browse list in this deployment yet — the OOT record's ID.",
+  trend: "No single record for a trend origin — describe/reference the trend analysis this CAPA answers.",
+  security: "No single record for a security-incident origin yet — the relevant reference ID.",
+  validation: "No single record for a validation-finding origin yet — the relevant reference ID.",
+};
 
 export default function CapaPage() {
   const { me } = useMe();
@@ -123,9 +144,38 @@ export default function CapaPage() {
 function RaiseCapaModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { siteId } = useSiteId();
   const { me } = useMe();
+  const entities = useEntityOptions();
   const [capaNumber, setCapaNumber] = useState("");
   const [sourceType, setSourceType] = useState(SOURCE_TYPES[0]);
   const [sourceId, setSourceId] = useState("");
+
+  // Reset the picked/typed record whenever the source type changes — an id chosen against one entity
+  // list is never valid once the type switches to a different one (same rule deviations/page.tsx's
+  // changeSourceType follows).
+  function changeSourceType(value: string) {
+    setSourceType(value);
+    setSourceId("");
+  }
+
+  // Which of useEntityOptions()'s lists backs this source_type's picker, if any.
+  const sourcePicker: { options: EntityOption[]; status: EntityOptionsStatus } | null = (() => {
+    switch (sourceType) {
+      case "deviation":
+        return { options: entities.deviations, status: entities.deviationsStatus };
+      case "ncr":
+        return { options: entities.nonconformances, status: entities.nonconformancesStatus };
+      case "complaint":
+        return { options: entities.complaints, status: entities.complaintsStatus };
+      case "audit":
+        return { options: entities.internalAudits, status: entities.internalAuditsStatus };
+      case "supplier":
+        return { options: entities.suppliers, status: entities.suppliersStatus };
+      case "risk":
+        return { options: entities.risks, status: entities.risksStatus };
+      default:
+        return null;
+    }
+  })();
   const [problem, setProblem] = useState("");
   const [riskClass, setRiskClass] = useState("medium");
   const [targetDate, setTargetDate] = useState("");
@@ -193,7 +243,7 @@ function RaiseCapaModal({ onClose, onDone }: { onClose: () => void; onDone: () =
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Source type" required>
-            <Select value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
+            <Select value={sourceType} onChange={(e) => changeSourceType(e.target.value)}>
               {SOURCE_TYPES.map((s) => (
                 <option key={s} value={s}>
                   {s}
@@ -201,9 +251,21 @@ function RaiseCapaModal({ onClose, onDone }: { onClose: () => void; onDone: () =
               ))}
             </Select>
           </Field>
-          <Field label="Source record ID" required>
-            <Input value={sourceId} onChange={(e) => setSourceId(e.target.value)} required />
-          </Field>
+          {sourcePicker ? (
+            <EntityPickerField
+              label="Source record"
+              required
+              value={sourceId}
+              onChange={setSourceId}
+              options={sourcePicker.options}
+              status={sourcePicker.status}
+              kind={SOURCE_PICKER_KIND[sourceType]!}
+            />
+          ) : (
+            <Field label="Source record ID" required hint={SOURCE_MANUAL_HINT[sourceType]}>
+              <Input value={sourceId} onChange={(e) => setSourceId(e.target.value)} required />
+            </Field>
+          )}
         </div>
         {proactive ? (
           <Field label="Proactive rationale" required hint="Why this CAPA is raised without a triggering investigation.">

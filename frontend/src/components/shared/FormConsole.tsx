@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
-import { useEntityOptions } from "@/lib/hooks";
+import { useEntityOptions, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
@@ -41,6 +41,11 @@ export interface FormField {
     | "equipmentSelect"
     | "areaSelect"
     | "userSelect"
+    // A batch → step cascading picker for a field that references a specific batch step (e.g. evidence
+    // staging's "Owner ID" when Owner type is "batch_step") — picking a step also sets the sibling
+    // "owner_type" field to "batch_step" for the caller, since a raw id alone doesn't say what kind of
+    // record it is. Manual-ID fallback available, same as every other "*Select" type.
+    | "batchStepSelect"
     // A file picker for a command field the backend expects as base64 content (e.g. evidence upload) —
     // reads the chosen file client-side and stores its base64 encoding, so the operator picks a file
     // instead of pasting a base64 blob into a text box.
@@ -187,8 +192,14 @@ export function FormFieldsGrid({
               subFields={f.subFields ?? []}
               value={(complexValues[f.name] as RepeatRow[]) ?? []}
               onChange={(rows) => setComplexValues((c) => ({ ...c, [f.name]: rows }))}
+              materialLotOptions={entities.materialLots}
+              materialLotOptionsStatus={entities.materialLotsStatus}
               userOptions={entities.users}
               userOptionsStatus={entities.usersStatus}
+              equipmentOptions={entities.equipment}
+              equipmentOptionsStatus={entities.equipmentStatus}
+              areaOptions={entities.areas}
+              areaOptionsStatus={entities.areasStatus}
             />
           </div>
         ) : f.type === "kv" ? (
@@ -259,6 +270,17 @@ export function FormFieldsGrid({
             options={entities.users}
             status={entities.usersStatus}
             kind="user"
+          />
+        ) : f.type === "batchStepSelect" ? (
+          <BatchStepOwnerPicker
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(stepId) => setValues((c) => ({ ...c, [f.name]: stepId, owner_type: "batch_step" }))}
+            batchOptions={entities.batches}
+            batchOptionsStatus={entities.batchesStatus}
           />
         ) : f.type === "fileBase64" ? (
           <FileBase64Field
@@ -355,6 +377,100 @@ function FileBase64Field({
         onChange={(e) => handleFile(e.target.files?.[0])}
       />
       {fileName && <p className="hint mt-1">Selected: {fileName}</p>}
+    </Field>
+  );
+}
+
+const pickerLinkStyle = {
+  background: "none",
+  border: "none",
+  padding: 0,
+  color: "var(--brand-600)",
+  fontSize: "var(--fs-2)",
+  cursor: "pointer",
+  textDecoration: "underline",
+} as const;
+
+/** Batch → step cascading picker, for a field referencing one specific batch step (e.g. evidence
+ * staging's "Owner ID" when "Owner type" is "batch_step") — the batch id alone isn't the field's value,
+ * so a plain `EntityPickerField` (one flat list) doesn't fit; this fetches the chosen batch's steps on
+ * demand rather than every step of every batch up front. Falls back to a manual-ID `Input` the same way
+ * every other "*Select" type does, for any owner_type this picker doesn't cover. */
+function BatchStepOwnerPicker({
+  label,
+  required,
+  hint,
+  value,
+  onChange,
+  batchOptions,
+  batchOptionsStatus,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  value: string;
+  onChange: (stepId: string) => void;
+  batchOptions: EntityOption[];
+  batchOptionsStatus: EntityOptionsStatus;
+}) {
+  const [manual, setManual] = useState(false);
+  const [batchId, setBatchId] = useState("");
+  const [steps, setSteps] = useState<{ step_id: string; recipe_step_code: string }[]>([]);
+  const [stepsStatus, setStepsStatus] = useState<EntityOptionsStatus>("empty");
+
+  function selectBatch(id: string) {
+    setBatchId(id);
+    setSteps([]);
+    if (!id) {
+      setStepsStatus("empty");
+      return;
+    }
+    setStepsStatus("loading");
+    api
+      .get<{ steps: { step_id: string; recipe_step_code: string }[] }>(`/batches/v1/${id}/execution-view`)
+      .then((res) => {
+        setSteps(res.steps);
+        setStepsStatus(res.steps.length ? "ready" : "empty");
+      })
+      .catch(() => setStepsStatus("error"));
+  }
+
+  if (manual || batchOptionsStatus === "error") {
+    return (
+      <Field label={label} required={required} hint={hint}>
+        <Input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Owner ID" />
+        {batchOptionsStatus !== "error" && (
+          <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManual(false)}>
+            Pick a batch step instead
+          </button>
+        )}
+      </Field>
+    );
+  }
+
+  return (
+    <Field label={label} required={required} hint={hint}>
+      <Select value={batchId} onChange={(e) => selectBatch(e.target.value)} disabled={batchOptionsStatus === "loading"}>
+        <option value="">{batchOptionsStatus === "loading" ? "Loading batches…" : "Select a batch"}</option>
+        {batchOptions.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </Select>
+      {batchId && (
+        <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={stepsStatus === "loading"} style={{ marginTop: 6 }}>
+          <option value="">{stepsStatus === "loading" ? "Loading steps…" : "Select a step"}</option>
+          {steps.map((s) => (
+            <option key={s.step_id} value={s.step_id}>
+              {s.recipe_step_code}
+            </option>
+          ))}
+        </Select>
+      )}
+      <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManual(true)}>
+        Not a batch step? Enter the owner ID manually
+      </button>
     </Field>
   );
 }

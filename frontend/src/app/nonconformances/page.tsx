@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { api, ApiError, canRaiseQualityEvent, newIdempotencyKey, type Nonconformance } from "@/lib/api";
-import { useMe, useSiteId } from "@/lib/hooks";
+import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -20,6 +21,19 @@ const NCR_STATES = [
 ];
 const SCOPE_TYPES = ["material", "component", "subassembly", "device", "packaging", "finished_output"];
 const SEVERITIES = ["critical", "major", "minor"];
+
+// Only "material" resolves to a real registered master-data list in this system (`entities.materials`,
+// `GET /materials`) — component/subassembly/device/packaging/finished_output describe a *manufactured*
+// unit at some stage of assembly, not a standalone master record with its own browsable list (no bulk
+// list endpoint exists for any of them; `device` has only a by-serial lookup). Same honest
+// picker/manual-hint split `deviations/page.tsx`'s SOURCE_PICKER_KIND/SOURCE_MANUAL_HINT established.
+const SCOPE_MANUAL_HINT: Partial<Record<string, string>> = {
+  component: "No master list for a component reference in this deployment — the component's identifying reference.",
+  subassembly: "No master list for a subassembly reference in this deployment — the subassembly's identifying reference.",
+  device: "No bulk device list in this deployment yet (only lookup-by-serial) — the device unit's serial or ID.",
+  packaging: "No master list for a packaging reference in this deployment — the packaging run/item reference.",
+  finished_output: "No master list for a finished-output reference in this deployment — the finished unit's identifying reference.",
+};
 
 export default function NonconformancesPage() {
   const { me } = useMe();
@@ -92,9 +106,17 @@ export default function NonconformancesPage() {
 function RaiseNcrModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { siteId } = useSiteId();
   const { me } = useMe();
+  const entities = useEntityOptions();
   const [ncrNumber, setNcrNumber] = useState("");
   const [scopeType, setScopeType] = useState(SCOPE_TYPES[0]);
   const [scopeRecordId, setScopeRecordId] = useState("");
+
+  // An id picked against one scope type's list is never valid once the type switches to another.
+  function changeScopeType(value: string) {
+    setScopeType(value);
+    setScopeRecordId("");
+  }
+
   const [defectCode, setDefectCode] = useState("");
   const [severity, setSeverity] = useState("major");
   const [specRef, setSpecRef] = useState("");
@@ -150,7 +172,7 @@ function RaiseNcrModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Scope type" required>
-            <Select value={scopeType} onChange={(e) => setScopeType(e.target.value)}>
+            <Select value={scopeType} onChange={(e) => changeScopeType(e.target.value)}>
               {SCOPE_TYPES.map((s) => (
                 <option key={s} value={s}>
                   {s}
@@ -158,9 +180,21 @@ function RaiseNcrModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
               ))}
             </Select>
           </Field>
-          <Field label="Affected record ID" required>
-            <Input value={scopeRecordId} onChange={(e) => setScopeRecordId(e.target.value)} required />
-          </Field>
+          {scopeType === "material" ? (
+            <EntityPickerField
+              label="Affected record"
+              required
+              value={scopeRecordId}
+              onChange={setScopeRecordId}
+              options={entities.materials}
+              status={entities.materialsStatus}
+              kind="material"
+            />
+          ) : (
+            <Field label="Affected record ID" required hint={SCOPE_MANUAL_HINT[scopeType]}>
+              <Input value={scopeRecordId} onChange={(e) => setScopeRecordId(e.target.value)} required />
+            </Field>
+          )}
         </div>
         <Field label="Specification reference" required hint="The requirement this product fails to meet.">
           <Input value={specRef} onChange={(e) => setSpecRef(e.target.value)} required />

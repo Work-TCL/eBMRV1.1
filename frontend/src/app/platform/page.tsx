@@ -126,9 +126,10 @@ export default function PlatformPage() {
           {
             path: "uploads",
             label: "Stage an evidence upload",
+            about: "Stages the metadata row only. Once staged, use \"Finalize an upload\" below (same panel, pick it from the Operation list above) to attach the actual file and compute its hash.",
             fields: [
-              { name: "owner_type", label: "Owner type", required: true, placeholder: "e.g. batch, oos_record" },
-              { name: "owner_id", label: "Owner ID", required: true },
+              { name: "owner_type", label: "Owner type", required: true, placeholder: "e.g. batch, oos_record — auto-filled to \"batch_step\" if you pick a step below" },
+              { name: "owner_id", label: "Owner ID", required: true, type: "batchStepSelect", hint: "Pick a batch step, or enter any other owner's ID manually." },
               { name: "filename", label: "Filename", required: true },
               { name: "mime_type", label: "MIME type", required: true, default: "application/pdf" },
               { name: "reason", label: "Reason", required: true },

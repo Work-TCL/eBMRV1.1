@@ -2877,6 +2877,42 @@ resolution_document: "2026-09-09, project-owner-directed, PARTIAL: two of the 24
   RBAC-gated by the pre-existing `batch_execution.execute` permission (`batch_step.correct`, added earlier
   this session for the #023 correction flow, is unrelated to these five).
 
+**2026-09-17 -- four UI-visibility fixes, project-owner-directed (client hit real friction using the
+step Detail modal and the Link Evidence/evidence-staging forms; asked to fix what was fixable without
+inventing regulated behaviour). None of these change what's enforced/blocked -- display and picker
+convenience only:**
+  - **#009's own already-computed `StepResult.quality_status`** (see above -- server has always returned
+    it) is now actually rendered: `batch-execution/page.tsx`'s step Detail modal shows an "out of range"
+    warning next to a recorded value. Still informational only, Complete still does not block on it --
+    BAT-FR-021 exception generation remains unbuilt, unchanged.
+  - **Material/equipment requirements** (`gxp_recipe_material_requirement`/`gxp_recipe_equipment_
+    requirement`, already fully declared via the Recipe Master editor per §9.3.2/§9.3.3) are now returned
+    by `GET /batches/v1/{id}/execution-view`'s `step_detail_by_step_id` (`material_requirements`/
+    `equipment_requirements`, material name resolved via `material_specification.MaterialSpecificationVersion`)
+    and rendered as two new read-only tables in the step Detail modal. This is visibility only -- lot
+    reservation/consumption and specific-equipment-asset linking at execution time (the harder #012/#013
+    half) remain unbuilt, blocked on SG-045's still-open tolerance/consume-mode/calibration-policy
+    schema question exactly as before.
+  - **Evidence picker for "Link evidence"**: new `GET /evidence/v1/objects?owner_type=&owner_id=` (same
+    `evidence.download` read-gate precedent as the existing single-object GET -- Document 72 declares no
+    list operation either) lets the step's "Link evidence" modal offer a dropdown of evidence already
+    staged for that step (`owner_type="batch_step"`, `owner_id=step_id` -- a convention, not an enforced
+    constraint) instead of requiring a pasted raw UUID + hash; selecting one auto-fills the real
+    `content_hash`/`mime_type`. Manual entry stays available for evidence staged under a different owner.
+  - **Owner ID picker on evidence staging** ("Platform ops" → "Stage an evidence upload"): new
+    `FormConsole` field type `batchStepSelect` (`components/shared/FormConsole.tsx`) offers a Batch →
+    Step cascading dropdown that fills both `owner_id` and (automatically) `owner_type="batch_step"`;
+    any other owner type still falls back to manual entry, same as every other `*Select` field type in
+    this codebase already does for its one covered case. No generic "any owner_type gets a picker"
+    system was built -- `owner_type` remains genuinely free text platform-wide (only this one module,
+    batch-execution, currently reads evidence links back at all).
+
+  Verified: `test_batch_execution.py` 27/27, `test_evidence_lifecycle.py` 51/51 (full suite, both files),
+  `npx tsc --noEmit` clean, `npx eslint` clean on all three changed frontend files. No migration, no new
+  permission code, no signature-policy change -- all four are read/query-side additions or client-side
+  convenience. SG-045/SG-047/SG-048's underlying open items are unchanged in scope; only their existing
+  data became visible where it wasn't rendered before.
+
   Verified: `tests/test_batch_execution.py` full suite 42/42 (8 new tests this follow-up: qualification
   gate x2, quality_status/device_transcribed x2, comments x2, handover x2), plus `test_recipe_master.py`
   and `test_material_flow.py` as untouched-module controls, all green. `alembic check` clean on both test
@@ -5249,8 +5285,10 @@ affected_modules:
   - SPEC-QMS-006
   - SPEC-IAM-001
 affected_functions:
-  - app/modules/qms/training_commands.py create_qualification() -- writes qms.qualification_record only
-  - app/modules/iam/models.py Qualification -- iam.qualifications, unrelated write path, untouched
+  - app/modules/qms/training_commands.py create_qualification() -- writes qms.qualification_record and,
+    since 2026-09-17, a mirroring app.modules.iam.models.Qualification row in the same transaction
+  - app/modules/iam/models.py Qualification -- iam.qualifications, still has no version/state/scope and
+    is not updated on renewal/correction of the qms record it mirrors
 why_material: >
   Which store is authoritative for a real-time execution-gate read, and whether a write-through/
   reconciliation mechanism is needed between them, is a record-authority decision (AG-05) this module
@@ -5270,6 +5308,52 @@ owner: Data Architect + IAM module owner + QMS module owner
 resolution_document: "— (open)"
 status: OPEN
 ```
+
+**2026-09-16 partial note (narrow, does not resolve the gap above) + a more severe live defect found while
+building it:** Recipe Master's `StepInput.required_qualification_code` (Document 10) is free text with no
+catalog to source a UI suggestion list from -- exactly this SG-086 conflict, one level up. Asked the
+project owner directly which of the two stores to suggest from; chose `qms.qualification_record`. Added
+`GET /training/v1/qualification-codes` (new `training.qualification_code.list` permission, granted via
+`QMS_VIEW_CODES` plus explicitly to `Process Engineer`) returning `qms.qualification_record`'s distinct
+granted codes, wired into the Recipe Master step editor as an `<input list>`/`<datalist>` suggestion (free
+text still accepted).
+
+While tracing where `required_qualification_code` is actually consumed, found that
+`batch_execution/commands.py::_enforce_step_qualification()` (BAT-FR-014) **does** hard-enforce this field
+at step start -- `QUALIFICATION_MISSING`/`QUALIFICATION_EXPIRED`, and unlike `required_role_code`
+(SG-178) it has **no override path at all**, not even for Admin/Supervisor -- but it checks
+**`iam.qualifications`**, not `qms.qualification_record` (the store the new dropdown suggests from, and
+the only one with any create/grant endpoint -- `POST /training/v1/qualifications`). Grepped the entire
+codebase for `session.add(Qualification` (the `iam.models.Qualification` class, not
+`qms.QualificationRecord`): **zero matches**. No endpoint, script, or seed data writes to
+`iam.qualifications` anywhere. `material/commands.py::_check_dispensing_qualification()`'s
+`dispensing_operator` gate reads the same dead table for the same reason -- its own docstring already
+says "enforced by zero commands anywhere else in this codebase," which is also, unintentionally, an
+accurate description of its own table's write side.
+
+**Practical effect:** setting `required_qualification_code` on any recipe step makes that step
+permanently unstartable by every user, Admin included, with no recovery path short of a schema change or
+a direct DB insert. This is not a new gap on its own -- it is SG-086's dual-store problem made concrete
+and now demonstrably broken end to end, not just architecturally ambiguous. Filed here rather than as a
+new SG number since the fix is the same one SG-086 already asks for (reconcile the two stores, or add a
+write-through). Until resolved, `docs/testing/DDCP_Client_Demo_Guide_Gujarati.md` §9.3 tells testers to
+leave the field empty. The core dual-authority question above remains fully open; `status: OPEN`
+unchanged.
+
+**2026-09-17 write-through added, project-owner-directed** (hit live: operator1 and Admin both blocked
+starting a batch step with `required_qualification_code=ASEPTIC_GOWN_CERT_DEMO` set, since nothing had
+ever written a row to `iam.qualifications` and no override path exists (option A's Option B half rejected
+by the framing above, but a mirroring write-through, not a full reconciliation, was offered and chosen
+directly): `app/modules/qms/training_commands.py::create_qualification()` now also inserts a matching
+`app.modules.iam.models.Qualification` row (`user_id=subject_id`, `qualification_code`,
+`expires_at=effective_to`, `granted_by_user_id=actor`) in the same transaction as the
+`qms.qualification_record` it creates, so granting a qualification through the existing Training page
+(`POST /training/v1/qualifications`) now also satisfies the batch-execution and material-dispensing gates
+that read `iam.qualifications`. This does not answer SG-086's authority question -- `iam.qualifications`
+still has no `version`/`state`/scope columns, renewal still creates a second row rather than superseding
+the first there (the ordering-by-`granted_at` read pattern tolerates this), and a qualification revoked or
+corrected in `qms.qualification_record` is not reflected back. Reconciliation/full authority decision
+remains open; `status: OPEN` unchanged.
 
 ### SG-087 — TRN-FR-007: no numeric attempt-limit or retry-backoff policy exists for assessment attempts
 
@@ -13375,3 +13459,584 @@ owner: Platform Architect + Security owner (supervisor sandbox boundary owner)
 resolution_document: "— (open; edge/plugins/base.py::send_command() and its two real overrides are the interim, production-unreachable interface)"
 status: OPEN
 ```
+
+```yaml
+spec_gap_id: SG-190
+title: "Document 25 (SPEC-QC-003) OOS/OOT records have no browse/list endpoint — only get-by-id"
+class: E
+description: >
+  A frontend-wide audit (2026-09-16, "wire raw-ID fields to real dropdowns") found `/quality/oos/page.tsx`'s
+  top "OOS record ID" lookup box, and CAPA's `source_type=oos`/`oot` picker (`capa/page.tsx`), both need a
+  real OOS/OOT record to reference but `app/modules/qc/router.py`'s `oos_router` exposes only
+  `GET /quality/oos/v1/{oos_id}` (by id) and the OOT evaluate/close mutations — no `GET /quality/oos/v1`
+  or `GET /quality/oot/v1` list route exists. `qc/router.py::list_results_for_batch` (`GET /qc/v1/results
+  ?batch_id=`) was added this same pass and *does* let an operator find the *source* QC result that opens
+  an OOS/OOT record, so `OpenFromResultCard`/`OotCard`'s own entry points are now real pickers — this gap
+  is specifically about finding an *already-open* OOS/OOT record afterward.
+source_documents:
+  - Document 25 (SPEC-QC-003, OOS-FR-001..030, OOT-FR-001..010)
+source_requirement_ids: []
+affected_modules:
+  - SPEC-QC-003
+affected_functions:
+  - app/modules/qc/router.py oos_router — no list route
+  - frontend/src/app/quality/oos/page.tsx — "OOS record ID" lookup stays free text
+  - frontend/src/app/capa/page.tsx — source_type=oos/oot stays free text (SOURCE_MANUAL_HINT)
+why_material: >
+  Deciding what an OOS/OOT list should be filterable/sortable by (state, severity, classification, date
+  range) and who may browse it (`oos_record.view` doesn't exist as a distinct permission yet — the
+  by-id read has no RBAC gate at all) is a small but real product/security decision, not a one-line
+  addition — inventing the shape here without an owner's input risks a second, incompatible listing
+  later once Document 25's own view is actually specified.
+risk_if_guessed: >
+  A guessed list endpoint with the wrong filter/sort/RBAC shape becomes the de facto contract the first
+  frontend consumer locks onto, expensive to change once a real spec review happens.
+options:
+  - (A) Add `GET /quality/oos/v1` and `GET /quality/oot/v1` list endpoints mirroring the paginate()
+    pattern every other QMS module list route already uses (state/severity filter, site-scoped) —
+    recommended, low-risk, same SG-081 read-side precedent.
+  - (B) Leave both record types lookup-only forever (rejected — actively worse for a real investigator
+    who doesn't already have the id memorized).
+blocking: false
+owner: QC module owner
+resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-191
+title: "Document 41 (SPEC-EQP-004) EM programs, samples/readings and excursions have no list endpoints"
+class: E
+description: >
+  Found in the same 2026-09-16 frontend audit: `/em/page.tsx`'s "EM program version ID" (task creation),
+  top "EM sample / reading ID" lookup, and "Excursion ID" (impact-recording card) are all free-text UUID
+  entry with nothing to pick from. `app/modules/equipment/em_router.py` has `GET /tasks/{sample_id}`,
+  `GET /results/{sample_id}`, `GET /areas/{area_id}/readiness` and `GET /trends` but no
+  `GET /programs`, `GET /samples` (bulk) or `GET /excursions` list route. "Location ID" fields on the same
+  page *were* fixed this pass (they're really `equipment_area` ids — `entities.areas`, already listable).
+source_documents:
+  - Document 41 (SPEC-EQP-004)
+source_requirement_ids: []
+affected_modules:
+  - SPEC-EQP-004
+affected_functions:
+  - app/modules/equipment/em_router.py — no /programs, /samples, /excursions list routes
+  - frontend/src/app/em/page.tsx — 4 fields stay free text (program version, top-level sample lookup, excursion id, RecordResultCard's sample id)
+why_material: >
+  Same class as SG-190 — a real list needs a filter/sort/RBAC shape decided by the module owner, not
+  invented by whoever happens to be wiring a frontend picker.
+risk_if_guessed: >
+  Same as SG-190 — a wrong-shaped list becomes a de facto contract.
+options:
+  - (A) Add the three missing list routes, paginate()-shaped, site-scoped — recommended.
+  - (B) Leave lookup-only (rejected — same reasoning as SG-190).
+blocking: false
+owner: Equipment/EM module owner
+resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-192
+title: "Device module has no bulk device-lot list and no product-version-scoped device list"
+class: E
+description: >
+  Found 2026-09-16: `/devices/page.tsx`'s "Device lot ID" readiness-lookup field, and
+  `/nonconformances/page.tsx`'s `scope_type=device` picker, both need a real device/device-lot reference
+  but `app/modules/device/router.py` exposes only `GET /devices/v1/units/by-serial/{serial}` and
+  `GET /devices/v1/units/{unit_id}/history` — no `GET /devices/v1/lots` or `GET /devices/v1/units` bulk
+  list. (`device_lot`/`device_unit` create and the product-version/batch pickers feeding lot *creation*
+  were fixed this pass via the new shared `ProductVersionPickerField` + `entities.batches` — this gap is
+  specifically about finding an *existing* lot/unit afterward.)
+source_documents:
+  - Document 12 (SPEC-EBMR-003, eDHR / Device Production History)
+source_requirement_ids: []
+affected_modules:
+  - SPEC-EBMR-003
+affected_functions:
+  - app/modules/device/router.py — no bulk list route for device_lot or device_unit
+  - frontend/src/app/devices/page.tsx — "Device lot ID" readiness field stays free text
+  - frontend/src/app/nonconformances/page.tsx — scope_type=device stays free text (SCOPE_MANUAL_HINT)
+why_material: >
+  Same class as SG-190/191 — filter/sort/RBAC shape for a device-lot list is a module-owner decision.
+risk_if_guessed: >
+  Same as SG-190/191.
+options:
+  - (A) Add `GET /devices/v1/lots` (and optionally `/units`), paginate()-shaped, site-scoped — recommended.
+  - (B) Leave lookup-only (rejected).
+blocking: false
+owner: Device module owner
+resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-193
+title: "Document 48 (SPEC-ERP-001) integration mapping/conflict/job/run/command records have no list endpoints"
+class: E
+description: >
+  Found 2026-09-16: `/integrations/erp/page.tsx`'s FormConsole ops list has `mapping_id`, `conflict_id`,
+  `job_id`, `run_id`, `difference_id`, `command_id`, `original_command_id`, `external_event_id` and
+  `external_entity_id` fields, all free text. `app/modules/erp/router.py` has POST + get-by-id for each of
+  these but no list route for any of them (the page's own `erpInstanceId` field *is* a real picker,
+  fed by a page-local `useErpInstances()` hook — only the sub-records under an instance lack one).
+source_documents:
+  - Document 48 (SPEC-ERP-001)
+source_requirement_ids: []
+affected_modules:
+  - SPEC-ERP-001
+affected_functions:
+  - app/modules/erp/router.py — no list routes for mappings/conflicts/bulk-jobs/reconciliation-runs/commands
+  - frontend/src/app/integrations/erp/page.tsx — 9 FormConsole fields stay free text
+why_material: >
+  Same class as SG-190/191/192 — and here the volume (5 distinct record types) makes it more likely a
+  guessed shape would need rework once a real Document 48 read-model review happens.
+risk_if_guessed: >
+  Same as above, multiplied by 5 record types.
+options:
+  - (A) Add the 5 missing list routes, paginate()-shaped, scoped to `erp_instance_id` — recommended.
+  - (B) Leave all 9 fields lookup-only (rejected — this module already has the worst raw-ID density in
+    the audit).
+blocking: false
+owner: ERP integration module owner
+resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-194
+title: "Document 61 (SPEC-SEC-001) security module has almost no browse/list endpoints across ~12 record types"
+class: E
+description: >
+  Found 2026-09-16: `/security/page.tsx` has raw-text id fields for `threat_model_version_id`, `risk_id`,
+  `session_id`, `identity_provider_config_id`, `service_identity_id`, `grant_id`,
+  `privileged_session_id`, `secret_id`, `identity_id`, `certificate_id`, `service_id` and `incident_id` —
+  `app/modules/security/router.py` exposes only `GET /control-matrix` and `GET /exceptions/{exception_id}`,
+  no list route for any of the 12. (`subject_id`/`user_id` fields were already real `userSelect` pickers
+  before this pass; `vulnerability_id` fields are the identity being *registered*, not an FK, correctly
+  left free text.)
+source_documents:
+  - Document 61 (SPEC-SEC-001)
+source_requirement_ids: []
+affected_modules:
+  - SPEC-SEC-001
+affected_functions:
+  - app/modules/security/router.py — no list routes for any of the 12 record types above
+  - frontend/src/app/security/page.tsx — every id field for those 12 types stays free text
+why_material: >
+  Security-module record lists carry their own access-control sensitivity question (who may enumerate
+  privileged sessions, secrets metadata, grants) beyond the generic "add a list endpoint" pattern SG-190
+  through SG-193 cover — this is not a decision to make without the security module owner.
+risk_if_guessed: >
+  Guessing RBAC scope for a list of privileged-session/secret/grant records is a materially worse mistake
+  than guessing an ordinary master-data list's filter shape — could over-expose sensitive metadata.
+options:
+  - (A) Security module owner defines list endpoints + RBAC per record type in a dedicated pass —
+    recommended, not attempted here.
+  - (B) Leave all 12 lookup-only indefinitely (acceptable interim — most are rare, deliberate actions,
+    not high-frequency data entry).
+blocking: false
+owner: Security module owner
+resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-195
+title: "WP-12 Validation Platform (Documents 65, 72-90) has zero list endpoints across ~10 record types"
+class: E
+description: >
+  Found 2026-09-16: `/validation/page.tsx` and `/validation/go-live/page.tsx` together have ~30 raw-text
+  id fields (`plan_id`, `scenario_id`, `execution_id`, `protocol_id`, `baseline_id`, `suite_id`,
+  `profile_id`, `fingerprint_id`, `assessment_id`, `control_evidence_id`, `change_impact_id`,
+  `source_execution_id`, etc.) — `app/modules/validation/router.py` has no `GET ""` list route anywhere,
+  only narrow single-record reads (`/releases/{plan_id}/gate`, `/oq/{execution_id}/coverage`,
+  `/security/{suite_id}/gate`). `performer_user_id`/`reviewer_user_id`/`requested_by_user_id` fields were
+  already real `userSelect` pickers before this pass.
+source_documents:
+  - Documents 65, 72-90 (WP-12 Validation Platform & Evidence)
+source_requirement_ids: []
+affected_modules:
+  - WP-12
+affected_functions:
+  - app/modules/validation/router.py — no list route for any validation record type
+  - frontend/src/app/validation/page.tsx, frontend/src/app/validation/go-live/page.tsx — ~30 fields stay free text
+why_material: >
+  10 distinct record types across a wide document range (65, 72-90) — deciding which even need a
+  standalone browsable list (versus being reached only through their owning plan/protocol) is a validation
+  program design question, not a mechanical fix.
+risk_if_guessed: >
+  Same volume/shape risk as SG-193, larger.
+options:
+  - (A) Validation platform owner scopes which of the ~10 record types get list endpoints in a dedicated
+    pass — recommended, not attempted here (out of scope for a frontend-picker-wiring pass).
+  - (B) Leave all lookup-only (acceptable interim — these are mostly qualification-time actions, not
+    routine data entry).
+blocking: false
+owner: Validation Lead
+resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-196
+title: "No evidence object has a browse/list endpoint anywhere in the platform (systemic, cross-module)"
+class: D
+description: >
+  Found 2026-09-16: `evidence_id` reference fields recur across `/vault`, `/platform`, `/dispensing`,
+  `/sterilization` and others — `app/modules/evidence/router.py` (and the Vault module it backs) exposes
+  only get-by-id/download, never a list. Every one of these fields stayed free text this pass.
+source_documents:
+  - AG-12 (Object evidence is hash-controlled and immutable/WORM-capable)
+source_requirement_ids: []
+affected_modules:
+  - evidence
+  - vault
+affected_functions:
+  - app/modules/evidence/router.py — no list route
+  - every page referencing evidence_id (vault, platform, dispensing, sterilization, …)
+why_material: >
+  This is not simply a missing GET — whether evidence objects should ever be *bulk browsable* at all
+  (versus reachable only via the specific regulated record that generated them, per AG-12's WORM/
+  immutability framing) is itself a design/security question. A blanket "list all evidence" endpoint
+  could be a bigger disclosure surface than any other list endpoint in this register.
+risk_if_guessed: >
+  Building a flat evidence-browse endpoint without that review risks exposing evidence across records/
+  batches a given actor shouldn't be able to enumerate, even if by-id access is already correctly RBAC-
+  gated per record.
+options:
+  - (A) Scope evidence discovery per owning record (e.g. "evidence for this batch/step", not a global
+    list) — recommended direction, not built here; needs the evidence/vault module owner's design.
+  - (B) A global evidence list with strict RBAC (rejected as a guess — the access model isn't specified
+    anywhere in Documents 01-105 read so far).
+blocking: false
+owner: Evidence/Vault module owner + Security Officer
+resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-197
+title: "Document 58 (SPEC-PM-001) postmarket safety-case/signal/report records have no list endpoints"
+class: E
+description: >
+  Found 2026-09-16: `/postmarket/page.tsx` has ~15 occurrences of `case_id`/`safety_case_id`/`signal_id`/
+  `report_id`/`track_id` across its ops list, all free text. `app/modules/postmarket/router.py` exposes
+  only `GET /safety-cases/{case_id}`, `/signals/{signal_id}`, `/safety-cases/{case_id}/duplicate-
+  candidates` and `/dashboard` — no list route for safety cases, signals or reports. `owner_subject_id`
+  fields were already real `userSelect` pickers before this pass; `site_id` fields' hints now surface the
+  resolved site id (this pass, see the accompanying frontend change summary).
+source_documents:
+  - Document 58 (SPEC-PM-001)
+source_requirement_ids: []
+affected_modules:
+  - SPEC-PM-001
+affected_functions:
+  - app/modules/postmarket/router.py — no list route for safety cases, signals or reports
+  - frontend/src/app/postmarket/page.tsx — ~15 id fields stay free text
+why_material: >
+  Same class as SG-190-193 — filter/sort/RBAC shape for a safety-case/signal list is a module-owner
+  decision, and this module's dashboard already implies some aggregate view exists conceptually, worth
+  checking against before a flat list is added.
+risk_if_guessed: >
+  Same as SG-190-193.
+options:
+  - (A) Add list routes for safety cases and signals (reports may not need one if always reached via a
+    case) — recommended, not attempted here.
+  - (B) Leave lookup-only (acceptable interim — dashboard already gives an aggregate view).
+blocking: false
+owner: Postmarket module owner
+resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-198
+title: "Document 39/42 cleaning_procedure_version and sterile filter-use records have no list endpoints"
+class: E
+description: >
+  Found 2026-09-16: `/cleaning/page.tsx`'s "Cleaning procedure version ID" is documented in code
+  (`equipment/cleaning_models.py`'s own docstring) as deliberately having no CRUD in Document 39's 7-op
+  API list — seed-only master data, confirmed-deliberate, not a fresh finding. Separately,
+  `/sterilization/page.tsx`'s "Filter use ID" (3 occurrences, Document 42 filtration) has no list route
+  either — this one is not documented as deliberate anywhere, a genuine gap distinct from the cleaning-
+  procedure one.
+source_documents:
+  - Document 39 (SPEC-EQP-002)
+  - Document 42 (SPEC-EQP-005)
+source_requirement_ids: []
+affected_modules:
+  - SPEC-EQP-002
+  - SPEC-EQP-005
+affected_functions:
+  - app/modules/equipment/cleaning_models.py — cleaning_procedure_version, no CRUD by design (pre-existing, re-confirmed)
+  - app/modules/equipment/sterilization_router.py filtration_router — no list route for filter uses
+  - frontend/src/app/cleaning/page.tsx, frontend/src/app/sterilization/page.tsx
+why_material: >
+  The cleaning-procedure-version half is an already-made, documented decision (no action needed). The
+  filter-use half needs the same module-owner filter/sort/RBAC decision as the other list-endpoint gaps
+  in this register.
+risk_if_guessed: >
+  Guessing a filter-use list shape risks the same rework-later cost as SG-190-193/197.
+options:
+  - (A) Cleaning-procedure-version: leave as-is (already a deliberate Document 39 decision, not reopened
+    here). Filter-use: add a `GET /filtration/v1/uses` list route, paginate()-shaped — recommended.
+  - (B) Leave filter-use lookup-only too (acceptable interim).
+blocking: false
+owner: Equipment/Sterilization module owner
+resolution_document: "— (open, filter-use half only)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-199
+title: "Several polymorphic reference fields need a type-selector-first redesign before a picker can cascade"
+class: D
+description: >
+  Found 2026-09-16 auditing raw-ID fields platform-wide: three fields are not simply "missing a list
+  endpoint" but structurally ambiguous about *which* list to cascade from, because the field itself
+  doesn't carry a companion "kind" selector the way `deviations/page.tsx`'s `source_type` does: (1)
+  `/complaints/page.tsx`'s "Lot / batch / serial reference" — could be a material lot, a batch, or a
+  device serial, no selector distinguishes which; (2) `/vault/page.tsx`'s top "Business ID" lookup and
+  the generic "Release a master record" form's `object_type`/`business_id` pair — `object_type` here
+  isn't even constrained to the page's own declared `OBJECT_TYPES` list; (3) `/platform/page.tsx`'s
+  "Owner ID" fields (evidence stage/verify/manifest ops) paired with a free-text `owner_type` instead of
+  a constrained selector.
+source_documents:
+  - Document 58 (SPEC-PM-001, complaint lot/batch/serial reference)
+  - AG-12 (vault object addressing)
+source_requirement_ids: []
+affected_modules:
+  - SPEC-PM-001
+  - vault
+  - platform diagnostics
+affected_functions:
+  - frontend/src/app/complaints/page.tsx — lot_batch_serial_ref field
+  - frontend/src/app/vault/page.tsx — top Business ID lookup, generic release form's object_type/business_id
+  - frontend/src/app/platform/page.tsx — owner_id/owner_type pairs
+why_material: >
+  Adding a `kind`/type Select next to each of these three fields, then cascading the actual picker off
+  that selection (the same shape `deviations/page.tsx`'s `source_type` already established), is a UI
+  design choice about what the closed vocabulary for each selector should be — for `vault`'s
+  `object_type` specifically, constraining it to the page's own `OBJECT_TYPES` list is a behavior change
+  (today it silently accepts anything), not a pure additive fix, so it wasn't made unilaterally in this
+  pass.
+risk_if_guessed: >
+  Constraining `vault`'s `object_type` without confirming every value a real workflow currently sends
+  is already in that list could silently break an existing flow that currently relies on the unconstrained
+  field accepting something outside it.
+options:
+  - (A) Add a `kind` selector to each of the three fields and cascade a real picker off it, confirming
+    `vault`'s `OBJECT_TYPES` list is actually exhaustive first — recommended, not attempted here (needs a
+    dedicated pass with vault module owner sign-off on the object_type constraint).
+  - (B) Leave all three as unconstrained free text (current state, no regression risk).
+blocking: false
+owner: Vault module owner + Postmarket module owner
+resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-200
+title: "NCR scope types component/subassembly/packaging/finished_output have no master-data entity concept at all"
+class: D
+description: >
+  Found 2026-09-16: `/nonconformances/page.tsx`'s `scope_type` vocabulary (`ncr_models.py`
+  NCR_SCOPE_TYPES) includes `material` (a real master entity, fixed this pass — `entities.materials`),
+  `device` (SG-192, exists but no bulk list yet), and four values — `component`, `subassembly`,
+  `packaging`, `finished_output` — that name a *stage of assembly* a nonconforming unit was found at,
+  not a standalone registered master-data record anywhere in the current schema. There is nothing to add
+  a list endpoint for; the open question is whether these should become real trackable entities (with
+  their own identity/lifecycle) or permanently stay free-text references to whatever the recipe/DDCP
+  execution record identifies them by (a `device_assembly_record.unit_identifier`, a DDCP handoff's
+  `component_lot_reference`, etc.).
+source_documents:
+  - Document 27 (SPEC-QMS-... NCR) — scope_type vocabulary
+source_requirement_ids: []
+affected_modules:
+  - QMS NCR
+affected_functions:
+  - app/modules/qms/ncr_models.py NCR_SCOPE_TYPES
+  - frontend/src/app/nonconformances/page.tsx — 4 of 6 scope types stay free text (SCOPE_MANUAL_HINT)
+why_material: >
+  This is a data-model question (does the platform need first-class Component/Subassembly/Packaging-Unit/
+  FinishedOutput entities), not a missing-endpoint question — guessing an answer here would mean
+  inventing new regulated entities CLAUDE.md §4 explicitly reserves for a real decision.
+risk_if_guessed: >
+  Inventing new master-data entity types to satisfy a picker would be exactly the "regulated behavior
+  guessed" CLAUDE.md §4/AG-15 prohibit — these entities, if built wrong, are expensive to unwind once NCR
+  records reference them.
+options:
+  - (A) Leave all four free text permanently, since they may always be identified via whichever DDCP/
+    batch-execution record produced them rather than a standalone NCR-owned master list — plausible,
+    not decided here.
+  - (B) Build first-class entities for one or more of the four (rejected as a guess — no requirement in
+    Documents 01-105 read so far calls for this).
+blocking: false
+owner: QMS module owner + Data Architect
+resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-201
+title: "FormConsole/RepeatSubField's FormField.type vocabulary doesn't cover AI use-case/model-deployment/advisory selects"
+class: E
+description: >
+  Found 2026-09-16: `frontend/src/components/shared/FormConsole.tsx`'s `FormField.type` union supports
+  `batchSelect`/`equipmentSelect`/`areaSelect`/`userSelect` (the latter two — plus `materialLotSelect` —
+  now also supported inside `RepeatSubField` rows as of this pass, closing a related gap on
+  `/line-clearance`'s equipment checklist item). `/ai/page.tsx`'s `FormConsole`/`SignedJsonForm` ops
+  arrays (use-case lifecycle, context/advisory/evaluation operations, `AI_SIGNED_OPS`) still have
+  `use_case_id`/`model_deployment_id`/`advisory_id` fields as plain untyped `FormField`s — the standalone
+  filter/lookup boxes on the same page (`UseCasesCard`/`ModelDeploymentsCard`/`AdvisoriesCard`) *were*
+  wired to real pickers this pass via 3 new local hooks, but the FormConsole ops-list fields were left
+  alone deliberately to avoid changing a shared component's type contract without a dedicated pass.
+source_documents:
+  - Document 105 (SPEC-AI-001..somewhere in that range — AI governance)
+source_requirement_ids: []
+affected_modules:
+  - frontend shared components
+affected_functions:
+  - frontend/src/components/shared/FormConsole.tsx FormField.type — needs 3 new variants
+  - frontend/src/app/ai/page.tsx — ~8 ops-list fields across `use-cases/{id}/risk-assessments`, `.../retire`, `.../governance-package`, `context-packages`, `advisories`, `evaluation-reports`, and AI_SIGNED_OPS's `model-deployments`/`tool-decisions`/`dispositions`/`release-gates`/`provider-switches`
+why_material: >
+  Adding new `FormField.type` variants touches a shared component every other FormConsole/SignedJsonForm
+  page in the app depends on — low individual risk, but should be a deliberate, reviewed addition (and
+  ideally generalized rather than AI-specific, given `entities.rules`/`.deviations`/etc. added this same
+  pass hint at wanting a more general "pick any of useEntityOptions()'s lists" FormField type).
+risk_if_guessed: >
+  A narrow AI-only FormField.type addition now risks needing a second, more general pass later once the
+  next module hits the same wall (already true 3 times this session — CAPA/NCR/field-actions needed
+  bespoke cascading logic FormConsole's fixed vocabulary couldn't express either).
+options:
+  - (A) Generalize `FormField.type` to something like `entitySelect` with an `entityKey` naming which
+    `useEntityOptions()` list to use, covering AI and any future module in one change — recommended for a
+    dedicated follow-up pass, not attempted here (scope discipline for this pass).
+  - (B) Add 3 narrow AI-specific type variants now (rejected — foreseeably needs generalizing almost
+    immediately given the pattern already repeated 3x this pass).
+blocking: false
+owner: Frontend platform owner
+resolution_document: "— (open; AI's FormConsole ops-list fields still untyped)"
+status: OPEN
+```
+
+**SG-201 related partial step 2026-09-16** (not a resolution of this gap — `frontend/src/app/ai/page.tsx`
+is unchanged): `RepeatableFields.tsx`'s `RepeatSubField.type` gained a `customSelect` variant while
+wiring a real dropdown for `/aseptic`'s "Sterile input references" row (`GET /sterilization/v1/items/
+eligible`) — a field whose options/status the field definition itself carries, rather than a new named
+prop pair threaded through `RepeatableRows`/`SubFieldControl` (the same shape the four existing named
+types — `materialLotSelect`/`userSelect`/`equipmentSelect`/`areaSelect` — required one each). This is the
+`RepeatSubField` half of Option A's "generalize rather than grow bespoke per-entity types" direction;
+`FormConsole.tsx`'s top-level `FormField.type` (what AI's ops-list fields would need) is the same
+generalization applied to a sibling component and remains unaddressed — SG-201 stays open for that half.
+
+```yaml
+spec_gap_id: SG-202
+title: "Dispensing's Container ID / location fields could reuse Inventory's already-built cascades but weren't wired this pass"
+class: E
+description: >
+  Found 2026-09-16: `/dispensing/page.tsx`'s `CompleteStepModal` "Container ID" field, and its
+  FormConsole ops list's `dispensed_container_id`/`target_location_id`/`location_id`/`container_id`
+  fields, could reuse two endpoints that already exist and are already proven in `/inventory/page.tsx`:
+  `GET /material-lots/{lot_id}/containers` (lot-scoped container cascade, SG-081 precedent) and
+  `GET /inventory/v1/warehouse-locations?site_id=` (flat location list, also SG-081 precedent, and now
+  also usable as a shared `useEntityOptions()` entry if a second consumer needs it). Deliberately not
+  wired in this pass, scoped out to keep this pass's blast radius to genuinely-missing-backend cases plus
+  the highest-confidence trivial swaps.
+source_documents:
+  - Document 20 (SPEC-MAT-... inventory, warehouse_location/material_container precedent)
+source_requirement_ids: []
+affected_modules:
+  - dispensing
+affected_functions:
+  - frontend/src/app/dispensing/page.tsx — Container ID (CompleteStepModal) and 4 FormConsole ops fields
+  - (reuses existing) GET /material-lots/{lot_id}/containers, GET /inventory/v1/warehouse-locations
+why_material: >
+  Not a backend gap — both endpoints already exist and are already load-bearing in Inventory. This is
+  scoped-out follow-up work, recorded so it isn't silently forgotten rather than assumed "impossible."
+risk_if_guessed: >
+  None — recorded purely to avoid the gap being lost, not because the fix is uncertain.
+options:
+  - (A) A follow-up pass mirrors `inventory/page.tsx`'s lot -> container cascade (§6.4.1 pattern) into
+    `dispensing/page.tsx`, and wires the location fields to `GET /inventory/v1/warehouse-locations` —
+    recommended, straightforward, no backend change needed.
+blocking: false
+owner: Frontend platform owner
+resolution_document: "— (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-203
+title: "Document 42 process_cycle_profile_version (sterilization cycle profile) has no create command anywhere — not just no UI"
+class: E
+description: >
+  Found 2026-09-16 while writing `docs/testing/Sterilization_Aseptic_Client_Demo_Guide_Gujarati.md`
+  against a freshly-reset (empty) database: `equipment.process_cycle_profile_versions` (the profile a
+  `process_cycle` must reference to be created — `CreateProcessCycleCommand.profile_version_id`,
+  required) has `GET /sterilization/v1/profiles` (a picker list, RELEASED-only by default) but **no
+  `POST` anywhere in `sterilization_router.py`/`sterilization_commands.py`** — confirmed by full-file
+  read, not just a missing frontend form. This is a stricter gap than aseptic's equivalent
+  (`aseptic_profile_version` at least got a real `POST /aseptic/v1/profiles` + UI, SG-176) — sterilization
+  cycle profiles are seed-only master data with literally no authoring path, through the API or the UI,
+  in this deployment. On a DB with 0 profiles (post-reset, or a fresh deployment), no sterilization cycle
+  can ever be created until someone inserts a row directly via SQL/migration.
+source_documents:
+  - Document 42 (SPEC-EQP-005)
+source_requirement_ids: []
+affected_modules:
+  - SPEC-EQP-005
+affected_functions:
+  - app/modules/equipment/sterilization_router.py — no POST route for process_cycle_profile_version
+  - app/modules/equipment/sterilization_commands.py — no CreateProcessCycleProfileVersionCommand
+  - frontend/src/app/sterilization/page.tsx — no create UI (nothing to build a UI against, since no command exists)
+why_material: >
+  Same class as SG-081/SG-176 (a plain create for seed-only master data) but with no existing command to
+  mirror the frontend against — building one means deciding the create shape (draft/review stage like
+  Product Master, or direct-to-RELEASED like `aseptic_profile_version`, SG-176's precedent) and which role
+  authors it (Sterilization Operator itself, or a dedicated authoring role like Aseptic Supervisor is for
+  its own profile) — a real design choice, not a one-line wiring fix.
+risk_if_guessed: >
+  Guessing the wrong authoring pattern (e.g. giving Sterilization Operator both author and execute rights
+  on the same profile, or skipping a review stage a real validation program would want) creates a SoD gap
+  that's expensive to unwind once cycles reference the profile it produced.
+options:
+  - (A) Mirror `aseptic_profile_version`'s SG-176 precedent exactly — `POST /sterilization/v1/profiles`
+    direct-to-RELEASED, gated to a role with process/validation authority — **chosen, see resolution**.
+  - (B) Leave seed/migration-only permanently — rejected.
+blocking: false
+owner: Equipment/Sterilization module owner
+resolution_document: "app/modules/equipment/{sterilization_commands,sterilization_router}.py, scripts/seed.py, tests/test_sterilization_flow.py, frontend/src/app/sterilization/page.tsx"
+status: RESOLVED
+```
+
+**SG-203 RESOLVED 2026-09-16, project-owner-directed (asked directly which role should author a
+profile's critical parameters, and whether to match aseptic's direct-to-RELEASED shape or a draft/review
+lifecycle like Product Master).** Chose **Option A** with two specific decisions: (1) **QA Reviewer**
+(not Sterilization Operator) authors the profile — the same role that later independently reviews a real
+cycle's data is deliberately the one that defines the spec that data is reviewed against, keeping
+authorship and execution in different hands, same "who defines vs who executes" split the aseptic
+module already established for its own profile; (2) **direct-to-RELEASED**, no draft/review stage,
+mirroring `aseptic_profile_version`'s own SG-176 precedent exactly rather than inventing a heavier
+lifecycle. Built: `CreateProcessCycleProfileVersionCommand`/`create_process_cycle_profile_version()`
+(`sterilization_commands.py`, field-for-field structural mirror of aseptic's
+`CreateAsepticProfileVersionCommand`/`create_profile_version()`), `POST /sterilization/v1/profiles`
+(`sterilization_router.py`), new permission `process_cycle_profile_version.create` (granted to Admin +
+QA Reviewer in `scripts/seed.py` and the `tests/conftest.py` fixture copy, synced into the live demo DB
+via `scripts/sync_permissions.py` — 1 permission created, 2 grants added, 0 revoked), and a real "New
+sterilization cycle profile" modal + profile list on `/sterilization` (`frontend/src/app/sterilization/
+page.tsx`, `canCreateCycleProfile` gated to Admin/QA Reviewer, mirroring aseptic's
+`NewProfileModal`/`ProfileListCard`/`canCreateProfile`). No signature — Document 106 has no row for this
+action, same "row absent, not optional" precedent as every other unsigned create in this module. No
+supersede endpoint was built (unlike aseptic's own profile) — `process_cycle_profile_version` has no
+`supersedes_profile_version_id` self-FK in its Document 112 schema, so building one now would mean a new
+migration beyond what was asked; left as a separate, smaller follow-up if wanted. Verified:
+`tests/test_sterilization_flow.py` 16/16 passed (13 pre-existing + 3 new:
+`test_create_process_cycle_profile_version_succeeds_and_is_usable`,
+`_requires_role`, `_rejects_duplicate`), `tests/test_aseptic_flow.py` 21/21 as an untouched-module
+control, plus a live end-to-end round trip against the real demo DB (`qa.reviewer` created the real
+`STR-PROC-001` profile the demo guides had been working around with a direct SQL insert;
+`sterilization.operator` correctly got `403 ROLE_MISSING` attempting the same call). `docs/testing/
+DDCP_Client_Demo_Guide_Gujarati.md` §7.4 and `Sterilization_Aseptic_Client_Demo_Guide_Gujarati.md` §4
+updated to use the real UI instead of the SQL workaround.

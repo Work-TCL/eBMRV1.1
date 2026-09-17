@@ -52,6 +52,7 @@ def _version_dict(version) -> dict:
         "udi_applicable": version.udi_applicable,
         "strength_value": str(version.strength_value) if version.strength_value is not None else None,
         "strength_uom": version.strength_uom,
+        "strength_uom_id": str(version.strength_uom_id) if version.strength_uom_id else None,
         "device_model_code": version.device_model_code,
         "effective_from": version.effective_from.isoformat() if version.effective_from else None,
         "effective_to": version.effective_to.isoformat() if version.effective_to else None,

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, holdsAnyRole, newIdempotencyKey, type Me, type MutationReceipt } from "@/lib/api";
-import { useMe, useSiteId } from "@/lib/hooks";
+import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -14,6 +14,7 @@ import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
 
 // em_models.py ALERT_ACTION_STATUSES
@@ -170,6 +171,7 @@ export default function EmPage() {
 }
 
 function CreateTaskCard({ siteId, onCreated }: { siteId: string | null; onCreated: (id: string) => void }) {
+  const entities = useEntityOptions();
   const [programVersionId, setProgramVersionId] = useState("");
   const [locationId, setLocationId] = useState("");
   const [monitoringType, setMonitoringType] = useState("viable_air");
@@ -203,9 +205,15 @@ function CreateTaskCard({ siteId, onCreated }: { siteId: string | null; onCreate
         <Field label="Program version ID" required>
           <Input value={programVersionId} onChange={(e) => setProgramVersionId(e.target.value)} required />
         </Field>
-        <Field label="Location ID" required>
-          <Input value={locationId} onChange={(e) => setLocationId(e.target.value)} required />
-        </Field>
+        <EntityPickerField
+          label="Location ID"
+          required
+          value={locationId}
+          onChange={setLocationId}
+          options={entities.areas}
+          status={entities.areasStatus}
+          kind="equipment area"
+        />
         <Field label="Monitoring type" required>
           <Input value={monitoringType} onChange={(e) => setMonitoringType(e.target.value)} required />
         </Field>

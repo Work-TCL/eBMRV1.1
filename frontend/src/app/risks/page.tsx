@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, ApiError, canInvestigateQms, formatDate, isOverdue, newIdempotencyKey, type RiskRecord } from "@/lib/api";
 import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
+import { RiskMethodologyPickerField } from "@/components/shared/RiskMethodologyPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
 import { KpiRow, KpiTile } from "@/components/ui/KpiTile";
 import { Button } from "@/components/ui/Button";
@@ -208,12 +209,11 @@ function RaiseRiskModal({ onClose, onDone }: { onClose: () => void; onDone: () =
         <Field label="Potential effect" required hint="What happens if the hazard is realised.">
           <textarea className="input" rows={2} value={effect} onChange={(e) => setEffect(e.target.value)} required />
         </Field>
-        <Field
-          label="Methodology ID"
+        <RiskMethodologyPickerField
+          value={methodologyId}
+          onChange={setMethodologyId}
           hint="A released rule of type risk_methodology, authored on the Rules page. Required before the first assessment."
-        >
-          <Input value={methodologyId} onChange={(e) => setMethodologyId(e.target.value)} />
-        </Field>
+        />
         <Field label="Context" hint="Scope, product or process this risk applies to.">
           <textarea className="input" rows={2} value={context} onChange={(e) => setContext(e.target.value)} />
         </Field>

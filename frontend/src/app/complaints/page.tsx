@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, ApiError, canRaiseQualityEvent, formatDate, newIdempotencyKey, type Complaint } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
+import { ProductVersionPickerField } from "@/components/shared/ProductVersionPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -164,12 +165,12 @@ function LogComplaintModal({ onClose, onDone }: { onClose: () => void; onDone: (
         <Field label="Description" required hint="The complainant's own account, recorded as reported.">
           <textarea className="input" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} required />
         </Field>
-        <Field
+        <ProductVersionPickerField
           label="Product version ID"
           hint="A released product version ID from Product Master. The complaint cannot be triaged until this is resolved."
-        >
-          <Input value={productRef} onChange={(e) => setProductRef(e.target.value)} />
-        </Field>
+          value={productRef}
+          onChange={setProductRef}
+        />
         <div className="grid grid-cols-2 gap-4">
           <Field label="Lot / batch / serial reference">
             <Input value={lotRef} onChange={(e) => setLotRef(e.target.value)} />
