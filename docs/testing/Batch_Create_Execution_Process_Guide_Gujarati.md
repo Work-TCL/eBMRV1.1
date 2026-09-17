@@ -26,7 +26,7 @@ permission લખતા પહેલા actual backend code અને frontend U
 13. [CAPA — Deviation પછીનું પગલું](#13-capa--deviation-પછીનું-પગલું)
 14. [QC Testing — Batch ના sample/result કેવી રીતે જોડાય](#14-qc-testing--batch-ના-sampleresult-કેવી-રીતે-જોડાય)
 15. [Cleaning Execution + Line Clearance — Batch શરૂ કરતાં પહેલાં](#15-cleaning-execution--line-clearance--batch-શરૂ-કરતાં-પહેલાં)
-16. [નવો Multi-step Recipe — `RCP-MJ-PFS-V1` v4, full execution worked example](#16-નવો-multi-step-recipe--rcp-mj-pfs-v1-v4-2026-09-17-released-full-execution-live-verified)
+16. [નવો Multi-step Recipe — `RCP-MJ-PFS-V1` v4 (manual browser data)](#16-નવો-multi-step-recipe--rcp-mj-pfs-v1-v4-2026-09-17-released)
 17. [જાણીતી મર્યાદાઓ (honest gaps)](#17-જાણીતી-મર્યાદાઓ-honest-gaps)
 
 ---
@@ -406,16 +406,20 @@ cross-module link હજુ નથી, §17 જુઓ). Realistic sequence: `/li
 
 ---
 
-## 16. નવો Multi-step Recipe — `RCP-MJ-PFS-V1` v4 (2026-09-17, RELEASED, full execution live-verified)
+## 16. નવો Multi-step Recipe — `RCP-MJ-PFS-V1` v4 (2026-09-17, RELEASED)
 
 `MERIDIJECT-PFS` product ની `RCP-MJ-PFS-V1` recipe family નું **v1** ફક્ત 1 step (`FILL-01`) નું હતું —
 batch execution ના multi-step/dependency/parallel-testing flow ને પૂરેપૂરું demo/test કરવા માટે અપૂરતું.
 **v4 — RELEASED** (`process.engineer` → author → validate → submit; `qa.releaser` → signed release,
 author≠releaser SoD) — 6 section, 9 step, 9 dependency, 5 parameter, 3 material requirement, 6 equipment
-requirement, 4 evidence requirement સાથે. **v2 (2026-09-17, ~10:15 UTC) અને v3 (~11:12 UTC) એ જ recipe ના
-પહેલા 2 attempt હતા — બંનેમાં role-assignment ભૂલ મળી (§16.1 જુઓ), v4 એ fix કરીને, **create → issue →
-start → બધા 9 step Complete → Production Complete → QA Review → Release — સંપૂર્ણ chain 1 જ વાર real
-API call દ્વારા ચલાવીને verify કરેલી છે (§16.5).**
+requirement, 4 evidence requirement સાથે.
+
+**v2/v3 એ જ recipe ના પહેલા 2 attempt હતા** — બંનેમાં role-assignment ભૂલ મળી (§16.1 જુઓ, code-testing
+દરમિયાન API દ્વારા ચકાસતાં પકડાયેલી), v4 એ fix કરેલો છે. **v4 ની correctness (parameter range, dependency
+ગ્રાફ, roles) code-testing pass દરમિયાન batch create → 9 step Complete → Production Complete → QA
+Review → Release ચલાવીને ચકાસી છે** (batch number `MJ-PFS-B-2803`, હવે RELEASED, ફરી ના વાપરવો) — પણ
+**તમારો પોતાનો batch browser માંથી manually ચલાવવાનો છે**, નીચે §16.5 માં ટાઈપ કરવાની બધી real/tested
+value આપી છે.
 
 ### 16.1 ⚠️ મહત્વનું finding — `required_role_code` ફક્ત એ role માટે જ કામ કરે જે પહેલેથી `batch_execution.execute` ધરાવે
 
@@ -478,82 +482,99 @@ batch_execution module rule engine ને call નથી કરતું — §1
 
 ---
 
-### 16.5 ✅ Full worked example — real data, batch RELEASED (2026-09-17, live-verified)
+### 16.5 📋 Manual walkthrough — browser માં જાતે ભરવાની data (કંઈ પણ auto-run નથી કરેલું)
 
-આખી chain — Create → Issue → Start → 9 step Complete → Production Complete → QA Review → Release — **1
-જ વાર real API call દ્વારા ચલાવીને, દરેક પગલે actual response capture કરીને** verify કરી છે. નીચેની
-બધી value ખરેખર વપરાયેલી છે (guess/example નથી):
+**નોંધ:** આ section ફક્ત **data reference** છે — recipe (v4) real, RELEASED, DB માં already છે (§16 ની
+ઉપરની નોંધ), પણ batch/execution/review/release **તમે પોતે browser માંથી manually કરવાના છે**. નીચેની
+value real/tested છે (તમે same recipe ના parameter range સામે already ચકાસેલી — in range), પણ **batch
+number તમારો પોતાનો નવો રાખો** (દા.ત. `MJ-PFS-B-2900` — `MJ-PFS-B-2803` નામ પહેલેથી બીજા code-testing
+pass માં વપરાઈ ચૂક્યું છે, ફરી ના વાપરવું, unique constraint error આવશે).
 
-#### 16.5.1 Batch — Create/Issue/Start
+#### 16.5.1 `/batch-execution` → "New batch" — શું ભરવું
 
-| Field | Value |
+| Field | શું પસંદ/ટાઈપ કરવું |
 |---|---|
-| Batch number | `MJ-PFS-B-2803` |
-| Batch ID (UUID) | `f8ca0896-9bf1-47bf-a0b4-a79a5d25eb00` |
-| Product | `MJ-PFS-40MG` v1 (`MERIDIJECT-PFS`, RELEASED) |
-| Recipe | `RCP-MJ-PFS-V1` **v4** (RELEASED) |
-| Target qty / UOM | `4000` / `EA` |
-| Production order ref | `PO-2026-9003` |
-| Created/Issued/Started by | `supervisor1` (Admin token પણ ચાલે — `batch_execution.create`/`.issue`/`.execute`) |
+| Product | `MERIDIJECT-PFS` → `MJ-PFS-40MG` v1 (RELEASED) |
+| Recipe | `RCP-MJ-PFS-V1` → **v4** (dropdown માં "released first" — v4 જ પસંદ કરવો, v1/v2/v3 નહીં) |
+| Batch number | તમારો પોતાનો નવો, દા.ત. `MJ-PFS-B-2900` |
+| Target quantity | `4000` |
+| Target UOM | `EA` |
+| Production order ref (optional) | `PO-2026-9010` (અથવા તમારો પોતાનો) |
 
-#### 16.5.2 Step-by-step — actual executed values
+→ **Create** → batch detail ખૂલશે → **Issue** બટન → **Start** બટન (§3-§5 ના જ pattern).
 
-| Step | Executed by | Action | Real data વપરાયેલો |
+#### 16.5.2 Step-by-step — Record results માં શું ટાઈપ કરવું
+
+Start થયા પછી `LC-01` `ready` થશે (§16.2 ના dependency ગ્રાફ પ્રમાણે). દરેક step: **Start** → (નીચે
+મુજબ Record results/Link evidence) → **Complete** — §6.3/§6.4 ના જ button pattern, password ceremony
+દરેક signed action પર.
+
+| Step | Record results — parameter | ટાઈપ કરવાની value | Evidence જોઈએ? |
 |---|---|---|---|
-| `LC-01` | `operator1` | Start → Link evidence → Complete | Evidence: `image/jpeg`, requirement_code `photo`, evidence object staged+finalized by `qa.reviewer` (owner_type `batch_step`, owner_id = આ step) |
-| `DISP-01` | `operator1` | Start → Record results → Complete | `DISP_WEIGHT_KG` = **12.510** (target 12.500, range 12.375–12.625 — in range) |
-| `FILL-01` | `operator1` | Start → Record results → Link evidence → Complete | `FILL_WEIGHT_MG` = **1002** (target 1000, range 950–1050 — in range); evidence photo |
-| `FILL-IPC-01` | `operator1` | Start → Record results → Link evidence → Complete | `IPC_FILL_WEIGHT_MG` = **998** (in range); evidence photo |
-| `ASSY-01` | `operator1` | Start → Link evidence → Complete | Evidence photo (assembled unit) |
-| `ASSY-VER-01` | `operator1` | Start → Complete | કોઈ parameter/evidence નથી |
-| `TEST-CCI-01` | `operator1` | Start → Record results → Complete | `CCI_LEAK_TEST_PASS` = **true** |
-| `TEST-VIS-01` | `operator1` | Start → Record results → Complete | `VISUAL_INSPECTION_PASS` = **true** |
-| `HOLD-QA-01` | `operator1` | Start → Complete | કોઈ parameter/evidence નથી |
+| `LC-01` | — | — | ✅ photo ×1 (નીચે §16.5.3) |
+| `DISP-01` | `DISP_WEIGHT_KG` | `12.510` *(target 12.500, range 12.375–12.625 — in range)* | — |
+| `FILL-01` | `FILL_WEIGHT_MG` | `1002` *(target 1000, range 950–1050 — in range)* | ✅ photo ×1 |
+| `FILL-IPC-01` | `IPC_FILL_WEIGHT_MG` | `998` *(in range)* | ✅ photo ×1 |
+| `ASSY-01` | — | — | ✅ photo ×1 |
+| `ASSY-VER-01` | — | — | — |
+| `TEST-CCI-01` | `CCI_LEAK_TEST_PASS` | `true` (checkbox/Yes) | — |
+| `TEST-VIS-01` | `VISUAL_INSPECTION_PASS` | `true` (checkbox/Yes) | — |
+| `HOLD-QA-01` | — | — | — |
 
-*(દરેક Record results/Complete/Link evidence call પોતાનો challenge_id + `reauth_password=ChangeMe123!`
-લઈને real signature ceremony તરીકે ચાલ્યો — 8 signed action (Complete ×9 − ASSY-VER-01/HOLD-QA-01 ના
-`Performed` signature સહિત, Record results ×5) generate થયા.)*
+`TEST-CCI-01`/`TEST-VIS-01` બંને `ASSY-VER-01` Complete થતાં જ સાથે `ready` થશે — કોઈ પણ ક્રમમાં Start/
+Complete કરી શકાય. `HOLD-QA-01` બંને complete થાય પછી જ `ready` થશે.
 
-#### 16.5.3 Production Complete
+#### 16.5.3 Evidence — `LC-01`/`FILL-01`/`FILL-IPC-01`/`ASSY-01` માટે
 
-| Field | Value |
-|---|---|
-| Actor | `operator1` (`batch_execution.execute`) |
-| Signature meaning | `Performed` |
-| Result | `resulting_version: 4`, `signature_id` present — batch state `production_complete` |
+Evidence ફાઈલ સીધી step પરથી upload નથી થતી (§6.4). પહેલા:
 
-#### 16.5.4 QA Review
+1. Sidebar → **Platform ops → Evidence operations** → "Stage an evidence upload":
 
-| Field | Value |
-|---|---|
-| Endpoint | `POST /qa-review/v1/batches/{batch_id}/packages` → `.../packages/{id}/complete` |
-| Actor | `qa.reviewer` (`qa_review.create`/`.execute`) |
-| Package ID | `053f4d71-1c19-459e-9094-436339f1685f` |
-| Signature meaning | `Reviewed` |
+   | Field | Value |
+   |---|---|
+   | Owner type | `batch_step` |
+   | Owner | Batch → Step 2-level dropdown — તમારો batch પસંદ કરો, પછી step (`LC-01`/`FILL-01`/વગેરે) |
+   | Filename | કોઈ પણ, દા.ત. `LC-01-photo.jpg` |
+   | Mime type | `image/jpeg` |
+   | File | કોઈ પણ real photo/image select કરો |
+   | Reason | `Line clearance photo evidence` (કે step પ્રમાણે) |
 
-#### 16.5.5 Release
+   → Stage → Finalize (એ જ પેજ પર).
 
-| Field | Value |
-|---|---|
-| Evaluate | `POST /release/v1/scopes/batch/{batch_id}/evaluate` — `qa.reviewer` (`release.evaluate`) |
-| Eligibility result | `state: "eligible"`, `blockers: []`, `warnings: []` |
-| Release scope ID | `40dcddcc-6405-419b-9af0-762fa4e246e4` |
-| Release actor | `qa.releaser` (`release.release`, **independent of `qa.reviewer`** — SoD) |
-| Reason | `"All 9 recipe steps complete, QA review complete, no open deviations"` |
-| Signature meaning | `Released` |
-| **Final result** | **Batch `MJ-PFS-B-2803` — fully RELEASED**, `released_vault_object_id` set |
+2. પાછા `/batch-execution` → એ step ની row → **Link evidence** બટન → dropdown માંથી હમણાં staged કરેલી
+   evidence પસંદ કરો (SHA-256/media type auto-fill થશે) → Requirement code = `photo` → Submit.
+
+#### 16.5.4 Production Complete
+
+બધા 9 step Complete થાય પછી batch action row માં **"Production complete"** બટન દેખાશે (§7) —
+click → password → Confirm.
+
+#### 16.5.5 QA Review — `/qa-review`
+
+1. `qa.reviewer` login → `/qa-review` → **"New review package"** બટન.
+2. Modal માં **Batch** dropdown — તમારો batch (batch number/product name સાથે) પસંદ કરો → **Create
+   package**.
+3. Package ખૂલશે (અથવા list માંથી ફરી ખોલો) → **"Complete review"** બટન → password → Confirm
+   (signature meaning `Reviewed`).
+
+#### 16.5.6 Release — `/release`
+
+1. `qa.releaser` login (**qa.reviewer થી અલગ user હોવો ફરજિયાત — SoD**) → `/release`.
+2. **Scope type** = `batch`, **Batch** dropdown — તમારો batch પસંદ કરો → **"Evaluate eligibility"**
+   બટન.
+3. Eligibility "Eligible for release" (લીલું banner, 0 blocker) બતાવે તો → **"Release"** બટન → Reason
+   (optional field, દા.ત. `All steps complete, QA review complete, no open deviations`) → password →
+   Confirm (signature meaning `Released`).
 
 **⚠️ Honest નોંધ (matches §8):** Release eligibility એ ફક્ત QA review completeness + Vault snapshot
 integrity ચેક કરે છે — batch ની `production_complete` state કે DDCP execution/readiness (§10) એ સીધું
-નથી જોતું. આ batch ના કિસ્સામાં production_complete પણ થયેલું જ હતું (realistic sequence follow કરેલો),
-પણ backend ટેકનિકલ રીતે એ ફરજિયાત નથી કરતું.
+નથી જોતું, ભલે realistic sequence (Production Complete → QA Review → Release) follow કરવો સાચી practice
+છે.
 
-**નિષ્કર્ષ — client/tester માટે:** `MJ-PFS-B-2803` હવે DB માં **સંપૂર્ણપણે RELEASED batch** તરીકે હાજર
-છે — genealogy/audit/vault બધું real. **નવો multi-step batch જાતે try કરવા** §16.3 ના field detail
-પ્રમાણે **નવો batch Create કરો** (existing v4 recipe વાપરીને) — જૂના `MJ-PFS-B-2801-SMOKE` (v2,
-`cc8c00d8-db80-4760-b60f-637fb3536aad`) અને `MJ-PFS-B-2802` (v3, `8e2a200a-353b-4f1f-9704-b1f68c4f7520`)
-batch ના `LC-01`/`TEST-*`/`HOLD-QA-01` step કાયમ `pending`/stuck રહેશે (§16.1 ના role bug ને લીધે) —
-**એ 2 batch ignore કરવા**, ફક્ત reference/history માટે રાખેલા છે.
+**Reference data (2026-09-17, code-testing pass દરમિયાન same recipe/value વાપરીને ચકાસેલું — batch
+number `MJ-PFS-B-2803`, હવે પહેલેથી RELEASED, ફરી ના વાપરવો):** ઉપરની બધી parameter value (12.510/
+1002/998/true/true) આ જ recipe ના declared min/max range સામે **in range** confirm થયેલી છે — તમે
+manually ટાઈપ કરો ત્યારે same range apply થશે.
 
 ---
 
