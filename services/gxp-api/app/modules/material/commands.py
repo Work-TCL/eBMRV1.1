@@ -4654,6 +4654,126 @@ async def approve_inventory_adjustment_request(
     )
 
 
+class RejectInventoryAdjustmentRequestCommand(CommandEnvelope):
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+async def reject_inventory_adjustment_request(
+    session: AsyncSession,
+    request_id: uuid.UUID,
+    cmd: RejectInventoryAdjustmentRequestCommand,
+    actor_user_id: uuid.UUID,
+    site_id: uuid.UUID,
+) -> MutationReceipt:
+    """Approve's missing counterpart -- until this pass a rejected/wrong adjustment request had no path
+    out of "requested" at all (docs/testing/DDCP_Client_Demo_Guide_Gujarati.md §19 #7). No dedicated
+    Document 106 row exists for reject (only row 55's approve is registered), but Document 106 P1 ("a
+    signature is required when the action ... approves ... rejects ... a predicate-rule record") and this
+    codebase's own material_lot.reject precedent (row 44, same "Rejected" meaning + independence as its
+    "release"/"approve" sibling) both point the same way -- reuses approve's independence/signature shape
+    rather than leaving reject unsigned. Unlike approve, no InventoryTransaction/balance mutation happens:
+    a rejected request never touched inventory in the first place."""
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(
+        select(InventoryAdjustmentRequest).where(InventoryAdjustmentRequest.id == request_id).with_for_update()
+    )
+    request = result.scalar_one_or_none()
+    if request is None:
+        raise NotFoundError("Inventory adjustment request not found")
+    if request.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Inventory adjustment request was modified by another actor since it was read",
+            expected_version=cmd.expected_version,
+            current_version=request.version,
+        )
+    if request.status != "requested":
+        raise InvalidTransitionError(
+            "Only a requested adjustment can be rejected (CON-FR-013)", current_status=request.status
+        )
+
+    await evaluate_policy(session, actor_user_id, action="inventory_adjustment_request.reject", site_id=site_id)
+
+    # CON-FR-014: same independence rule as approve -- a requester cannot dispose of their own request.
+    if actor_user_id == request.requested_by_user_id:
+        raise ValidationFailedError(
+            "Rejecter must be independent of the requester of this adjustment (CON-FR-014)"
+        )
+
+    signature_id = await _material_sign(
+        session,
+        record_type="inventory_adjustment_request",
+        action="reject",
+        actor_user_id=actor_user_id,
+        record_version=request.version,
+        record_hash=inventory_adjustment_request_record_hash(request),
+        challenge_id=cmd.challenge_id,
+        reauth_password=cmd.reauth_password,
+        reason=cmd.reason,
+    )
+    if signature_id is None:
+        raise AdjustmentApprovalRequiredError("Adjustment rejection requires a signature (Document 106 P1)")
+
+    old_status = request.status
+    request.status = "rejected"
+    request.signature_id = signature_id
+    request.approved_by_user_id = actor_user_id
+    request.approved_at = datetime.now(timezone.utc)
+    request.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=site_id,
+        aggregate_type="inventory_adjustment_request",
+        aggregate_id=request.id,
+        aggregate_version=request.version,
+        action="Rejected",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        old_value={"status": old_status},
+        new_value={"status": request.status},
+        signature_id=signature_id,
+        reason=cmd.reason,
+    )
+    await write_outbox_event(
+        session,
+        event_type="InventoryAdjustmentRejected",
+        aggregate_type="inventory_adjustment_request",
+        aggregate_id=request.id,
+        aggregate_version=request.version,
+        payload={"id": str(request.id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=site_id,
+        command_type="RejectInventoryAdjustmentRequest",
+        aggregate_type="inventory_adjustment_request",
+        aggregate_id=request.id,
+        expected_version=cmd.expected_version,
+        resulting_version=request.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=request.id,
+        resulting_version=request.version,
+        audit_event_id=audit_event.id,
+        signature_id=signature_id,
+        correlation_id=correlation_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CreateDestructionRequest / ExecuteDestruction — CON-FR-015/016/017/018. Document 106 row 56 registers
 # exactly one signer for `execute` (`Performed`, count=1, no independence, no reason) — `witnesses` is

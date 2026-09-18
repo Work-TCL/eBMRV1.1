@@ -754,3 +754,29 @@ async def test_supersede_rejects_stale_version(client, seeded):
     )
     assert resp.status_code == 409
     assert resp.json()["code"] == "STALE_VERSION"
+
+
+async def test_list_operations_paginated_and_resolves_labels(client, seeded, db):
+    """`/aseptic`'s new "Aseptic operations" datatable -- GET /aseptic/v1/operations must return every
+    operation for the site in the shared paginated envelope, with area/profile labels resolved so the UI
+    never shows a raw id."""
+    site_id = seeded["site_id"]
+    area_id = seeded["areas"]["AREA-GRADE-A"].id
+    profile_id = str(seeded["aseptic_profile"].id)
+    op_token = await login(client, "aseptic.operator")
+
+    equipment_id, item_id = await _create_eligible_sterile_load_item(client, db, site_id, str(seeded["sterilization_profile"].id))
+    operation_id = await _create_operation(client, site_id, area_id, profile_id, equipment_id, item_id, op_token)
+
+    resp = await client.get(f"/aseptic/v1/operations?site_id={site_id}")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "items" in body and "total" in body
+    row = next(r for r in body["items"] if r["id"] == operation_id)
+    assert row["state"] == "PREPARATION"
+    assert row["area_code"] == "AREA-GRADE-A"
+    assert row["profile_number"] == seeded["aseptic_profile"].profile_number
+
+    other_site_resp = await client.get(f"/aseptic/v1/operations?site_id={uuid.uuid4()}")
+    assert other_site_resp.status_code == 200
+    assert other_site_resp.json()["items"] == []

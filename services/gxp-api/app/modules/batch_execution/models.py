@@ -36,7 +36,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -144,6 +144,29 @@ class BatchStep(Base):
     branch_status: Mapped[str | None] = mapped_column(String(40))
     exception_state: Mapped[str | None] = mapped_column(String(40))
     temporal_workflow_ref: Mapped[str | None] = mapped_column(String(255))
+
+
+class BatchStepEquipmentRequirement(Base):
+    """Known-limitations fix (docs/testing/demo-gujarati/08 §8.8, "Equipment master eligibility wiring"
+    named by this module's own docstring as not-yet-built): frozen at `issue_batch()` time from
+    `recipe_master.RecipeEquipmentRequirement`, the same "freeze at issue, enforce against the frozen
+    snapshot not the live recipe" treatment `required_role_code`/`required_qualification_code` on
+    `BatchStep` already use. A step can carry more than one equipment requirement, so (unlike role/
+    qualification) this is a child table, not scalar columns on `BatchStep`. Enforced in
+    commands.py::_enforce_step_equipment against the equipment module's own `_ineligibility_reasons`
+    (calibration_status/qualification_status/cleanliness_status) -- reused, not reinvented."""
+
+    __tablename__ = "gxp_batch_step_equipment_requirement"
+    __table_args__ = {"schema": "ebmr"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    batch_step_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_batch_step.id"), nullable=False)
+    equipment_class: Mapped[str] = mapped_column(String(80), nullable=False)
+    equipment_class_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    exact_equipment_optional: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    require_current_calibration: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    require_current_qualification: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    require_current_cleaning: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class StepResult(Base):

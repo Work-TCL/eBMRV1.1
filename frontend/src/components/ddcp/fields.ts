@@ -197,7 +197,14 @@ export function buildFieldValue(field: DdcpField, value: FieldValue): unknown {
       for (const r of rows) {
         const k = r.key.trim();
         if (!k) continue;
-        obj[k] = inferKvValue(r.value ?? "");
+        // required_controls' one recognized key (PFS-FR-019 serialization/UDI applicability reporting) is
+        // read by the backend as a nested `{"required": <bool>}` object, not a flat scalar — this flat
+        // key/value editor could never produce that shape (DDCP_Client_Demo_Guide_Gujarati.md §10.1's own
+        // honest note), so the one key operators actually need silently never worked. Special-cased here
+        // rather than turning the whole editor into structured JSON, since every other key in this field
+        // (and every key in the sibling constituent_architecture/attributes kv fields) is genuinely a flat
+        // scalar the backend stores as-is.
+        obj[k] = field.name === "required_controls" && k === "serialization" ? { required: inferKvValue(r.value ?? "") } : inferKvValue(r.value ?? "");
       }
       // Unlike the other field types, an empty key/value editor is a meaningful value in its own
       // right — `{}` — not "nothing to send": every DDCP command with a kv field declares it as a

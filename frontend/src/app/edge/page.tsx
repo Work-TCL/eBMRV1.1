@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api } from "@/lib/api";
-import { useRequireAdmin } from "@/lib/hooks";
+import { useRequireAdmin, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Banner } from "@/components/ui/Banner";
@@ -15,6 +15,7 @@ import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 
 export default function EdgePage() {
   const { isAdmin } = useRequireAdmin();
+  const { siteId } = useSiteId();
   if (!isAdmin) return null;
 
   return (
@@ -56,7 +57,7 @@ export default function EdgePage() {
             about: "The challenge binds to the bootstrap token and fingerprint before any gateway row exists.",
             fields: [
               { name: "bootstrap_token", label: "Bootstrap token", required: true },
-              { name: "site_id", label: "Site ID", required: true },
+              { name: "site_id", label: "Site ID", required: true, hint: `This deployment's site ID: ${siteId ?? "loading…"}` },
               { name: "gateway_fingerprint", label: "Gateway fingerprint", required: true },
               { name: "csr", label: "CSR (optional)", type: "textarea" },
               { name: "reason", label: "Reason", type: "textarea", required: true },

@@ -603,6 +603,198 @@ async def test_drug_device_compatibility_released_alongside_parent(client, seede
     assert compat[0]["vault_object_id"] is not None
 
 
+async def test_obsolete_product_version(client, seeded, db):
+    """Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 1), corrected per SG-208: `obsolete`
+    was already a legal ALLOWED_TRANSITIONS edge from `released` with no command reaching it. Matches
+    Document 106 §8's "cancel/abort/void" family: `Approved`, QA Releaser, independent of the author.
+    Author (admin) cannot obsolete their own version; an independent QA Releaser can, once signed. Once
+    obsolete the state is terminal (ALLOWED_TRANSITIONS["obsolete"] == set())."""
+    async with db.begin():
+        author = await _make_admin(db, seeded, "admin.product.obsolete")
+        # Also grant the author QA Releaser directly, so the negative check below proves independence
+        # blocks them specifically -- not just a role they happen to lack (same trick
+        # test_reinstate_wrong_role_no_challenge_and_independent_success uses).
+        db.add(UserSiteRole(user_id=author.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+        await _make_user_with_role(db, seeded, "qa.product.obsolete", "QA Releaser")
+        _add_release_signature_policy(db, seeded)
+    admin_token = await login(client, "admin.product.obsolete")
+    qa_token = await login(client, "qa.product.obsolete")
+
+    resp = await client.post(
+        "/products/v1/drafts", json=_draft_body(seeded["site_id"], "PRD-OBS"), headers=auth_headers(admin_token)
+    )
+    product_version_id = resp.json()["aggregate_id"]
+    await client.post(
+        f"/products/v1/drafts/{product_version_id}/submit",
+        json={"idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert (await _release_with_signature(client, admin_token, product_version_id, 2)).status_code == 200
+
+    # The author (admin), even though they hold product.suspend, is not independent of themselves.
+    not_independent = await client.post(
+        f"/products/v1/{product_version_id}/obsolete",
+        json={
+            "idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 3,
+            "reason": "discontinued",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert not_independent.status_code == 409, not_independent.text
+    assert not_independent.json()["code"] == "SOD_INDEPENDENCE_REQUIRED"
+
+    unsigned = await client.post(
+        f"/products/v1/{product_version_id}/obsolete",
+        json={
+            "idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 3,
+            "reason": "discontinued",
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert unsigned.status_code == 428, unsigned.text
+    assert unsigned.json()["code"] == "MISSING_SIGNATURE"
+
+    challenge = (
+        await client.post(
+            f"/products/v1/{product_version_id}/signature-challenges",
+            json={"action": "obsolete"},
+            headers=auth_headers(qa_token),
+        )
+    ).json()
+    assert challenge["meaning"] == "Approved"
+
+    resp = await client.post(
+        f"/products/v1/{product_version_id}/obsolete",
+        json={
+            "idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 3,
+            "reason": "discontinued", "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/products/v1/{product_version_id}", headers=auth_headers(qa_token))).json()
+    assert detail["lifecycle_state"] == "obsolete"
+
+    # Terminal: no further transition allowed, even a signed one.
+    retry = await client.post(
+        f"/products/v1/{product_version_id}/suspend",
+        json={
+            "idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 4,
+            "reason": "should not be reachable",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert retry.status_code == 409, retry.text
+    assert retry.json()["code"] == "INVALID_TRANSITION"
+
+
+async def test_supersede_product_version(client, seeded, db):
+    """Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 1), corrected per SG-208:
+    `supersede` requires `superseding_version_id` to reference another RELEASED version of the same
+    product_business_id (enforced in `_resolve_supersession`), and records the link on
+    `superseded_by_version_id`. Matches Document 106 §8's "cancel/abort/void" family: `Approved`, QA
+    Releaser, independent of the author -- the author (admin) cannot supersede their own version."""
+    async with db.begin():
+        author = await _make_admin(db, seeded, "admin.product.supersede")
+        db.add(UserSiteRole(user_id=author.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+        await _make_user_with_role(db, seeded, "qa.product.supersede", "QA Releaser")
+        _add_release_signature_policy(db, seeded)
+    admin_token = await login(client, "admin.product.supersede")
+    qa_token = await login(client, "qa.product.supersede")
+
+    v1 = (
+        await client.post(
+            "/products/v1/drafts",
+            json=_draft_body(seeded["site_id"], "PRD-SUP", version_no=1),
+            headers=auth_headers(admin_token),
+        )
+    ).json()["aggregate_id"]
+    await client.post(
+        f"/products/v1/drafts/{v1}/submit",
+        json={"idempotency_key": idem(), "product_version_id": v1, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert (await _release_with_signature(client, admin_token, v1, 2)).status_code == 200
+
+    # A draft (not yet released) is not a valid successor.
+    v_draft = (
+        await client.post(
+            "/products/v1/drafts",
+            json=_draft_body(seeded["site_id"], "PRD-SUP-OTHER", version_no=1),
+            headers=auth_headers(admin_token),
+        )
+    ).json()["aggregate_id"]
+
+    bad_target = await client.post(
+        f"/products/v1/{v1}/supersede",
+        json={
+            "idempotency_key": idem(), "product_version_id": v1, "expected_version": 3,
+            "reason": "replaced", "superseding_version_id": v_draft,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert bad_target.status_code == 422, bad_target.text
+    assert bad_target.json()["code"] == "VALIDATION_FAILED"
+
+    # Cannot supersede itself.
+    self_supersede = await client.post(
+        f"/products/v1/{v1}/supersede",
+        json={
+            "idempotency_key": idem(), "product_version_id": v1, "expected_version": 3,
+            "reason": "replaced", "superseding_version_id": v1,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert self_supersede.status_code == 422, self_supersede.text
+
+    v2 = (
+        await client.post(
+            "/products/v1/drafts",
+            json=_draft_body(seeded["site_id"], "PRD-SUP", version_no=2),
+            headers=auth_headers(admin_token),
+        )
+    ).json()["aggregate_id"]
+    await client.post(
+        f"/products/v1/drafts/{v2}/submit",
+        json={"idempotency_key": idem(), "product_version_id": v2, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert (await _release_with_signature(client, admin_token, v2, 2)).status_code == 200
+
+    # The author (admin) is not independent of themselves.
+    not_independent = await client.post(
+        f"/products/v1/{v1}/supersede",
+        json={
+            "idempotency_key": idem(), "product_version_id": v1, "expected_version": 3,
+            "reason": "replaced", "superseding_version_id": v2,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert not_independent.status_code == 409, not_independent.text
+    assert not_independent.json()["code"] == "SOD_INDEPENDENCE_REQUIRED"
+
+    challenge = (
+        await client.post(
+            f"/products/v1/{v1}/signature-challenges", json={"action": "supersede"}, headers=auth_headers(qa_token),
+        )
+    ).json()
+    assert challenge["meaning"] == "Approved"
+
+    resp = await client.post(
+        f"/products/v1/{v1}/supersede",
+        json={
+            "idempotency_key": idem(), "product_version_id": v1, "expected_version": 3,
+            "reason": "replaced", "superseding_version_id": v2,
+            "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/products/v1/{v1}", headers=auth_headers(qa_token))).json()
+    assert detail["lifecycle_state"] == "superseded"
+    assert detail["superseded_by_version_id"] == v2
+
+
 async def test_concurrent_draft_update_rejects_stale_version(client, seeded, db):
     async with db.begin():
         await _make_admin(db, seeded, "admin.product5")

@@ -7,8 +7,10 @@ out of scope this pass -- see docs/generated/18_SPEC_GAPS.md SG-086..SG-090.
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import select
+
 from app.core.security import hash_password
-from app.modules.iam.models import User, UserSiteRole
+from app.modules.iam.models import Qualification, User, UserSiteRole
 from app.modules.signature.models import SignaturePolicy
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 
@@ -111,6 +113,17 @@ async def test_full_lifecycle_read_and_understand_to_qualification(client, seede
         headers=auth_headers(token),
     )
     assert resp.status_code == 200, resp.text
+
+    # SG-086 write-through: granting via qms.qualification_record must also satisfy the
+    # iam.qualifications-backed execution gates (batch_execution/material) that read it.
+    iam_qual = (
+        await db.execute(
+            select(Qualification).where(
+                Qualification.user_id == owner.id, Qualification.qualification_code == "DISPENSING_OPERATOR"
+            )
+        )
+    ).scalar_one_or_none()
+    assert iam_qual is not None
 
 
 async def test_assessment_pending_pass_completes(client, seeded, db):
@@ -312,6 +325,43 @@ async def test_matrix_returns_counts(client, seeded, db):
     assert resp.status_code == 200, resp.text
     rows = resp.json()["requirements"]
     assert any(r["requirement_id"] == requirement_id and r["assigned_count"] >= 1 for r in rows)
+
+
+async def test_qualification_codes_returns_distinct_granted_codes(client, seeded, db):
+    """SG-086: no catalog table exists for qualification codes, so this endpoint is a distinct-values
+    read over qms.qualification_record -- suggestion source for Recipe Master's required_qualification_code
+    (project-owner-directed, asked directly, chose qms.qualification_record over iam.qualifications)."""
+    owner = await _setup(db, seeded, "15")
+    token = await login(client, "admin.trn15")
+    code = f"CLEANROOM_GOWN_{uuid.uuid4().hex[:6]}"
+    for _ in range(2):
+        resp = await client.post(
+            "/training/v1/qualifications",
+            json={
+                "idempotency_key": idem(), "site_id": str(seeded["site_id"]), "subject_id": str(owner.id),
+                "qualification_code": code, "effective_from": datetime.now(timezone.utc).isoformat(),
+            },
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 200, resp.text
+
+    resp = await client.get("/training/v1/qualification-codes", headers=auth_headers(token))
+    assert resp.status_code == 200, resp.text
+    codes = resp.json()
+    assert codes.count(code) == 1
+
+
+async def test_qualification_codes_requires_permission(client, seeded, db):
+    async with db.begin():
+        user = User(
+            username="norole.trn16", email="norole.trn16@example.com", full_name="No Role",
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(user)
+    token = await login(client, "norole.trn16")
+    resp = await client.get("/training/v1/qualification-codes", headers=auth_headers(token))
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["code"] == "ROLE_MISSING"
 
 
 async def test_subject_status_returns_history(client, seeded, db):

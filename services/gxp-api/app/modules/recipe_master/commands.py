@@ -4,6 +4,7 @@ module is net-new and additive (see migration d0a1a1bdfaef's docstring).
 """
 
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -20,6 +21,7 @@ from app.modules.product_master.models import ProductVersion
 from app.modules.recipe_master import service as recipe_master_service
 from app.modules.recipe_master.models import (
     ALLOWED_TRANSITIONS,
+    EquipmentClass,
     RecipeEquipmentRequirement,
     RecipeEvidenceRequirement,
     RecipeFamily,
@@ -131,6 +133,9 @@ class MaterialRequirementInput(BaseModel):
 
 class EquipmentRequirementInput(BaseModel):
     equipment_class: str
+    # Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 4): controlled reference alongside
+    # the legacy free-string equipment_class (kept for backward compatibility).
+    equipment_class_id: uuid.UUID | None = None
     exact_equipment_optional: bool = True
     require_current_calibration: bool = False
     require_current_qualification: bool = False
@@ -149,6 +154,9 @@ class StepInput(BaseModel):
     signature_policy_id: uuid.UUID | None = None
     exception_policy_id: uuid.UUID | None = None
     is_critical: bool = False
+    # SG-048 #018, visibility-only slice -- optional; unset means no "overdue hold" flag is ever
+    # computed for this step at execution time.
+    expected_hold_duration_minutes: int | None = None
     parameters: list[ParameterInput] = []
     evidence_requirements: list[EvidenceRequirementInput] = []
     material_requirements: list[MaterialRequirementInput] = []
@@ -249,6 +257,7 @@ async def _replace_graph(
             signature_policy_id=st.signature_policy_id,
             exception_policy_id=st.exception_policy_id,
             is_critical=st.is_critical,
+            expected_hold_duration_minutes=st.expected_hold_duration_minutes,
         )
         session.add(row)
         await session.flush()
@@ -311,10 +320,18 @@ async def _replace_graph(
                 )
             )
         for eq in st.equipment_requirements:
+            if eq.equipment_class_id is not None:
+                klass = await session.get(EquipmentClass, eq.equipment_class_id)
+                if klass is None:
+                    raise ValidationFailedError(
+                        "equipment_class_id does not reference an existing equipment class",
+                        equipment_class_id=str(eq.equipment_class_id),
+                    )
             session.add(
                 RecipeEquipmentRequirement(
                     step_id=row.id,
                     equipment_class=eq.equipment_class,
+                    equipment_class_id=eq.equipment_class_id,
                     exact_equipment_optional=eq.exact_equipment_optional,
                     require_current_calibration=eq.require_current_calibration,
                     require_current_qualification=eq.require_current_qualification,
@@ -342,6 +359,64 @@ async def _replace_graph(
 # ---------------------------------------------------------------------------
 # CreateDraft
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# EquipmentClass — Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 4). Mirrors
+# equipment.create_equipment_area's shape: a simple controlled code table, create + list only, no
+# release/lifecycle workflow. See EquipmentClass's own model docstring for why this lives here rather
+# than in app/modules/equipment.
+# ---------------------------------------------------------------------------
+
+
+class CreateEquipmentClassCommand(CommandEnvelope):
+    class_code: str
+    name: str
+    description: str | None = None
+
+
+async def create_equipment_class(
+    session: AsyncSession, cmd: CreateEquipmentClassCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.class_code.strip():
+        raise ValidationFailedError("class_code is required")
+    conflict = (
+        await session.execute(select(EquipmentClass).where(EquipmentClass.class_code == cmd.class_code))
+    ).scalar_one_or_none()
+    if conflict is not None:
+        raise ValidationFailedError(
+            "class_code is already in use", class_code=cmd.class_code, existing_id=str(conflict.id)
+        )
+
+    klass = EquipmentClass(class_code=cmd.class_code, name=cmd.name, description=cmd.description, status="active")
+    session.add(klass)
+    await session.flush()
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=None, aggregate_type="equipment_class", aggregate_id=klass.id,
+        aggregate_version=1, action="Created", actor_id=actor_user_id, correlation_id=correlation_id,
+        new_value={"class_code": klass.class_code, "name": klass.name},
+    )
+    await write_outbox_event(
+        session, event_type="EquipmentClassCreated", aggregate_type="equipment_class", aggregate_id=klass.id,
+        aggregate_version=1, payload={"id": str(klass.id), "class_code": klass.class_code}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=None, command_type="CreateEquipmentClass", aggregate_type="equipment_class",
+        aggregate_id=klass.id, expected_version=None, resulting_version=1,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=klass.id, resulting_version=1,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
 
 
 class CreateRecipeDraftCommand(CommandEnvelope):
@@ -814,4 +889,254 @@ async def release_recipe_version(session: AsyncSession, cmd: ReleaseRecipeVersio
         audit_event_id=audit_event.id,
         signature_id=signature_id,
         correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Suspend / Reinstate / Obsolete / Supersede -- Known-limitations fix (docs/testing/demo-gujarati/07
+# §7.9 item 1): "Recipe Master માં suspend/reinstate/obsolete/supersede -- કંઈ જ built નથી." The model's
+# LIFECYCLE_STATES/ALLOWED_TRANSITIONS already declared `released -> {suspended, obsolete, superseded}`
+# and `suspended -> {released}` (same dead-edge shape product_master had before its own equivalent fix),
+# but no command existed to reach any of them. This ports product_master's `_transition_with_signature`
+# pattern wholesale, including the signature-policy shape: no Document 106 section 9 row exists for any
+# of the four; `suspend` matches section 8's "hold/quarantine/block/suspend" family (RBAC-gated only),
+# `reinstate` matches "resume/unhold/release-hold" (independent QA Releaser signer against whoever
+# suspended it), `obsolete`/`supersede` match "cancel/abort/void" (independent QA Releaser signer against
+# the version's own author) -- see SG-208 in SPEC_GAPS.md for the correction history and full reasoning.
+# ---------------------------------------------------------------------------
+
+
+class SuspendRecipeVersionCommand(CommandEnvelope):
+    recipe_version_id: uuid.UUID
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+class ReinstateRecipeVersionCommand(CommandEnvelope):
+    recipe_version_id: uuid.UUID
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+class ObsoleteRecipeVersionCommand(CommandEnvelope):
+    recipe_version_id: uuid.UUID
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+class SupersedeRecipeVersionCommand(CommandEnvelope):
+    recipe_version_id: uuid.UUID
+    expected_version: int
+    reason: str
+    superseding_version_id: uuid.UUID
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+async def _transition_with_signature(
+    session: AsyncSession,
+    cmd: (
+        "SuspendRecipeVersionCommand | ReinstateRecipeVersionCommand | ObsoleteRecipeVersionCommand"
+        " | SupersedeRecipeVersionCommand"
+    ),
+    actor_user_id: uuid.UUID,
+    *,
+    new_state: str,
+    action_name: str,
+    event_type: str,
+    signature_action: str,
+    extra_updates: "Callable[[AsyncSession, RecipeVersion, object], Awaitable[dict]] | None" = None,
+    # Document 106 §8: "resume/unhold/release-hold" (reinstate) is independent of "the person who caused
+    # the condition" (cause); "cancel/abort/void" (obsolete/supersede -- see SG-208) is independent of
+    # "the author" (the version's own Created event actor).
+    independence_reference: str = "cause",
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    version = await _load_for_update(session, cmd.recipe_version_id, cmd.expected_version)
+    _assert_transition(version, new_state)
+
+    field_updates: dict = {}
+    if extra_updates is not None:
+        field_updates = await extra_updates(session, version, cmd)
+
+    policy = await signature_service.resolve_signature_requirement(
+        session, record_type="recipe_version", action=signature_action
+    )
+    signature_id = None
+    if policy.signature_required:
+        disqualified_subject_ids: tuple = ()
+        if policy.requires_independent_signer:
+            if independence_reference == "author":
+                cause_actor_id = await session.scalar(
+                    select(AuditEvent.actor_id)
+                    .where(
+                        AuditEvent.aggregate_type == "recipe_version",
+                        AuditEvent.aggregate_id == version.id,
+                        AuditEvent.action == "Created",
+                    )
+                    .order_by(AuditEvent.occurred_at)
+                    .limit(1)
+                )
+            else:
+                # Same audit-trail lookup pattern as product_master's reinstate: the actor of this recipe
+                # version's own most recent `Changed`/`Released` event that set lifecycle_state to its
+                # current (pre-transition) value is who caused that state -- reinstate's signer must not
+                # be them.
+                cause_actor_id = await session.scalar(
+                    select(AuditEvent.actor_id)
+                    .where(
+                        AuditEvent.aggregate_type == "recipe_version",
+                        AuditEvent.aggregate_id == version.id,
+                        AuditEvent.action.in_(("Changed", "Released")),
+                        AuditEvent.new_value["lifecycle_state"].astext == version.lifecycle_state,
+                    )
+                    .order_by(AuditEvent.occurred_at.desc())
+                    .limit(1)
+                )
+            disqualified_subject_ids = (cause_actor_id,) if cause_actor_id else ()
+        await signature_service.enforce_signer_policy(
+            session, policy=policy, actor_user_id=actor_user_id, site_id=version.site_id,
+            action_label=f"recipe_version.{signature_action}", disqualified_subject_ids=disqualified_subject_ids,
+        )
+        if cmd.challenge_id is None or not cmd.reauth_password:
+            raise MissingSignatureError(f"{action_name} requires a signature", required_meaning=policy.meaning)
+        actor = await session.get(User, actor_user_id)
+        if actor is None or not verify_password(cmd.reauth_password, actor.password_hash):
+            raise MissingSignatureError("Fresh step-up authentication failed")
+        challenge = await signature_service.consume_challenge(
+            session,
+            challenge_id=cmd.challenge_id,
+            user_id=actor_user_id,
+            record_version=version.version,
+            record_hash=sha256_hex({"id": str(version.id), "version": version.version}),
+        )
+        signature = await signature_service.sign(session, challenge=challenge, auth_context={"method": "password_reauth"})
+        signature_id = signature.id
+
+    old_state = version.lifecycle_state
+    version.lifecycle_state = new_state
+    new_value: dict = {"lifecycle_state": new_state}
+    for field_name, field_value in field_updates.items():
+        setattr(version, field_name, field_value)
+        new_value[field_name] = str(field_value) if field_value is not None else None
+    version.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=version.site_id,
+        aggregate_type="recipe_version",
+        aggregate_id=version.id,
+        aggregate_version=version.version,
+        action="Changed",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        old_value={"lifecycle_state": old_state},
+        new_value=new_value,
+        reason=cmd.reason,
+        signature_id=signature_id,
+    )
+    await write_outbox_event(
+        session,
+        event_type=event_type,
+        aggregate_type="recipe_version",
+        aggregate_id=version.id,
+        aggregate_version=version.version,
+        payload={"id": str(version.id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=version.site_id,
+        command_type=action_name.replace(" ", ""),
+        aggregate_type="recipe_version",
+        aggregate_id=version.id,
+        expected_version=cmd.expected_version,
+        resulting_version=version.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=version.id,
+        resulting_version=version.version,
+        audit_event_id=audit_event.id,
+        signature_id=signature_id,
+        correlation_id=correlation_id,
+    )
+
+
+async def suspend_recipe_version(
+    session: AsyncSession, cmd: SuspendRecipeVersionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    return await _transition_with_signature(
+        session, cmd, actor_user_id,
+        new_state="suspended", action_name="Suspend",
+        event_type="RecipeVersionSuspended", signature_action="suspend",
+    )
+
+
+async def reinstate_recipe_version(
+    session: AsyncSession, cmd: ReinstateRecipeVersionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    return await _transition_with_signature(
+        session, cmd, actor_user_id,
+        new_state="released", action_name="Reinstate",
+        event_type="RecipeVersionReinstated", signature_action="reinstate",
+    )
+
+
+async def obsolete_recipe_version(
+    session: AsyncSession, cmd: ObsoleteRecipeVersionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    return await _transition_with_signature(
+        session, cmd, actor_user_id,
+        new_state="obsolete", action_name="Obsolete",
+        event_type="RecipeVersionObsoleted", signature_action="obsolete",
+        independence_reference="author",
+    )
+
+
+async def _resolve_recipe_supersession(
+    session: AsyncSession, version: RecipeVersion, cmd: SupersedeRecipeVersionCommand
+) -> dict:
+    if cmd.superseding_version_id == version.id:
+        raise ValidationFailedError("A recipe version cannot supersede itself")
+    successor = await session.get(RecipeVersion, cmd.superseding_version_id)
+    if successor is None:
+        raise NotFoundError("superseding_version_id does not reference an existing recipe version")
+    if successor.recipe_family_id != version.recipe_family_id:
+        raise ValidationFailedError(
+            "superseding_version_id must reference another version of the same recipe family",
+            recipe_family_id=str(version.recipe_family_id),
+        )
+    if successor.lifecycle_state != "released":
+        raise ValidationFailedError(
+            "superseding_version_id must reference a released recipe version",
+            state=successor.lifecycle_state,
+        )
+    return {"superseded_by_version_id": successor.id}
+
+
+async def supersede_recipe_version(
+    session: AsyncSession, cmd: SupersedeRecipeVersionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    return await _transition_with_signature(
+        session, cmd, actor_user_id,
+        new_state="superseded", action_name="Supersede",
+        event_type="RecipeVersionSuperseded", signature_action="supersede",
+        extra_updates=_resolve_recipe_supersession,
+        independence_reference="author",
     )

@@ -47,9 +47,16 @@ async def get_instance(instance_id: uuid.UUID, session: AsyncSession = Depends(g
         if instance is None:
             raise NotFoundError("ERP instance not found")
         return {
-            "id": str(instance.id), "instance_name": instance.instance_name, "vendor": instance.vendor,
-            "environment": instance.environment, "status": instance.status, "version": instance.version,
-            "validated": instance.validated,
+            "id": str(instance.id), "site_id": str(instance.site_id) if instance.site_id else None,
+            "instance_name": instance.instance_name, "vendor": instance.vendor,
+            "environment": instance.environment, "base_url": instance.base_url,
+            "auth_method": instance.auth_method, "capabilities": instance.capabilities,
+            "contract_version": instance.contract_version, "status": instance.status,
+            "version": instance.version, "validated": instance.validated,
+            "validated_by_user_id": str(instance.validated_by_user_id) if instance.validated_by_user_id else None,
+            "validated_at": instance.validated_at.isoformat() if instance.validated_at else None,
+            "service_actor_user_id": str(instance.service_actor_user_id) if instance.service_actor_user_id else None,
+            "created_at": instance.created_at.isoformat(),
         }
 
 

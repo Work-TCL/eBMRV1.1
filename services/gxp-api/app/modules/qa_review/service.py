@@ -74,12 +74,21 @@ async def get_batch_corrections(session: AsyncSession, batch_id: uuid.UUID) -> l
 
 
 async def compute_completeness(session: AsyncSession, batch: Batch, corrections: list[dict]) -> tuple[str, list[str]]:
-    """RBE-FR-005/029 (partial): real signals only -- batch hold state and Vault execution-snapshot
-    integrity. Everything the full completeness engine also checks (QC results, materials, equipment,
-    environment, genealogy completeness, packaging, yield, signatures) depends on modules/entities this
-    pass doesn't build -- see SG-054.
+    """RBE-FR-005/029 (partial): real signals only -- batch hold state, manufacturing completeness and
+    Vault execution-snapshot integrity. Everything the full completeness engine also checks (QC results,
+    materials, equipment, environment, genealogy completeness, packaging, yield, signatures) depends on
+    modules/entities this pass doesn't build -- see SG-054.
+
+    RBE-FR-001's own "Production-Complete trigger" (SG-054, reopened 2026-09-17 project-owner-directed
+    after the matching release/service.py gap was hit live): originally left unbuilt because the
+    `production_complete` batch state it depends on didn't exist yet (SG-048 was still open). SG-048 is
+    long since resolved -- `gxp_batch.state` reaches `production_complete` today -- so this half of
+    SG-054 no longer has a real blocker, and skipping it any further would just be an oversight, not a
+    documented decision.
     """
     blockers: list[str] = []
+    if batch.state != "production_complete":
+        blockers.append("batch is not production_complete")
     if batch.state == "on_hold":
         blockers.append("batch is on_hold")
     if batch.execution_snapshot_id is not None:

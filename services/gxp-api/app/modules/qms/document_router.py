@@ -43,6 +43,16 @@ def _version_dict(version) -> dict:
     }
 
 
+def _controlled_copy_dict(c) -> dict:
+    return {
+        "id": str(c.id), "document_version_id": str(c.document_version_id), "copy_number": c.copy_number,
+        "recipient": c.recipient, "location": c.location, "status": c.status,
+        "issued_by": str(c.issued_by), "issued_at": c.issued_at.isoformat(),
+        "returned_at": c.returned_at.isoformat() if c.returned_at else None,
+        "destroyed_at": c.destroyed_at.isoformat() if c.destroyed_at else None,
+    }
+
+
 @document_router.post("/drafts", response_model=MutationReceipt)
 async def post_create_draft(
     cmd: CreateDocumentDraftCommand, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
@@ -123,6 +133,16 @@ async def post_issue_controlled_copy(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="document.controlled_copy.issue", site_id=None)
         return await issue_controlled_copy(session, cmd, actor.user_id)
+
+
+@document_router.get("/versions/{document_version_id}/controlled-copies")
+async def get_controlled_copies(
+    document_version_id: uuid.UUID, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    await evaluate_policy(session, actor.user_id, action="document.view", site_id=None)
+    copies = await document_service.get_controlled_copies(session, document_version_id)
+    return [_controlled_copy_dict(c) for c in copies]
 
 
 @document_router.get("/{document_code}/versions")

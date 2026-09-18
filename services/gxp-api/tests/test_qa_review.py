@@ -76,7 +76,27 @@ async def _released_product_and_recipe(client, admin_token, site_id, tag):
     return product_version_id, recipe_version_id
 
 
-async def _setup(db, client, seeded, tag, *, issue=True):
+async def _sign_step(client, token, batch_id, step_id, action):
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/signature-challenges",
+        json={"action": action},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["challenge_id"]
+
+
+async def _sign_batch(client, token, batch_id, action):
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/signature-challenges",
+        json={"action": action},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["challenge_id"]
+
+
+async def _setup(db, client, seeded, tag, *, issue=True, production_complete=True):
     async with db.begin():
         await _make_admin(db, seeded, f"admin.qa{tag}")
         db.add(SignaturePolicy(record_type="product_version", action="release", meaning="Released", signature_required=False))
@@ -96,13 +116,58 @@ async def _setup(db, client, seeded, tag, *, issue=True):
     )
     assert resp.status_code == 200, resp.text
     batch_id = resp.json()["aggregate_id"]
-    if issue:
-        resp = await client.post(
-            f"/batches/v1/{batch_id}/issue",
-            json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 1},
-            headers=auth_headers(admin_token),
-        )
-        assert resp.status_code == 200, resp.text
+    if not issue:
+        return admin_token, batch_id
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/issue",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    if not production_complete:
+        return admin_token, batch_id
+
+    # SG-054 (RBE-FR-001, 2026-09-17, project-owner-directed): QA review completeness now also requires
+    # `batch.state == "production_complete"`, mirroring the release-eligibility gate (SG-180). Drive the
+    # single-step recipe (STEP-A, no parameters/evidence) all the way through so callers get the
+    # "complete" completeness baseline they're actually testing against, unless a test deliberately wants
+    # to stop earlier (pass production_complete=False and drive it manually, e.g. the hold test below).
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 2},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    step = next(s for s in view["steps"] if s["state"] == "ready")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step['step_id']}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step["step_id"], "expected_version": step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    challenge_id = await _sign_step(client, admin_token, batch_id, step["step_id"], "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step['step_id']}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step["step_id"],
+            "expected_version": step["version"] + 1,
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    challenge_id = await _sign_batch(client, admin_token, batch_id, "production_complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/production-complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "expected_version": view["batch"]["version"],
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
     return admin_token, batch_id
 
 
@@ -155,7 +220,7 @@ async def test_duplicate_package_for_same_batch_rejected(client, seeded, db):
 
 
 async def test_hold_makes_package_blocked_and_completion_rejected(client, seeded, db):
-    admin_token, batch_id = await _setup(db, client, seeded, "4")
+    admin_token, batch_id = await _setup(db, client, seeded, "4", production_complete=False)
     await client.post(
         f"/batches/v1/{batch_id}/start",
         json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 2},
@@ -205,12 +270,14 @@ async def test_complete_package_and_reopen_on_batch_change(client, seeded, db):
     assert detail["state"] == "REVIEW_COMPLETE"
     assert detail["completed_at"] is not None
 
-    # Batch changes underneath the completed review (start -> version bump) -- reindex should reopen it.
-    await client.post(
-        f"/batches/v1/{batch_id}/start",
-        json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 2},
+    # Batch changes underneath the completed review (hold -> version bump; "start" is no longer a legal
+    # transition from production_complete -- see ALLOWED_TRANSITIONS) -- reindex should reopen it.
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/hold",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 4},
         headers=auth_headers(admin_token),
     )
+    assert resp.status_code == 200, resp.text
     detail = (await client.get(f"/qa-review/v1/packages/{package_id}", headers=auth_headers(admin_token))).json()
     assert detail["stale"] is True
 
@@ -271,6 +338,46 @@ async def test_complete_fails_closed_pending_signature_policy(client, seeded, db
         headers=auth_headers(admin_token),
     )
     batch_id = resp.json()["aggregate_id"]
+    await client.post(
+        f"/batches/v1/{batch_id}/issue",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    # SG-054: drive the single step to completion + Production Complete so this test still reaches the
+    # signature-policy check it's actually testing, instead of tripping the new completeness blocker.
+    await client.post(
+        f"/batches/v1/{batch_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 2},
+        headers=auth_headers(admin_token),
+    )
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    step = next(s for s in view["steps"] if s["state"] == "ready")
+    await client.post(
+        f"/batches/v1/{batch_id}/steps/{step['step_id']}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step["step_id"], "expected_version": step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    challenge_id = await _sign_step(client, admin_token, batch_id, step["step_id"], "complete")
+    await client.post(
+        f"/batches/v1/{batch_id}/steps/{step['step_id']}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step["step_id"],
+            "expected_version": step["version"] + 1,
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    challenge_id = await _sign_batch(client, admin_token, batch_id, "production_complete")
+    await client.post(
+        f"/batches/v1/{batch_id}/production-complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "expected_version": view["batch"]["version"],
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+
     resp = await client.post(
         f"/qa-review/v1/batches/{batch_id}/packages",
         json={"idempotency_key": idem(), "batch_id": batch_id},

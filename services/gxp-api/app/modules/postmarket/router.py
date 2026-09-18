@@ -9,6 +9,7 @@ used for its genealogy/review-summary endpoints), not the 11 that section names 
 import uuid
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pydantic import BaseModel
@@ -18,7 +19,7 @@ from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy
 from app.modules.postmarket import commands
 from app.modules.postmarket.commands import _signal_hash
-from app.modules.postmarket.models import SafetyCase, SafetySignal
+from app.modules.postmarket.models import SafetyCase, SafetyCaseFollowup, SafetySignal
 from app.modules.signature.service import create_challenge, resolve_signature_requirement
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.hashing import sha256_hex
@@ -49,6 +50,88 @@ class OpenSignalChallengeRequest(BaseModel):
     `signal_code` it is about to open before the record exists to load."""
 
     signal_code: str
+
+
+def _followup_dict(f: SafetyCaseFollowup) -> dict:
+    return {
+        "id": str(f.id), "safety_case_id": str(f.safety_case_id), "followup_no": f.followup_no,
+        "followup_receipt_at": f.followup_receipt_at.isoformat(),
+        "source_reference": f.source_reference, "new_information": f.new_information,
+        "reassessment_flags": f.reassessment_flags, "expectedness_reference": f.expectedness_reference,
+        "recorded_by": str(f.recorded_by), "recorded_at": f.recorded_at.isoformat(),
+    }
+
+
+def _safety_case_dict(c: SafetyCase) -> dict:
+    return {
+        "id": str(c.id), "site_id": str(c.site_id), "safety_case_number": c.safety_case_number,
+        "source_record_type": c.source_record_type, "source_record_id": str(c.source_record_id),
+        "source_record_version": c.source_record_version,
+        "source_receipt_at": c.source_receipt_at.isoformat() if c.source_receipt_at else None,
+        "company_initial_receipt_at": c.company_initial_receipt_at.isoformat() if c.company_initial_receipt_at else None,
+        "regulatory_clock_candidate_at": c.regulatory_clock_candidate_at.isoformat() if c.regulatory_clock_candidate_at else None,
+        "system_ingested_at": c.system_ingested_at.isoformat(),
+        "marketed_product_id": str(c.marketed_product_id) if c.marketed_product_id else None,
+        "application_profile_id": str(c.application_profile_id) if c.application_profile_id else None,
+        "product_resolution": c.product_resolution, "identity_resolution_state": c.identity_resolution_state,
+        "reporter_details": c.reporter_details, "citation": c.citation, "external_reference": c.external_reference,
+        "seriousness_attributes": c.seriousness_attributes, "constituent_attribution": c.constituent_attribution,
+        "constituent_classification": c.constituent_classification,
+        "classification_history": c.classification_history,
+        "current_classification_version": c.current_classification_version,
+        "canonical_case_id": str(c.canonical_case_id) if c.canonical_case_id else None,
+        "duplicate_link_rationale": c.duplicate_link_rationale,
+        "reassessment_required": c.reassessment_required,
+        "reportability_referral_required": c.reportability_referral_required,
+        "state": c.state, "version": c.version, "created_at": c.created_at.isoformat(),
+    }
+
+
+def _safety_signal_dict(s: SafetySignal) -> dict:
+    return {
+        "id": str(s.id), "site_id": str(s.site_id), "signal_code": s.signal_code,
+        "detection_source": s.detection_source, "rule_version": s.rule_version, "trigger_refs": s.trigger_refs,
+        "population_definition": s.population_definition, "exposure_denominator": s.exposure_denominator,
+        "denominator_uncertain": s.denominator_uncertain, "case_snapshot": s.case_snapshot,
+        "rationale": s.rationale, "assessment": s.assessment, "assessment_history": s.assessment_history,
+        "state": s.state, "escalation_links": s.escalation_links,
+        "owner_subject_id": str(s.owner_subject_id) if s.owner_subject_id else None,
+        "opened_at": s.opened_at.isoformat(), "closed_at": s.closed_at.isoformat() if s.closed_at else None,
+        "version": s.version,
+    }
+
+
+@router.get("/safety-cases/{case_id}")
+async def get_safety_case(
+    case_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    case = await session.get(SafetyCase, case_id)
+    if case is None:
+        raise NotFoundError("Safety case not found")
+    await evaluate_policy(session, actor.user_id, action="safety_case.view", site_id=case.site_id)
+    followups = (
+        (
+            await session.execute(
+                select(SafetyCaseFollowup).where(SafetyCaseFollowup.safety_case_id == case_id).order_by(SafetyCaseFollowup.followup_no)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    body = _safety_case_dict(case)
+    body["followups"] = [_followup_dict(f) for f in followups]
+    return body
+
+
+@router.get("/signals/{signal_id}")
+async def get_safety_signal(
+    signal_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    signal = await session.get(SafetySignal, signal_id)
+    if signal is None:
+        raise NotFoundError("Safety signal not found")
+    await evaluate_policy(session, actor.user_id, action="safety_signal.view", site_id=signal.site_id)
+    return _safety_signal_dict(signal)
 
 
 @router.post("/sources", response_model=MutationReceipt)

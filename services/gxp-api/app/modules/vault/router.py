@@ -47,6 +47,34 @@ def _object_dict(obj) -> dict:
     }
 
 
+def _evidence_dict(e) -> dict:
+    return {
+        "id": str(e.id),
+        "vault_object_id": str(e.vault_object_id),
+        "evidence_id": str(e.evidence_id),
+        "evidence_version": e.evidence_version,
+        "evidence_sha256": e.evidence_sha256,
+        "media_type": e.media_type,
+        "sequence": e.sequence,
+    }
+
+
+def _correction_dict(c: RecordCorrection) -> dict:
+    return {
+        "correction_id": str(c.correction_id),
+        "record_object_id": str(c.record_object_id),
+        "status": c.status,
+        "reason_code": c.reason_code,
+        "reason_text": c.reason_text,
+        "impact_assessment": c.impact_assessment,
+        "requested_by": str(c.requested_by) if c.requested_by else None,
+        "approved_by_signatures": c.approved_by_signatures,
+        "resulting_object_id": str(c.resulting_object_id) if c.resulting_object_id else None,
+        "created_at": c.created_at.isoformat(),
+        "completed_at": c.completed_at.isoformat() if c.completed_at else None,
+    }
+
+
 @router.post("/masters/{object_type}/{business_id}/release", response_model=MutationReceipt)
 async def post_release_master(
     object_type: str,
@@ -98,7 +126,21 @@ async def get_object(
 ) -> dict:
     await evaluate_policy(session, actor.user_id, action="vault.review", site_id=None)
     obj = await vault_service.get_object(session, object_id)
-    return _object_dict(obj)
+    body = _object_dict(obj)
+    evidence = await vault_service.list_evidence_for_object(session, object_id)
+    body["evidence"] = [_evidence_dict(e) for e in evidence]
+    return body
+
+
+@router.get("/corrections/{correction_id}")
+async def get_correction(
+    correction_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=None)
+    correction = await vault_service.get_correction(session, correction_id)
+    return _correction_dict(correction)
 
 
 @router.get("/objects/{object_id}/integrity")

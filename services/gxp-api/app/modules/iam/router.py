@@ -37,7 +37,7 @@ from app.modules.iam.commands import (
     update_user,
 )
 from app.modules.iam.models import Organization, Permission, Role, RolePermission, Site, User, UserSiteRole
-from app.modules.iam.service import authenticate, get_role_names
+from app.modules.iam.service import authenticate, get_permission_codes, get_role_names
 from app.modules.policy.service import effective_role_names, evaluate_policy
 from app.modules.security import identity_commands as security_identity_commands
 from app.mutation.errors import GxPError, NotFoundError, ValidationFailedError
@@ -99,7 +99,19 @@ async def me(
     roles_by_site = {
         str(site.id): sorted(await get_role_names(session, actor.user_id, site.id)) for site in sites
     }
-    return {"user_id": str(actor.user_id), "username": actor.username, "roles_by_site": roles_by_site}
+    # permissions_by_site is the dynamic authorization surface the frontend should gate UI on -- unlike
+    # roles_by_site (role NAMES, which are user-editable data outside Admin), these are the actual
+    # permission codes evaluate_policy() itself checks, so a role rename/re-permission can never leave a
+    # frontend gate silently stale (2026-09-18, see get_permission_codes docstring).
+    permissions_by_site = {
+        str(site.id): sorted(await get_permission_codes(session, actor.user_id, site.id)) for site in sites
+    }
+    return {
+        "user_id": str(actor.user_id),
+        "username": actor.username,
+        "roles_by_site": roles_by_site,
+        "permissions_by_site": permissions_by_site,
+    }
 
 
 @organization_router.get("")

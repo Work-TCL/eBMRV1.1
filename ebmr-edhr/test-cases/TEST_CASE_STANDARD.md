@@ -1,6 +1,6 @@
 # Test Case Standard & Execution Rules
 
-**Total test cases:** 9150
+**Total test cases:** 9153
 **Coverage:** every requirement in Documents 03–105 has at least one positive case; higher-risk and
 rejection-bearing requirements carry targeted negative, boundary, concurrency and failure cases; every
 module carries the 14-case mandatory platform suite; every scenario declared in a specification's own
@@ -10,8 +10,8 @@ test catalogue is included as a scenario case.
 
 | Test type | Cases |
 |---|---|
-| positive | 2965 |
-| negative | 2674 |
+| positive | 2967 |
+| negative | 2675 |
 | scenario | 1208 |
 | failure | 783 |
 | security | 568 |
@@ -23,10 +23,10 @@ test catalogue is included as a scenario case.
 | Work package | Cases |
 |---|---|
 | WP-00 | 726 |
-| WP-01 | 811 |
+| WP-01 | 812 |
 | WP-02 | 476 |
 | WP-03 | 563 |
-| WP-04 | 960 |
+| WP-04 | 962 |
 | WP-05 | 739 |
 | WP-06 | 811 |
 | WP-07 | 576 |

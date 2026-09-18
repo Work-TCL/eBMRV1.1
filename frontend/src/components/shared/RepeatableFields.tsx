@@ -30,10 +30,23 @@ export interface RepeatSubField {
   /** "userSelect" renders a user dropdown with the same manual-ID fallback as "materialLotSelect" —
    * used by a row's user-id field (e.g. a PQ participant) so the operator picks a real user instead of
    * pasting a raw user ID. */
-  type?: "text" | "number" | "select" | "bool" | "materialLotSelect" | "userSelect";
+  /** "equipmentSelect"/"areaSelect" — same manual-ID-fallback dropdown, for a row's equipment-asset or
+   * equipment-area id field (e.g. a line-clearance checklist item that references a specific asset). */
+  /** "customSelect" — same manual-ID-fallback dropdown shape as the four named types above, but backed
+   * by whatever options/status the *field definition itself* carries (`options`/`optionsStatus`/
+   * `optionsNoun` below) instead of one of `RepeatableRows`'s fixed named prop pairs. Use this for a
+   * one-off entity list nothing else in the app shares yet (e.g. a page-local
+   * `GET /sterilization/v1/items/eligible` fetch) — SG-201's "generalize rather than grow bespoke
+   * per-entity types forever" resolution: a new dropdown source no longer needs a new prop pair added to
+   * `RepeatableRows`/`SubFieldControl`, just a `customSelect` field carrying its own already-fetched data. */
+  type?: "text" | "number" | "select" | "bool" | "materialLotSelect" | "userSelect" | "equipmentSelect" | "areaSelect" | "customSelect";
   required?: boolean;
   placeholder?: string;
   options?: { value: string; label: string }[];
+  /** "customSelect" only — loading/ready/empty/error state for `options` above. */
+  optionsStatus?: EntityOptionsStatus;
+  /** "customSelect" only — the noun used in copy ("Select a {noun}", "Loading {noun}s…"), e.g. "sterile input". */
+  optionsNoun?: string;
   default?: string;
 }
 export type RepeatRow = Record<string, string>;
@@ -41,6 +54,17 @@ export interface KvRow {
   key: string;
   value: string;
 }
+
+// One entry per "*Select" RepeatSubField type: the noun used in copy ("Select a {noun}", "Loading
+// {plural}…") and the manual-entry placeholder shown when no list is available/chosen. Adding a new
+// entity-backed sub-field type is then just one row here plus one new options/status prop threaded down
+// from RepeatableRows, matching the two original hand-written branches this table replaced.
+const SELECT_FIELD_META: Record<string, { noun: string; plural: string; manualPlaceholder: string }> = {
+  materialLotSelect: { noun: "lot", plural: "material lots", manualPlaceholder: "e.g. LOT-DEV-2601, or a garment/filter reference" },
+  userSelect: { noun: "user", plural: "users", manualPlaceholder: "User ID" },
+  equipmentSelect: { noun: "equipment asset", plural: "equipment assets", manualPlaceholder: "Equipment asset ID" },
+  areaSelect: { noun: "equipment area", plural: "equipment areas", manualPlaceholder: "Equipment area ID" },
+};
 
 function SubFieldControl({
   field,
@@ -50,6 +74,10 @@ function SubFieldControl({
   materialLotOptionsStatus,
   userOptions,
   userOptionsStatus,
+  equipmentOptions,
+  equipmentOptionsStatus,
+  areaOptions,
+  areaOptionsStatus,
 }: {
   field: RepeatSubField;
   value: string;
@@ -60,6 +88,12 @@ function SubFieldControl({
   /** Backs "userSelect" — omitted for every other sub-field type. */
   userOptions?: EntityOption[];
   userOptionsStatus?: EntityOptionsStatus;
+  /** Backs "equipmentSelect" — omitted for every other sub-field type. */
+  equipmentOptions?: EntityOption[];
+  equipmentOptionsStatus?: EntityOptionsStatus;
+  /** Backs "areaSelect" — omitted for every other sub-field type. */
+  areaOptions?: EntityOption[];
+  areaOptionsStatus?: EntityOptionsStatus;
 }) {
   const [manual, setManual] = useState(false);
   const labelRow = (
@@ -67,11 +101,39 @@ function SubFieldControl({
       {field.label} {field.required && <span style={{ color: "var(--status-critical-solid)" }}>*</span>}
     </label>
   );
-  if (field.type === "materialLotSelect" || field.type === "userSelect") {
-    const isUser = field.type === "userSelect";
-    const status = (isUser ? userOptionsStatus : materialLotOptionsStatus) ?? "empty";
-    const options = (isUser ? userOptions : materialLotOptions) ?? [];
-    const noun = isUser ? "user" : "lot";
+  const selectMeta = field.type ? SELECT_FIELD_META[field.type] : undefined;
+  const resolved: { options: EntityOption[]; status: EntityOptionsStatus; noun: string; plural: string; manualPlaceholder: string } | null =
+    field.type === "customSelect"
+      ? {
+          options: field.options ?? [],
+          status: field.optionsStatus ?? "empty",
+          noun: field.optionsNoun ?? "option",
+          plural: `${field.optionsNoun ?? "option"}s`,
+          manualPlaceholder: field.placeholder ?? "ID",
+        }
+      : selectMeta
+        ? {
+            options:
+              field.type === "userSelect"
+                ? userOptions ?? []
+                : field.type === "equipmentSelect"
+                  ? equipmentOptions ?? []
+                  : field.type === "areaSelect"
+                    ? areaOptions ?? []
+                    : materialLotOptions ?? [],
+            status:
+              field.type === "userSelect"
+                ? userOptionsStatus ?? "empty"
+                : field.type === "equipmentSelect"
+                  ? equipmentOptionsStatus ?? "empty"
+                  : field.type === "areaSelect"
+                    ? areaOptionsStatus ?? "empty"
+                    : materialLotOptionsStatus ?? "empty",
+            ...selectMeta,
+          }
+        : null;
+  if (resolved) {
+    const { options, status, noun, plural, manualPlaceholder } = resolved;
     const useManual = manual || status === "error" || status === "empty";
     if (useManual) {
       return (
@@ -81,7 +143,7 @@ function SubFieldControl({
             type="text"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder={field.placeholder ?? (isUser ? "User ID" : "e.g. LOT-DEV-2601, or a garment/filter reference")}
+            placeholder={field.placeholder ?? manualPlaceholder}
           />
           {status === "ready" && (
             <button type="button" style={{ ...linkBtnStyle, marginTop: 4, fontSize: "var(--fs-1)" }} onClick={() => setManual(false)}>
@@ -96,7 +158,7 @@ function SubFieldControl({
         <div>
           {labelRow}
           <Select disabled>
-            <option>Loading {isUser ? "users" : "material lots"}…</option>
+            <option>Loading {plural}…</option>
           </Select>
         </div>
       );
@@ -105,7 +167,7 @@ function SubFieldControl({
       <div>
         {labelRow}
         <Select value={value} onChange={(e) => onChange(e.target.value)}>
- <option value="">{isUser ? "Select a user" : "Select a material lot"}</option>
+          <option value="">Select {/^[aeiou]/i.test(noun) ? "an" : "a"} {noun}</option>
           {options.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
@@ -113,7 +175,7 @@ function SubFieldControl({
           ))}
         </Select>
         <button type="button" style={{ ...linkBtnStyle, marginTop: 4, fontSize: "var(--fs-1)" }} onClick={() => setManual(true)}>
-          {isUser ? "Not listed? Enter user ID manually" : "Not a lot? Enter reference manually"}
+          Not listed? Enter {noun === "equipment asset" || noun === "equipment area" ? "the ID" : noun === "user" ? "user ID" : "reference"} manually
         </button>
       </div>
     );
@@ -168,6 +230,10 @@ export function RepeatableRows({
   materialLotOptionsStatus,
   userOptions,
   userOptionsStatus,
+  equipmentOptions,
+  equipmentOptionsStatus,
+  areaOptions,
+  areaOptionsStatus,
 }: {
   label: string;
   required?: boolean;
@@ -182,6 +248,12 @@ export function RepeatableRows({
   /** Backs any "userSelect" sub-field — omitted when no sub-field uses that type. */
   userOptions?: EntityOption[];
   userOptionsStatus?: EntityOptionsStatus;
+  /** Backs any "equipmentSelect" sub-field — omitted when no sub-field uses that type. */
+  equipmentOptions?: EntityOption[];
+  equipmentOptionsStatus?: EntityOptionsStatus;
+  /** Backs any "areaSelect" sub-field — omitted when no sub-field uses that type. */
+  areaOptions?: EntityOption[];
+  areaOptionsStatus?: EntityOptionsStatus;
 }) {
   const rows = value ?? [];
   const item = itemLabel ?? label;
@@ -220,6 +292,8 @@ export function RepeatableRows({
                 key={sf.name} field={sf} value={row[sf.name] ?? ""} onChange={(v) => updateRow(i, sf.name, v)}
                 materialLotOptions={materialLotOptions} materialLotOptionsStatus={materialLotOptionsStatus}
                 userOptions={userOptions} userOptionsStatus={userOptionsStatus}
+                equipmentOptions={equipmentOptions} equipmentOptionsStatus={equipmentOptionsStatus}
+                areaOptions={areaOptions} areaOptionsStatus={areaOptionsStatus}
               />
             ))}
           </div>

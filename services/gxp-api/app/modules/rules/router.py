@@ -46,6 +46,8 @@ def _rule_dict(rule) -> dict:
         "rule_type": rule.rule_type,
         "semantic_version": rule.semantic_version,
         "status": rule.status,
+        "scope": rule.scope,
+        "reason_codes": rule.reason_codes,
         "effective_from": rule.effective_from.isoformat() if rule.effective_from else None,
         "effective_to": rule.effective_to.isoformat() if rule.effective_to else None,
         "expression_ast": rule.expression_ast,
@@ -258,6 +260,17 @@ async def post_uom_release_signature_challenge(
             record_version=uom.version, record_hash=sha256_hex(canonical), meaning=policy.meaning,
         )
         return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
+
+
+@router.get("/uom")
+async def get_released_uoms(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Picker data for any free-text UOM field (Recipe Master parameter/material requirement, Product
+    Master batch size) -- same shape/precedent as `GET /rules/v1` above for `condition_rule_id`."""
+    await evaluate_policy(session, actor.user_id, action="rules.evaluate", site_id=None)
+    return await rules_service.list_released_uoms(session)
 
 
 @router.get("/uom/{code}/versions")

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   api,
-  holdsAnyRole,
+  hasPermission,
   listAll,
   listBatchesForSite,
   newIdempotencyKey,
@@ -11,7 +11,7 @@ import {
   type BatchSummary,
   type Material,
 } from "@/lib/api";
-import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -26,6 +26,7 @@ import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { FormConsole } from "@/components/shared/FormConsole";
 import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 
@@ -72,7 +73,7 @@ export default function DispensingPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
-  const canDispense = holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
+  const canDispense = hasPermission(me, "dispensing_order.create");
 
   const columns: DataTableColumn<DispensingOrder>[] = [
     {
@@ -388,9 +389,10 @@ function OrderModal({
   const allowed = ALLOWED_FROM[o.state] ?? [];
   // Document 21 / SOD-011: verification must be performed by someone other than the weigher. The backend
   // enforces the actual independence rule; this only picks who is offered the button.
-  const canVerify = holdsAnyRole(me, ["Admin", "QC Reviewer"]);
-  const canWeigh = holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
-  const canCancel = holdsAnyRole(me, ["Admin", "QA Releaser"]);
+  const canVerify = hasPermission(me, "dispensing_order.verify");
+  // select_source/start/readings/manual_reading/complete share one grant (Admin/Operator/Supervisor).
+  const canWeigh = hasPermission(me, "dispensing_order.select_source");
+  const canCancel = hasPermission(me, "dispensing_order.cancel");
 
   function offered(s: Step): boolean {
     if (!allowed.includes(s)) return false;
@@ -466,6 +468,7 @@ function StepModal({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const entities = useEntityOptions();
   const [lotId, setLotId] = useState("");
   const [containerId, setContainerId] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -496,11 +499,16 @@ function StepModal({
       {step === "select_source" && (
         <>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Material lot ID">
-              <Input value={lotId} onChange={(e) => setLotId(e.target.value)} autoFocus />
-            </Field>
+            <EntityPickerField
+              label="Material lot ID"
+              value={lotId}
+              onChange={setLotId}
+              options={entities.materialLots}
+              status={entities.materialLotsStatus}
+              kind="material lot"
+            />
             <Field label="Container ID">
-              <Input value={containerId} onChange={(e) => setContainerId(e.target.value)} />
+              <Input value={containerId} onChange={(e) => setContainerId(e.target.value)} autoFocus />
             </Field>
           </div>
           <Field label="Quantity to take" required>
@@ -541,9 +549,15 @@ function StepModal({
             <input type="checkbox" checked={stable} onChange={(e) => setStable(e.target.checked)} />
             Balance reading was stable
           </label>
-          <Field label="Device ID" hint="Optional - which connected balance/device reported this reading.">
-            <Input value={deviceId} onChange={(e) => setDeviceId(e.target.value)} />
-          </Field>
+          <EntityPickerField
+            label="Device ID"
+            hint="Optional - which connected balance/device reported this reading."
+            value={deviceId}
+            onChange={setDeviceId}
+            options={entities.equipment}
+            status={entities.equipmentStatus}
+            kind="equipment asset"
+          />
         </>
       )}
 

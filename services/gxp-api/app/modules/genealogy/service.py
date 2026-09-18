@@ -68,7 +68,7 @@ async def get_ancestors(session: AsyncSession, node_id: uuid.UUID, *, max_depth:
     are validated acyclic at write time, GEN-FR-024)."""
     await get_node(session, node_id)  # 404s cleanly if the root doesn't exist
     visited: dict[uuid.UUID, int] = {}
-    edge_ids: set[uuid.UUID] = set()
+    edges_by_id: dict[uuid.UUID, GenealogyEdge] = {}
     frontier = {node_id}
     depth = 0
     truncated = False
@@ -79,7 +79,7 @@ async def get_ancestors(session: AsyncSession, node_id: uuid.UUID, *, max_depth:
         depth += 1
         next_frontier: set[uuid.UUID] = set()
         for e in edges:
-            edge_ids.add(e.id)
+            edges_by_id[e.id] = e
             if e.from_node_id not in visited:
                 visited[e.from_node_id] = depth
                 next_frontier.add(e.from_node_id)
@@ -91,7 +91,13 @@ async def get_ancestors(session: AsyncSession, node_id: uuid.UUID, *, max_depth:
         if visited
         else []
     )
-    return {"root_node_id": node_id, "nodes": nodes, "edge_ids": list(edge_ids), "truncated": truncated}
+    return {
+        "root_node_id": node_id,
+        "nodes": nodes,
+        "edge_ids": list(edges_by_id.keys()),
+        "edges": list(edges_by_id.values()),
+        "truncated": truncated,
+    }
 
 
 async def _one_hop_descendants(session: AsyncSession, node_id: uuid.UUID, edge_types: tuple[str, ...]) -> list[GenealogyEdge]:
@@ -112,7 +118,7 @@ async def get_descendants(session: AsyncSession, node_id: uuid.UUID, *, max_dept
     """GEN-FR-003 forward trace: mirror of get_ancestors, walking edges forward."""
     await get_node(session, node_id)
     visited: dict[uuid.UUID, int] = {}
-    edge_ids: set[uuid.UUID] = set()
+    edges_by_id: dict[uuid.UUID, GenealogyEdge] = {}
     frontier = {node_id}
     depth = 0
     truncated = False
@@ -123,7 +129,7 @@ async def get_descendants(session: AsyncSession, node_id: uuid.UUID, *, max_dept
         depth += 1
         next_frontier: set[uuid.UUID] = set()
         for e in edges:
-            edge_ids.add(e.id)
+            edges_by_id[e.id] = e
             if e.to_node_id not in visited:
                 visited[e.to_node_id] = depth
                 next_frontier.add(e.to_node_id)
@@ -135,7 +141,13 @@ async def get_descendants(session: AsyncSession, node_id: uuid.UUID, *, max_dept
         if visited
         else []
     )
-    return {"root_node_id": node_id, "nodes": nodes, "edge_ids": list(edge_ids), "truncated": truncated}
+    return {
+        "root_node_id": node_id,
+        "nodes": nodes,
+        "edge_ids": list(edges_by_id.keys()),
+        "edges": list(edges_by_id.values()),
+        "truncated": truncated,
+    }
 
 
 FINAL_PRODUCT_NODE_TYPES = (

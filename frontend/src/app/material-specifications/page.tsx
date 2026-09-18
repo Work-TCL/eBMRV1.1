@@ -2,11 +2,10 @@
 
 import { useState } from "react";
 import { api, ApiError, newIdempotencyKey } from "@/lib/api";
-import { useMe } from "@/lib/hooks";
+import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
-import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
@@ -14,6 +13,7 @@ import { Icon } from "@/components/ui/Icon";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { Modal } from "@/components/ui/Modal";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 
 interface MaterialSpecVersion {
   material_spec_version_id: string;
@@ -144,16 +144,18 @@ function VersionsCard() {
 }
 
 function NewDraftModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const { siteId } = useSiteId();
+  const entities = useEntityOptions();
   const [businessId, setBusinessId] = useState("");
   const [versionNo, setVersionNo] = useState("1");
   const [materialId, setMaterialId] = useState("");
   const [name, setName] = useState("");
-  const [siteId, setSiteId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!siteId) return;
     setBusy(true);
     setError(null);
     try {
@@ -163,7 +165,7 @@ function NewDraftModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
         version_no: Number(versionNo),
         material_id: materialId.trim(),
         name: name.trim(),
-        site_id: siteId.trim(),
+        site_id: siteId,
       });
       onDone();
     } catch (err) {
@@ -183,12 +185,15 @@ function NewDraftModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
           <Field label="Version number" required>
             <Input type="number" min={1} value={versionNo} onChange={(e) => setVersionNo(e.target.value)} required />
           </Field>
-          <Field label="Material ID" required hint="Find the material's ID on /materials.">
-            <Input value={materialId} onChange={(e) => setMaterialId(e.target.value)} required />
-          </Field>
-          <Field label="Site ID" required>
-            <Input value={siteId} onChange={(e) => setSiteId(e.target.value)} required />
-          </Field>
+          <EntityPickerField
+            label="Material ID"
+            required
+            value={materialId}
+            onChange={setMaterialId}
+            options={entities.materials}
+            status={entities.materialsStatus}
+            kind="material"
+          />
         </div>
         <Field label="Name" required>
           <Input value={name} onChange={(e) => setName(e.target.value)} required />
@@ -201,7 +206,7 @@ function NewDraftModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
           <Button
             type="submit"
             variant="primary"
-            disabled={busy || !businessId.trim() || !materialId.trim() || !name.trim() || !siteId.trim()}
+            disabled={busy || !businessId.trim() || !materialId.trim() || !name.trim() || !siteId}
           >
             {busy ? "Creating…" : "Create draft"}
           </Button>
@@ -222,10 +227,6 @@ function ReleaseModal({
 }) {
   return (
     <>
-      <Banner tone="warn" title="Signature policy not yet configured">
-        The challenge below is real, but no signature policy is configured for releasing a material
-        specification version yet - the release itself will correctly fail closed until one is added.
-      </Banner>
       <SignatureCeremony
         open
         onClose={onClose}

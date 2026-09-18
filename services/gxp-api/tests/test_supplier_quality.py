@@ -5,6 +5,8 @@ supplier's own DRAFT->UNDER_QUALIFICATION->APPROVED lifecycle (Document 18 §5).
 
 from sqlalchemy import select
 
+from app.core.security import hash_password
+from app.modules.iam.models import User, UserSiteRole
 from app.modules.supplier_quality.models import (
     Supplier,
     SupplierQualification,
@@ -12,7 +14,7 @@ from app.modules.supplier_quality.models import (
     SupplierSite,
 )
 from app.modules.vault.models import VaultObject
-from tests.conftest import auth_headers, idem, login
+from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 
 
 async def _create_supplier(client, token, code="SUP-1", name="Acme Pharma Supply Co.", country="US"):
@@ -51,8 +53,8 @@ async def _create_qualification(client, token, supplier_id, site_id, quality_agr
 
 
 async def test_create_supplier_and_site(client, seeded, db):
-    op_token = await login(client, "operator1")
-    supplier_id = await _create_supplier(client, op_token)
+    pe_token = await login(client, "process.engineer")
+    supplier_id = await _create_supplier(client, pe_token)
 
     supplier = await db.get(Supplier, supplier_id)
     assert supplier.status == "draft"
@@ -61,7 +63,7 @@ async def test_create_supplier_and_site(client, seeded, db):
 
 async def test_create_manufacturer_supplier(client, seeded, db):
     """SUP-FR-002: role_type distinguishes a manufacturer identity from a commercial supplier."""
-    op_token = await login(client, "operator1")
+    pe_token = await login(client, "process.engineer")
     resp = await client.post(
         "/suppliers/v1",
         json={
@@ -72,7 +74,7 @@ async def test_create_manufacturer_supplier(client, seeded, db):
             "country": "US",
             "sites": [{"site_name": "Plant 1", "country": "US", "manufacturer_flag": True}],
         },
-        headers=auth_headers(op_token),
+        headers=auth_headers(pe_token),
     )
     assert resp.status_code == 200, resp.text
     supplier = await db.get(Supplier, resp.json()["aggregate_id"])
@@ -86,8 +88,8 @@ async def test_create_manufacturer_supplier(client, seeded, db):
 
 async def test_qualification_with_quality_agreement(client, seeded, db):
     """SUP-FR-013: quality_agreement_vault_id references an existing Vault object."""
-    op_token = await login(client, "operator1")
-    supplier_id = await _create_supplier(client, op_token, code="SUP-QA")
+    pe_token = await login(client, "process.engineer")
+    supplier_id = await _create_supplier(client, pe_token, code="SUP-QA")
 
     async with db.begin():
         vault_obj = VaultObject(
@@ -101,15 +103,15 @@ async def test_qualification_with_quality_agreement(client, seeded, db):
 
     site_id = await _site_id_for(db, supplier_id)
     qualification_id = await _create_qualification(
-        client, op_token, supplier_id, site_id, quality_agreement_vault_id=str(vault_obj.object_id)
+        client, pe_token, supplier_id, site_id, quality_agreement_vault_id=str(vault_obj.object_id)
     )
     qualification = await db.get(SupplierQualification, qualification_id)
     assert str(qualification.quality_agreement_vault_id) == str(vault_obj.object_id)
 
 
 async def test_duplicate_supplier_candidate_rejected(client, seeded):
-    op_token = await login(client, "operator1")
-    await _create_supplier(client, op_token, code="SUP-DUP-1", name="Duplicate Legal Name LLC")
+    pe_token = await login(client, "process.engineer")
+    await _create_supplier(client, pe_token, code="SUP-DUP-1", name="Duplicate Legal Name LLC")
 
     resp = await client.post(
         "/suppliers/v1",
@@ -121,20 +123,20 @@ async def test_duplicate_supplier_candidate_rejected(client, seeded):
             "country": "US",
             "sites": [],
         },
-        headers=auth_headers(op_token),
+        headers=auth_headers(pe_token),
     )
     assert resp.status_code == 409
     assert resp.json()["code"] == "DUPLICATE_SUPPLIER_CANDIDATE"
 
 
 async def test_qualification_request_moves_supplier_under_qualification(client, seeded, db):
-    op_token = await login(client, "operator1")
-    supplier_id = await _create_supplier(client, op_token, code="SUP-2")
+    pe_token = await login(client, "process.engineer")
+    supplier_id = await _create_supplier(client, pe_token, code="SUP-2")
     supplier = await db.get(Supplier, supplier_id)
     await db.refresh(supplier)
     site_id = await _site_id_for(db, supplier_id)
 
-    qualification_id = await _create_qualification(client, op_token, supplier_id, site_id)
+    qualification_id = await _create_qualification(client, pe_token, supplier_id, site_id)
 
     await db.refresh(supplier)
     assert supplier.status == "under_qualification"
@@ -147,8 +149,8 @@ async def test_qualification_request_moves_supplier_under_qualification(client, 
 async def test_qualification_evidence_attached(client, seeded, db):
     """SUP-FR-005: qualification evidence is stored as a join against an existing Vault object, not a
     new evidence-storage mechanism."""
-    op_token = await login(client, "operator1")
-    supplier_id = await _create_supplier(client, op_token, code="SUP-EVID")
+    pe_token = await login(client, "process.engineer")
+    supplier_id = await _create_supplier(client, pe_token, code="SUP-EVID")
 
     async with db.begin():
         vault_obj = VaultObject(
@@ -171,7 +173,7 @@ async def test_qualification_evidence_attached(client, seeded, db):
             "risk_class": "critical",
             "evidence": [{"vault_object_id": vault_object_id, "evidence_category": "certification"}],
         },
-        headers=auth_headers(op_token),
+        headers=auth_headers(pe_token),
     )
     assert resp.status_code == 200, resp.text
     qualification_id = resp.json()["aggregate_id"]
@@ -215,33 +217,53 @@ async def _approve_flow(client, actor_token, qualification_id, decision="approve
 
 async def test_approve_requires_role(client, seeded, db):
     op_token = await login(client, "operator1")
-    supplier_id = await _create_supplier(client, op_token, code="SUP-3")
+    pe_token = await login(client, "process.engineer")
+    supplier_id = await _create_supplier(client, pe_token, code="SUP-3")
     site_id = await _site_id_for(db, supplier_id)
-    qualification_id = await _create_qualification(client, op_token, supplier_id, site_id)
+    qualification_id = await _create_qualification(client, pe_token, supplier_id, site_id)
 
+    # Operator holds neither supplier_qualification.create nor .approve -- still the right negative
+    # case for "a role without approve permission is refused," independent of the RBAC gaps closed
+    # 2026-09-18 above.
     resp = await _approve_flow(client, op_token, qualification_id)
     assert resp.status_code == 403
     assert resp.json()["code"] == "ROLE_MISSING"
 
 
 async def test_approve_by_requester_rejected_sod(client, seeded, db):
-    """SUP-FR-007/SIG-FR-018: the approver must be independent of the requester."""
-    qa_releaser_token = await login(client, "qa.releaser")
-    supplier_id = await _create_supplier(client, qa_releaser_token, code="SUP-4")
-    site_id = await _site_id_for(db, supplier_id)
-    qualification_id = await _create_qualification(client, qa_releaser_token, supplier_id, site_id)
+    """SUP-FR-007/SIG-FR-018: the approver must be independent of the requester.
 
-    resp = await _approve_flow(client, qa_releaser_token, qualification_id)
+    2026-09-18: supplier_qualification.create (Process Engineer/Admin) and .approve (QA Releaser/Admin)
+    are now disjoint permission classes (RBAC gap closure), so the "same person requests and tries to
+    approve" scenario needs a dual-role user to even reach the approve call -- the SoD check itself is
+    identity-based (qualification.requested_by_user_id == actor_user_id), independent of which role(s)
+    that identity holds, matching test_product_master.py's own dual-role SoD test pattern."""
+    async with db.begin():
+        dual = User(
+            username="dual.supplier", email="dual.supplier@example.com", full_name="Dual Supplier",
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(dual)
+        await db.flush()
+        db.add(UserSiteRole(user_id=dual.id, site_id=seeded["site_id"], role_id=seeded["roles"]["Process Engineer"].id))
+        db.add(UserSiteRole(user_id=dual.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+    dual_token = await login(client, "dual.supplier")
+
+    supplier_id = await _create_supplier(client, dual_token, code="SUP-4")
+    site_id = await _site_id_for(db, supplier_id)
+    qualification_id = await _create_qualification(client, dual_token, supplier_id, site_id)
+
+    resp = await _approve_flow(client, dual_token, qualification_id)
     assert resp.status_code == 409
     assert resp.json()["code"] == "INVALID_TRANSITION"
 
 
 async def test_conditional_approval_requires_justification(client, seeded, db):
-    op_token = await login(client, "operator1")
+    pe_token = await login(client, "process.engineer")
     qa_releaser_token = await login(client, "qa.releaser")
-    supplier_id = await _create_supplier(client, op_token, code="SUP-5")
+    supplier_id = await _create_supplier(client, pe_token, code="SUP-5")
     site_id = await _site_id_for(db, supplier_id)
-    qualification_id = await _create_qualification(client, op_token, supplier_id, site_id)
+    qualification_id = await _create_qualification(client, pe_token, supplier_id, site_id)
 
     resp = await _approve_flow(client, qa_releaser_token, qualification_id, decision="conditional")
     assert resp.status_code == 422
@@ -249,11 +271,11 @@ async def test_conditional_approval_requires_justification(client, seeded, db):
 
 
 async def test_conditional_approval_succeeds_with_justification(client, seeded, db):
-    op_token = await login(client, "operator1")
+    pe_token = await login(client, "process.engineer")
     qa_releaser_token = await login(client, "qa.releaser")
-    supplier_id = await _create_supplier(client, op_token, code="SUP-COND")
+    supplier_id = await _create_supplier(client, pe_token, code="SUP-COND")
     site_id = await _site_id_for(db, supplier_id)
-    qualification_id = await _create_qualification(client, op_token, supplier_id, site_id)
+    qualification_id = await _create_qualification(client, pe_token, supplier_id, site_id)
 
     resp = await _approve_flow(
         client,
@@ -275,11 +297,11 @@ async def test_conditional_approval_succeeds_with_justification(client, seeded, 
 
 
 async def test_full_qualification_approval_flow(client, seeded, db):
-    op_token = await login(client, "operator1")
+    pe_token = await login(client, "process.engineer")
     qa_releaser_token = await login(client, "qa.releaser")
-    supplier_id = await _create_supplier(client, op_token, code="SUP-6")
+    supplier_id = await _create_supplier(client, pe_token, code="SUP-6")
     site_id = await _site_id_for(db, supplier_id)
-    qualification_id = await _create_qualification(client, op_token, supplier_id, site_id)
+    qualification_id = await _create_qualification(client, pe_token, supplier_id, site_id)
 
     resp = await _approve_flow(client, qa_releaser_token, qualification_id, decision="approved")
     assert resp.status_code == 200, resp.text
@@ -296,11 +318,11 @@ async def test_full_qualification_approval_flow(client, seeded, db):
 
 
 async def test_approve_stale_version_rejected(client, seeded, db):
-    op_token = await login(client, "operator1")
+    pe_token = await login(client, "process.engineer")
     qa_releaser_token = await login(client, "qa.releaser")
-    supplier_id = await _create_supplier(client, op_token, code="SUP-7")
+    supplier_id = await _create_supplier(client, pe_token, code="SUP-7")
     site_id = await _site_id_for(db, supplier_id)
-    qualification_id = await _create_qualification(client, op_token, supplier_id, site_id)
+    qualification_id = await _create_qualification(client, pe_token, supplier_id, site_id)
 
     challenge = (
         await client.post(

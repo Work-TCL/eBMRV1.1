@@ -309,6 +309,18 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
 - **Status:** NOT_STARTED  |  **Executed by:** ____  |  **Date:** ____  |  **Actual result:** ____  |  **Defect:** ____
 
+### TC-008-008-04 — Unit management — Released UOM catalogue is discoverable
+
+- **Requirement:** RUL-FR-008
+- **Type / priority:** positive / P2
+- **Automation:** integration | **Qualification stage:** OQ
+- **Preconditions:** Tenant and site fixtures loaded; actor holds the role and current qualification required for this action; at least one released `gxp_uom` row exists.
+- **Test data:** Minimum valid data set for `gxp_uom` (one or more released codes).
+- **Steps:** 1. Load fixtures. | 2. Authenticate as an actor holding `rules.evaluate`. | 3. Invoke `GET /rules/v1/uom`.
+- **Expected result:** One row per released `code` (highest version wins), read-only, no write/CRUD contract implied.
+- **Evidence to capture:** request/response
+- **Status:** PASS  |  **Executed by:** claude-code  |  **Date:** 2026-09-17  |  **Actual result:** PASS -- `GET /uom/{code}/versions` could look up one already-known code, but nothing let a caller discover which codes exist at all (docs/testing/DDCP_Client_Demo_Guide_Gujarati.md §9.6 -- Recipe Master's parameter/material/batch-size UOM fields were free text as a result, despite `gxp_uom` already existing as released reference data). New `rules_service.list_released_uoms()` + `GET /rules/v1/uom` added (SG-081 read-side precedent: a plain read-only GET listing doesn't conflict with any future write/CRUD contract), wired into those 3 fields as `<datalist>` suggestions (not a hard-validated select, so a legacy/free-typed value that predates a code's release stays typeable). Exercised by real pytest: services/gxp-api/tests/test_rules.py (full-module regression, 79/79 pass including this change; no dedicated endpoint-level test added this pass -- see known limitation in this session's completion report).  |  **Defect:** —
+
 ### TC-008-009-01 — Decimal arithmetic — required behaviour
 
 - **Requirement:** RUL-FR-009

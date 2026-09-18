@@ -10,6 +10,7 @@ import {
   newIdempotencyKey,
 } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -53,7 +54,9 @@ const DOCUMENT_TYPES = ["sop", "policy", "specification", "work_instruction", "f
 
 type Action = "submit" | "release" | "make_effective" | "obsolete" | "controlled_copy";
 
-// SG-138: no Document 106 policy row for controlled_document_version.release.
+// Document 106 row for controlled_document_version/release (resolved, seed.py) — "Released" by an
+// independent QA Releaser. Backend challenge endpoint: POST /documents/v1/drafts/{id}/signature-challenges
+// (document_router.py, DOCUMENT_VERSION_SIGNATURE_ACTIONS = ("release",)).
 const SIGNATURE_GATED: Action[] = ["release"];
 
 export default function DocumentsPage() {
@@ -362,15 +365,6 @@ function ActionModal({
             ...base,
             reviewers: [{ subject_id: reviewer, role: "reviewer" }],
           });
-        case "release":
-          return api.post(`/documents/v1/drafts/${version.id}/release`, {
-            ...base,
-            review_completed: true,
-            effective_from: effectiveFrom ? new Date(effectiveFrom).toISOString() : null,
-            periodic_review_due: periodicReview ? new Date(periodicReview).toISOString() : null,
-            training_impact: { required: trainingRequired },
-            acknowledgment_required: acknowledgmentRequired,
-          });
         case "make_effective":
           return api.post(`/documents/v1/versions/${version.id}/make-effective`, {
             ...base,
@@ -388,27 +382,30 @@ function ActionModal({
             recipient,
             location: location || null,
           });
+        default:
+          // "release" is signature-gated and never reaches this form — see the early return below
+          // that renders <SignatureCeremony> for it instead.
+          throw new Error(`${action} does not submit through the plain form`);
       }
     });
   }
 
-  return (
-    <Modal open onClose={onClose} title={`${ACTION_LABEL[action]} - ${version.document_code} ${version.version_label}`}>
-      <form onSubmit={submit}>
-        {SIGNATURE_GATED.includes(action) && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be
-            correctly refused rather than proceeding without one.
-          </Banner>
-        )}
-
-        {action === "submit" && (
-          <Field label="Reviewer (user ID)" required hint="SOD-005: the author should not approve their own document.">
-            <Input value={reviewer} onChange={(e) => setReviewer(e.target.value)} required autoFocus />
-          </Field>
-        )}
-
-        {action === "release" && (
+  // Document 106 row (controlled_document_version/release): "Released" by an independent QA Releaser,
+  // via the shared Part 11 ceremony (challenge -> password re-entry -> signed mutation) — same pattern
+  // as the deviations/CAPA detail pages' close.
+  if (action === "release") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`/documents/v1/drafts/${version.id}/signature-challenges`}
+        action="release"
+        title={`Release - ${version.document_code} ${version.version_label}`}
+        summary="Releases this document version. This is a released quality decision - signer must be independent of the record's author."
+        submitLabel="Sign & release"
+        submitVariant="success"
+        extraFields={
           <>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Effective from">
@@ -431,6 +428,32 @@ function ActionModal({
               Read-and-understood acknowledgment required
             </label>
           </>
+        }
+        onSign={(p) =>
+          api.post(`/documents/v1/drafts/${version.id}/release`, {
+            idempotency_key: p.idempotency_key,
+            document_version_id: version.id,
+            expected_version: version.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            review_completed: true,
+            effective_from: effectiveFrom ? new Date(effectiveFrom).toISOString() : null,
+            periodic_review_due: periodicReview ? new Date(periodicReview).toISOString() : null,
+            training_impact: { required: trainingRequired },
+            acknowledgment_required: acknowledgmentRequired,
+          })
+        }
+      />
+    );
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`${ACTION_LABEL[action]} - ${version.document_code} ${version.version_label}`}>
+      <form onSubmit={submit}>
+        {action === "submit" && (
+          <Field label="Reviewer (user ID)" required hint="SOD-005: the author should not approve their own document.">
+            <Input value={reviewer} onChange={(e) => setReviewer(e.target.value)} required autoFocus />
+          </Field>
         )}
 
         {action === "make_effective" && (

@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   api,
   formatDateTime,
-  holdsAnyRole,
+  hasPermission,
   newIdempotencyKey,
   type ListQuery,
   type Me,
@@ -66,7 +66,8 @@ interface MaterialReceipt {
   version: number;
 }
 
-const canReceive = (me: Me | null) => holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
+// material_receipt.create/.examine share one grant (Admin/Operator/Supervisor).
+const canReceive = (me: Me | null) => hasPermission(me, "material_receipt.create");
 
 function fetchReceipts(query: ListQuery): Promise<Paged<MaterialReceipt>> {
   const search = new URLSearchParams({

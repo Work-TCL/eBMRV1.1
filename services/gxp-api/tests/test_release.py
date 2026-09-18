@@ -75,6 +75,26 @@ async def _released_product_and_recipe(client, admin_token, site_id, tag):
     return product_version_id, recipe_version_id
 
 
+async def _sign_step(client, token, batch_id, step_id, action):
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/signature-challenges",
+        json={"action": action},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["challenge_id"]
+
+
+async def _sign_batch(client, token, batch_id, action):
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/signature-challenges",
+        json={"action": action},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["challenge_id"]
+
+
 async def _setup(db, client, seeded, tag, *, complete_review=True):
     async with db.begin():
         await _make_admin(db, seeded, f"admin.rel{tag}")
@@ -101,6 +121,48 @@ async def _setup(db, client, seeded, tag, *, complete_review=True):
     resp = await client.post(
         f"/batches/v1/{batch_id}/issue",
         json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    # SG-180 (2026-09-17, project-owner-directed): release eligibility now also requires
+    # `batch.state == "production_complete"` (REL-FR-003's "manufacturing completeness"). Drive the
+    # single-step recipe (STEP-A, no parameters/evidence) all the way through so every test in this file
+    # still represents a batch that is actually eligible to be evaluated/released, unless a test
+    # deliberately wants to hit that specific blocker.
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 2},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    step = next(s for s in view["steps"] if s["state"] == "ready")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step['step_id']}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step["step_id"], "expected_version": step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    challenge_id = await _sign_step(client, admin_token, batch_id, step["step_id"], "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step['step_id']}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step["step_id"],
+            "expected_version": step["version"] + 1,
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    challenge_id = await _sign_batch(client, admin_token, batch_id, "production_complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/production-complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "expected_version": view["batch"]["version"],
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
         headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
@@ -186,6 +248,65 @@ async def test_evaluate_eligible_and_release(client, seeded, db):
     assert package["scope"]["released_vault_object_id"] is not None
     assert package["decisions"][-1]["decision_code"] == "RELEASED"
     assert package["decisions"][-1]["release_package_hash"] is not None
+
+
+async def test_evaluate_blocked_by_open_deviation(client, seeded, db):
+    """SG-059 RESOLVED 2026-09-18, project-owner-directed (asked directly: any open deviation vs.
+    critical/major-only vs. don't block -- chose 'any open deviation attributed to the batch')."""
+    admin_token, batch_id = await _setup(db, client, seeded, "7")
+    import uuid as uuid_mod
+
+    from sqlalchemy import select
+
+    from app.modules.qms.models import DeviationRecord
+
+    async with db.begin():
+        admin_user = (await db.execute(select(User).where(User.username == "admin.rel7"))).scalar_one()
+        deviation = DeviationRecord(
+            site_id=seeded["site_id"], deviation_number=f"DEV-REL-TEST-7-{uuid_mod.uuid4().hex[:6]}",
+            deviation_type="process", source_type="batch", source_id=uuid_mod.UUID(batch_id),
+            severity="major", owner_subject_id=admin_user.id, state="OPEN",
+        )
+        db.add(deviation)
+        await db.flush()
+        deviation_id = deviation.id
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    scope_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert detail["scope"]["state"] == "blocked"
+    blockers = [b for b in detail["evaluation"]["blockers"] if b["code"] == "OPEN_DEVIATION"]
+    assert len(blockers) == 1
+    assert blockers[0]["source_id"] == str(deviation_id)
+
+    resp = await client.post(
+        f"/release/v1/scopes/{scope_id}/release",
+        json={"idempotency_key": idem(), "scope_id": scope_id, "expected_version": 2},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "INVALID_TRANSITION"
+
+    # Close the deviation -- the blocker clears on re-evaluation.
+    async with db.begin():
+        dev = await db.get(DeviationRecord, deviation_id)
+        dev.state = "CLOSED"
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert detail["evaluation"]["eligible"] is True
+    assert not any(b["code"] == "OPEN_DEVIATION" for b in detail["evaluation"]["blockers"])
 
 
 async def test_release_rejected_when_blocked(client, seeded, db):
@@ -342,6 +463,42 @@ async def test_release_fails_closed_pending_signature_policy(client, seeded, db)
         json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 1},
         headers=auth_headers(admin_token),
     )
+    # SG-180: drive the single step to completion + Production Complete so this test still reaches the
+    # signature-policy check it's actually testing, instead of tripping the new PRODUCTION_NOT_COMPLETE
+    # blocker first.
+    await client.post(
+        f"/batches/v1/{batch_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 2},
+        headers=auth_headers(admin_token),
+    )
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    step = next(s for s in view["steps"] if s["state"] == "ready")
+    await client.post(
+        f"/batches/v1/{batch_id}/steps/{step['step_id']}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step["step_id"], "expected_version": step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    challenge_id = await _sign_step(client, admin_token, batch_id, step["step_id"], "complete")
+    await client.post(
+        f"/batches/v1/{batch_id}/steps/{step['step_id']}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step["step_id"],
+            "expected_version": step["version"] + 1,
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    challenge_id = await _sign_batch(client, admin_token, batch_id, "production_complete")
+    await client.post(
+        f"/batches/v1/{batch_id}/production-complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "expected_version": view["batch"]["version"],
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+
     resp = await client.post(
         f"/qa-review/v1/batches/{batch_id}/packages",
         json={"idempotency_key": idem(), "batch_id": batch_id},

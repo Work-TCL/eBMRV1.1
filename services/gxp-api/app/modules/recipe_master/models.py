@@ -78,6 +78,11 @@ class RecipeVersion(Base):
     # (ebmr.gxp_recipe_version is mutable — UPDATE granted, migration d0a1a1bdfaef 0011).
     batch_size_uom_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.gxp_uom.uom_id"))
     lifecycle_state: Mapped[str] = mapped_column(String(40), nullable=False, default="draft")
+    # Known-limitations fix (migration 321e3db43c4a_0111): set only by supersede_recipe_version() when
+    # this version transitions released -> superseded. Nullable -- most versions never get one.
+    superseded_by_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ebmr.gxp_recipe_version.id")
+    )
     effective_from: Mapped[datetime | None] = mapped_column()
     effective_to: Mapped[datetime | None] = mapped_column()
     graph_version: Mapped[str] = mapped_column(String(20), nullable=False, default="1")
@@ -133,6 +138,10 @@ class RecipeStep(Base):
     signature_policy_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     exception_policy_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     is_critical: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # SG-048 #018, visibility-only slice (migration 09322681e7ac_0110). Opt-in and unenforced -- unset
+    # (the default) means no "overdue" flag is ever computed for a hold on this step; exceeding it
+    # triggers no automatic action (BAT-FR-021 exception generation stays unbuilt).
+    expected_hold_duration_minutes: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -220,16 +229,37 @@ class RecipeMaterialRequirement(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class EquipmentClass(Base):
+    """Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 4): `equipment_class` was a free
+    string with no backing entity. Placed here in recipe_master, not `app/modules/equipment`, because
+    that module's own docstring declares "Exactly 4 authoritative entities ... no 5th table is added" per
+    Document 38 §5 -- adding a class table there would silently break that documented boundary. This is a
+    new, narrower controlled vocabulary serving `RecipeEquipmentRequirement.equipment_class_id`
+    specifically (logged as a SPEC_GAP: whether this should instead extend Document 38's own model is a
+    real open question, not guessed here). Simple code table, create + list only, no lifecycle -- same
+    "no qualification/release workflow" precedent as `equipment.EquipmentArea`."""
+
+    __tablename__ = "gxp_equipment_class"
+    __table_args__ = (UniqueConstraint("class_code"), {"schema": "ebmr"})
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    class_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class RecipeEquipmentRequirement(Base):
-    """SG-045 (equipment half) — `equipment_class` is a captured, unenforced reference, the same
-    precedent `EquipmentAsset.equipment_class_id` already uses (no equipment-class-master entity exists).
-    `require_current_calibration`/`require_current_qualification` declare the gate this recipe step needs
-    (would compare against `EquipmentAsset.calibration_status`/`.qualification_status`, mirroring SG-178's
-    `required_role_code` pattern) but are NOT enforced by this pass -- BAT-FR-012/013's batch_execution
-    step-start wiring (SG-048 #012/#013, explicitly deferred pending this schema) is a separate build.
-    `require_current_cleaning` is captured for the same reason and additionally has no persistent status
-    field to check against yet (cleaning state lives in separate CleaningExecution/LineClearance event
-    records, not on EquipmentAsset)."""
+    """SG-045 (equipment half) — `equipment_class` (free string) is kept for backward compatibility with
+    existing rows; `equipment_class_id` (added by the known-limitations fix above) is the controlled
+    reference new/edited requirements should set instead.
+    `require_current_calibration`/`require_current_qualification`/`require_current_cleaning` declare the
+    gate this recipe step needs and ARE now enforced at batch-step-start
+    (`batch_execution.commands._enforce_step_equipment`, known-limitations fix, docs/testing/demo-gujarati/
+    07 §7.9 item 3) by comparing the operator-supplied `EquipmentAsset` against
+    `equipment.commands._ineligibility_reasons` (calibration_status/qualification_status/
+    cleanliness_status), the same reuse-don't-reinvent precedent as SG-178's `required_role_code`."""
 
     __tablename__ = "gxp_recipe_equipment_requirement"
     __table_args__ = {"schema": "ebmr"}
@@ -237,6 +267,9 @@ class RecipeEquipmentRequirement(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     step_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_recipe_step.id"), nullable=False)
     equipment_class: Mapped[str] = mapped_column(String(80), nullable=False)
+    equipment_class_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ebmr.gxp_equipment_class.id")
+    )
     exact_equipment_optional: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     require_current_calibration: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     require_current_qualification: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

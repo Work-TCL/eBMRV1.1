@@ -262,8 +262,11 @@ async def get_batch(batch_id: uuid.UUID, session: AsyncSession = Depends(get_ses
         "version": batch.version,
         "product_id": str(batch.product_id),
         "recipe_id": str(batch.recipe_id),
+        "recipe_version": batch.recipe_version,
         "target_quantity": str(batch.target_quantity),
         "uom": batch.uom,
+        "uom_id": str(batch.uom_id) if batch.uom_id else None,
+        "created_at": batch.created_at.isoformat(),
         "steps": [
             {
                 "batch_step_id": str(bs.id),
@@ -273,6 +276,11 @@ async def get_batch(batch_id: uuid.UUID, session: AsyncSession = Depends(get_ses
                 "status": bs.status,
                 "requires_signature": rs.requires_signature,
                 "signature_meaning": rs.signature_meaning,
+                "started_at": bs.started_at.isoformat() if bs.started_at else None,
+                "completed_at": bs.completed_at.isoformat() if bs.completed_at else None,
+                "performed_by_user_id": str(bs.performed_by_user_id) if bs.performed_by_user_id else None,
+                "verified_by_user_id": str(bs.verified_by_user_id) if bs.verified_by_user_id else None,
+                "signature_id": str(bs.signature_id) if bs.signature_id else None,
                 "data": bs.data,
             }
             for bs, rs in steps

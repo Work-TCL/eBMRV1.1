@@ -38,6 +38,7 @@ from app.modules.material.commands import (
     RecordMaterialLossCommand,
     RecordReadingCommand,
     RecordReturnCommand,
+    RejectInventoryAdjustmentRequestCommand,
     RejectMaterialLotCommand,
     ReleaseInventoryReservationCommand,
     ReleaseMaterialLotCommand,
@@ -82,6 +83,7 @@ from app.modules.material.commands import (
     record_material_loss,
     record_reading,
     record_return,
+    reject_inventory_adjustment_request,
     reject_material_lot,
     release_inventory_reservation,
     release_material_lot,
@@ -188,6 +190,9 @@ async def post_create_material(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # 2026-09-18, project-owner-directed: create_material() had no evaluate_policy() call at all —
+        # same "master-data technical author" role class as material_spec.author/product.author.
+        await evaluate_policy(session, actor.user_id, action="material.create", site_id=None)
         return await create_material(session, cmd, actor.user_id)
 
 
@@ -229,6 +234,7 @@ async def patch_material(
     if cmd.material_id != material_id:
         raise ValidationFailedError("material_id in path and body must match")
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="material.update", site_id=None)
         return await update_material(session, cmd, actor.user_id)
 
 
@@ -262,6 +268,7 @@ async def post_receive_lot(
 def _lot_dict(lot: MaterialLot, material_code: str, material_name: str) -> dict:
     return {
         "id": str(lot.id),
+        "site_id": str(lot.site_id),
         "material_id": str(lot.material_id),
         "material_code": material_code,
         "material_name": material_name,
@@ -272,11 +279,17 @@ def _lot_dict(lot: MaterialLot, material_code: str, material_name: str) -> dict:
         "received_quantity": str(lot.received_quantity),
         "available_quantity": str(lot.available_quantity),
         "uom": lot.uom,
+        "uom_id": str(lot.uom_id) if lot.uom_id else None,
         "status": lot.status,
+        "received_by_user_id": str(lot.received_by_user_id),
         "received_at": lot.received_at.isoformat() if lot.received_at else None,
         "released_at": lot.released_at.isoformat() if lot.released_at else None,
+        "release_signature_id": str(lot.release_signature_id) if lot.release_signature_id else None,
         "expiry_date": lot.expiry_date.isoformat() if lot.expiry_date else None,
         "retest_date": lot.retest_date.isoformat() if lot.retest_date else None,
+        "material_spec_version_id": str(lot.material_spec_version_id) if lot.material_spec_version_id else None,
+        "receipt_id": str(lot.receipt_id) if lot.receipt_id else None,
+        "manufacture_date": lot.manufacture_date.isoformat() if lot.manufacture_date else None,
         "version": lot.version,
     }
 
@@ -326,11 +339,20 @@ async def get_material_lot(lot_id: uuid.UUID, session: AsyncSession = Depends(ge
 def _container_dict(c: MaterialContainer) -> dict:
     return {
         "id": str(c.id),
+        "material_lot_id": str(c.material_lot_id),
         "container_code": c.container_code,
+        "received_quantity": str(c.received_quantity),
         "current_quantity": str(c.current_quantity),
         "uom": c.uom,
+        "uom_id": str(c.uom_id) if c.uom_id else None,
+        "location_zone": c.location_zone,
         "container_status": c.container_status,
         "quality_status_override": c.quality_status_override,
+        "sampled": c.sampled,
+        "seal_status": c.seal_status,
+        "parent_container_id": str(c.parent_container_id) if c.parent_container_id else None,
+        "source_container_ids": c.source_container_ids,
+        "version": c.version,
     }
 
 
@@ -453,12 +475,22 @@ def _receipt_dict(
         "received_net_quantity": str(receipt_row.received_net_quantity) if receipt_row.received_net_quantity else None,
         "accepted_quantity": str(receipt_row.accepted_quantity) if receipt_row.accepted_quantity else None,
         "uom": receipt_row.uom,
+        "uom_id": str(receipt_row.uom_id) if receipt_row.uom_id else None,
         "manufacture_date": receipt_row.manufacture_date.isoformat() if receipt_row.manufacture_date else None,
         "expiry_date": receipt_row.expiry_date.isoformat() if receipt_row.expiry_date else None,
         "retest_date": receipt_row.retest_date.isoformat() if receipt_row.retest_date else None,
         "shipment_condition_status": receipt_row.shipment_condition_status,
+        "coa_vault_object_id": str(receipt_row.coa_vault_object_id) if receipt_row.coa_vault_object_id else None,
         "coa_document_hash": receipt_row.coa_document_hash,
+        "receiver_subject_id": str(receipt_row.receiver_subject_id),
         "state": receipt_row.state,
+        "labeling_ok": receipt_row.labeling_ok,
+        "damage_observed": receipt_row.damage_observed,
+        "seal_broken": receipt_row.seal_broken,
+        "contamination_observed": receipt_row.contamination_observed,
+        "examination_notes": receipt_row.examination_notes,
+        "examined_by_user_id": str(receipt_row.examined_by_user_id) if receipt_row.examined_by_user_id else None,
+        "examined_at": receipt_row.examined_at.isoformat() if receipt_row.examined_at else None,
         "discrepancy_type": receipt_row.discrepancy_type,
         "discrepancy_reason": receipt_row.discrepancy_reason,
         "received_at": receipt_row.received_at.isoformat() if receipt_row.received_at else None,
@@ -922,12 +954,17 @@ def _dispensing_dict(order: DispensingOrder) -> dict:
         "id": str(order.id),
         "site_id": str(order.site_id),
         "batch_id": str(order.batch_id),
+        "batch_step_id": str(order.batch_step_id) if order.batch_step_id else None,
         "material_id": str(order.material_id),
+        "material_spec_version_id": str(order.material_spec_version_id) if order.material_spec_version_id else None,
         "target_qty": str(order.target_qty),
         "target_uom": order.target_uom,
+        "target_uom_id": str(order.target_uom_id) if order.target_uom_id else None,
         "tolerance_low": str(order.tolerance_low),
         "tolerance_high": str(order.tolerance_high),
         "state": order.state,
+        "performed_by_user_id": str(order.performed_by_user_id) if order.performed_by_user_id else None,
+        "requested_by_user_id": str(order.requested_by_user_id),
         "version": order.version,
     }
 
@@ -1149,6 +1186,15 @@ class AdjustmentSignatureChallengeRequest(BaseModel):
     action: str = "approve"
 
 
+# Was hardcoded to meaning="Approved" regardless of body.action -- harmless while only "approve" existed,
+# but adding reject (Rejected meaning) would otherwise have signed a rejection decision with sign()'s own
+# challenge.meaning carried onto the immutable Signature row reading "Approved" (SignatureChallenge/sign()
+# in app/modules/signature/service.py -- meaning is set at challenge creation, not decision time). Same
+# per-action permission/meaning dict shape release/router.py's own signature-challenges endpoint uses.
+_ADJUSTMENT_CHALLENGE_PERMISSIONS = {"approve": "inventory_adjustment_request.approve", "reject": "inventory_adjustment_request.reject"}
+_ADJUSTMENT_CHALLENGE_MEANINGS = {"approve": "Approved", "reject": "Rejected"}
+
+
 @inventory_v1_router.post("/adjustments/{request_id}/signature-challenges")
 async def post_adjustment_signature_challenge(
     request_id: uuid.UUID,
@@ -1156,7 +1202,12 @@ async def post_adjustment_signature_challenge(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
+    permission = _ADJUSTMENT_CHALLENGE_PERMISSIONS.get(body.action)
+    meaning = _ADJUSTMENT_CHALLENGE_MEANINGS.get(body.action)
+    if permission is None or meaning is None:
+        raise ValidationFailedError("Unknown or unsigned action", action=body.action)
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action=permission, site_id=None)
         request = await session.get(InventoryAdjustmentRequest, request_id)
         if request is None:
             raise NotFoundError("Inventory adjustment request not found")
@@ -1167,7 +1218,7 @@ async def post_adjustment_signature_challenge(
             record_id=request.id,
             record_version=request.version,
             record_hash=inventory_adjustment_request_record_hash(request),
-            meaning="Approved",
+            meaning=meaning,
         )
         return {
             "challenge_id": str(challenge.id),
@@ -1190,6 +1241,20 @@ async def post_approve_adjustment_request(
         return await approve_inventory_adjustment_request(session, request_id, cmd, actor.user_id, request.site_id)
 
 
+@inventory_v1_router.post("/adjustments/{request_id}/reject", response_model=MutationReceipt)
+async def post_reject_adjustment_request(
+    request_id: uuid.UUID,
+    cmd: RejectInventoryAdjustmentRequestCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        request = await session.get(InventoryAdjustmentRequest, request_id)
+        if request is None:
+            raise NotFoundError("Inventory adjustment request not found")
+        return await reject_inventory_adjustment_request(session, request_id, cmd, actor.user_id, request.site_id)
+
+
 ADJUSTMENT_SORTABLE = {"created_at": InventoryAdjustmentRequest.created_at, "status": InventoryAdjustmentRequest.status}
 
 
@@ -1208,8 +1273,14 @@ def _adjustment_dict(
         "observed_quantity": str(r.observed_quantity),
         "variance": str(r.variance),
         "reason": r.reason,
+        "evidence": r.evidence,
         "status": r.status,
+        "signature_id": str(r.signature_id) if r.signature_id else None,
+        "resulting_transaction_id": str(r.resulting_transaction_id) if r.resulting_transaction_id else None,
         "requested_by": requested_by,
+        "requested_by_user_id": str(r.requested_by_user_id),
+        "approved_by_user_id": str(r.approved_by_user_id) if r.approved_by_user_id else None,
+        "approved_at": r.approved_at.isoformat() if r.approved_at else None,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "version": r.version,
     }

@@ -601,6 +601,113 @@ async def test_adjustment_approve_stale_version_rejected(client, db, seeded):
     assert approve_resp.json()["code"] == "STALE_VERSION"
 
 
+async def test_adjustment_request_create_and_reject(client, db, seeded):
+    """Approve's missing counterpart until this pass (DDCP_Client_Demo_Guide_Gujarati.md §19 #7) -- a
+    wrong/unwanted adjustment request had no way out of "requested" at all."""
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    _material_id, lot_id, container_id, location_id = await _released_lot_with_balance(
+        client, db, seeded, op_token, qa_token, "MAT-ADJ5", "LOT-ADJ5"
+    )
+
+    create_resp = await client.post(
+        "/inventory/v1/adjustments",
+        json={
+            "idempotency_key": idem(),
+            "material_lot_id": lot_id,
+            "container_id": container_id,
+            "location_id": location_id,
+            "expected_quantity": "50.000000",
+            "observed_quantity": "48.500000",
+            "reason": "physical count variance, disputed",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert create_resp.status_code == 200, create_resp.text
+    request_id = create_resp.json()["aggregate_id"]
+
+    challenge = (
+        await client.post(
+            f"/inventory/v1/adjustments/{request_id}/signature-challenges",
+            json={"action": "reject"},
+            headers=auth_headers(qa_token),
+        )
+    ).json()
+    assert challenge["meaning"] == "Rejected"
+    reject_resp = await client.post(
+        f"/inventory/v1/adjustments/{request_id}/reject",
+        json={
+            "idempotency_key": idem(),
+            "expected_version": 1,
+            "reason": "recount confirmed original count was correct",
+            "challenge_id": challenge["challenge_id"],
+            "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert reject_resp.status_code == 200, reject_resp.text
+    assert reject_resp.json()["signature_id"] is not None
+
+    request = await db.get(InventoryAdjustmentRequest, uuid.UUID(request_id))
+    assert request.status == "rejected"
+
+    from app.modules.material.models import InventoryBalanceProjection
+
+    balance = (
+        await db.execute(
+            select(InventoryBalanceProjection).where(
+                InventoryBalanceProjection.material_lot_id == uuid.UUID(lot_id),
+                InventoryBalanceProjection.container_id == uuid.UUID(container_id),
+                InventoryBalanceProjection.location_id == uuid.UUID(location_id),
+            )
+        )
+    ).scalar_one()
+    assert balance.on_hand == Decimal("50.000000")  # unchanged -- a rejected adjustment never touches inventory
+
+
+async def test_adjustment_self_rejection_denied(client, db, seeded):
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    _material_id, lot_id, _container_id, location_id = await _released_lot_with_balance(
+        client, db, seeded, op_token, qa_token, "MAT-ADJ6", "LOT-ADJ6"
+    )
+
+    create_resp = await client.post(
+        "/inventory/v1/adjustments",
+        json={
+            "idempotency_key": idem(),
+            "material_lot_id": lot_id,
+            "location_id": location_id,
+            "expected_quantity": "50.000000",
+            "observed_quantity": "49.000000",
+            "reason": "self-rejection test",
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert create_resp.status_code == 200, create_resp.text
+    request_id = create_resp.json()["aggregate_id"]
+
+    challenge = (
+        await client.post(
+            f"/inventory/v1/adjustments/{request_id}/signature-challenges",
+            json={"action": "reject"},
+            headers=auth_headers(qa_token),
+        )
+    ).json()
+    reject_resp = await client.post(
+        f"/inventory/v1/adjustments/{request_id}/reject",
+        json={
+            "idempotency_key": idem(),
+            "expected_version": 1,
+            "reason": "attempting self-rejection",
+            "challenge_id": challenge["challenge_id"],
+            "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert reject_resp.status_code == 422, reject_resp.text
+
+
 # ---------------------------------------------------------------------------
 # DestructionRecord — CON-FR-015/016/017/018
 # ---------------------------------------------------------------------------

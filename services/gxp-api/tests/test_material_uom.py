@@ -23,7 +23,7 @@ async def test_create_material_dual_writes_uom_id_when_a_released_uom_resolves(c
         db.add(UnitOfMeasure(code="kg-mat1", dimension="MASS", base_unit="kg-mat1", factor=Decimal("1"), precision_dp=4, status="released"))
     op_token = await login(client, "operator1")
 
-    material_id = await _create_material(client, op_token, seeded["site_id"], code="RM-UOM-1", uom="kg-mat1")
+    material_id = await _create_material(client, seeded["site_id"], code="RM-UOM-1", uom="kg-mat1")
     material = await db.get(Material, uuid.UUID(material_id))
     assert material.uom == "kg-mat1"
     assert material.uom_id is not None
@@ -32,7 +32,7 @@ async def test_create_material_dual_writes_uom_id_when_a_released_uom_resolves(c
 async def test_create_material_leaves_uom_id_null_when_unresolved(client, seeded, db):
     op_token = await login(client, "operator1")
 
-    material_id = await _create_material(client, op_token, seeded["site_id"], code="RM-UOM-2", uom="kg")
+    material_id = await _create_material(client, seeded["site_id"], code="RM-UOM-2", uom="kg")
     material = await db.get(Material, uuid.UUID(material_id))
     assert material.uom == "kg"
     assert material.uom_id is None
@@ -44,7 +44,7 @@ async def test_receive_lot_dual_writes_uom_id_when_a_released_uom_resolves(clien
     async with db.begin():
         db.add(UnitOfMeasure(code="g-mat3", dimension="MASS", base_unit="g-mat3", factor=Decimal("1"), precision_dp=4, status="released"))
     op_token = await login(client, "operator1")
-    material_id = await _create_material(client, op_token, seeded["site_id"], code="RM-UOM-3")
+    material_id = await _create_material(client, seeded["site_id"], code="RM-UOM-3")
 
     resp = await client.post(
         f"/materials/{material_id}/lots",

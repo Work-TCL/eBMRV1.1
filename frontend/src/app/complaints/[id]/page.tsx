@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDate,
   formatDateTime,
   isOverdue,
@@ -88,6 +87,16 @@ const LABEL: Record<Transition, string> = {
   close: "Close",
 };
 
+// The exact permission code app/modules/qms/complaint_router.py checks for each transition.
+const PERMISSION_FOR_TRANSITION: Record<Transition, string> = {
+  triage: "complaint.triage",
+  investigation_decision: "complaint.investigation_decision",
+  investigation: "complaint.investigate",
+  reportability: "complaint.reportability",
+  response: "complaint.response",
+  close: "complaint.close",
+};
+
 const REGIMES = ["FDA_MDR", "FDA_FAR", "EU_MDR_VIGILANCE", "HEALTH_CANADA", "NONE"];
 // app/modules/qms/complaint_models.py CONSTITUENT_CLASSIFICATIONS.
 const CONSTITUENT_CLASSIFICATIONS = [
@@ -101,8 +110,7 @@ export default function ComplaintDetailPage({ params }: { params: Promise<{ id: 
   const { data, loading, error, reload } = useApiResource<ComplaintDetail>(`/qms/v1/complaints/${id}`);
 
   const allowed = data ? (ALLOWED_FROM[data.state] ?? []) : [];
-  const canDo = (t: Transition) =>
-    allowed.includes(t) && (SIGNATURE_GATED.includes(t) ? canApproveQms(me) : canInvestigateQms(me));
+  const canDo = (t: Transition) => allowed.includes(t) && hasPermission(me, PERMISSION_FOR_TRANSITION[t]);
 
   const latestAssessment = data?.reportability_assessments.at(-1);
 

@@ -759,20 +759,27 @@ async def get_equipment_history(session: AsyncSession, asset_id: uuid.UUID) -> d
         "asset_id": str(asset.id),
         "calibrations": [
             {
-                "id": str(c.id), "due_date": c.due_date.isoformat(),
+                "id": str(c.id), "calibration_plan_ref": c.calibration_plan_ref,
+                "procedure_version": c.procedure_version, "frequency_days": c.frequency_days,
+                "tolerance": c.tolerance, "due_date": c.due_date.isoformat(),
                 "performed_date": c.performed_date.isoformat() if c.performed_date else None, "result": c.result,
                 "standard_reference": c.standard_reference,
                 "standard_calibration_status": c.standard_calibration_status,
                 "standard_expiry_date": c.standard_expiry_date.isoformat() if c.standard_expiry_date else None,
                 "as_found": c.as_found, "adjustments": c.adjustments, "as_left": c.as_left,
                 "impact_assessment_required": c.impact_assessment_required,
+                "deviation_reference_id": str(c.deviation_reference_id) if c.deviation_reference_id else None,
                 "performer_user_id": str(c.performer_user_id) if c.performer_user_id else None,
+                "reviewer_user_id": str(c.reviewer_user_id) if c.reviewer_user_id else None,
+                "state": c.state, "version": c.version,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
             }
             for c in calibrations
         ],
         "maintenance_work_orders": [
             {
                 "id": str(w.id), "type": w.type, "state": w.state, "started_at": w.started_at.isoformat(),
+                "completed_at": w.completed_at.isoformat() if w.completed_at else None,
                 "fault_description": w.fault_description, "diagnosis": w.diagnosis,
                 "work_performed": w.work_performed, "parts_used": w.parts_used,
                 "procedure_version": w.procedure_version, "frequency_days": w.frequency_days,
@@ -780,7 +787,9 @@ async def get_equipment_history(session: AsyncSession, asset_id: uuid.UUID) -> d
                 "expected_downtime_hours": str(w.expected_downtime_hours) if w.expected_downtime_hours is not None else None,
                 "post_maintenance_verification_required": w.post_maintenance_verification_required,
                 "verified_at": w.verified_at.isoformat() if w.verified_at else None,
+                "verified_by_user_id": str(w.verified_by_user_id) if w.verified_by_user_id else None,
                 "technician_user_id": str(w.technician_user_id),
+                "version": w.version, "created_at": w.created_at.isoformat() if w.created_at else None,
             }
             for w in work_orders
         ],
