@@ -85,7 +85,6 @@ def _cycle_dict(cycle: ProcessCycle, refs: dict | None = None) -> dict:
         "deviation_reference_id": str(cycle.deviation_reference_id) if cycle.deviation_reference_id else None,
         "version": cycle.version,
         "created_at": cycle.created_at.isoformat() if cycle.created_at else None,
-        "created_at": cycle.created_at.isoformat() if cycle.created_at else None,
     }
 
 

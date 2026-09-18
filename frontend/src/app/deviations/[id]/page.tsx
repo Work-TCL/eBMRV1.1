@@ -360,7 +360,7 @@ function TransitionModal({
   const [productImpact, setProductImpact] = useState("");
   const [correction, setCorrection] = useState("");
   const [containment, setContainment] = useState("");
-  const [investigator, setInvestigator] = useState(deviation.investigator_subject_id ?? deviation.owner_subject_id);
+  const [investigator, setInvestigator] = useState(deviation.investigator_subject_id ?? deviation.owner_subject_id ?? "");
   const [dueDate, setDueDate] = useState("");
   const [rootCauseMethod, setRootCauseMethod] = useState("5-why");
   const [rootCauseConclusion, setRootCauseConclusion] = useState("");
