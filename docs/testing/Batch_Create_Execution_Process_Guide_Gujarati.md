@@ -137,14 +137,16 @@ Hand over/Hold એ routine flow નો ભાગ નથી, ફક્ત excepti
 દેખાય, actual value ભરો. દરેક submit અલગ સહી-action છે (fresh password) — Part 11 ના નિયમ પ્રમાણે.
 Multiple વાર submit કરી શકાય, છેલ્લી value જ final ગણાય.
 
-**Link evidence** — ફાઈલ પોતે અહીંથી upload નથી થતી. પહેલા **Platform ops → Evidence operations**
-પર "Stage an evidence upload" કરીને Evidence object ID + SHA-256 hash મેળવો, પછી અહીં paste કરો:
+**Link evidence** — ફાઈલ પોતે "Link evidence" modal થી upload નથી થતી. પહેલા **Platform ops →
+Evidence operations** પર "Stage an evidence upload" → "Finalize an upload" કરીને real evidence object
+બનાવો (**2026-09-17 થી Operator/Supervisor પણ પોતે આ કરી શકે — SG-204, નીચે જુઓ**), પછી "Link evidence"
+modal ખોલો:
 
 | Field | જરૂરી? |
 |---|---|
-| Evidence object ID | ✅ |
-| Evidence SHA-256 | ✅ |
-| Media type (દા.ત. `image/jpeg`) | optional |
+| Evidence object | ✅ — **dropdown** (એ જ step માટે પહેલેથી staged/finalized evidence ની list, `GET /evidence/v1/objects`) — raw UUID paste કરવાની જરૂર નથી |
+| Evidence SHA-256 | ✅ — dropdown માંથી પસંદ કરો તો auto-fill થાય (finalize વખતે ગણાયેલો real SHA-256) |
+| Media type (દા.ત. `image/jpeg`) | optional — dropdown પસંદગીથી auto-fill થાય |
 | Requirement code (recipe ના evidence requirement સાથે match) | optional, પણ Complete વખતે આ code પરથી જ count ગણાય |
 
 ⚠️ કેટલી/કઈ evidence જોઈએ એ live "1 of 2" જેવું ક્યાંય નથી દેખાતું — step ના **"Detail"** બટન ખોલીને
@@ -186,9 +188,16 @@ Multiple વાર submit કરી શકાય, છેલ્લી value જ f
 | QA Review | QA Reviewer | ✅ (`Reviewed`) | — |
 | QA Release | QA Releaser | ✅ (`Released`) | ✅ Reviewer ≠ Releaser ફરજિયાત (SoD enforced) |
 
-**ક્યાં:** `/release`. **નોંધ:** Release check batch ની `production_complete` state નથી જોતું — ફક્ત
-QA review પૂરો છે કે નહીં + Vault snapshot integrity જુએ છે. Production Complete step realistic GMP
-sequence બતાવવા માટે છે, backend technically ફરજિયાત નથી કરતું.
+**ક્યાં:** `/release`. **નોંધ (✅ UPDATED 2026-09-17, SG-180 reopened):** Release હવે batch ની
+`production_complete` state **પણ ચેક કરે છે** — `batch.state != "production_complete"` હોય તો
+`PRODUCTION_NOT_COMPLETE` (CRITICAL) blocker આવે છે, "Evaluate eligibility" અને final "Release" બંને
+પર. **પહેલા (2026-09-11 થી 2026-09-17 સુધી) આ ચેક નહોતો** — એક live batch (`MJ-PFS-B-0000`) 3/9 step
+પૂરા હોવા છતાં review+release થઈ ગયો, જે §17 ના SG-180 finding ને જ confirm કરે છે; project owner ને
+ફરી પુછતાં hard gate ઉમેરવાનું નક્કી થયું. બાકી બંને ચેક (QA review completeness + Vault snapshot
+integrity) એ જ રહે છે. **⚠️ આ ચેક ફક્ત generic `gxp_batch_step` ચેઇન વાંચે છે — DDCP ના પોતાના execution
+records (§10) નહીં** — DDCP profile વાપરતા batch માટે, DDCP ops પૂરા કરવા ઉપરાંત batch નું પોતાનું
+generic step chain પણ `/batch-execution` પર Complete + Production Complete કરવું જ પડશે (વિગત:
+`DDCP_Client_Demo_Guide_Gujarati.md` §22.1).
 
 ---
 
@@ -257,8 +266,9 @@ batch ને લાગુ પડે છે.
 - બંને track ને **અલગ-અલગ, પોતપોતાની રીતે** પૂરા drive કરવા પડે છે — ફક્ત `batch_id` common છે.
 - `/ddcp` પર જ એક "sync status" view છે (કયો DDCP action કયા recipe step ને અનુલક્ષે છે એ **બતાવે**
   છે) — પણ એ ફક્ત informational છે, આપોઆપ complete નથી કરતું.
-- **Release check** (`/release`) batch execution state કે DDCP state — બેમાંથી કોઈ નથી જોતું, ફક્ત
-  QA review completeness + Vault snapshot integrity જુએ છે.
+- **Release check** (`/release`) — **✅ UPDATED 2026-09-17 (§8 જુઓ):** હવે generic `gxp_batch_step`
+  ચેઇનની `production_complete` state ચેક કરે છે, પણ **DDCP ની પોતાની execution state હજુ પણ નથી
+  જોતું** — QA review completeness + Vault snapshot integrity + હવે production-complete, ત્રણ.
 
 **Practical order:** `/batch-execution` પર generic manufacturing step (line clearance, dispensing,
 fill, વગેરે) ચલાવો, **અને** `/ddcp` પર combination-product-specific step (handoff/fill/assembly/tests/
@@ -498,7 +508,7 @@ pass માં વપરાઈ ચૂક્યું છે, ફરી ના �
 | 2 | Issue batch | `supervisor1` (એ જ session) | Supervisor | `/batch-execution` |
 | 3 | Start batch | `operator1` (અથવા `supervisor1` — બંને `batch_execution.execute` ધરાવે) | Operator | `/batch-execution` |
 | 4 | બધા 9 step — Start/Record results/Link evidence/Complete | `operator1` | Operator *(§16.1 ના finding પ્રમાણે — QC/QA role થી ના જ થાય)* | `/batch-execution` |
-| 5 | Evidence stage/finalize (Platform ops) | `qa.reviewer` (**`operator1` થી નથી થતું — Operator role `evidence.upload` ધરાવતો નથી, ફક્ત Admin/QA Reviewer ધરાવે છે**) | QA Reviewer | Platform ops → Evidence operations |
+| 5 | Evidence stage/finalize (Platform ops) | `operator1` (**2026-09-17 થી — SG-204, Operator/Supervisor ને પણ `evidence.upload`/`evidence.download` મળ્યું, પહેલા ફક્ત Admin/QA Reviewer પાસે હતું; `/platform` ની Admin-only sidebar/route gate પણ ફિક્સ થઈ છે — હવે Operator સીધું sidebar → Platform ops ખોલી શકે**) | Operator (એ જ session) | Platform ops → Evidence operations |
 | 6 | Production Complete | `operator1` | Operator | `/batch-execution` |
 | 7 | QA Review (create package + Complete review) | `qa.reviewer` | QA Reviewer | `/qa-review` |
 | 8 | Release (Evaluate + Release) | `qa.releaser` (**qa.reviewer થી અલગ user ફરજિયાત — SoD**) | QA Releaser | `/release` |
@@ -545,11 +555,14 @@ Complete કરી શકાય. `HOLD-QA-01` બંને complete થાય �
 
 #### 16.5.3 Evidence — `LC-01`/`FILL-01`/`FILL-IPC-01`/`ASSY-01` માટે
 
-**કોણ — 2 અલગ user જોઈએ:** Stage/Finalize (પગલું 1) → `qa.reviewer` (**`operator1` થી નથી થતું** —
-Operator role `evidence.upload` ધરાવતો નથી, ફક્ત Admin/QA Reviewer ધરાવે છે). Link evidence (પગલું 2,
-step પર) → `operator1` (એ જ step-execute session, `batch_execution.execute`).
+**કોણ — 1 જ user, `operator1` (2026-09-17 થી, SG-204):** પહેલા Operator role પાસે `evidence.upload`/
+`evidence.download` નહોતું (ફક્ત Admin/QA Reviewer પાસે હતું) — હવે Operator/Supervisor બંને પાસે છે, અને
+`/platform` ની sidebar/route gate પણ હવે Admin-only નથી રહી (એ ફક્ત UI bug હતો — permission તો
+QA Reviewer પાસે પહેલેથી હતું, પણ page પોતે Admin સિવાય કોઈને ખોલવા જ ના દેતું). એટલે હવે Stage/Finalize
+**અને** Link evidence — બંને `operator1` ના એ જ session થી થાય છે, બીજું login જરૂરી નથી.
 
-Evidence ફાઈલ સીધી step પરથી upload નથી થતી (§6.4). પહેલા:
+Evidence ફાઈલ સીધી step પરથી upload નથી થતી (§6.4) — modal ફક્ત પહેલેથી existing evidence object ને
+step સાથે **જોડે** છે. પહેલા:
 
 1. Sidebar → **Platform ops → Evidence operations** → "Stage an evidence upload":
 
@@ -562,10 +575,15 @@ Evidence ફાઈલ સીધી step પરથી upload નથી થતી 
    | File | કોઈ પણ real photo/image select કરો |
    | Reason | `Line clearance photo evidence` (કે step પ્રમાણે) |
 
-   → Stage → Finalize (એ જ પેજ પર).
+   → Stage → Finalize (એ જ પેજ પર, "Finalize an upload" — staged operation એ જ evidence ID પાછું આપે છે).
 
-2. પાછા `/batch-execution` → એ step ની row → **Link evidence** બટન → dropdown માંથી હમણાં staged કરેલી
-   evidence પસંદ કરો (SHA-256/media type auto-fill થશે) → Requirement code = `photo` → Submit.
+2. પાછા `/batch-execution` → એ step ની row → **Link evidence** બટન → **"Evidence object" dropdown**
+   માંથી હમણાં staged/finalized કરેલી evidence પસંદ કરો (SHA-256/media type auto-fill થશે — dropdown ના
+   row માં filename + state + hash prefix દેખાય) → Requirement code = `photo` → Submit.
+
+**Live-verified 2026-09-17 (`operator1`, batch `MJ-PFS-B-0000`, step `LC-01`):** stage → finalize →
+dropdown listing → link — ચારેય call `operator1` ના પોતાના token થી, ચારેય `200`. `LC-01` નું `photo ×1`
+evidence requirement હવે real રીતે પૂરું છે.
 
 #### 16.5.4 Production Complete
 
@@ -609,12 +627,13 @@ manually ટાઈપ કરો ત્યારે same range apply થશે.
 | Material/Equipment requirement | **✅ FIXED 2026-09-17** — step Detail modal માં હવે "Material requirements"/"Equipment requirements" ટેબલ દેખાય છે (material name, target/range, consume mode, equipment class, calibration/qualification/cleaning flags). Actual lot/asset **link કરવાની** UI/API હજુ નથી — એ ભાગ SG-045/SG-048 પર જ ખુલ્લો છે, ફક્ત **જોવાનું** હવે શક્ય છે |
 | Link evidence — Evidence object ID | **✅ FIXED 2026-09-17** — હવે raw UUID paste કરવાને બદલે dropdown માંથી પસંદ કરી શકાય (એ જ step માટે પહેલેથી staged evidence ની list, `GET /evidence/v1/objects`) — SHA-256/media type પણ auto-fill થાય |
 | Evidence staging ("Platform ops") ના Owner ID | **✅ FIXED 2026-09-17** — Owner type `batch_step` હોય ત્યારે હવે Batch → Step 2-level dropdown વાપરી શકાય, raw UUID manual paste ફરજિયાત નથી (બીજા owner type માટે હજુ manual entry) |
+| Operator role `evidence.upload`/`evidence.download` ધરાવતો નહોતો, અને `/platform` route Admin-only હતું | **✅ FIXED 2026-09-17 (SG-204, project-owner-directed)** — બે અલગ defect: (1) `scripts/seed.py`/`tests/conftest.py` — Operator+Supervisor ને `evidence.upload`/`evidence.download` permission આપ્યું (live DB પર `sync_permissions.py` — 4 નવા grant, code-verified via direct DB query), matches RCP-FR-021 (step execute કરનાર જ evidence capture કરે) + Document 106 row 326 (attaching evidence unsigned/routine છે). (2) `/platform` ની frontend page + sidebar link ફક્ત Admin-role માટે hard-gated હતા (`useRequireAdmin`) — ભલે "Evidence operations" server-side `evidence.upload`/`.download` permission-gated હોય (QA Reviewer પાસે તો પહેલેથી જ હતું!) — એટલે QA Reviewer પણ ક્યારેય એ page ખોલી શકતો નહોતો. Fix: `canOperateEvidence()` (`frontend/src/lib/api.ts`) + `/platform`/`Sidebar.tsx` ના gate હવે `isAdmin \|\| canOperateEvidence` (બાકીના Admin-only card — data ownership/backup/search/workflow-ops — હજુ Admin-only જ છે). **Live-verified**: `operator1` ના પોતાના token થી stage → finalize → dropdown list → link — ચારેય call batch `MJ-PFS-B-0000`/step `LC-01` પર real રીતે ચલાવીને `200` confirm કર્યું (§16.5.3 જુઓ) |
 | Step correction/rework | હજુ open — Complete થયેલો step પછી ભૂલ સુધારવાનો controlled flow નથી (regulated correction/audit semantics ની decision જરૂરી, SG-048 #023/#024) |
 | Timer/duration enforcement | હજુ open — Hold-time limit આપોઆપ ચેક નથી થતું (Temporal integration જરૂરી, આ platform માં હજુ નથી) |
-| `/batch-execution` ↔ `/ddcp` auto-sync | હજુ open (ઉપર §10 જુઓ) — ફક્ત read-only "sync status" view. Auto-complete કરવું એ regulated signature/authority ની નવી decision માંગે છે (SG-180), guess નથી કરવો |
+| `/batch-execution` ↔ `/ddcp` auto-sync | Step-completion sync હજુ open (ઉપર §10 જુઓ) — ફક્ત read-only "sync status" view, auto-complete regulated decision (SG-180) બાકી. **✅ PARTIALLY FIXED 2026-09-17** — Release eligibility હવે ઓછામાં ઓછું generic chain ની `production_complete` state ચેક કરે છે (§8), એટલે "0/9 step પૂરા છતાં release" જેવો gap હવે બંધ છે — પણ DDCP ની પોતાની execution state હજુ પણ release eligibility નથી વાંચતું (project-owner decision પ્રમાણે, scope minimal રાખ્યો) |
 | Parameter `rule_id` નું automatic evaluation | **નવું finding, 2026-09-17 (code-verified, `batch_execution/commands.py` — grep 0 match `rules_service.evaluate_rule`)** — Recipe parameter (§16.3 ના `FILL_WEIGHT_MG`/`IPC_FILL_WEIGHT_MG`) પર `rule_id` set કરી શકાય છે, પણ Record results/Complete એ rule ને actually evaluate **નથી** કરતું — ફક્ત parameter ના પોતાના `min_value`/`max_value` સામે check થાય છે (§6.5). Rule evaluation ફક્ત `/rules` પેજ પર manually (`rules.evaluate`) અથવા DDCP module ના પોતાના rule-evaluated ops (`DDCP_Client_Demo_Guide_Gujarati.md` §21.3.3) દ્વારા થાય છે. Batch execution ને rule engine સાથે જોડવું એ regulated acceptance-logic ની નવી decision છે — guess નથી કરવો, નવો SPEC_GAP તરીકે યોગ્ય |
 | `LC-01` (recipe step) ↔ `/line-clearance` (real attestation) | Batch execution નો `LC-01` step અને `/line-clearance` નું real pass/fail attestation record — **2 અલગ, જોડાયેલા નથી** records (§15 જુઓ). `LC-01` Complete કરવાથી `/line-clearance` નો કોઈ record આપોઆપ નથી બનતો, અને ઊલટું — બંને manually જ ચલાવવા પડે, ફક્ત `batch_id` common context છે (SG-180 ના જ class નું finding, DDCP execution vs batch execution ની જેમ) |
 | `required_role_code` ને non-execute role point કરવો | **નવું, મહત્વનું finding, 2026-09-17 (code-verified — §16.1 માં પૂરી વિગત)** — QC Reviewer/QA Reviewer/Sanitation Operator (અને `batch_execution.execute` ના ધરાવતો કોઈ પણ role) ને recipe step નો `required_role_code` બનાવવાથી એ step **કાયમ માટે execute ના જ થઈ શકે** તેવો — base permission gate (`batch_execution.execute`) role-check પહેલાં જ 403 આપે. Recipe author ને UI માં કોઈ warning નથી મળતું (કોઈ પણ role name ટાઈપ/પસંદ કરી શકાય, ભલે એ role batch execute ના કરી શકે). `RCP-MJ-PFS-V1` ના v2/v3 attempt આ જ ભૂલ સાથે release થયા હતા (§16 ની શરૂઆતની નોંધ) — v4 એ fix કર્યું. **Fix વિકલ્પો (project-owner decision જરૂરી, guess નથી કરવો):** (a) QC Reviewer/QA Reviewer ને `batch_execution.execute` આપવું (broader scope change), (b) Recipe Master ના "Required role" picker ને ફક્ત `batch_execution.execute`-ધારક roles સુધી મર્યાદિત કરવું (UI-level guard), (c) જેમ છે એમ રાખવું, દસ્તાવેજીકરણ સાથે |
 
 **વધુ detail/history માટે:** `docs/generated/18_SPEC_GAPS.md` (SG-045, SG-047, SG-048, SG-056,
-SG-180) અને `DDCP_Client_Demo_Guide_Gujarati.md` §11-12.
+SG-180, SG-204) અને `DDCP_Client_Demo_Guide_Gujarati.md` §11-12.

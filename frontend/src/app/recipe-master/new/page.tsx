@@ -40,7 +40,7 @@ export default function NewRecipeDraftPage() {
   const [batchSizeValue, setBatchSizeValue] = useState("");
   const [batchSizeUom, setBatchSizeUom] = useState("");
   const [sections, setSections] = useState<SectionDraft[]>([]);
-  const { roleOptions, ruleOptions, materialSpecOptions, qualificationCodeOptions, uomOptions } = useRoleAndRuleOptions();
+  const { roleOptions, ruleOptions, materialSpecOptions, qualificationCodeOptions, uomOptions, equipmentClassOptions } = useRoleAndRuleOptions();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -198,6 +198,7 @@ export default function NewRecipeDraftPage() {
             materialSpecOptions={materialSpecOptions}
             qualificationCodeOptions={qualificationCodeOptions}
             uomOptions={uomOptions}
+            equipmentClassOptions={equipmentClassOptions}
           />
 
           <div className="flex justify-between gap-3 mt-2">

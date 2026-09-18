@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { holdsAnyRole, pagedFetcher, type Me } from "@/lib/api";
+import { hasPermission, pagedFetcher, type Me } from "@/lib/api";
 import { useSiteId } from "@/lib/hooks";
 import { Fact, IdFact, OpsRecordPage, type OpsRecordConfig } from "@/components/shared/OpsRecordPage";
 import { Button } from "@/components/ui/Button";
@@ -27,7 +27,8 @@ interface LineClearanceRecord {
 
 // Document 39 (SPEC-EQP-002): same actor class as cleaning execution, and every role that can create a
 // cleaning execution also holds line_clearance.create/.complete in scripts/seed.py's ROLE_PERMISSIONS.
-const canClear = (me: Me | null) => holdsAnyRole(me, ["Admin", "Operator", "Supervisor", "Sanitation Operator"]);
+// line_clearance.create/.complete share one grant.
+const canClear = (me: Me | null) => hasPermission(me, "line_clearance.create");
 
 const config: OpsRecordConfig<LineClearanceRecord> = {
   title: "Line clearance",

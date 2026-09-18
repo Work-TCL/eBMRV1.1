@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, canRaiseQualityEvent, formatDate, newIdempotencyKey, type Complaint } from "@/lib/api";
+import { api, ApiError, hasPermission, formatDate, newIdempotencyKey, type Complaint } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { ProductVersionPickerField } from "@/components/shared/ProductVersionPicker";
@@ -80,7 +80,7 @@ export default function ComplaintsPage() {
         reloadToken={reloadToken}
         defaultSort={{ by: "received_at", dir: "desc" }}
         action={
-          canRaiseQualityEvent(me) ? (
+          hasPermission(me, "complaint.create") ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" /> Log complaint
             </Button>

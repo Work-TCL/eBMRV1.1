@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, canInvestigateQms, formatDate, newIdempotencyKey, type SupplierCase } from "@/lib/api";
+import { api, ApiError, hasPermission, formatDate, newIdempotencyKey, type SupplierCase } from "@/lib/api";
 import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
@@ -59,7 +59,7 @@ export default function SupplierCasesPage() {
         rowHref={(c) => `/supplier-cases/${c.id}`}
         reloadToken={reloadToken}
         action={
-          canInvestigateQms(me) ? (
+          hasPermission(me, "scar.case.create") ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" /> Open case
             </Button>

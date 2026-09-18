@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.recipe_master.models import (
     STEP_TYPES,
+    EquipmentClass,
     RecipeEquipmentRequirement,
     RecipeEvidenceRequirement,
     RecipeFamily,
@@ -22,6 +23,12 @@ from app.modules.recipe_master.models import (
 )
 from app.modules.rules import service as rules_service
 from app.mutation.errors import NotFoundError
+
+
+async def list_equipment_classes(session: AsyncSession) -> list[EquipmentClass]:
+    """Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 4): picker data for
+    equipment_class_id, backing commands.py::create_equipment_class."""
+    return (await session.execute(select(EquipmentClass).order_by(EquipmentClass.class_code))).scalars().all()
 
 
 async def get_version(session: AsyncSession, recipe_version_id: uuid.UUID) -> RecipeVersion:

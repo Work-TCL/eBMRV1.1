@@ -13,6 +13,8 @@ from sqlalchemy import select
 
 from app.core.security import hash_password
 from app.modules.batch_execution.models import Batch
+from app.modules.equipment.commands import QUALIFIED_MARKER
+from app.modules.equipment.models import EquipmentAsset
 from app.modules.iam.models import Permission, Qualification, Role, RolePermission, User, UserSiteRole
 from app.modules.signature.models import SignaturePolicy
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
@@ -34,7 +36,7 @@ async def _make_admin(db, seeded, username="admin.batch"):
 
 async def _make_released_product_and_recipe(
     client, admin_token, site_id, tag, step_a_role=None, step_a_parameters=None, step_a_evidence=None,
-    step_a_qualification_code=None,
+    step_a_qualification_code=None, step_a_equipment_requirements=None,
 ):
     resp = await client.post(
         "/products/v1/drafts",
@@ -82,6 +84,7 @@ async def _make_released_product_and_recipe(
                     **({"parameters": step_a_parameters} if step_a_parameters else {}),
                     **({"evidence_requirements": step_a_evidence} if step_a_evidence else {}),
                     **({"required_qualification_code": step_a_qualification_code} if step_a_qualification_code else {}),
+                    **({"equipment_requirements": step_a_equipment_requirements} if step_a_equipment_requirements else {}),
                 },
                 {"stable_step_code": "STEP-B", "section_code": "SEC-1", "step_type": "instruction", "sequence_hint": 2},
             ],
@@ -109,7 +112,7 @@ async def _make_released_product_and_recipe(
 
 async def _released_pair(
     db, client, seeded, tag, step_a_role=None, step_a_parameters=None, step_a_evidence=None,
-    step_a_qualification_code=None,
+    step_a_qualification_code=None, step_a_equipment_requirements=None,
 ):
     async with db.begin():
         await _make_admin(db, seeded, f"admin.batch{tag}")
@@ -119,6 +122,7 @@ async def _released_pair(
     product_version_id, recipe_version_id = await _make_released_product_and_recipe(
         client, admin_token, seeded["site_id"], tag, step_a_role=step_a_role, step_a_parameters=step_a_parameters,
         step_a_evidence=step_a_evidence, step_a_qualification_code=step_a_qualification_code,
+        step_a_equipment_requirements=step_a_equipment_requirements,
     )
     return admin_token, product_version_id, recipe_version_id
 
@@ -1753,3 +1757,154 @@ async def test_handover_step_rejected_when_not_in_progress(client, seeded, db):
     )
     assert resp.status_code == 409, resp.text
     assert resp.json()["code"] == "INVALID_TRANSITION"
+
+
+async def test_start_step_blocked_without_required_equipment_then_succeeds_with_eligible_asset(client, seeded, db):
+    """Known-limitations fix (docs/testing/demo-gujarati/08 §8.8, and this module's own docstring naming
+    "Equipment master eligibility wiring" as not-yet-built): RecipeEquipmentRequirement is frozen onto
+    BatchStepEquipmentRequirement at issue and enforced at step-start via
+    commands.py::_enforce_step_equipment, reusing equipment.commands.get_eligibility() rather than
+    reinventing calibration/qualification currency checks."""
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "equip1",
+        step_a_equipment_requirements=[{"equipment_class": "balance", "require_current_qualification": True}],
+    )
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-EQUIP-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+
+    # The frozen requirement is visible on the execution view (surfaced for the step-start UI).
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    step = next(s for s in view["steps"] if s["step_id"] == ready_step["step_id"])
+    assert step["equipment_requirements"] == [
+        {
+            "equipment_class": "balance", "equipment_class_id": None, "exact_equipment_optional": True,
+            "require_current_calibration": False, "require_current_qualification": True, "require_current_cleaning": False,
+        }
+    ]
+
+    # No equipment_asset_ids supplied at all -> the requirement can't be satisfied.
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": ready_step["version"],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "EQUIPMENT_REQUIREMENT_NOT_MET"
+
+    async with db.begin():
+        asset = EquipmentAsset(
+            site_id=seeded["site_id"], equipment_code="BAL-EQUIP-1", state="QUALIFIED_AVAILABLE",
+            qualification_status=None,
+        )
+        db.add(asset)
+        await db.flush()
+        asset_id = str(asset.id)
+
+    # A supplied asset that fails the declared eligibility check (not qualified) -> still blocked.
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": ready_step["version"], "equipment_asset_ids": [asset_id],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["code"] == "EQUIPMENT_NOT_QUALIFIED"
+
+    async with db.begin():
+        row = (await db.execute(select(EquipmentAsset).where(EquipmentAsset.id == uuid.UUID(asset_id)))).scalar_one()
+        row.qualification_status = QUALIFIED_MARKER
+
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": ready_step["version"], "equipment_asset_ids": [asset_id],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_out_of_range_result_auto_opens_a_deviation(client, seeded, db):
+    """Known-limitations fix (docs/testing/demo-gujarati/08 §8.8 item 2), project-owner-directed
+    2026-09-18: an in-process result outside min/max now automatically opens a DeviationRecord (OPEN,
+    unassigned owner, severity=minor, deviation_type=process) instead of staying purely informational.
+    An in-range result on the same step must NOT open one."""
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "oor1",
+        step_a_parameters=[
+            {
+                "parameter_code": "WEIGHT", "data_type": "numeric", "uom": "kg", "source_type": "manual",
+                "required": True, "min_value": "1.0", "max_value": "2.0",
+            },
+        ],
+    )
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-OOR-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "results")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/results",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": step_version,
+            "results": [{"parameter_code": "WEIGHT", "value_numeric": "2.50000000", "uom": "kg", "source_type": "manual"}],
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    deviations = (
+        await client.get(f"/qms/v1/deviations?site_id={seeded['site_id']}", headers=auth_headers(admin_token))
+    ).json()["items"]
+    auto_opened = [d for d in deviations if d["deviation_number"].startswith("DEV-AUTO-BAT-OOR-1-")]
+    assert len(auto_opened) == 1, deviations
+    deviation = auto_opened[0]
+    assert deviation["state"] == "OPEN"
+    assert deviation["severity"] == "minor"
+    assert deviation["deviation_type"] == "process"
+    assert deviation["source_type"] == "batch"
+    assert deviation["source_id"] == batch_id
+    assert deviation["owner_subject_id"] is None
+
+    # A second, in-range result recorded against the (now version-bumped) step must not open a second
+    # deviation.
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/results",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": step_version + 1,
+            "results": [{"parameter_code": "WEIGHT", "value_numeric": "1.50000000", "uom": "kg", "source_type": "manual"}],
+            "challenge_id": await _sign_step(client, admin_token, batch_id, step_id, "results"),
+            "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    deviations_after = (
+        await client.get(f"/qms/v1/deviations?site_id={seeded['site_id']}", headers=auth_headers(admin_token))
+    ).json()["items"]
+    still_auto_opened = [d for d in deviations_after if d["deviation_number"].startswith("DEV-AUTO-BAT-OOR-1-")]
+    assert len(still_auto_opened) == 1, deviations_after

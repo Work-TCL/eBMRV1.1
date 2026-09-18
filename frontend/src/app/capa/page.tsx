@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   api,
   ApiError,
-  canRaiseQualityEvent,
+  hasPermission,
   formatDate,
   isOverdue,
   newIdempotencyKey,
@@ -121,7 +121,7 @@ export default function CapaPage() {
         rowHref={(c) => `/capa/${c.id}`}
         reloadToken={reloadToken}
         action={
-          canRaiseQualityEvent(me) ? (
+          hasPermission(me, "capa.create") ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" /> Raise CAPA
             </Button>

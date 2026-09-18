@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   api,
-  holdsAnyRole,
+  hasPermission,
   listAll,
   listBatchesForSite,
   newIdempotencyKey,
@@ -73,7 +73,7 @@ export default function DispensingPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
-  const canDispense = holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
+  const canDispense = hasPermission(me, "dispensing_order.create");
 
   const columns: DataTableColumn<DispensingOrder>[] = [
     {
@@ -389,9 +389,10 @@ function OrderModal({
   const allowed = ALLOWED_FROM[o.state] ?? [];
   // Document 21 / SOD-011: verification must be performed by someone other than the weigher. The backend
   // enforces the actual independence rule; this only picks who is offered the button.
-  const canVerify = holdsAnyRole(me, ["Admin", "QC Reviewer"]);
-  const canWeigh = holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
-  const canCancel = holdsAnyRole(me, ["Admin", "QA Releaser"]);
+  const canVerify = hasPermission(me, "dispensing_order.verify");
+  // select_source/start/readings/manual_reading/complete share one grant (Admin/Operator/Supervisor).
+  const canWeigh = hasPermission(me, "dispensing_order.select_source");
+  const canCancel = hasPermission(me, "dispensing_order.cancel");
 
   function offered(s: Step): boolean {
     if (!allowed.includes(s)) return false;

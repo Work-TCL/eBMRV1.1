@@ -11,16 +11,19 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Response
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.evidence import commands
+from app.modules.evidence.commands import evidence_record_hash
 from app.modules.evidence.models import EvidenceObject
 from app.modules.evidence.store import get_store
 from app.modules.policy.service import evaluate_policy
-from app.mutation.errors import EvidenceAccessDeniedError, EvidenceMissingError, NotFoundError
+from app.modules.signature.service import create_challenge, resolve_signature_requirement
+from app.mutation.errors import EvidenceAccessDeniedError, EvidenceMissingError, NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/evidence/v1", tags=["evidence"])
@@ -120,8 +123,6 @@ async def post_finalize_upload(
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     if cmd.evidence_id != evidence_id:
-        from app.mutation.errors import ValidationFailedError
-
         raise ValidationFailedError("evidence_id in path and body must match")
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="evidence.upload", site_id=None)
@@ -170,6 +171,38 @@ async def post_create_manifest(
         return await commands.create_evidence_manifest(session, cmd, actor.user_id)
 
 
+class EvidenceSignatureChallengeRequest(BaseModel):
+    action: str
+
+
+_EVIDENCE_SIGNATURE_ACTIONS = ("legal_hold",)
+
+
+@router.post("/{evidence_id}/signature-challenges")
+async def post_evidence_signature_challenge(
+    evidence_id: uuid.UUID, body: EvidenceSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Same reference pattern as batch_execution's/product_master's own `/signature-challenges`
+    endpoints (SG-035 precedent) — resolves the Document 106 row 142 policy for `evidence_object/
+    legal_hold`, then issues a challenge bound to the object's exact (id, version, hash) so
+    `consume_challenge()` in `apply_evidence_legal_hold()` rejects it if the object changed underneath.
+    `apply_evidence_legal_hold()` has always accepted `challenge_id`/`reauth_password` — this endpoint
+    was the missing piece that actually produces a `challenge_id` for the client to send back."""
+    if body.action not in _EVIDENCE_SIGNATURE_ACTIONS:
+        raise ValidationFailedError("Unknown action", action=body.action, allowed=list(_EVIDENCE_SIGNATURE_ACTIONS))
+    async with session.begin():
+        obj = await session.get(EvidenceObject, evidence_id)
+        if obj is None:
+            raise NotFoundError("Evidence object not found")
+        policy = await resolve_signature_requirement(session, record_type="evidence_object", action=body.action)
+        challenge = await create_challenge(
+            session, user_id=actor.user_id, record_type="evidence_object", record_id=obj.id,
+            record_version=obj.version, record_hash=evidence_record_hash(obj), meaning=policy.meaning,
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
+
+
 @router.post("/{evidence_id}/legal-holds", response_model=MutationReceipt)
 async def post_legal_hold(
     evidence_id: uuid.UUID, cmd: commands.ApplyEvidenceLegalHoldCommand,
@@ -178,8 +211,6 @@ async def post_legal_hold(
     """Document 106 row 142 -- `Performed`, "Authorized holder (Production / QA)", reason required.
     Signed step-up ceremony bound to the evidence record id/version/hash."""
     if cmd.evidence_id != evidence_id:
-        from app.mutation.errors import ValidationFailedError
-
         raise ValidationFailedError("evidence_id in path and body must match")
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="evidence.legal_hold", site_id=None)

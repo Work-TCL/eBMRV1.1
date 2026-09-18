@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { api, ApiError, downloadEvidence } from "@/lib/api";
-import { useRequireAdmin } from "@/lib/hooks";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { api, ApiError, canManageEvidenceIntegrity, canOperateEvidence, downloadEvidence, isAdminAnywhere } from "@/lib/api";
+import { useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -11,19 +12,40 @@ import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { FormConsole } from "@/components/shared/FormConsole";
+import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 
+/** The rest of this page (data ownership, projections, backup/DR, search, workflow ops, report
+ * exports) is platform.administer-gated server-side — Admin only. "Evidence operations" and "Download
+ * evidence" are not: Document 72's evidence.upload/evidence.download are also granted to Operator,
+ * Supervisor and QA Reviewer (scripts/seed.py). The page used to hard-gate the whole thing on Admin,
+ * which meant nobody else could ever reach those two cards through the UI even though the backend
+ * already authorized them (2026-09-17 fix, canOperateEvidence in lib/api.ts is the shared check). */
 export default function PlatformPage() {
-  const { isAdmin } = useRequireAdmin();
-  if (!isAdmin) return null;
+  const { me, loading } = useMe();
+  const router = useRouter();
+  const isAdmin = isAdminAnywhere(me);
+  const canEvidence = canOperateEvidence(me);
+  const canEvidenceIntegrity = canManageEvidenceIntegrity(me);
+
+  useEffect(() => {
+    if (!loading && !isAdmin && !canEvidence) router.replace("/batch-execution");
+  }, [me, loading, isAdmin, canEvidence, router]);
+
+  if (!isAdmin && !canEvidence) return null;
 
   return (
     <div>
       <PageHead
         title="Platform operations"
-        subtitle="Data ownership, projection health, evidence, search/read models and backup/DR."
+        subtitle={
+          isAdmin
+            ? "Data ownership, projection health, evidence, search/read models and backup/DR."
+            : "Stage, finalize and download evidence objects."
+        }
       />
 
-      <GetCard
+      {isAdmin && (
+        <GetCard
         title="Data ownership & dictionary"
         subtitle="The authoritative-store registry and the generated data dictionary."
         inputs={[{ name: "entity_type", label: "Entity type", placeholder: "e.g. batch, material_lot" }]}
@@ -32,7 +54,9 @@ export default function PlatformPage() {
           { label: "Data dictionary", path: `/platform/v1/data-dictionary` },
         ]}
       />
+      )}
 
+      {isAdmin && (
       <GetCard
         title="Projection & read-model health"
         subtitle="Projection freshness and read-model status."
@@ -55,14 +79,18 @@ export default function PlatformPage() {
           },
         ]}
       />
+      )}
 
+      {isAdmin && (
       <GetCard
         title="Backup & disaster recovery"
         subtitle="Backup health, WAL/PITR coverage and restore-test evidence."
         inputs={[]}
         endpoints={() => [{ label: "Backup health", path: `/platform/v1/backups/health` }]}
       />
+      )}
 
+      {isAdmin && (
       <GetCard
         title="Search & read models"
         subtitle="The rebuildable search index (never authoritative for a regulated value)."
@@ -79,7 +107,9 @@ export default function PlatformPage() {
           },
         ]}
       />
+      )}
 
+      {isAdmin && (
       <FormConsole
         title="Backup / DR operations"
         root="/platform/v1"
@@ -118,6 +148,7 @@ export default function PlatformPage() {
           ] },
         ]}
       />
+      )}
 
       <FormConsole
         title="Evidence operations"
@@ -136,22 +167,34 @@ export default function PlatformPage() {
             ],
           },
           {
-            path: "integrity-checks",
-            label: "Verify evidence integrity",
-            fields: [
-              { name: "mode", label: "Mode", type: "select", default: "full", options: [{ value: "full", label: "Full" }, { value: "sample", label: "Sample" }] },
-              { name: "owner_type", label: "Owner type" },
-              { name: "owner_id", label: "Owner ID" },
-              { name: "reason", label: "Reason", required: true },
-            ],
-          },
-          {
             path: "{evidence_id}:finalize",
             label: "Finalize an upload",
             fields: [
               { name: "evidence_id", label: "Evidence object ID", required: true, hint: "The ID returned when the upload was staged." },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
               { name: "content_base64", label: "File", type: "fileBase64", required: true, hint: "The file this evidence object's content hash will be finalized against." },
+              { name: "reason", label: "Reason", required: true },
+            ],
+          },
+        ]}
+      />
+
+      {/* evidence.manifest/.integrity_check/.legal_hold (Document 72) are Admin + QA Reviewer only —
+          narrower than evidence.upload/.download above (also Operator/Supervisor). Split out of the
+          console above 2026-09-18 (audit finding): Operator/Supervisor were previously shown these
+          three ops in the same console as upload/finalize and got a silent 403 on each. */}
+      {canEvidenceIntegrity && (
+      <FormConsole
+        title="Evidence integrity & manifests"
+        root="/evidence/v1"
+        ops={[
+          {
+            path: "integrity-checks",
+            label: "Verify evidence integrity",
+            fields: [
+              { name: "mode", label: "Mode", type: "select", default: "full", options: [{ value: "full", label: "Full" }, { value: "sample", label: "Sample" }] },
+              { name: "owner_type", label: "Owner type" },
+              { name: "owner_id", label: "Owner ID" },
               { name: "reason", label: "Reason", required: true },
             ],
           },
@@ -168,10 +211,21 @@ export default function PlatformPage() {
               { name: "reason", label: "Reason", required: true },
             ],
           },
+        ]}
+      />
+      )}
+
+      {canEvidenceIntegrity && (
+      <SignedJsonForm
+        title="Apply a legal hold"
+        subtitle="Document 106 row 142 — 'Performed' by the authorized holder (Production/QA), reason required."
+        root="/evidence/v1"
+        ops={[
           {
-            path: "{evidence_id}/legal-holds",
+            postPath: "{evidence_id}/legal-holds",
+            challengePath: "{evidence_id}/signature-challenges",
             label: "Apply a legal hold",
-            about: "No signature policy is configured for this action yet - if one is later added, this form does not yet request the signature challenge it would require, so the action will correctly fail closed rather than proceed unsigned.",
+            action: "legal_hold",
             fields: [
               { name: "evidence_id", label: "Evidence object ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -181,9 +235,11 @@ export default function PlatformPage() {
           },
         ]}
       />
+      )}
 
       <DownloadEvidenceCard />
 
+      {isAdmin && (
       <FormConsole
         title="Search & report operations"
         root="/search/v1"
@@ -201,6 +257,8 @@ export default function PlatformPage() {
           },
         ]}
       />
+      )}
+      {isAdmin && (
       <FormConsole
       title="Workflow orchestration ops"
         root="/workflowops/v1"
@@ -223,7 +281,9 @@ export default function PlatformPage() {
           },
         ]}
       />
+      )}
 
+      {isAdmin && (
       <FormConsole
         title="Async report exports"
         root="/reports/v1"
@@ -240,6 +300,7 @@ export default function PlatformPage() {
           },
         ]}
       />
+      )}
     </div>
   );
 }

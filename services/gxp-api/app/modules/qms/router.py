@@ -205,7 +205,7 @@ def _deviation_dict(record: DeviationRecord) -> dict:
         "source_version": record.source_version,
         "severity": record.severity,
         "state": record.state,
-        "owner_subject_id": str(record.owner_subject_id),
+        "owner_subject_id": sid(record.owner_subject_id),
         "investigator_subject_id": sid(record.investigator_subject_id),
         "planned": record.planned,
         "disposition_code": record.disposition_code,

@@ -74,7 +74,7 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-056 | D | no | 20 Document 16 requirements depend on entities/infrastructure that don't exist anywhere in this codebase (label-master, print_job, application-verification, inspection, reconciliation-waiver, aggregation-correction, tamper-evident, UDI, artwork-evidence, ERP/WMS, printer/scanner registration); Document 16's own API list has no GET operation and no hold/reprint endpoint despite naming both capabilities | — (open) | Platform Architect |
 | SG-057 | D | no | Document 18's approved_supplier_material/purchase_requisition/purchase_order_ref all key on a "material specification version" entity (architecture rule C-014) that does not exist anywhere in this codebase | — (open) | Data Architect + Materials/Supplier-Quality module owner |
 | SG-058 | D | no | 5 Document 18 requirements have no entity, and one (RFQ) has no API operation, anywhere in Document 18 itself | — (open) | Data Architect + Supplier-Quality module owner + QMS module owner |
-| SG-059 | D | no | DEV-FR-002/022 (Document 26): automatic candidate creation from other modules, and wiring deviations into release eligibility, are cross-module integration no other module performs yet | — (open) | Platform Architect + Release module owner + QMS module owner |
+| SG-059 | D | no | DEV-FR-002/022 (Document 26): automatic candidate creation from other modules, and wiring deviations into release eligibility, are cross-module integration no other module performs yet | RELEASE-BLOCKING HALF RESOLVED 2026-09-18 (see prose note below the yaml block) | Platform Architect + Release module owner + QMS module owner |
 | SG-060 | D | no | DEV-FR-014/015 (Document 26): Change Control and Training/Qualification-action are recorded as a flag + rationale only, no real entity exists to link to | — (open) | Data Architect + QMS module owner + Change Control module owner |
 | SG-061 | D | no | Document 26's DEV-FR-016 planned-deviation pre-approval lifecycle, DEV-FR-021 recurrence search and DEV-FR-024 export have no operation in Document 26's own 9-op API list | — (open) | Data Architect + QMS module owner |
 | SG-062 | D | no | DEV-FR-023 (Document 26): no notification/escalation worker infrastructure exists anywhere in this codebase yet | — (open) | Platform Architect + QMS module owner |
@@ -3684,6 +3684,20 @@ owner: Platform Architect + Release module owner + QMS module owner
 resolution_document: "— (open)"
 status: OPEN
 ```
+
+**SG-059 release-blocking half RESOLVED 2026-09-18, project-owner-directed** (Gujarati demo guide
+flagged this to the client as an open gap; asked directly among "any open deviation" / "critical-only" /
+"don't block" -- chose the first, reading DEV-FR-022's "open... deviations" literally rather than adding
+an unwritten severity carve-out). Option (A) above's release-eligibility half is now built:
+`evaluate_eligibility()` (`app/modules/release/service.py`) queries `deviation_record` by
+`source_type="batch"`/`source_id=batch.id` and adds one `OPEN_DEVIATION` (CRITICAL) blocker per matching
+deviation whose `state != "CLOSED"` (deviation has no CANCELLED state, unlike CAPA) -- enforced on both
+`POST /release/v1/scopes/{scope}/evaluate` and the final `.../release` call. CAPA deliberately does NOT
+get an equivalent gate -- Document 27 has no requirement analogous to DEV-FR-022, and the project owner
+chose not to invent one (asked separately, same session). Option (A)'s other half -- automatic deviation
+*candidate creation* from Rules/Batch/QC/Edge (DEV-FR-002) -- remains open; this resolution only closes
+the release-blocking direction. Verified: `tests/test_release.py::test_evaluate_blocked_by_open_deviation`
+(new test) exercises an open deviation blocking evaluate+release and a closed one clearing it.
 
 ### SG-060 — DEV-FR-014/015: Change Control and Training/Qualification-action are recorded as a flag + rationale only, no real entity exists to link to
 
@@ -12586,6 +12600,35 @@ status: PARTIALLY RESOLVED (declarative mapping + read-only sync-visibility buil
   resolution note for why it would be permanently inert under current Document 106 policy)
 ```
 
+**SG-180 further partially resolved 2026-09-17, project-owner-directed (hit live: a user reviewed and
+released a real batch, `MJ-PFS-B-0000`, with 6 of 9 recipe steps still incomplete — exactly the scenario
+this gap's description warned about; asked directly whether to revisit the 2026-09-11 "leave it
+undecided" position, chose to add a hard gate now).** This is a narrower slice than options B/C above —
+it does not touch the DDCP-vs-generic-step-sync question at all, only the previously-completely-missing
+half of REL-FR-003's "manufacturing completeness" eligibility category (Document 15), which SG-056 had
+also flagged as having no data source. `evaluate_eligibility()` (`app/modules/release/service.py`) now
+adds a `PRODUCTION_NOT_COMPLETE` (CRITICAL) blocker whenever `batch.state != "production_complete"` —
+reusing `gxp_batch.state`'s own already-enforced `production_complete` transition (BAT-FR-026,
+`complete_production()` already refuses it until every applicable generic step is `complete`) as the
+manufacturing-completeness signal. This runs both on `POST /release/v1/scopes/{scope}/evaluate` and the
+final `POST /release/v1/scopes/{scope}/release` (same function, re-evaluated immediately before commit
+per REL-FR-008), so a batch can no longer be released — or even show as eligible — while its generic
+step chain is incomplete. It deliberately does **not** read DDCP's own execution tables
+(`constituent_handoff`/`fill_operation`/etc.) — that remains the separate, still-open half of this gap
+(options B/C, write-side DDCP↔generic sync); a DDCP-linked batch must still have its generic step chain
+independently driven to `production_complete` for Release to become eligible, exactly as before this
+change, just now actually enforced rather than silently skipped. Files changed:
+`app/modules/release/service.py` (the blocker), `tests/test_release.py` (the module's own `_setup()`
+fixture had never driven a batch past `issued` — it needed a full start→complete-step→production-
+complete sequence added, plus the same for `test_release_fails_closed_pending_signature_policy`'s
+inline setup, both using the existing `_sign_step`/`_sign_batch` signature-challenge helpers already
+established in `test_batch_execution.py`). Verified: `tests/test_release.py` 11/11 passed;
+`tests/test_batch_execution.py`/`test_qa_review.py`/`test_ddcp_step_mapping.py` 58/58 as an untouched-
+module control. Docs updated: `docs/testing/Batch_Create_Execution_Process_Guide_Gujarati.md` §8/§10/§17
+and `docs/testing/DDCP_Client_Demo_Guide_Gujarati.md` new §22 (both note the generic-chain-only scope of
+this check and give real, code-verified data for driving `RCP-MJ-PFS-V1` v1's single `FILL-01` step to
+completion before Release can succeed on a DDCP-linked batch).
+
 ### SG-181 — `qa_review_package`/`complete` and `release_scope`/`release`+`hold`+`reject` had no Document 106 signature policy row and no signature-challenges endpoint — same defect class as SG-138, different work package
 
 Hit live 2026-09-09 by a user clicking "Complete review" on `/qa-review`: `SIGNATURE_POLICY_UNRESOLVED`.
@@ -13223,9 +13266,26 @@ options:
     specification from ever being released.
 blocking: false
 owner: Quality/Regulatory org (signature policy authority) + Materials module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "docs/testing/demo-gujarati/00_Master_Index_Gujarati.md §5 decision record, 2026-09-18"
+status: RESOLVED
 ```
+
+**RESOLVED 2026-09-18, project-owner-directed (asked directly: option A vs. option B — chose A, the
+recommended product/recipe-release analogue).** `scripts/seed.py`'s `SIGNATURE_POLICY_FLOOR` now carries
+`("material_specification_version", "release", "Released", "QA Releaser", True, True, False)` — same
+shape as `product_version`/`release`. `release_material_spec_version()`
+(`app/modules/material_specification/commands.py`) now enforces the required role and independence
+itself (`resolve_signature_requirement()` still does not read those two columns) against the version's
+own `Created` audit event, the identical bespoke pattern `release_product_version()` uses. Applied to the
+live/demo database via `scripts/sync_signature_policies.py` (idempotent upsert, no reseed). Verified:
+`tests/test_material_specification.py` 8/8 passed (added
+`test_release_authored_by_process_engineer_is_released_by_an_independent_qa_releaser`, covering
+RBAC-denied/SOD_CONFLICT/unsigned-428/signed-200, mirroring `test_product_master.py`'s equivalent);
+`tests/test_evidence_lifecycle.py`/`test_qms_capa.py`/`test_qms_deviation.py`/
+`test_qms_document_control.py`/`test_qc_method.py`/`test_product_master.py`/`test_recipe_master.py`
+126/126 as a regression control. Also fixed in the same pass: `/material-specifications`'s `ReleaseModal`
+carried a stale "signature policy not yet configured, release will correctly fail closed" warning banner
+— now false — removed (frontend/src/app/material-specifications/page.tsx).
 
 
 ### SG-186 — `qc_method_version`/`release` has no Document 106 signature policy row
@@ -13275,9 +13335,24 @@ options:
     from ever being released, and blocks qc_test_definition rows from ever citing a released method.
 blocking: false
 owner: Quality/Regulatory org (signature policy authority) + QC module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "docs/testing/demo-gujarati/00_Master_Index_Gujarati.md §5 decision record, 2026-09-18"
+status: RESOLVED
 ```
+
+**RESOLVED 2026-09-18, project-owner-directed (asked directly: option A vs. option B — chose A, the
+recommended `qc_test_specification/release` analogue).** `scripts/seed.py`'s `SIGNATURE_POLICY_FLOOR` now
+carries `("qc_method_version", "release", "Released", "QA Releaser", True, True, False)` — the same shape
+as its chosen precedent. Unlike SG-185/SG-035's product/recipe/material-spec resolutions,
+`release_qc_method_version()` enforces no bespoke author-independence check — consistent with
+`release_test_specification()` itself, which enforces none either (no single stored "performer" identity
+to check a release against); RBAC (`qc_method.release`: QA Releaser/Admin only, `qc_method.author`: QC
+Reviewer/Admin only) plus the signature ceremony are the whole enforcement surface, matching the chosen
+analogue's own actual behaviour rather than a stricter rule it doesn't itself implement. Applied to the
+live/demo database via `scripts/sync_signature_policies.py`. Verified: `tests/test_qc_method.py` 11/11
+passed (added `test_release_authored_by_qc_reviewer_is_released_by_a_qa_releaser`, covering
+RBAC-denied/unsigned-428/signed-200); same 126/126 regression control as SG-185 above. Also fixed: `/qc`
+page's QC-method-master panel carried the identical stale "not yet configured" warning — now false —
+removed (frontend/src/app/qc/page.tsx).
 
 ```yaml
 spec_gap_id: SG-187
@@ -14040,3 +14115,434 @@ control, plus a live end-to-end round trip against the real demo DB (`qa.reviewe
 `sterilization.operator` correctly got `403 ROLE_MISSING` attempting the same call). `docs/testing/
 DDCP_Client_Demo_Guide_Gujarati.md` §7.4 and `Sterilization_Aseptic_Client_Demo_Guide_Gujarati.md` §4
 updated to use the real UI instead of the SQL workaround.
+
+```yaml
+spec_gap_id: SG-204
+title: "Operator role held neither evidence.upload nor evidence.download (Document 72) — recipe-declared step evidence (RCP-FR-021) could not be self-captured by the role that executes the step"
+class: R
+description: >
+  Found 2026-09-17 while a user manually tested `/batch-execution`'s "Link evidence" action as
+  `operator1` on a real in-progress step (`LC-01`, batch `MJ-PFS-B-0000`). Two compounding defects, one
+  RBAC/SoD (class R) and one pure UI-routing bug (class E, fixed without a gap — see below):
+
+  1. (R, this gap) `scripts/seed.py`'s `ROLE_PERMISSIONS` granted `evidence.upload`/`evidence.download`
+     (Document 72's stage/finalize/list/download operations) only to Admin and QA Reviewer — never to
+     Operator or Supervisor, the roles that actually execute a batch step and are the ones physically
+     present to capture a photo/instrument-file/document evidence item per RCP-FR-021 (Document 10).
+     `link_step_evidence()` itself (`batch_execution/commands.py`) only ever required
+     `batch_execution.execute` and does not validate the pasted `evidence_id`/`evidence_sha256` against a
+     real `EvidenceObject` row — so an Operator *could* submit the link call, but had no lawful way to
+     obtain a real evidence object's id/hash first, and no way to see the picker list
+     (`GET /evidence/v1/objects`, gated on `evidence.download`) that the frontend already builds for this
+     exact purpose (`LinkEvidenceModal`/`useStepEvidenceOptions`,
+     `frontend/src/app/batch-execution/page.tsx`).
+  2. (E, fixed directly, no gap needed) `/platform`'s frontend route (`useRequireAdmin()`) and its
+     sidebar entry were hard-gated to the Admin role only, even though "Evidence operations" on that
+     same page is gated server-side by `evidence.upload`/`evidence.download`, already granted to QA
+     Reviewer. This meant *nobody but the literal `admin` user* (who holds every role in this demo seed)
+     could reach the stage/finalize UI at all — not even QA Reviewer, contradicting the permission grant
+     already on record. This half is a UI-routing defect, not a new authorization decision, so it was
+     fixed without a gap: `canOperateEvidence()` added to `frontend/src/lib/api.ts` (mirrors the existing
+     `canReviewAudit`/`canReviewVault` role-list pattern), `/platform`'s page gate and sidebar item now use
+     `isAdminAnywhere(me) || canOperateEvidence(me)`, with every other Admin-only card on that page
+     (`platform.administer`/backup/search/workflow-ops/report-export) left admin-gated behind an explicit
+     `{isAdmin && (...)}` wrapper.
+source_documents:
+  - Document 10 (SPEC-EBMR-001), RCP-FR-021
+  - Document 72 (SPEC-DATA-004)
+  - Document 106 (row 326 — "Attaching evidence to an open record" is audit-only, unsigned)
+  - Document 107 (SPEC-IAM-002, SoD baseline)
+source_requirement_ids:
+  - RCP-FR-021
+affected_modules:
+  - SPEC-DATA-004
+  - SPEC-EBMR-001
+affected_functions:
+  - scripts/seed.py — ROLE_PERMISSIONS["Operator"], ROLE_PERMISSIONS["Supervisor"]
+  - tests/conftest.py — permission-grant fixture mirror of the same two role lists
+  - app/modules/evidence/router.py — evaluate_policy(action="evidence.upload"/"evidence.download") unchanged, only the grant table changed
+  - frontend/src/lib/api.ts — canOperateEvidence()
+  - frontend/src/app/platform/page.tsx — route gate + per-card admin-only wrapping
+  - frontend/src/components/layout/Sidebar.tsx — "Platform ops" nav item gate
+why_material: >
+  Who may create/see a regulated evidence object (Document 72) is authorization data (Document 107's
+  domain), not something derivable from RCP-FR-021's plain-language "step can require photo/instrument
+  evidence" alone — granting a new permission to a role is exactly the class of decision CLAUDE.md §4
+  says not to guess. The two plausible designs (Operator self-captures vs. a mandatory second QA/Admin
+  login mid-batch to stage evidence for the Operator to merely link) have materially different SoD
+  posture, so the project owner was asked directly rather than assumed.
+risk_if_guessed: >
+  Silently widening who can stage/finalize/download evidence objects, or silently leaving the workflow
+  broken for every non-Admin/QA-Reviewer role, are both regulated-authorization outcomes — either one
+  landing without an explicit decision would be exactly the "invented SoD" failure mode this rule exists
+  to prevent.
+options:
+  - (A) Grant `evidence.upload`/`evidence.download` to Operator and Supervisor — matches RCP-FR-021 (the
+    step executor captures the evidence) and Document 106 row 326 (attaching evidence is unsigned/
+    routine, not an elevated action) — **chosen, see resolution**.
+  - (B) Keep Operator/Supervisor without these permissions; require a second Admin/QA Reviewer login to
+    stage+finalize evidence mid-batch, Operator only links what was already staged — rejected as the
+    project owner's explicit choice, in favor of (A).
+blocking: false
+owner: Batch execution / evidence module owner
+resolution_document: "scripts/seed.py, tests/conftest.py, frontend/src/lib/api.ts, frontend/src/app/platform/page.tsx, frontend/src/components/layout/Sidebar.tsx"
+status: RESOLVED
+```
+
+**SG-204 RESOLVED 2026-09-17, project-owner-directed (asked directly whether Operator/Supervisor should
+self-serve evidence capture or keep the two-role handoff; chose Option A).** Added `evidence.upload` and
+`evidence.download` to `ROLE_PERMISSIONS["Operator"]` and `["Supervisor"]` in `scripts/seed.py`, mirrored
+in the `tests/conftest.py` fixture copy of the same table (per the established "two catalogues, update
+both" pattern from earlier sessions), then ran `scripts/sync_permissions.py` against the live demo DB
+(`ebmr_new_gxp`): 1 permission row created (pre-existing unrelated drift, not from this change), 7 grants
+added, 0 revoked — verified the 4 expected `(Operator|Supervisor, evidence.upload|evidence.download)`
+rows now exist in `iam.role_permissions` via a direct query. Live-verified against the running API with
+`operator1`'s own token: `GET /evidence/v1/objects?owner_type=batch_step&owner_id=<uuid>` now returns
+`200 {"evidence_objects": []}` (was `403 ROLE_MISSING` before the grant) and `POST /evidence/v1/uploads`
+with a real `batch_step` owner now returns `200` with a real `MutationReceipt` (`aggregate_id` =
+new `EvidenceObject.id`). The companion UI-routing bug (item 2 in the description, `/platform` hard-gated
+to Admin) was fixed in the same pass without a gap — see `canOperateEvidence()`/`platform/page.tsx`/
+`Sidebar.tsx` above; `npx tsc --noEmit` passed clean and `ebmr-new-frontend` was restarted under PM2 to
+pick up the change. Net effect: `operator1` can now open `/platform → Platform ops` (previously
+invisible/redirected for every non-Admin role, including QA Reviewer), stage+finalize their own step
+evidence, and the `LinkEvidenceModal` dropdown (already-built code, `useStepEvidenceOptions`) now
+actually populates for them instead of erroring, auto-filling SHA-256/media type as designed.
+`tests/test_evidence_lifecycle.py::test_api_rbac_and_download` hardcoded the *old* boundary (asserted
+`operator1` got `403` staging evidence) — re-running it after the grant caught this immediately (1
+failed, 50 passed). Fixed by moving the negative-permission case to `qc.reviewer` (still holds neither
+`evidence.upload` nor `evidence.download`) and adding a positive assertion that `operator1` can now
+stage an upload and list the owner-filtered evidence objects — both re-runs of
+`tests/test_evidence_lifecycle.py tests/test_batch_execution.py` then passed clean (51/51). `docs/
+testing/Batch_Create_Execution_Process_Guide_Gujarati.md` §6.4/§16.5/§16.5.3/§17 updated to reflect the
+corrected workflow (single `operator1` login for both staging and linking; `/platform` reachable
+directly).
+
+## SG-208: signature policy for the new product_version/recipe_version obsolete+supersede+suspend+reinstate actions
+
+```yaml
+id: SG-208
+date_raised: 2026-09-18
+raised_during: >
+  Known-limitations fix pass closing 6 items from docs/testing/demo-gujarati/06 and 07's "Known
+  Limitations" sections: product_version obsolete/supersede (already legal ALLOWED_TRANSITIONS edges,
+  no command ever reached them) and recipe_version suspend/reinstate/obsolete/supersede (none existed at
+  all before this pass). **Self-correction note:** an earlier version of this entry (drafted as "SG-205")
+  incorrectly stated "this repo has no real Document 106" — that check was run against
+  `/home/hepin/mydata/eBMR-new/specs` (doesn't exist) rather than the actual location,
+  `ebmr-edhr/specs/Documents_106_115/Document_106_Signature_Policy_Baseline_...md` (does exist, 10 files,
+  APPROVED). Found and corrected before any human read the wrong claim; the implementation below reflects
+  the corrected, source-grounded resolution, not the original guess.
+source_requirements:
+  - SPEC-EBMR-000 (Document 09, Product/Constituent/Regulatory Profile Master)
+  - SPEC-EBMR-001 (Document 10, Master Recipe / MMR)
+  - SIG-FR-004 (signature policy mapping)
+  - Document 106 §8 (platform floor action-family defaults, PROPOSED) — "hold/quarantine/block/suspend",
+    "resume/unhold/release-hold" and "cancel/abort/void" families
+affected_functions:
+  - app/modules/product_master/commands.py — obsolete_product_version(), supersede_product_version(),
+    _transition_with_signature(..., independence_reference=)
+  - app/modules/recipe_master/commands.py — suspend_recipe_version(), reinstate_recipe_version(),
+    obsolete_recipe_version(), supersede_recipe_version(), _transition_with_signature(...)
+  - scripts/seed.py, tests/conftest.py — SIGNATURE_POLICY_FLOOR / SignaturePolicy rows for both
+why_material: >
+  Document 106 section 9 (the Signature Point Register, 171 compiled points) has no row naming
+  `product_version`/`recipe_version` obsolete, supersede, recipe suspend or recipe reinstate specifically.
+  Section 8's action-family table is the documented fallback for exactly this situation ("These defaults
+  were derived by action family, not by guessing per endpoint") but still requires picking which family
+  an un-named action belongs to — a judgment call CLAUDE.md §4/AG-15/SIG-FR-004 say should not be made
+  silently for a regulated signature/authorization decision.
+risk_if_guessed: >
+  A wrong family match changes who is legally accountable for retiring/replacing a released regulated
+  record. Product_version/suspend's existing precedent (Document 106 row 9) already resolves the
+  "hold/suspend" family for the two modules' `suspend` actions; the risk here was specifically that
+  `obsolete`/`supersede` look suspend-like (also terminal/consequential) but are semantically closer to
+  Document 106 §8's "cancel/abort/void" family (permanently retiring a record) than to "hold/suspend"
+  (temporarily pausing one) — landing on the wrong family without flagging it would misstate the
+  independence requirement law actually calls for.
+options:
+  - (A) Mirror `product_version/suspend`'s "hold/quarantine/block/suspend" family shape for
+    obsolete/supersede too (RBAC-gated only, no independent-signer check) — this was the first
+    implementation, later found to not match Document 106 §8's closest actual family and corrected before
+    this entry was finalized.
+  - (B) Map obsolete/supersede to Document 106 §8's "cancel/abort/void" family instead (`Approved`,
+    "Authorized canceller for the record class" → QA Releaser, "MUST be independent of the author",
+    reason yes) — **chosen, see resolution**. Semantically closer: obsolete/supersede permanently retire
+    a released record (ALLOWED_TRANSITIONS["obsolete"]/["superseded"] == set(), no way back), matching
+    cancel/abort/void's finality, whereas suspend is explicitly reversible (→ released via reinstate).
+  - (C) Require no signature at all for obsolete/supersede — rejected: both are consequential,
+    effectively irreversible state changes on a released regulated record; Document 106 §8 names no
+    "no signature" family for anything this weighty.
+blocking: false
+owner: Product Master / Recipe Master module owner
+resolution_document: "app/modules/product_master/commands.py, app/modules/product_master/router.py, app/modules/recipe_master/commands.py, app/modules/recipe_master/router.py, scripts/seed.py, tests/conftest.py"
+status: RESOLVED_PROVISIONAL
+```
+
+**SG-208 RESOLVED_PROVISIONAL 2026-09-18 (Claude Code, no direct project-owner sign-off obtained for
+this specific family mapping — flagged here for review, not silently assumed permanent).** `suspend`
+(both modules) keeps product_version/suspend's existing Document 106 row 9 shape (`Performed`,
+`required_role_id=None`, no independence). `reinstate` (both modules) uses §8's "resume/unhold/
+release-hold" family (`Approved`, QA Releaser, independent of "the person who caused the condition" —
+resolved as the actor of the version's most recent audit event that set `lifecycle_state` to its current
+pre-transition value, i.e. whoever suspended it). `obsolete`/`supersede` (both modules) use §8's
+"cancel/abort/void" family (`Approved`, QA Releaser, independent of "the author" — resolved as the actor
+of the version's own `Created` audit event, the same target `release_product_version()`/
+`release_recipe_version()` already use for their own independence check). This required adding an
+`independence_reference: "cause" | "author"` parameter to both modules' `_transition_with_signature()`
+helper so the same shared function can look up the correct disqualified actor for either family.
+`reason_required=True` throughout (the command schema's `reason: str` field is mandatory regardless).
+Live-verified against the running dev API (`ebmr_new_gxp`) with real signature ceremonies after the
+correction: unsigned attempts on `product_version/obsolete`, `product_version/supersede` and
+`recipe_version/suspend` all returned `428 MISSING_SIGNATURE`; challenge + `reauth_password` succeeded
+and moved the state correctly (`released → obsolete`, `released → superseded` with
+`superseded_by_version_id` set, `released → suspended`). `recipe_version/reinstate` was exercised with
+the actual independence check: the same actor who suspended got `409 SOD_INDEPENDENCE_REQUIRED` on
+reinstate, a different (Admin) actor succeeded and moved the record back to `released`. Automated
+coverage: `tests/test_product_master.py::test_obsolete_product_version`, `::test_supersede_product_version`,
+`tests/test_recipe_master.py::test_recipe_obsolete_and_supersede` (15 and 35 total tests in those two
+files respectively, all passing after the correction — re-run following the independence-reference
+change). **This family mapping should be confirmed with the project owner at the next available
+checkpoint** — "cancel/abort/void" was chosen as the closest documented match by direct textual/semantic
+comparison against Document 106 §8, not asked of the project owner directly, and they may have a
+different, more specific intent for these two modules.
+
+## SG-206: `equipment_class` master entity placed outside Document 38's declared 4-entity model
+
+```yaml
+id: SG-206
+date_raised: 2026-09-18
+raised_during: >
+  Same known-limitations pass as SG-208 — docs/testing/demo-gujarati/07 §7.9 item 4:
+  "`equipment_class` free string છે — કોઈ equipment-class-master entity નથી" (no equipment-class-master
+  entity exists), plus item 3's related "calibration/qualification/cleaning flags captured but not
+  enforced at batch-step-start."
+source_requirements:
+  - SPEC-EQP-001 (Document 38, Equipment/Calibration/Qualification/Maintenance) — its own module
+    docstring: "Exactly 4 authoritative entities per the spec's own §5 Data Model ... no 5th table is
+    added"
+  - SPEC-EBMR-001 (Document 10) — RecipeEquipmentRequirement's own docstring naming this exact gap
+  - AG-05 (one authoritative owner/store per regulated entity)
+affected_functions:
+  - app/modules/recipe_master/models.py — new EquipmentClass entity, RecipeEquipmentRequirement.equipment_class_id
+  - app/modules/batch_execution/models.py — new BatchStepEquipmentRequirement (frozen at issue)
+  - app/modules/batch_execution/commands.py — _enforce_step_equipment(), issue_batch() freeze logic
+  - migrations/versions/820e95fa606e_0112_equipment_class_master.py,
+    6eacd4d13145_0113_batch_step_equipment_requirement.py
+why_material: >
+  `app/modules/equipment/models.py`'s own docstring is an explicit, deliberate architectural decision:
+  Document 38's data model is frozen at exactly 4 tables, and that decision was clearly load-bearing
+  enough for a prior session to write it down as a hard constraint ("no 5th table is added"). Silently
+  adding an `equipment_class` table to that module to close this known limitation would override a
+  documented decision without confirming it's still the right one — exactly the "silent reconciliation of
+  conflicting specifications" AG-15 forbids.
+risk_if_guessed: >
+  If Document 38's 4-entity boundary was a genuine, still-current constraint (e.g. a customer/regulatory
+  commitment about that module's schema surface), quietly breaking it to satisfy Document 10's need would
+  be an undocumented architecture change landing under a routine bug-fix banner. Equally, if the
+  constraint is now stale and Document 38 was always meant to eventually get a class-master, placing the
+  new entity in the wrong module creates real technical debt (equipment_class now modeled in two places
+  conceptually, ownership per AG-05 is ambiguous).
+options:
+  - (A) Add `EquipmentClass` inside `app/modules/equipment` as the module's 5th entity, extending
+    Document 38's own model to finally close both this gap and `EquipmentAsset.equipment_class_id`'s
+    matching "captured, unenforced" note — most architecturally correct long-term (equipment concepts
+    belong in the equipment module) but directly overrides the documented "exactly 4" constraint.
+  - (B) Add `EquipmentClass` in `recipe_master` instead, scoped narrowly to what
+    `RecipeEquipmentRequirement.equipment_class_id` needs, leaving Document 38's declared model
+    untouched — **chosen, see resolution**. Leaves `EquipmentAsset.equipment_class_id` as an
+    unconstrained bare UUID for now (unchanged from before this pass); a future decision could point it
+    at the same table once (A) vs (B) is confirmed.
+  - (C) Skip building a class master at all, leave `equipment_class` as free text (status quo) — rejected
+    per your explicit selection of this item in scope.
+blocking: false
+owner: Equipment module owner / Recipe Master module owner (ownership itself is part of what's open)
+resolution_document: "app/modules/recipe_master/models.py, migrations/versions/820e95fa606e_0112_equipment_class_master.py"
+status: RESOLVED_PROVISIONAL
+```
+
+**SG-206 RESOLVED_PROVISIONAL 2026-09-18 (Claude Code, no direct project-owner sign-off obtained — flagged
+for review).** Chose Option B: `EquipmentClass` lives in `ebmr.gxp_equipment_class` (recipe_master's
+schema), a simple controlled code table (`class_code` unique, `name`, `description`, `status`), create +
+list only, mirroring `equipment.EquipmentArea`'s own "no qualification/release workflow" shape.
+`RecipeEquipmentRequirement` gained a new nullable `equipment_class_id` FK alongside the existing
+free-string `equipment_class` (kept, not backfilled — no confirmed mapping from old free text to a new
+controlled code). `EquipmentAsset.equipment_class_id` (equipment module) was deliberately left
+unconstrained, unchanged from before this pass — matching Option B's boundary. Live-verified: created a
+real `EquipmentClass` row via `POST /recipes/v2/equipment-classes`, listed it via `GET`, referenced it
+from a recipe step's equipment requirement, and confirmed it flows through to `BatchStepEquipmentRequirement`
+at batch issue (see SG-207 below for the enforcement half). **Whether this entity should eventually move
+into (or be duplicated/synced into) `app/modules/equipment` as Document 38's real 5th entity is an open
+question for the project owner** — this pass deliberately did not touch Document 38's declared boundary.
+
+## SG-207: `RecipeEquipmentRequirement.require_current_cleaning` enforcement source (frozen requirement only, no batch-time cleaning-execution re-check)
+
+```yaml
+id: SG-207
+date_raised: 2026-09-18
+raised_during: >
+  Same pass, docs/testing/demo-gujarati/07 §7.9 item 3 — "RecipeEquipmentRequirement ના calibration/
+  qualification/cleaning flags capture થાય છે પણ batch-step-start સમયે enforce નથી થતા" (captured but
+  not enforced at batch-step-start).
+source_requirements:
+  - SPEC-EBMR-002 (Document 11, BAT-FR-012/013, both named "deferred pending equipment eligibility
+    wiring" by this module's own docstring)
+  - SPEC-EQP-002 (Document 39, cleaning/sanitization/line clearance) — CleaningExecution/LineClearance
+    are the actual event-sourced cleaning records; EquipmentAsset.cleanliness_status is described
+    elsewhere in this codebase (equipment/commands.py::_ineligibility_reasons's own SG-110 comment) as
+    "the sole writer" being Document 39's own cleaning_commands._mirror_cleanliness()
+affected_functions:
+  - app/modules/batch_execution/commands.py — _enforce_step_equipment() (calls
+    equipment.commands.get_eligibility(), which reads EquipmentAsset.cleanliness_status)
+why_material: >
+  `_enforce_step_equipment()` checks `require_current_cleaning` against `EquipmentAsset.cleanliness_status`
+  at the moment step-start is called — a point-in-time snapshot, not a live subscription to Document 39's
+  cleaning-execution/line-clearance event stream. Whether that snapshot check is sufficient (matches how
+  calibration/qualification are already checked the same way) or whether cleaning specifically needs a
+  stronger guarantee (e.g. a held line-clearance record, not just a status field) is a regulated-process
+  question about what "current cleaning" means operationally, not something inferable from the schema.
+risk_if_guessed: >
+  If a stronger cleaning-currency guarantee was actually required (e.g. an active, non-expired
+  LineClearance record specifically tied to this equipment+product changeover), the snapshot-status check
+  built here could pass a step start that a real Document 39 process would have blocked — a false-negative
+  risk on a GxP-significant control if the assumption is wrong.
+options:
+  - (A) Treat `cleanliness_status` currency (via the equipment module's own `_ineligibility_reasons`) as
+    sufficient for `require_current_cleaning`, same treatment as calibration_status/qualification_status
+    — **chosen, see resolution**, on the grounds that Document 39 already made this field "the sole
+    writer" of cleaning state for exactly this kind of check, and BAT-FR-012/013 named no stronger
+    requirement.
+  - (B) Additionally require an active, non-expired LineClearance record scoped to this specific
+    equipment + product/changeover before allowing step-start — rejected as inventing a stronger
+    regulated control not named by BAT-FR-012/013 or asked for by the project owner.
+blocking: false
+owner: Batch execution module owner / Equipment (Document 39) module owner
+resolution_document: "app/modules/batch_execution/commands.py"
+status: RESOLVED_PROVISIONAL
+```
+
+**SG-207 RESOLVED_PROVISIONAL 2026-09-18 (Claude Code, no direct project-owner sign-off obtained —
+flagged for review).** Chose Option A: `require_current_cleaning` blocks on the same
+`equipment.commands.get_eligibility()` reason codes (`CLEANING_REQUIRED`) the equipment module already
+uses everywhere else cleaning currency matters, reusing rather than inventing a second cleaning-check
+path. Not independently tested against a live `CleaningExecution`/`LineClearance` record in this pass
+(`tests/test_batch_execution.py::test_start_step_blocked_without_required_equipment_then_succeeds_with_
+eligible_asset` exercises `require_current_qualification` only, since that was sufficient to prove the
+enforcement wiring itself works end-to-end) — the cleaning-specific path shares the identical code path
+as qualification/calibration (same `_EQUIPMENT_REASON_ERRORS` dispatch, same `get_eligibility()` call),
+so this is a reasoning gap about what "current cleaning" should mean, not an untested code path.
+
+## SG-209: `combination_product_type` provisional taxonomy
+
+```yaml
+id: SG-209
+date_raised: 2026-09-18
+raised_during: >
+  Same known-limitations pass as SG-205/206/207/208 — docs/testing/demo-gujarati/06 §6.8 item 3:
+  "`combination_product_type` free text છે, controlled dropdown નથી". Related to, but distinct from,
+  the pre-existing SG-175 (product_family_id/manufacturing_profile_code/combination_product_type <->
+  ddcp.ddcp_profile_version linkage question, raised 2026-09-03, still partially open) — SG-175 is about
+  whether this field should be *derived* from a DDCP profile link; this entry is narrower, about what
+  the field's own *value set* should be regardless of that question.
+source_requirements:
+  - SPEC-EBMR-000 (Document 09, Product/Constituent/Regulatory Profile Master)
+affected_functions:
+  - app/modules/product_master/commands.py — COMBINATION_PRODUCT_TYPES, create_draft(), update_draft()
+  - frontend/src/app/product-master/page.tsx — combination_product_type Select
+why_material: >
+  A repo-wide search found no controlled taxonomy for this field anywhere — the DDCP module
+  distinguishes device types via `manufacturing_profile_code` and separate routers (prefilled-syringe,
+  autoinjector), never via a `combination_product_type` value list. The allowed value set for a
+  regulated master-data field is validation-acceptance behavior CLAUDE.md §4 says not to guess.
+risk_if_guessed: >
+  An invented taxonomy that doesn't match the client's actual regulatory/business classification would
+  either reject real values operators need to record, or accept values that don't map to anything
+  meaningful downstream (e.g. DDCP profile selection, PMOA determination).
+options:
+  - (A) Leave `combination_product_type` free text (status quo) — rejected per your explicit direction
+    to convert it to a dropdown.
+  - (B) Seed a provisional dropdown derived from what the DDCP module already models
+    (`prefilled_syringe`, `autoinjector`, `inhalation_device`, `drug_eluting_device`) plus `other` as a
+    free-text escape hatch, log the taxonomy as provisional, confirm with the project owner later —
+    **chosen (your explicit direction), see resolution**.
+blocking: false
+owner: Product Master module owner
+resolution_document: "app/modules/product_master/commands.py, frontend/src/app/product-master/page.tsx"
+status: RESOLVED_PROVISIONAL
+```
+
+**SG-209 RESOLVED_PROVISIONAL 2026-09-18, project-owner-directed (asked directly via AskUserQuestion:
+"Use a provisional list, log SPEC_GAP" — chosen over "give exact values" or "skip this item").** Backend
+`COMBINATION_PRODUCT_TYPES = {"prefilled_syringe", "autoinjector", "inhalation_device",
+"drug_eluting_device", "other"}` validated at `create_draft`/`update_draft` (rejects anything outside the
+set unless the value is `"other"`, which stays free-form via a companion text field on the frontend).
+Frontend replaced the free-text `<Input>` with a `<Select>` of the same 5 options, on both the create and
+edit draft forms. **This taxonomy still needs real client/regulatory confirmation** — it was derived by
+inspection of what the DDCP module already builds toward, not sourced from a controlled document.
+
+## SG-210: `capa_record`/`effectiveness` (recording the pass/fail/inconclusive result) has no Document 106
+signature point, unlike every other CAPA quality decision
+
+Found answering a client question flagged in the CAPA Gujarati demo guide (docs/testing/demo-gujarati/10
+§10.6 item 2): Document 106's own signature-point register lists exactly three signed CAPA actions —
+`close` (row 80), `extend` (row 81), `reopen` (row 82) — and nothing for `effectiveness`. `capa_commands.py
+::record_effectiveness()` was therefore unsigned end-to-end: both "define the effectiveness check"
+(plan-time criteria entry) and "record the effectiveness result" (the pass/fail/inconclusive quality
+conclusion that drives the CAPA to `EFFECTIVENESS_REVIEW` or `EFFECTIVENESS_FAILED`) posted without any
+signature ceremony, unlike every other quality-decision action in this module (`close`) or its sibling
+modules (`deviation_record/disposition`, `oos_record/disposition`, `ncr/disposition`, all Document
+106-signed). Whether Document 106's silence here means "genuinely no signature required" or "an omission
+in the baseline register" is a signature-policy question CLAUDE.md §4 says not to guess.
+
+```yaml
+spec_gap_id: SG-210
+title: "capa_record/effectiveness (recording the pass/fail/inconclusive result) has no Document 106 signature point, unlike every other CAPA quality decision"
+class: R  # regulated decision -- whether/how a quality conclusion gets an electronic signature
+description: >
+  Document 106's signature-point register has rows for capa_record/close, extend and reopen but none for
+  effectiveness. record_effectiveness() (app/modules/qms/capa_commands.py) posted the pass/fail/
+  inconclusive effectiveness result unsigned, unlike every comparable disposition-class action elsewhere
+  in QMS (deviation_record/disposition, oos_record/disposition, ncr/disposition).
+source_documents:
+  - Document 27 (SPEC-QMS-002, CAPA-FR-010/011/012)
+  - Document 106 (SPEC-GXP signature policy baseline, section 9 rows 80-82)
+source_requirement_ids:
+  - CAPA-FR-011
+  - CAPA-FR-012
+affected_modules:
+  - SPEC-QMS-002
+affected_functions:
+  - services/gxp-api/app/modules/qms/capa_commands.py record_effectiveness()
+why_material: >
+  Whether recording an effectiveness result requires an electronic signature, and if so with what
+  meaning/role/independence, is a Part 11 signature-policy decision (AG-07, SIG-FR-004) -- guessing it
+  either invents a regulatory control the baseline never asked for, or leaves a real quality conclusion
+  unsigned when it should be released.
+risk_if_guessed: >
+  A guessed signature requirement could diverge from whatever the client's actual Quality organization
+  expects for this decision class, requiring rework once a real Document 106 addendum is authored.
+options:
+  - (A) Leave record_effectiveness() fully unsigned, matching Document 106 literally (status quo).
+  - (B) Sign only "record result" (the actual conclusion) with the same "Approved"/QA Releaser/
+    independent-of-owner shape as close() -- "define" stays unsigned as plan-time criteria entry, not a
+    conclusion -- recommended and chosen (see resolution).
+  - (C) Sign both "define" and "record result" identically to close().
+blocking: false
+owner: Head of Quality + QMS module owner
+resolution_document: "app/modules/qms/capa_commands.py, scripts/seed.py SIGNATURE_POLICY_FLOOR, frontend/src/app/capa/[id]/page.tsx"
+status: RESOLVED
+```
+
+**SG-210 RESOLVED 2026-09-18, project-owner-directed (asked directly via AskUserQuestion among options
+A/B/C above — chose B).** New `SIGNATURE_POLICY_FLOOR` row `("capa_record", "effectiveness", "Approved",
+"QA Releaser", True, True, True)` (`scripts/seed.py`), read by the existing `_resolve_signature()` helper
+in `capa_commands.py` and enforced only on the "recording a result" branch of `record_effectiveness()`
+(`cmd.result is not None`), before any state mutation — same independent-of-`owner_subject_id` check
+`close_capa()` already performs. `EffectivenessCommand` gained `challenge_id`/`reauth_password` fields;
+`capa_router.py`'s `CAPA_SIGNATURE_ACTIONS` gained `"effectiveness"` so
+`POST /qms/v1/capas/{id}/signature-challenges` can issue a challenge for it. Frontend's "Record
+effectiveness result" transition on `/capa/[id]` now renders the shared `SignatureCeremony` component
+(challenge → password re-entry → signed submit) instead of the plain form; "Define effectiveness check"
+is untouched. Verified: `tests/test_qms_capa.py` (22 tests, unaffected by this change — none of them drive
+a CAPA through `record_effectiveness()`'s "record" branch with a signature-required policy, since no
+existing test needed effectiveness gated behind a live signature ceremony yet) plus a live-DB
+`sync_permissions.py`/`scripts/seed.py` policy row confirmed present.

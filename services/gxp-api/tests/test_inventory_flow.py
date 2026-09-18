@@ -14,11 +14,14 @@ from app.modules.material.models import InventoryTransaction, MaterialContainer,
 from tests.conftest import auth_headers, idem, login
 
 
-async def _create_material(client, token, site_id, code="RM-D20", name="Raw Material D20", uom="kg"):
+async def _create_material(client, site_id, code="RM-D20", name="Raw Material D20", uom="kg"):
+    # 2026-09-18: material.create is now Process Engineer/Admin-only (RBAC gap closure) -- always
+    # authors as process.engineer regardless of which actor the calling test is otherwise exercising.
+    pe_token = await login(client, "process.engineer")
     resp = await client.post(
         "/materials",
         json={"idempotency_key": idem(), "site_id": str(site_id), "code": code, "name": name, "uom": uom},
-        headers=auth_headers(token),
+        headers=auth_headers(pe_token),
     )
     assert resp.status_code == 200, resp.text
     return resp.json()["aggregate_id"]
@@ -27,7 +30,7 @@ async def _create_material(client, token, site_id, code="RM-D20", name="Raw Mate
 async def _receive_and_examine(
     client, db, token, site_id, code, internal_lot, container_count=1, quantity="100.000000", expiry_date=None
 ):
-    material_id = await _create_material(client, token, site_id, code=code, name=code)
+    material_id = await _create_material(client, site_id, code=code, name=code)
     receipt_body = {
         "idempotency_key": idem(),
         "site_id": str(site_id),

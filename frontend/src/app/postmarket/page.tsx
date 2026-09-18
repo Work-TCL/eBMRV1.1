@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, holdsAnyRole, newIdempotencyKey, type Me, type MutationReceipt } from "@/lib/api";
+import { api, ApiError, hasAnyPermission, hasPermission, newIdempotencyKey, type Me, type MutationReceipt } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -25,7 +25,26 @@ const REPORT_TYPE_OPTIONS = [
   { value: "FOLLOWUP", label: "Follow-up" },
 ];
 
-const canWork = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer", "QA Releaser"]);
+// Document 58/59 (WP-09) actor-specific roles: Postmarket Safety Reviewer owns safety_case.*/
+// safety_signal.*/postmarket_source.register/postmarket_dataset.freeze; Postmarket Regulatory Affairs
+// owns reportability_track.*/regulatory_report.*/applicant_relationship.*/correction_removal.*/
+// regulatory_obligation.*/periodic_reporting_cycle.*. This page previously gated everything on
+// QA Reviewer/QA Releaser -- neither role holds ANY of these codes -- which meant the two roles this
+// page actually exists for could never reach it, and the two roles it accidentally granted access to
+// couldn't do anything real here either (audit finding 2026-09-18: this module has zero demo users, so
+// nobody had exercised it end-to-end since it was built).
+const canManageSafetyCases = (me: Me | null) => hasPermission(me, "safety_case.create");
+const canManageReportability = (me: Me | null) => hasPermission(me, "reportability_track.create");
+// The big "operations console" below bundles ~25 ops spanning both personas' whole surface in one
+// FormConsole (which has no per-op permission gating) -- shown if the user holds an entry permission
+// from either persona; the backend still enforces each individual op's own exact code.
+const canWork = (me: Me | null) =>
+  hasAnyPermission(me, [
+    "safety_case.create", "postmarket_source.register", "safety_signal.open", "postmarket_dataset.freeze",
+    "safety_case.followup", "safety_case.link_duplicates",
+    "reportability_track.create", "regulatory_report.create", "applicant_relationship.configure",
+    "correction_removal.create", "regulatory_obligation.create", "periodic_reporting_cycle.generate",
+  ]);
 
 export default function PostmarketPage() {
   const { me } = useMe();
@@ -41,8 +60,8 @@ export default function PostmarketPage() {
 
       <DashboardCards />
 
-      {canWork(me) && <CreateSafetyCaseCard />}
-      {canWork(me) && <ReportabilityCard />}
+      {canManageSafetyCases(me) && <CreateSafetyCaseCard />}
+      {canManageReportability(me) && <ReportabilityCard />}
 
       {canWork(me) && (
         <>

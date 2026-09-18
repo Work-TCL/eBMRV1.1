@@ -37,14 +37,22 @@ async def post_create_product(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # Known-limitations fix (docs/testing/demo-gujarati/06): this legacy pre-Document-09 router is
+        # unused by the frontend (product-master/page.tsx calls /products/v1/... instead) but was still
+        # live with no RBAC gate at all. Gated on product.view (not product.author) since this module has
+        # no author/release split of its own and product.view is the floor every operational role holds.
+        await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
         receipt = await create_product(session, cmd, actor.user_id)
     return receipt
 
 
 @router.get("")
 async def list_products(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
+    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
     stmt = select(Product)
     if params.q:
         needle = f"%{params.q}%"
@@ -79,6 +87,7 @@ async def patch_product(
     if cmd.product_id != product_id:
         raise ValidationFailedError("product_id in path and body must match")
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
         return await update_product(session, cmd, actor.user_id)
 
 

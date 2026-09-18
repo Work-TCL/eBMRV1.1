@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiError, canAuthorRecipe, canReleaseRecipe, clientPagedFetcher, newIdempotencyKey } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  canAuthorRecipe,
+  canReleaseRecipe,
+  canSuspendRecipe,
+  clientPagedFetcher,
+  newIdempotencyKey,
+} from "@/lib/api";
 import { useMe, useSites } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -268,7 +276,7 @@ function EditGraphModal({
   const [sections, setSections] = useState<SectionDraft[]>(() => sectionsFromVersion(version));
   const [batchSizeValue, setBatchSizeValue] = useState(version.batch_size_value ?? "");
   const [batchSizeUom, setBatchSizeUom] = useState(version.batch_size_uom ?? "");
-  const { roleOptions, ruleOptions, materialSpecOptions, qualificationCodeOptions, uomOptions } = useRoleAndRuleOptions();
+  const { roleOptions, ruleOptions, materialSpecOptions, qualificationCodeOptions, uomOptions, equipmentClassOptions } = useRoleAndRuleOptions();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -317,7 +325,7 @@ function EditGraphModal({
           </Field>
         </div>
 
-        <RecipeGraphEditor sections={sections} onChange={setSections} roleOptions={roleOptions} ruleOptions={ruleOptions} materialSpecOptions={materialSpecOptions} qualificationCodeOptions={qualificationCodeOptions} uomOptions={uomOptions} />
+        <RecipeGraphEditor sections={sections} onChange={setSections} roleOptions={roleOptions} ruleOptions={ruleOptions} materialSpecOptions={materialSpecOptions} qualificationCodeOptions={qualificationCodeOptions} uomOptions={uomOptions} equipmentClassOptions={equipmentClassOptions} />
 
         <div className="flex justify-between gap-3 mt-2">
           <Button type="button" variant="secondary" onClick={onClose}>
@@ -518,6 +526,11 @@ function VersionDetailModal({
   const [diff, setDiff] = useState<RecipeDiff | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [releaseSigOpen, setReleaseSigOpen] = useState(false);
+  const [suspendSigOpen, setSuspendSigOpen] = useState(false);
+  const [reinstateSigOpen, setReinstateSigOpen] = useState(false);
+  const [obsoleteSigOpen, setObsoleteSigOpen] = useState(false);
+  const [supersedeSigOpen, setSupersedeSigOpen] = useState(false);
+  const [supersedingVersionId, setSupersedingVersionId] = useState("");
   const [editOpen, setEditOpen] = useState(false);
 
   async function runCompare() {
@@ -594,12 +607,19 @@ function VersionDetailModal({
     );
   }
 
+  const supersessionCandidates = allVersions.filter(
+    (v) => v.recipe_version_id !== recipeVersionId && v.recipe_family_id === version.recipe_family_id && v.lifecycle_state === "released"
+  );
+
   return (
     <Modal open onClose={onClose} title={`${version.recipe_family_id.slice(0, 8)}… - v${version.version_no}`} large>
       <div className="mb-4">
         {(
           [
             ["Lifecycle state", version.lifecycle_state],
+            ...(version.superseded_by_version_id
+              ? ([["Superseded by", version.superseded_by_version_id]] as [string, string][])
+              : []),
             [
               "Batch size",
               version.batch_size_value ? `${version.batch_size_value}${version.batch_size_uom ? ` ${version.batch_size_uom}` : ""}` : "—",
@@ -746,6 +766,24 @@ function VersionDetailModal({
               Release
             </Button>
           )}
+          {canSuspendRecipe(me) && version.lifecycle_state === "released" && (
+            <>
+              <Button variant="danger" onClick={() => setSuspendSigOpen(true)} disabled={busy}>
+                Suspend
+              </Button>
+              <Button variant="secondary" onClick={() => setObsoleteSigOpen(true)} disabled={busy}>
+                Obsolete
+              </Button>
+              <Button variant="secondary" onClick={() => setSupersedeSigOpen(true)} disabled={busy}>
+                Supersede
+              </Button>
+            </>
+          )}
+          {canSuspendRecipe(me) && version.lifecycle_state === "suspended" && (
+            <Button variant="primary" onClick={() => setReinstateSigOpen(true)} disabled={busy}>
+              Reinstate
+            </Button>
+          )}
         </div>
       </div>
 
@@ -787,6 +825,160 @@ function VersionDetailModal({
               idempotency_key: p.idempotency_key,
               recipe_version_id: recipeVersionId,
               expected_version: version.version,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+
+      {suspendSigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setSuspendSigOpen(false)}
+          onDone={() => {
+            setSuspendSigOpen(false);
+            refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to reload"));
+            onChanged();
+          }}
+          challengePath={`/recipes/v2/drafts/${recipeVersionId}/signature-challenges`}
+          action="suspend"
+          submitVariant="danger"
+          submitLabel="Sign & suspend"
+          reason="required"
+          title={`Suspend recipe - v${version.version_no}`}
+          summary={
+            <>
+              This suspends recipe version <strong>v{version.version_no}</strong> - it can no longer be
+              used to issue new batches until reinstated.
+            </>
+          }
+          onSign={(p) =>
+            api.post(`/recipes/v2/${recipeVersionId}/suspend`, {
+              idempotency_key: p.idempotency_key,
+              recipe_version_id: recipeVersionId,
+              expected_version: version.version,
+              reason: p.reason,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+
+      {reinstateSigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setReinstateSigOpen(false)}
+          onDone={() => {
+            setReinstateSigOpen(false);
+            refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to reload"));
+            onChanged();
+          }}
+          challengePath={`/recipes/v2/drafts/${recipeVersionId}/signature-challenges`}
+          action="reinstate"
+          submitVariant="primary"
+          submitLabel="Sign & reinstate"
+          reason="required"
+          title={`Reinstate recipe - v${version.version_no}`}
+          summary={
+            <>
+              This reinstates recipe version <strong>v{version.version_no}</strong> back to released.
+              Must be signed by someone other than whoever suspended it.
+            </>
+          }
+          onSign={(p) =>
+            api.post(`/recipes/v2/${recipeVersionId}/reinstate`, {
+              idempotency_key: p.idempotency_key,
+              recipe_version_id: recipeVersionId,
+              expected_version: version.version,
+              reason: p.reason,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+
+      {obsoleteSigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setObsoleteSigOpen(false)}
+          onDone={() => {
+            setObsoleteSigOpen(false);
+            refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to reload"));
+            onChanged();
+          }}
+          challengePath={`/recipes/v2/drafts/${recipeVersionId}/signature-challenges`}
+          action="obsolete"
+          submitVariant="danger"
+          submitLabel="Sign & obsolete"
+          reason="required"
+          title={`Obsolete recipe - v${version.version_no}`}
+          summary={
+            <>
+              This retires recipe version <strong>v{version.version_no}</strong> permanently - obsolete
+              is a terminal state with no further transitions.
+            </>
+          }
+          onSign={(p) =>
+            api.post(`/recipes/v2/${recipeVersionId}/obsolete`, {
+              idempotency_key: p.idempotency_key,
+              recipe_version_id: recipeVersionId,
+              expected_version: version.version,
+              reason: p.reason,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+
+      {supersedeSigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setSupersedeSigOpen(false)}
+          onDone={() => {
+            setSupersedeSigOpen(false);
+            setSupersedingVersionId("");
+            refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to reload"));
+            onChanged();
+          }}
+          challengePath={`/recipes/v2/drafts/${recipeVersionId}/signature-challenges`}
+          action="supersede"
+          submitVariant="danger"
+          submitLabel="Sign & supersede"
+          reason="required"
+          disabled={!supersedingVersionId}
+          title={`Supersede recipe - v${version.version_no}`}
+          summary={
+            <>
+              This marks recipe version <strong>v{version.version_no}</strong> as superseded by the
+              released version chosen below - terminal, no further transitions.
+            </>
+          }
+          extraFields={
+            <Field label="Superseded by" required>
+              <Select value={supersedingVersionId} onChange={(e) => setSupersedingVersionId(e.target.value)}>
+                <option value="">Select a released version…</option>
+                {supersessionCandidates.map((v) => (
+                  <option key={v.recipe_version_id} value={v.recipe_version_id}>
+                    v{v.version_no}
+                  </option>
+                ))}
+              </Select>
+              {supersessionCandidates.length === 0 && (
+                <p className="hint mt-1">No other released version of this recipe family exists yet.</p>
+              )}
+            </Field>
+          }
+          onSign={(p) =>
+            api.post(`/recipes/v2/${recipeVersionId}/supersede`, {
+              idempotency_key: p.idempotency_key,
+              recipe_version_id: recipeVersionId,
+              expected_version: version.version,
+              reason: p.reason,
+              superseding_version_id: supersedingVersionId,
               challenge_id: p.challenge_id,
               reauth_password: p.reauth_password,
             })

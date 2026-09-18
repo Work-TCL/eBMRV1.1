@@ -281,9 +281,9 @@ async def post_qc_method_signature_challenge(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    """SG-186: no Document 106 policy row exists yet for qc_method_version/release -- the challenge
-    endpoint is real, but release_qc_method_version()'s resolve_signature_requirement() fails closed
-    until a policy row is seeded."""
+    """SG-186 RESOLVED (2026-09-18): qc_method_version/release now has a real Document 106 signature
+    policy row (scripts/seed.py SIGNATURE_POLICY_FLOOR) -- "Released" by an independent QA Releaser,
+    same shape as the nearest in-module precedent, qc_test_specification/release (row 58)."""
     async with session.begin():
         method = await session.get(QcMethodVersion, method_version_id)
         if method is None:
@@ -317,7 +317,11 @@ async def post_create_sample(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
+    # 2026-09-18 RBAC gap closure: gated here, not inside create_sample() itself, because that function
+    # is also called internally (already-authorized) by material/commands.py::collect_sample(),
+    # equipment/cleaning_commands.py and lims_integration/commands.py.
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qc_sample.create", site_id=None)
         return await create_sample(session, cmd, actor.user_id)
 
 
@@ -330,7 +334,10 @@ async def post_receive_sample(
 ) -> MutationReceipt:
     if str(cmd.sample_id) != sample_id:
         raise ValidationFailedError("sample_id in path and body must match")
+    # 2026-09-18 RBAC gap closure: gated here (see post_create_sample's comment above) -- also called
+    # internally by lims_integration/commands.py's already-authorized flow.
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qc_sample.receive", site_id=None)
         return await receive_sample(session, cmd, actor.user_id)
 
 
@@ -443,7 +450,10 @@ async def post_start_test_order(
 ) -> MutationReceipt:
     if str(cmd.test_order_id) != test_order_id:
         raise ValidationFailedError("test_order_id in path and body must match")
+    # 2026-09-18 RBAC gap closure: gated here (see post_create_sample's comment above) -- also called
+    # internally by lims_integration/commands.py's already-authorized flow.
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qc_test_order.start", site_id=None)
         return await start_test_order(session, cmd, actor.user_id)
 
 
@@ -456,7 +466,10 @@ async def post_record_raw_data(
 ) -> MutationReceipt:
     if str(cmd.test_order_id) != test_order_id:
         raise ValidationFailedError("test_order_id in path and body must match")
+    # 2026-09-18 RBAC gap closure: gated here (see post_create_sample's comment above) -- also called
+    # internally by lims_integration/commands.py's already-authorized flow.
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qc_test_order.record_raw_data", site_id=None)
         return await record_raw_data(session, cmd, actor.user_id)
 
 
@@ -469,7 +482,10 @@ async def post_record_result(
 ) -> MutationReceipt:
     if str(cmd.test_order_id) != test_order_id:
         raise ValidationFailedError("test_order_id in path and body must match")
+    # 2026-09-18 RBAC gap closure: gated here (see post_create_sample's comment above) -- also called
+    # internally by lims_integration/commands.py's already-authorized flow.
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qc_result.record", site_id=None)
         return await record_result(session, cmd, actor.user_id)
 
 

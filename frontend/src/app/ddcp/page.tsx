@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, listAll, holdsAnyRole, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
+import { api, listAll, hasPermission, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -88,8 +88,9 @@ export default function DdcpPage() {
   // DDCP Engineer/Operator roles could reach these cards, nor did QA Reviewer/Supervisor actually hold
   // any ddcp_* permission (their submits 403'd despite the form being shown) — see
   // docs/testing/DDCP_Manual_Test_Guide_Gujarati.md §4.3/§17 for how this was found.
-  const canAuthorProfile = holdsAnyRole(me, ["Admin", "DDCP Engineer"]);
-  const canExecute = holdsAnyRole(me, ["Admin", "DDCP Operator"]);
+  const canAuthorProfile = hasPermission(me, "ddcp_profile.author");
+  // Entry permission for the whole DDCP Operator execution surface (handoff/fill/device/release).
+  const canExecute = hasPermission(me, "ddcp_constituent.handoff");
   const entities = useDdcpEntityOptions();
   // Shared across cards so a profile ID created in Card 1 pre-fills wherever Card 2/3 ask for one —
   // the user still sees and can overwrite the field, this only saves the copy/paste.

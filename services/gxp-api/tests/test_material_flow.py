@@ -4,11 +4,14 @@ batch (MAT-013 eligibility). Mirrors the negative-case discipline used for the b
 from tests.conftest import auth_headers, idem, login
 
 
-async def _create_material(client, token, site_id, code="RM-1", name="Raw Material 1", uom="kg"):
+async def _create_material(client, site_id, code="RM-1", name="Raw Material 1", uom="kg"):
+    # 2026-09-18: material.create is now Process Engineer/Admin-only (RBAC gap closure) -- always
+    # authors as process.engineer regardless of which actor the calling test is otherwise exercising.
+    pe_token = await login(client, "process.engineer")
     resp = await client.post(
         "/materials",
         json={"idempotency_key": idem(), "site_id": str(site_id), "code": code, "name": name, "uom": uom},
-        headers=auth_headers(token),
+        headers=auth_headers(pe_token),
     )
     assert resp.status_code == 200, resp.text
     return resp.json()["aggregate_id"]
@@ -58,7 +61,7 @@ async def _release_lot(client, token, lot_id):
 async def test_receipt_enters_quarantine(client, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id)
+    material_id = await _create_material(client, site_id)
     lot_id = await _receive_lot(client, op_token, material_id, site_id)
 
     detail = (await client.get(f"/material-lots/{lot_id}")).json()
@@ -69,7 +72,7 @@ async def test_receipt_enters_quarantine(client, seeded):
 async def test_disposition_requires_qc_reviewer_role(client, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id)
+    material_id = await _create_material(client, site_id)
     lot_id = await _receive_lot(client, op_token, material_id, site_id)
 
     challenge = (
@@ -101,7 +104,7 @@ async def test_issue_from_quarantine_lot_rejected(client, seeded):
 
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id)
+    material_id = await _create_material(client, site_id)
     lot_id = await _receive_lot(client, op_token, material_id, site_id)
 
     # SG-173 / ADR-0013: material-issue resolves the batch from `ebmr.gxp_batch`.
@@ -131,7 +134,7 @@ async def test_full_material_genealogy_flow(client, seeded, db):
     qc_token = await login(client, "qc.reviewer")
     site_id = seeded["site_id"]
 
-    material_id = await _create_material(client, op_token, site_id)
+    material_id = await _create_material(client, site_id)
     lot_id = await _receive_lot(client, op_token, material_id, site_id, quantity="50.000000")
     await _release_lot(client, qc_token, lot_id)
 
@@ -174,7 +177,7 @@ async def test_over_issue_rejected(client, seeded):
     qc_token = await login(client, "qc.reviewer")
     site_id = seeded["site_id"]
 
-    material_id = await _create_material(client, op_token, site_id, code="RM-OVER")
+    material_id = await _create_material(client, site_id, code="RM-OVER")
     lot_id = await _receive_lot(client, op_token, material_id, site_id, internal_lot="LOT-OVER", quantity="10.000000")
     await _release_lot(client, qc_token, lot_id)
 

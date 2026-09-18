@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, canCreateDevice, canViewDevices, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
+import { api, ApiError, canCreateDevice, canExecuteDevice, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
 import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -118,7 +118,7 @@ export default function DevicesPage() {
             <span className="font-semibold">
               {unit.serial_number} <WorkflowStatePill state={unit.state} />
             </span>
-            {canViewDevices(me) && unit.state !== "HELD" && (
+            {canExecuteDevice(me) && unit.state !== "HELD" && (
               <Button variant="danger" onClick={() => setHoldOpen(true)}>
                 <Icon name="lock" /> Hold unit
               </Button>

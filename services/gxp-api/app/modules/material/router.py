@@ -190,6 +190,9 @@ async def post_create_material(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # 2026-09-18, project-owner-directed: create_material() had no evaluate_policy() call at all —
+        # same "master-data technical author" role class as material_spec.author/product.author.
+        await evaluate_policy(session, actor.user_id, action="material.create", site_id=None)
         return await create_material(session, cmd, actor.user_id)
 
 
@@ -231,6 +234,7 @@ async def patch_material(
     if cmd.material_id != material_id:
         raise ValidationFailedError("material_id in path and body must match")
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="material.update", site_id=None)
         return await update_material(session, cmd, actor.user_id)
 
 

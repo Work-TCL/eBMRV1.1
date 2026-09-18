@@ -5,6 +5,7 @@ d5d48a66187f's docstring).
 """
 
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -22,6 +23,7 @@ from app.modules.product_master.models import (
     ALLOWED_TRANSITIONS,
     ConstituentCompatibilityVersion,
     ProductConstituent,
+    ProductFamily,
     ProductVersion,
 )
 from app.modules.rules import service as rules_service
@@ -74,6 +76,31 @@ async def _validate_sterile_profile(
         raise ValidationFailedError(
             "sterile_profile_id references a sterile process profile at a different site (PRD-FR-010)",
             sterile_profile_id=str(sterile_profile_id),
+        )
+
+
+# Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 3): no controlled taxonomy for
+# combination_product_type exists anywhere in this codebase (confirmed by repo-wide search) -- the DDCP
+# module distinguishes device types via manufacturing_profile_code / separate routers, not this field.
+# This is a provisional value set pending a real regulatory/business decision -- logged as a SPEC_GAP.
+# "other" is the escape hatch: free text is still accepted so nothing already stored breaks.
+COMBINATION_PRODUCT_TYPES = {
+    "prefilled_syringe", "autoinjector", "inhalation_device", "drug_eluting_device", "other",
+}
+
+
+async def _validate_product_family(session: AsyncSession, product_family_id: uuid.UUID | None) -> None:
+    """Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 2): product_family_id previously
+    accepted any UUID with no existence check -- an orphaned FK. `ProductFamily` already had a real
+    model/table with no gap in the schema; only this validation (and the create/list API in this file's
+    ProductFamily section below) was missing."""
+    if product_family_id is None:
+        return
+    family = await session.get(ProductFamily, product_family_id)
+    if family is None:
+        raise ValidationFailedError(
+            "product_family_id does not reference an existing product family",
+            product_family_id=str(product_family_id),
         )
 
 
@@ -154,6 +181,64 @@ class ConstituentInput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# ProductFamily — Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 2): the model/table
+# already existed (migration d5d48a66187f) with zero CRUD -- product_family_id was an orphaned FK,
+# rendered nowhere in the UI. Mirrors `equipment.create_equipment_area`'s exact shape: a simple
+# controlled code table, create + list only, no release/lifecycle workflow.
+# ---------------------------------------------------------------------------
+
+
+class CreateProductFamilyCommand(CommandEnvelope):
+    family_code: str
+    name: str
+    profile_code: str | None = None
+
+
+async def create_product_family(
+    session: AsyncSession, cmd: CreateProductFamilyCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.family_code.strip():
+        raise ValidationFailedError("family_code is required")
+    conflict = (
+        await session.execute(select(ProductFamily).where(ProductFamily.family_code == cmd.family_code))
+    ).scalar_one_or_none()
+    if conflict is not None:
+        raise ValidationFailedError(
+            "family_code is already in use", family_code=cmd.family_code, existing_id=str(conflict.id)
+        )
+
+    family = ProductFamily(family_code=cmd.family_code, name=cmd.name, profile_code=cmd.profile_code, status="active")
+    session.add(family)
+    await session.flush()
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=None, aggregate_type="product_family", aggregate_id=family.id,
+        aggregate_version=1, action="Created", actor_id=actor_user_id, correlation_id=correlation_id,
+        new_value={"family_code": family.family_code, "name": family.name},
+    )
+    await write_outbox_event(
+        session, event_type="ProductFamilyCreated", aggregate_type="product_family", aggregate_id=family.id,
+        aggregate_version=1, payload={"id": str(family.id), "family_code": family.family_code}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=None, command_type="CreateProductFamily", aggregate_type="product_family",
+        aggregate_id=family.id, expected_version=None, resulting_version=1,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=family.id, resulting_version=1,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
 # CreateDraft
 # ---------------------------------------------------------------------------
 
@@ -222,6 +307,13 @@ async def create_draft(session: AsyncSession, cmd: CreateProductDraftCommand, ac
         )
 
     await _validate_sterile_profile(session, cmd.sterile_profile_id, cmd.site_id)
+    await _validate_product_family(session, cmd.product_family_id)
+    if cmd.combination_product_type and cmd.combination_product_type not in COMBINATION_PRODUCT_TYPES:
+        raise ValidationFailedError(
+            "combination_product_type must be one of the provisional taxonomy values (or 'other')",
+            combination_product_type=cmd.combination_product_type,
+            allowed=sorted(COMBINATION_PRODUCT_TYPES),
+        )
 
     version = ProductVersion(
         product_business_id=cmd.product_business_id,
@@ -324,6 +416,13 @@ async def update_draft(session: AsyncSession, cmd: UpdateProductDraftCommand, ac
         raise ValidationFailedError("Only a draft can be edited", current_state=version.lifecycle_state)
 
     await _validate_sterile_profile(session, cmd.sterile_profile_id, version.site_id)
+    await _validate_product_family(session, cmd.product_family_id)
+    if cmd.combination_product_type and cmd.combination_product_type not in COMBINATION_PRODUCT_TYPES:
+        raise ValidationFailedError(
+            "combination_product_type must be one of the provisional taxonomy values (or 'other')",
+            combination_product_type=cmd.combination_product_type,
+            allowed=sorted(COMBINATION_PRODUCT_TYPES),
+        )
 
     version.name = cmd.name
     version.manufacturing_profile_code = cmd.manufacturing_profile_code
@@ -741,13 +840,19 @@ class ReinstateProductVersionCommand(CommandEnvelope):
 
 async def _transition_with_signature(
     session: AsyncSession,
-    cmd: SuspendProductVersionCommand | ReinstateProductVersionCommand,
+    cmd: "SuspendProductVersionCommand | ReinstateProductVersionCommand | ObsoleteProductVersionCommand | SupersedeProductVersionCommand",
     actor_user_id: uuid.UUID,
     *,
     new_state: str,
     action_name: str,
     event_type: str,
     signature_action: str,
+    extra_updates: "Callable[[AsyncSession, ProductVersion, object], Awaitable[dict]] | None" = None,
+    # Document 106 §8 gives two different independence targets depending on action family: "resume/
+    # unhold/release-hold" (reinstate) is independent of "the person who caused the condition" (whoever
+    # set the current pre-transition state); "cancel/abort/void" (obsolete/supersede -- see SG-208) is
+    # independent of "the author" (the version's own Created event actor, same target release() uses).
+    independence_reference: str = "cause",
 ) -> MutationReceipt:
     payload_hash = sha256_hex(cmd.model_dump(mode="json"))
     existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
@@ -756,6 +861,10 @@ async def _transition_with_signature(
 
     version = await _load_for_update(session, cmd.product_version_id, cmd.expected_version)
     _assert_transition(version, new_state)
+
+    field_updates: dict = {}
+    if extra_updates is not None:
+        field_updates = await extra_updates(session, version, cmd)
 
     policy = await signature_service.resolve_signature_requirement(
         session, record_type="product_version", action=signature_action
@@ -773,17 +882,29 @@ async def _transition_with_signature(
         # a no-op for it -- this block is safe for both actions sharing this helper.
         disqualified_subject_ids: tuple = ()
         if policy.requires_independent_signer:
-            cause_actor_id = await session.scalar(
-                select(AuditEvent.actor_id)
-                .where(
-                    AuditEvent.aggregate_type == "product_version",
-                    AuditEvent.aggregate_id == version.id,
-                    AuditEvent.action == "Changed",
-                    AuditEvent.new_value["lifecycle_state"].astext == version.lifecycle_state,
+            if independence_reference == "author":
+                cause_actor_id = await session.scalar(
+                    select(AuditEvent.actor_id)
+                    .where(
+                        AuditEvent.aggregate_type == "product_version",
+                        AuditEvent.aggregate_id == version.id,
+                        AuditEvent.action == "Created",
+                    )
+                    .order_by(AuditEvent.occurred_at)
+                    .limit(1)
                 )
-                .order_by(AuditEvent.occurred_at.desc())
-                .limit(1)
-            )
+            else:
+                cause_actor_id = await session.scalar(
+                    select(AuditEvent.actor_id)
+                    .where(
+                        AuditEvent.aggregate_type == "product_version",
+                        AuditEvent.aggregate_id == version.id,
+                        AuditEvent.action == "Changed",
+                        AuditEvent.new_value["lifecycle_state"].astext == version.lifecycle_state,
+                    )
+                    .order_by(AuditEvent.occurred_at.desc())
+                    .limit(1)
+                )
             disqualified_subject_ids = (cause_actor_id,) if cause_actor_id else ()
         await signature_service.enforce_signer_policy(
             session, policy=policy, actor_user_id=actor_user_id, site_id=version.site_id,
@@ -806,6 +927,10 @@ async def _transition_with_signature(
 
     old_state = version.lifecycle_state
     version.lifecycle_state = new_state
+    new_value: dict = {"lifecycle_state": new_state}
+    for field_name, field_value in field_updates.items():
+        setattr(version, field_name, field_value)
+        new_value[field_name] = str(field_value) if field_value is not None else None
     version.version += 1
 
     correlation_id = uuid.uuid4()
@@ -819,7 +944,7 @@ async def _transition_with_signature(
         actor_id=actor_user_id,
         correlation_id=correlation_id,
         old_value={"lifecycle_state": old_state},
-        new_value={"lifecycle_state": new_state},
+        new_value=new_value,
         reason=cmd.reason,
         signature_id=signature_id,
     )
@@ -880,4 +1005,83 @@ async def reinstate_product_version(
         action_name="Reinstate",
         event_type="ProductVersionReinstated",
         signature_action="reinstate",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Obsolete / Supersede -- known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 1):
+# `obsolete`/`superseded` were already legal ALLOWED_TRANSITIONS edges from `released` with no command
+# ever reaching them. Both share `_transition_with_signature` exactly like suspend/reinstate above.
+# Document 106 section 9 has no row for either; the closest section 8 action-family match is
+# "cancel/abort/void" (Approved, QA Releaser, independent of the author) -- see SG-208 in SPEC_GAPS.md.
+# `independence_reference="author"` below checks against the version's own `Created` audit event.
+# ---------------------------------------------------------------------------
+
+
+class ObsoleteProductVersionCommand(CommandEnvelope):
+    product_version_id: uuid.UUID
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+class SupersedeProductVersionCommand(CommandEnvelope):
+    product_version_id: uuid.UUID
+    expected_version: int
+    reason: str
+    superseding_version_id: uuid.UUID
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+async def obsolete_product_version(
+    session: AsyncSession, cmd: ObsoleteProductVersionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    return await _transition_with_signature(
+        session,
+        cmd,
+        actor_user_id,
+        new_state="obsolete",
+        action_name="Obsolete",
+        event_type="ProductVersionObsoleted",
+        signature_action="obsolete",
+        independence_reference="author",
+    )
+
+
+async def _resolve_supersession(
+    session: AsyncSession, version: ProductVersion, cmd: SupersedeProductVersionCommand
+) -> dict:
+    if cmd.superseding_version_id == version.id:
+        raise ValidationFailedError("A product version cannot supersede itself")
+    successor = await session.get(ProductVersion, cmd.superseding_version_id)
+    if successor is None:
+        raise NotFoundError("superseding_version_id does not reference an existing product version")
+    if successor.product_business_id != version.product_business_id:
+        raise ValidationFailedError(
+            "superseding_version_id must reference another version of the same product",
+            product_business_id=version.product_business_id,
+        )
+    if successor.lifecycle_state != "released":
+        raise ValidationFailedError(
+            "superseding_version_id must reference a released product version",
+            state=successor.lifecycle_state,
+        )
+    return {"superseded_by_version_id": successor.id}
+
+
+async def supersede_product_version(
+    session: AsyncSession, cmd: SupersedeProductVersionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    return await _transition_with_signature(
+        session,
+        cmd,
+        actor_user_id,
+        new_state="superseded",
+        action_name="Supersede",
+        event_type="ProductVersionSuperseded",
+        signature_action="supersede",
+        extra_updates=_resolve_supersession,
+        independence_reference="author",
     )

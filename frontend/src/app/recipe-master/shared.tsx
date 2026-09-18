@@ -121,10 +121,21 @@ export interface RecipeEvidenceRequirement {
   retention_class: string | null;
 }
 
+// Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 4): matches
+// recipe_master/router.py::get_equipment_classes / _equipment_class_dict.
+export interface EquipmentClassOption {
+  id: string;
+  class_code: string;
+  name: string;
+  description: string | null;
+  status: string;
+}
+
 export interface RecipeEquipmentRequirement {
   id: string;
   step_id: string;
   equipment_class: string;
+  equipment_class_id: string | null;
   exact_equipment_optional: boolean;
   require_current_calibration: boolean;
   require_current_qualification: boolean;
@@ -151,6 +162,7 @@ export interface RecipeVersion {
   version_no: number;
   product_version_id: string;
   lifecycle_state: string;
+  superseded_by_version_id: string | null;
   batch_size_value: string | null;
   batch_size_uom: string | null;
   released_vault_object_id: string | null;
@@ -230,6 +242,7 @@ export interface EvidenceRequirementDraft {
 export interface EquipmentRequirementDraft {
   key: string;
   equipment_class: string;
+  equipment_class_id: string;
   exact_equipment_optional: boolean;
   require_current_calibration: boolean;
   require_current_qualification: boolean;
@@ -305,6 +318,7 @@ export function emptyEquipmentRequirement(): EquipmentRequirementDraft {
   return {
     key: newKey(),
     equipment_class: "",
+    equipment_class_id: "",
     exact_equipment_optional: true,
     require_current_calibration: false,
     require_current_qualification: false,
@@ -416,6 +430,7 @@ export function sectionsFromVersion(version: RecipeVersion): SectionDraft[] {
             .map((e) => ({
               key: newKey(),
               equipment_class: e.equipment_class,
+              equipment_class_id: e.equipment_class_id ?? "",
               exact_equipment_optional: e.exact_equipment_optional,
               require_current_calibration: e.require_current_calibration,
               require_current_qualification: e.require_current_qualification,
@@ -494,6 +509,7 @@ export function buildGraphPayload(sections: SectionDraft[]) {
           .filter((e) => e.equipment_class.trim())
           .map((e) => ({
             equipment_class: e.equipment_class,
+            ...(e.equipment_class_id ? { equipment_class_id: e.equipment_class_id } : {}),
             exact_equipment_optional: e.exact_equipment_optional,
             require_current_calibration: e.require_current_calibration,
             require_current_qualification: e.require_current_qualification,
@@ -555,7 +571,14 @@ export function useRoleAndRuleOptions() {
   // code's release must stay typeable, not silently blocked.
   const { data: releasedUoms } = useApiResource<{ code: string }[]>("/rules/v1/uom");
   const uomOptions = useMemo(() => (releasedUoms ?? []).map((u) => u.code), [releasedUoms]);
-  return { roleOptions, ruleOptions, materialSpecOptions: materialSpecOptions ?? [], qualificationCodeOptions: qualificationCodeOptions ?? [], uomOptions };
+  // Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 4): matches
+  // recipe_master/router.py::get_equipment_classes / _equipment_class_dict.
+  const { data: equipmentClassOptions } = useApiResource<EquipmentClassOption[]>("/recipes/v2/equipment-classes");
+  return {
+    roleOptions, ruleOptions, materialSpecOptions: materialSpecOptions ?? [],
+    qualificationCodeOptions: qualificationCodeOptions ?? [], uomOptions,
+    equipmentClassOptions: equipmentClassOptions ?? [],
+  };
 }
 
 /** Two linked selects (Business ID -> version) for any field that references one Material Specification
@@ -658,6 +681,7 @@ export function RecipeGraphEditor({
   materialSpecOptions,
   qualificationCodeOptions,
   uomOptions,
+  equipmentClassOptions,
 }: {
   sections: SectionDraft[];
   onChange: (next: SectionDraft[]) => void;
@@ -666,6 +690,7 @@ export function RecipeGraphEditor({
   materialSpecOptions: MaterialSpecBusinessIdOption[];
   qualificationCodeOptions: string[];
   uomOptions: string[];
+  equipmentClassOptions: EquipmentClassOption[];
 }) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
@@ -892,6 +917,7 @@ export function RecipeGraphEditor({
                     materialSpecOptions={materialSpecOptions}
                     qualificationCodeOptions={qualificationCodeOptions}
                     uomOptions={uomOptions}
+                    equipmentClassOptions={equipmentClassOptions}
                     onChange={(patch) => updateStep(section.key, step.key, patch)}
                     onRemove={() => removeStep(section.key, step.key)}
                     onMove={(dir) => moveStep(section.key, step.key, dir)}
@@ -973,6 +999,7 @@ export function StepBlock({
   materialSpecOptions,
   qualificationCodeOptions,
   uomOptions,
+  equipmentClassOptions,
   onChange,
   onRemove,
   onMove,
@@ -1001,6 +1028,7 @@ export function StepBlock({
   materialSpecOptions: MaterialSpecBusinessIdOption[];
   qualificationCodeOptions: string[];
   uomOptions: string[];
+  equipmentClassOptions: EquipmentClassOption[];
   onChange: (patch: Partial<StepDraft>) => void;
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
@@ -1349,8 +1377,30 @@ export function StepBlock({
         {step.equipment_requirements.map((req) => (
           <div key={req.key} className="sig-block mb-2" style={{ background: "var(--surface-sunken, #f6f6f6)" }}>
             <div className="flex flex-wrap items-center gap-3 mb-2">
+              {/* Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 4): equipment_class_id is
+               * the controlled reference batch-step-start enforcement matches against; equipment_class
+               * stays a free-text label (kept for legacy rows / anything not yet in the class list). */}
+              <Select
+                value={req.equipment_class_id}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const klass = equipmentClassOptions.find((k) => k.id === id);
+                  onUpdateEquipmentRequirement(req.key, {
+                    equipment_class_id: id,
+                    ...(klass && !req.equipment_class ? { equipment_class: klass.class_code } : {}),
+                  });
+                }}
+                style={{ minWidth: 200 }}
+              >
+                <option value="">No controlled class…</option>
+                {equipmentClassOptions.map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.class_code} - {k.name}
+                  </option>
+                ))}
+              </Select>
               <Input
-                placeholder="Equipment class (e.g. FILLING_LINE)"
+                placeholder="Equipment class label (e.g. FILLING_LINE)"
                 value={req.equipment_class}
                 onChange={(e) => onUpdateEquipmentRequirement(req.key, { equipment_class: e.target.value })}
                 style={{ minWidth: 220 }}

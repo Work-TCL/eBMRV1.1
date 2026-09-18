@@ -140,9 +140,9 @@ async def post_version_signature_challenge(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    """SG-185: no Document 106 policy row exists yet for material_specification_version/release --
-    the challenge endpoint is real, but resolve_signature_requirement() inside release_material_spec_version
-    fails closed until a policy row is seeded."""
+    """SG-185 RESOLVED (2026-09-18): material_specification_version/release now has a real Document 106
+    signature policy row (scripts/seed.py SIGNATURE_POLICY_FLOOR) — "Released" by an independent QA
+    Releaser, same shape as product_version/release."""
     async with session.begin():
         version = await session.get(MaterialSpecificationVersion, material_spec_version_id)
         if version is None:

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, holdsAnyRole, newIdempotencyKey, pagedFetcher, type Me, type MutationReceipt } from "@/lib/api";
+import { api, hasPermission, newIdempotencyKey, pagedFetcher, type Me, type MutationReceipt } from "@/lib/api";
 import { useApiResource, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { useCommand } from "@/components/shared/RecordDetailShell";
 import { Fact, IdFact, OpsRecordPage, type OpsRecordConfig } from "@/components/shared/OpsRecordPage";
@@ -43,8 +43,15 @@ interface AsepticOperation {
   version: number;
 }
 
-const canOperate = (me: Me | null) =>
-  holdsAnyRole(me, ["Admin", "Aseptic Operator", "Aseptic Supervisor", "Operator", "Supervisor"]);
+// aseptic_operation.create / .intervention / .event / .complete (Document 40) — Admin + Aseptic Operator
+// only per scripts/seed.py. aseptic_operation.start is a SEPARATE, deliberate SoD split: Admin + Aseptic
+// Supervisor only (the operator who performs the run must not also be the one who authorizes its start).
+// Audit finding 2026-09-18: this single canOperate previously covered all five transitions with one
+// over-broad role list (including Operator/Supervisor, who hold none of these grants, and Aseptic
+// Operator on "start", which the backend deliberately denies them), breaking the documented split at the
+// UI level even though the backend still enforces it correctly.
+const canOperate = (me: Me | null) => hasPermission(me, "aseptic_operation.create");
+const canStart = (me: Me | null) => hasPermission(me, "aseptic_operation.start");
 
 // Document 40's own 7-op API list has no create/release operation for the sterile process *profile*
 // itself (only the *operation* that executes against one) — POST /aseptic/v1/profiles was added
@@ -52,7 +59,7 @@ const canOperate = (me: Me | null) =>
 // (frontend/src/app/product-master/page.tsx) has more than the one seeded ASP-PROC-001 row to choose
 // from. Admin + Aseptic Supervisor only (scripts/seed.py aseptic_profile_version.create) — same
 // "who defines the profile vs who executes against it" split as the rest of this page.
-const canCreateProfile = (me: Me | null) => holdsAnyRole(me, ["Admin", "Aseptic Supervisor"]);
+const canCreateProfile = (me: Me | null) => hasPermission(me, "aseptic_profile_version.create");
 
 const AREA_CLASSIFICATIONS = ["ISO_5", "ISO_6", "ISO_7", "ISO_8", "Unclassified"];
 
@@ -365,7 +372,7 @@ function buildConfig(
       signed: true,
       challengeAction: "start",
       variant: "primary",
-      can: canOperate,
+      can: canStart,
       summary: "Starts the aseptic operation. Area, personnel and sterile-input checks must already pass.",
       buildBody: (r) => ({ operation_id: r.id, expected_version: r.version }),
     },

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, canInvestigateQms, formatDate, newIdempotencyKey, type InternalAudit } from "@/lib/api";
+import { api, ApiError, hasPermission, formatDate, newIdempotencyKey, type InternalAudit } from "@/lib/api";
 import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
@@ -61,7 +61,7 @@ export default function AuditsPage() {
         reloadToken={reloadToken}
         defaultSort={{ by: "scheduled_at", dir: "desc" }}
         action={
-          canInvestigateQms(me) ? (
+          hasPermission(me, "internal_audit.create") ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" /> Schedule audit
             </Button>

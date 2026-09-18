@@ -102,6 +102,13 @@ PERMISSION_CATALOG = [
     ("batch.review", "review", "batch", "QA review of a completed batch"),
     ("batch.release", "release", "batch", "QA release of a reviewed batch"),
     ("material_lot.disposition", "approve", "material_lot", "QC disposition of a material lot"),
+    # 2026-09-18, project-owner-directed (asked directly, three options presented: master-data-author
+    # class like material_spec.author, setup-data class like warehouse_location.create, or leave open —
+    # chose the first): create_material()/update_material() had no evaluate_policy() call at all —
+    # anyone authenticated could create or rename a Material master row. Same "master-data technical
+    # author" role class as material_spec.author/product.author/recipe.author.
+    ("material.create", "create", "material", "Create a Material master record"),
+    ("material.update", "update", "material", "Update a Material master record's name/status"),
     ("platform.administer", "administer", "platform", "Create/edit/delete master data and IAM records"),
     ("audit.review", "review", "audit_event", "Search and read the audit ledger (Document 05)"),
     ("audit.export", "export", "audit_event", "Create a structured audit export (Document 05)"),
@@ -119,6 +126,9 @@ PERMISSION_CATALOG = [
     ("material_spec.view", "view", "material_specification_version", "Read material specification versions (SG-057)"),
     ("recipe.author", "author", "recipe_version", "Draft, edit, validate and simulate a master recipe version (Document 10)"),
     ("recipe.release", "release", "recipe_version", "Release a submitted master recipe version (Document 10)"),
+    # Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 1): mirrors product.suspend exactly
+    # -- Recipe Master had no suspend/reinstate/obsolete/supersede at all before this.
+    ("recipe.suspend", "suspend", "recipe_version", "Suspend, reinstate, obsolete or supersede a released recipe version (Document 10)"),
     ("recipe.view", "view", "recipe_version", "Read recipe versions, graph, compare and issue-eligibility (Document 10)"),
     ("batch_execution.create", "create", "batch", "Create a batch against a released product+recipe version (Document 11)"),
     ("batch_execution.issue", "issue", "batch", "Issue a batch: create its execution snapshot and step instances (Document 11)"),
@@ -144,8 +154,28 @@ PERMISSION_CATALOG = [
     ("qc_method.view", "view", "qc_method_version", "Read QC method versions (SG-066)"),
     ("qc_test_order.review", "review", "qc_test_order", "Second-person review of a completed QC test order (Document 23)"),
     ("qc_result.correct", "correct", "qc_result", "Request or approve a 2-signature QC result correction (Document 23)"),
+    # Catalogue completion pass, 2026-09-18: these 5 codes were already granted to Operator/Supervisor
+    # in ROLE_PERMISSIONS (the "QC execution/performer" class -- same intent as qc_test_order.review/
+    # qc_result.correct above) but had no PERMISSION_CATALOG row, so scripts/sync_permissions.py could
+    # never resolve them. Adding the missing catalogue rows only; router-level enforcement (whether each
+    # endpoint actually calls evaluate_policy() for these) is unchanged by this pass.
+    ("qc_sample.create", "create", "qc_sample", "Create a QC sample record (Document 23)"),
+    ("qc_sample.receive", "receive", "qc_sample", "Receive a QC sample into the lab (Document 23)"),
+    ("qc_test_order.create", "create", "qc_test_order", "Create a QC test order (Document 23)"),
+    ("qc_test_order.start", "start", "qc_test_order", "Start execution of a QC test order (Document 23)"),
+    ("qc_test_order.record_raw_data", "record_raw_data", "qc_test_order", "Record raw data for a QC test order (Document 23)"),
+    ("qc_result.record", "record", "qc_result", "Record a QC result (Document 23)"),
+    ("qc_test_order.complete", "complete", "qc_test_order", "Complete a QC test order (Document 23)"),
     ("lims_sample.cancel", "cancel", "lims_mapping", "Cancel a LIMS-requested sample (Document 24)"),
     ("oos_record.extended_investigation", "extended_investigation", "oos_record", "Start extended investigation on an OOS with no assignable lab cause (Document 25)"),
+    # Catalogue completion pass, 2026-09-18: same class of missing-row gap as the qc_sample/qc_test_order
+    # codes above -- already granted to QA Reviewer/QC Reviewer in ROLE_PERMISSIONS (the "QC
+    # investigation" class, alongside oos_record.extended_investigation) but no PERMISSION_CATALOG row.
+    ("oos_record.lab_investigation", "lab_investigation", "oos_record", "Record the laboratory-phase investigation of an OOS (Document 25)"),
+    ("oos_record.classify_lab_cause", "classify_lab_cause", "oos_record", "Classify an OOS's lab cause as assignable or not (Document 25)"),
+    ("oos_record.retest_plan", "retest_plan", "oos_record", "Record an OOS retest plan (Document 25)"),
+    ("oos_record.resample_plan", "resample_plan", "oos_record", "Record an OOS resample plan (Document 25)"),
+    ("oos_record.impact", "impact", "oos_record", "Record an OOS impact assessment (Document 25)"),
     ("oos_record.disposition", "disposition", "oos_record", "Approve final disposition of an OOS (Document 25)"),
     ("oos_record.close", "close", "oos_record", "Close an OOS record (Document 25)"),
     ("oot_record.close", "close", "oot_record", "Close an OOT record (Document 25)"),
@@ -384,6 +414,11 @@ PERMISSION_CATALOG = [
     # command-only; the list/detail endpoints added alongside these are what the UI reads.
     ("packaging.view", "view", "packaging_run", "Read packaging runs, label issues and reconciliations (Document 16)"),
     ("supplier.view", "view", "supplier", "Read suppliers, sites and qualifications (Document 18)"),
+    # 2026-09-18, project-owner-directed (same decision as material.create/material.update above,
+    # applied consistently to Document 18's equivalent gap): create_supplier()/
+    # create_supplier_qualification() had no evaluate_policy() call at all.
+    ("supplier.create", "create", "supplier", "Create a Supplier master record (Document 18)"),
+    ("supplier_qualification.create", "create", "supplier_qualification", "Request a supplier qualification (Document 18)"),
     # WP-08 (Document 54, SPEC-DDCP-001) — 14 grants covering the module's full command surface
     # (module docstring in app/modules/ddcp/router.py: this document's own §4 catalogue, unlike Document
     # 52, is a genuinely public API surface).
@@ -664,7 +699,7 @@ ROLE_PERMISSIONS = {
         "rules.author", "rules.release", "rules.evaluate",
         "product.author", "product.release", "product.suspend", "product.view",
         "material_spec.author", "material_spec.release", "material_spec.view",
-        "recipe.author", "recipe.release", "recipe.view",
+        "recipe.author", "recipe.release", "recipe.suspend", "recipe.view",
         "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view",
         "batch_step.role_override", "batch_step.correct",
         "device.create", "device.execute", "device.view", "genealogy.view",
@@ -765,22 +800,48 @@ ROLE_PERMISSIONS = {
         "validation.migration.trace_view", "validation.vsr.manage", "validation.vsr.approve",
         "validation.release_auth.view", "validation.release_auth.authorize", "validation.release_auth.deployment_check",
         "validation.post_go_live.record",
+        # 2026-09-18, project-owner-directed (Honest Gaps follow-up pass): 16 codes closing the
+        # Supplier/Material/QC "no evaluate_policy() call at all" gap.
+        "material.create", "material.update", "supplier.create", "supplier_qualification.create",
+        "qc_sample.create", "qc_sample.receive", "qc_test_order.create", "qc_test_order.start",
+        "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
+        "oos_record.lab_investigation", "oos_record.classify_lab_cause", "oos_record.retest_plan",
+        "oos_record.resample_plan", "oos_record.impact",
         *QMS_WRITE_CODES, *QMS_VIEW_CODES,
     ],
     # `validation.pq.manage` deliberately NOT here (found + fixed 2026-09-10, SG-172 gap-fixing pass): Document 85's own function catalogue names `createPQScenario()` as "Validation/Process SME" and `assignPQParticipants()` as "Validation Admin", never Operator/"Representative users" -- only `executePQScenario()` is "Representative users", matching `validation.pq.execute` below. The rest of this role's `validation.*` block (test_execution.complete, iq.complete, etc. -- genuine "qualified performer" actions) is unrelated and unaudited by this pass.
-    "Operator": ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.execute", "batch_execution.view", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "equipment_asset.hold", "cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "ncr.create", "complaint.create", "training.assignment.complete", "validation.plan.manage", "validation.gate.view", "validation.package.view", "validation.intended_use.manage", "validation.function_risk.manage", "validation.function_risk.view", "validation.requirement.manage", "validation.trace_link.manage", "validation.baseline.manage", "validation.traceability.view", "validation.test_definition.manage", "validation.test_execution.manage", "validation.test_execution.complete", "validation.iq.manage", "validation.iq.complete", "validation.oq.manage", "validation.oq.view", "validation.infrastructure.manage", "validation.part11.manage", "validation.data_integrity.manage", "validation.interface.manage", "validation.dr.manage", "validation.security.manage", "validation.security.view", "validation.performance.manage", "validation.performance.view", "validation.exception.view", "validation.change_impact.manage", "validation.periodic_review.manage", "validation.periodic_review.decide", "validation.state_baseline.decommission", "validation.pq.execute", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"],
-    "Supervisor": ["batch_step.start", "batch_step.role_override", "batch_step.correct", "rules.evaluate", "product.view", "recipe.view", "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view", "device.create", "device.execute", "device.view", "genealogy.view", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "warehouse_location.create", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
-    "QA Reviewer": ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation", "equipment_asset.hold", "equipment_asset.return_to_service", "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify", "em_sample.review", "em_excursion.impact", "process_cycle.create", "process_cycle.start", "process_cycle.review", "process_cycle_profile_version.create", "reconciliation.verify", "machine_evidence.review_view", "evidence.upload", "evidence.download", "evidence.manifest", "evidence.legal_hold", "evidence.integrity_check", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "qms_deviation.investigate", "qms_deviation.impact", "qms_deviation.extend", "capa.create", "capa.plan", "capa.action.add", "capa.action.complete", "capa.extend", "ncr.create", "ncr.segregate", "ncr.evaluate", "ncr.verify", "change.create", "change.impact", "change.task.add", "change.implement", "change.verify", "document.create", "document.submit", "complaint.create", "complaint.triage", "complaint.investigation_decision", "complaint.investigate", "risk.create", "risk.assessment.add", "risk.controls.add", "risk.review", "scar.case.create", "scar.issue", "scar.response", "scar.review", "internal_audit.create", "internal_audit.start", "internal_audit.finding.add", "internal_audit.finding.response", "field_action.create", "field_action.scope", "field_action.communications", "field_action.reconcile", "quality_metric.calculate",
+    "Operator": ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.execute", "batch_execution.view", "device.execute", "device.view", "genealogy.view", "evidence.upload", "evidence.download", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
+        # 2026-09-18, project-owner-directed: QC execution ("performer") class — matches Operator's
+        # existing dispensing/cleaning/batch-execution "performs" pattern; QC Reviewer stays the
+        # separate reviewer role (qc_test_order.review/qc_result.correct).
+        "qc_sample.create", "qc_sample.receive", "qc_test_order.create", "qc_test_order.start",
+        "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
+        "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "equipment_asset.hold", "cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "ncr.create", "complaint.create", "training.assignment.complete", "validation.plan.manage", "validation.gate.view", "validation.package.view", "validation.intended_use.manage", "validation.function_risk.manage", "validation.function_risk.view", "validation.requirement.manage", "validation.trace_link.manage", "validation.baseline.manage", "validation.traceability.view", "validation.test_definition.manage", "validation.test_execution.manage", "validation.test_execution.complete", "validation.iq.manage", "validation.iq.complete", "validation.oq.manage", "validation.oq.view", "validation.infrastructure.manage", "validation.part11.manage", "validation.data_integrity.manage", "validation.interface.manage", "validation.dr.manage", "validation.security.manage", "validation.security.view", "validation.performance.manage", "validation.performance.view", "validation.exception.view", "validation.change_impact.manage", "validation.periodic_review.manage", "validation.periodic_review.decide", "validation.state_baseline.decommission", "validation.pq.execute", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"],
+    "Supervisor": ["batch_step.start", "batch_step.role_override", "batch_step.correct", "rules.evaluate", "product.view", "recipe.view", "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view", "device.create", "device.execute", "device.view", "genealogy.view", "evidence.upload", "evidence.download", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
+        # 2026-09-18, project-owner-directed: same QC execution class as Operator above.
+        "qc_sample.create", "qc_sample.receive", "qc_test_order.create", "qc_test_order.start",
+        "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
+        "warehouse_location.create", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
+    "QA Reviewer": ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation",
+        # 2026-09-18, project-owner-directed: QC investigation class — mirrors qms_deviation.investigate
+        # (also QA Reviewer) plus QC Reviewer since this is QC-domain investigation work.
+        "oos_record.lab_investigation", "oos_record.classify_lab_cause", "oos_record.retest_plan",
+        "oos_record.resample_plan", "oos_record.impact",
+        "equipment_asset.hold", "equipment_asset.return_to_service", "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify", "em_sample.review", "em_excursion.impact", "process_cycle.create", "process_cycle.start", "process_cycle.review", "process_cycle_profile_version.create", "reconciliation.verify", "machine_evidence.review_view", "evidence.upload", "evidence.download", "evidence.manifest", "evidence.legal_hold", "evidence.integrity_check", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "qms_deviation.investigate", "qms_deviation.impact", "qms_deviation.extend", "capa.create", "capa.plan", "capa.action.add", "capa.action.complete", "capa.extend", "ncr.create", "ncr.segregate", "ncr.evaluate", "ncr.verify", "change.create", "change.impact", "change.task.add", "change.implement", "change.verify", "document.create", "document.submit", "complaint.create", "complaint.triage", "complaint.investigation_decision", "complaint.investigate", "risk.create", "risk.assessment.add", "risk.controls.add", "risk.review", "scar.case.create", "scar.issue", "scar.response", "scar.review", "internal_audit.create", "internal_audit.start", "internal_audit.finding.add", "internal_audit.finding.response", "field_action.create", "field_action.scope", "field_action.communications", "field_action.reconcile", "quality_metric.calculate",
         # SG-138 (2026-09-10, project-owner-directed): Document 106 section 9 row 107's "QA Reviewer"
         # signer class for `quality_metric_snapshot/management_review` -> this role holds it.
         "quality_metric.management_review",
         "effectiveness_check.create", "ai_governance.use_case.register", "ai_governance.use_case.assess_risk", "ai_governance.context.build", "ai_governance.advisory.execute", "ai_governance.disposition.record", "ai_governance.evaluation.run", "ai_governance.release_gate.evaluate", "ai_governance.injection.detect", "validation.gate.view", "validation.package.view", "validation.function_risk.approve", "validation.function_risk.view", "validation.traceability.view", "validation.oq.view", "validation.security.view", "validation.performance.view", "validation.exception.view", "validation.periodic_review.decide", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"],
-    "QA Releaser": ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "rules.release", "product.view", "product.release", "material_spec.view", "material_spec.release", "recipe.view", "recipe.release", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.effectiveness", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
+    "QA Releaser": ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "rules.release", "product.view", "product.release", "product.suspend", "material_spec.view", "material_spec.release", "recipe.view", "recipe.release", "recipe.suspend", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.effectiveness", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
     # SG-157 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): closest existing real role to Document
     # 106's "QA Manager/Head of Quality per record class" text for regulatory_report.approve -- QA Releaser
     # is this codebase's actual highest quality-release-authority role (batch/recipe/product release).
     "regulatory_report.approve", "quality_metric.definition.create", "quality_metric.definition.release", "quality_metric.management_review", "effectiveness_check.evaluate", "privileged_access.approve", "privileged_session.close", "privileged_session.review", "security_incident.close", "validation.exception.create", "validation.exception.triage", "validation.exception.retest_plan", "validation.exception.disposition", "validation.plan.release", "validation.function_risk.approve", "validation.test_definition.approve", "validation.iq.approve", "validation.oq.approve", "validation.infrastructure.approve", "validation.part11.approve", "validation.data_integrity.approve", "validation.interface.approve", "validation.dr.approve", "validation.security.approve", "validation.pq.approve", "validation.migration.approve", "validation.vsr.approve", "validation.release_auth.authorize", "validation.release_auth.deployment_check", "validation.post_go_live.record"],
-    "QC Reviewer": ["material_lot.disposition", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.view", "qc_method.author", "qc_method.view", "qc_result.correct", "material_lot.collect_sample", "material_lot.retest", "dispensing_order.verify", "cleaning_execution.verify", "em_sample.review", "process_cycle.review", *QMS_VIEW_CODES, "qms_deviation.create", "ncr.create", "ncr.evaluate", "ncr.verify", "capa.action.complete"],
+    "QC Reviewer": ["material_lot.disposition", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.view", "qc_method.author", "qc_method.view", "qc_result.correct", "material_lot.collect_sample", "material_lot.retest", "dispensing_order.verify", "cleaning_execution.verify", "em_sample.review", "process_cycle.review",
+        # 2026-09-18, project-owner-directed: QC investigation class — same as QA Reviewer above.
+        "oos_record.lab_investigation", "oos_record.classify_lab_cause", "oos_record.retest_plan",
+        "oos_record.resample_plan", "oos_record.impact",
+        *QMS_VIEW_CODES, "qms_deviation.create", "ncr.create", "ncr.evaluate", "ncr.verify", "capa.action.complete"],
     # Document 38 (SPEC-EQP-001) actor-specific roles — grants scoped to exactly the operation each actor
     # performs (§2), no broader platform access.
     "Equipment Administrator": ["equipment_asset.create", "equipment_asset.qualify", "machine_command.submit", "equipment_area.create"],
@@ -802,7 +863,15 @@ ROLE_PERMISSIONS = {
     # Document 10 (SPEC-EBMR-002) -- master-recipe author. Draft/edit/validate/simulate/submit only;
     # recipe.release is deliberately NOT here (it sits with QA Releaser / Admin) so authoring and release
     # are held by different roles. Closes the DDCP_Client_Demo_Guide §9.1 "author == releaser" gap.
-    "Process Engineer": ["product.author", "product.view", "material_spec.author", "material_spec.view", "recipe.author", "recipe.view", "rules.evaluate", "training.qualification_code.list"],
+    "Process Engineer": ["product.author", "product.view", "material_spec.author", "material_spec.view", "recipe.author", "recipe.view", "rules.evaluate", "training.qualification_code.list",
+        # 2026-09-18, project-owner-directed: Supplier/Material master creation — same "master-data
+        # technical author" class as product.author/material_spec.author above.
+        "material.create", "material.update", "supplier.create", "supplier_qualification.create",
+        # Known-limitations fix (docs/testing/demo-gujarati/10 §10.4 note / 11 §11.6 item 4),
+        # project-owner-directed 2026-09-18: a Process Engineer previously had no way to see a deviation
+        # or CAPA implicating their own recipe/process, not even read-only. Read-only view only —
+        # qms_deviation.disposition/close and capa.close/effectiveness stay with QA Releaser.
+        "qms_deviation.view", "capa.view"],
     # WP-07 (Documents 48/52/53) actor-specific role -- ERP-ARC-027 "authorized integration admin" gets
     # the whole shared integration-gateway surface; no independent-signer split exists (SG-122: every
     # action here is RBAC-gated only, not signed).
@@ -1260,6 +1329,28 @@ SIGNATURE_POLICY_FLOOR = [
     # against the `Created` event; reason yes, already satisfied by the required
     # `ReinstateProductVersionCommand.reason` field).
     ("product_version", "reinstate", "Approved", "QA Releaser", True, True, True),
+    # product_version/obsolete + product_version/supersede -- Known-limitations fix (docs/testing/
+    # demo-gujarati/06 §6.8 item 1), 2026-09-18, SG-208 (see SPEC_GAPS.md; corrected 2026-09-18 after
+    # finding ebmr-edhr/specs/Documents_106_115/Document_106 DOES exist in this package -- an earlier
+    # version of this comment wrongly said it didn't). Document 106 section 9 has no row for either
+    # action; section 8's platform-floor action-family table has no "obsolete"/"supersede" family either,
+    # but its closest semantic match is "cancel / abort / void" (`Approved`, "Authorized canceller for
+    # the record class" -> QA Releaser, "MUST be independent of the author", reason yes) -- not the
+    # "hold/suspend" family this row previously (wrongly) mirrored. `requires_independent_signer=True`
+    # is enforced in `_transition_with_signature(..., independence_reference="author")` against the
+    # version's own `Created` audit event, the same target `release_product_version()` uses.
+    ("product_version", "obsolete", "Approved", "QA Releaser", True, True, True),
+    ("product_version", "supersede", "Approved", "QA Releaser", True, True, True),
+    # recipe_version/suspend + reinstate + obsolete + supersede -- Known-limitations fix (docs/testing/
+    # demo-gujarati/07 §7.9 item 1), 2026-09-18, SG-208. Recipe Master had no lifecycle governance at all
+    # before this. `suspend`/`reinstate` mirror product_version's rows above exactly (`suspend` = Document
+    # 106 §8 "hold/quarantine/block/suspend" family via product_version/suspend's own precedent;
+    # `reinstate` = §8 "resume/unhold/release-hold"). `obsolete`/`supersede` mirror product_version's
+    # corrected "cancel/abort/void"-family rows above (independent of the author).
+    ("recipe_version", "suspend", "Performed", None, False, True, True),
+    ("recipe_version", "reinstate", "Approved", "QA Releaser", True, True, True),
+    ("recipe_version", "obsolete", "Approved", "QA Releaser", True, True, True),
+    ("recipe_version", "supersede", "Approved", "QA Releaser", True, True, True),
     # SG-035 vault_object/release + rule/release -- 2026-09-10, project-owner-directed ("follow the
     # ebmr-edhr docs"): Document 106 section 9 rows 2 and 6 both state `Released` by a "QA Approver /
     # Batch Release" -> "QA Releaser", "MUST be independent of every production performer on the record",
@@ -1280,6 +1371,26 @@ SIGNATURE_POLICY_FLOOR = [
     # IND-011 / CON-FR-014 independence pattern used elsewhere -- resolve_signature_requirement() itself
     # still does not read these two columns.
     ("recipe_version", "release", "Released", "QA Releaser", True, True, False),
+    # material_specification_version/release -- SG-185 RESOLVED 2026-09-18, project-owner-directed
+    # (asked directly: same as product/recipe release vs. leave fail-closed -- chose the first, option A
+    # from the SG-185 entry itself). Same shape as product_version/release: `Released` by an independent
+    # QA Releaser (material_spec.release is QA Releaser + Admin only -- ROLE_PERMISSIONS above; authoring
+    # is Process Engineer + Admin via material_spec.author, the same author/release role split product/
+    # recipe master already use). `requires_independent_signer=True` is enforced in
+    # release_material_spec_version() against the version's own `Created` audit event (the author), the
+    # same bespoke pattern release_product_version()/release_recipe_version() use --
+    # resolve_signature_requirement() itself still does not read these two columns.
+    ("material_specification_version", "release", "Released", "QA Releaser", True, True, False),
+    # qc_method_version/release -- SG-186 RESOLVED 2026-09-18, project-owner-directed (asked directly:
+    # QA-Releaser-independent-of-every-performer vs. leave fail-closed -- chose the first, mirroring the
+    # nearest in-module precedent named in the SG-186 entry, qc_test_specification/release, row 58: "QA
+    # Approver/Batch Release role, independent of every production performer"). Same shape as that
+    # precedent: `Released` by QA Releaser (qc_method.release is QA Releaser + Admin only), independence
+    # recorded as data (independent=True) matching Document 106's own row 58 verbatim -- exactly as
+    # release_test_specification() itself does not enforce a bespoke independence check for this
+    # precedent (no single stored "performer" identity to check a QC method release against), RBAC + the
+    # signature ceremony are the whole enforcement surface here too, consistent with the chosen analogue.
+    ("qc_method_version", "release", "Released", "QA Releaser", True, True, False),
     # deviation_record/disposition+close -- Document 106 rows 71/73 (SPEC-QMS-001), resolved 2026-09-09
     # project-owner-directed ("as per the ebmr-edhr docs"): disposition is `Released` by "QA Approver /
     # Batch Release" independent of every production performer on the record; close is `Approved` by "QA
@@ -1337,6 +1448,15 @@ SIGNATURE_POLICY_FLOOR = [
     # required_role_id/requires_independent_signer -- same bespoke pattern as close_deviation().
     # Stage 2 (rows 80-88): CAPA close, NCR disposition/verify/close, Change approve/verify/close.
     ("capa_record", "close", "Approved", "QA Releaser", True, True, True),  # Doc 106 section 9 row 80
+    # capa_record/effectiveness -- Known-limitations fix (docs/testing/demo-gujarati/10 §10.6 item 2),
+    # 2026-09-18, project-owner-directed (asked directly among "record-result only" / "both define and
+    # record" / "leave unsigned as Document 106 has it" -- chose the first). Document 106's own row 80 is
+    # the only CAPA-effectiveness-adjacent signature point it defines (close); "define effectiveness
+    # check" is plan-time criteria entry, not a quality conclusion, and stays unsigned. "Record
+    # effectiveness result" (the pass/fail/inconclusive conclusion) gets the identical meaning/role/
+    # independence shape as close, since it is the same class of decision -- enforced in
+    # capa_commands.py::record_effectiveness() only on the `cmd.result is not None` branch.
+    ("capa_record", "effectiveness", "Approved", "QA Releaser", True, True, True),
     # NCR -- verify is "Qualified independent verifier" ("MUST NOT be the performer") -> required_role
     # None, independence enforced in code against `owner_subject_id` (NonconformanceRecord's only stored
     # identity; no separate disposition-performer column -- same honest limitation as qa_review_package/complete).
@@ -1559,6 +1679,11 @@ CLEANING_PROCEDURE_FLOOR = [
 DEMO_USERS = [
     ("admin", "admin@example.com", "Admin User", "Admin"),
     ("operator1", "operator1@example.com", "Olivia Operator", "Operator"),
+    # Known-limitations fix (docs/testing/demo-gujarati/08): "Supervisor role માટે demo user નથી" --
+    # the Supervisor role/permissions already existed (ROLE_PERMISSIONS["Supervisor"]) but no demo user
+    # held it, forcing every batch create/issue walkthrough to use admin instead of the role it was
+    # actually built for. Same class of gap as the DDCP/security comments below.
+    ("supervisor1", "supervisor1@example.com", "Sunita Supervisor", "Supervisor"),
     ("qa.reviewer", "qa.reviewer@example.com", "Rita Reviewer", "QA Reviewer"),
     ("qa.releaser", "qa.releaser@example.com", "Ray Releaser", "QA Releaser"),
     ("qc.reviewer", "qc.reviewer@example.com", "Quinn QC", "QC Reviewer"),
@@ -1581,6 +1706,15 @@ DEMO_USERS = [
     ("ddcp.engineer", "ddcp.engineer@example.com", "Dev DdcpEngineer", "DDCP Engineer"),
     ("ddcp.operator", "ddcp.operator@example.com", "Opal DdcpOperator", "DDCP Operator"),
     ("ddcp.operator2", "ddcp.operator2@example.com", "Odell DdcpOperatorTwo", "DDCP Operator"),
+    # WP-10 (Documents 61-68) -- same class of gap as the DDCP comment above: these 5 roles existed as
+    # roles/permissions only, with the /security console's frontend gate hard-coded to Admin-only on top
+    # (fixed 2026-09-18, canOperateSecurity in lib/api.ts) -- no demo user meant nobody could actually
+    # walk the security console as the role it was built for.
+    ("security.architect", "security.architect@example.com", "Sasha SecArchitect", "Security Architect"),
+    ("security.risk.approver", "security.risk.approver@example.com", "Riya SecRiskApprover", "Security Risk Approver"),
+    ("security.admin", "security.admin@example.com", "Sam SecAdmin", "Security Admin"),
+    ("platform.admin", "platform.admin@example.com", "Percy PlatformAdmin", "Platform Admin"),
+    ("vendor.support", "vendor.support@example.com", "Vic VendorSupport", "Vendor Support Engineer"),
 ]
 
 # WP-07 (Document 48) -- demo ERPNext instance every adapter test/E2E walkthrough registers against.

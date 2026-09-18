@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, canApproveQms, canInvestigateQms, formatDate, newIdempotencyKey, type FieldAction } from "@/lib/api";
+import { api, ApiError, hasPermission, formatDate, newIdempotencyKey, type FieldAction } from "@/lib/api";
 import { useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
@@ -92,7 +92,7 @@ export default function FieldActionsPage() {
         rowHref={(f) => `/field-actions/${f.id}`}
         reloadToken={reloadToken}
         action={
-          canInvestigateQms(me) || canApproveQms(me) ? (
+          hasPermission(me, "field_action.create") ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" /> Raise field action
             </Button>

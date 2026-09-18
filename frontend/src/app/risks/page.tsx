@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, canInvestigateQms, formatDate, isOverdue, newIdempotencyKey, type RiskRecord } from "@/lib/api";
+import { api, ApiError, hasPermission, formatDate, isOverdue, newIdempotencyKey, type RiskRecord } from "@/lib/api";
 import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { RiskMethodologyPickerField } from "@/components/shared/RiskMethodologyPicker";
@@ -101,7 +101,7 @@ export default function RisksPage() {
         rowHref={(r) => `/risks/${r.id}`}
         reloadToken={reloadToken}
         action={
-          canInvestigateQms(me) ? (
+          hasPermission(me, "risk.create") ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" /> Raise risk
             </Button>

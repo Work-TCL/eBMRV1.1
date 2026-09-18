@@ -55,6 +55,7 @@ literal batch/lot/receipt/deviation **numbers** હવે consumed છે, ન�
 19. [જાણીતી મર્યાદાઓ (પ્રામાણિકતા)](#19-જાણીતી-મર્યાદાઓ-પ્રામાણિકતા)
 20. [સંદર્ભ](#20-સંદર્ભ)
 21. [નવું Test Cycle (Round 2, 2026-09-16) — Real Live Data](#21-નવું-test-cycle-round-2-2026-09-16-real-live-data)
+22. [2026-09-17 Update — Release હવે Production Complete માંગે છે + CAPA data](#22-2026-09-17-update--release-હવે-production-complete-માંગે-છે--capa-data)
 
 ---
 
@@ -2593,5 +2594,89 @@ Field-level meaning/UI location માટે દરેક પગલે મૂળ
 | Progress sync | §12.0 એ પહેલેથી કહ્યું છે — Batch Execution ના generic step complete/DDCP execution ops **એકબીજાને touch જ નથી કરતા** (SG-180 open) |
 
 **વ્યવહારુ (practical) સલાહ:** Batch create/issue/start (§11) પછી, batch ID copy કરીને note કરી રાખવો (દા.ત. `MJ-PFS-B-2701` ની સાથે UUID) — DDCP execution tab (§12/§21.3.2) અને readiness tab (§15) બંનેમાં એ જ UUID manually paste કરવાનો રહેશે, દરેક વખતે.
+
+---
+
+## 22. 2026-09-17 Update — Release હવે Production Complete માંગે છે + CAPA data
+
+**⚠️ પ્રામાણિકતા નોંધ:** આ section fresh code-verified છે (2026-09-17) — batch/deviation/lot/receipt number
+(`MJ-PFS-B-2701`, `DEV-2026-0201`, `LOT-DRUG-2701`, `LOT-DEV-2701`, `RCPT-DRUG-2701`, `RCPT-DEV-2701`)
+હજુ **DB માં વપરાયેલા નથી** (2026-09-17 ના રોજ ફરી ચકાસેલું — §21 ના Round 2 cycle લખાયો ત્યારે 2026-09-16
+ના રોજ ફ્રેશ હતા, હજુ પણ છે) — master data (`MERIDIJECT-PFS` v1, `RCP-MJ-PFS-V1` v1, `PFS-MERIDIJECT-001`
+v1, `AREA-GRADE-A`) બધું RELEASED/active confirm કર્યું. **આ section ફક્ત data reference છે — batch/
+DDCP/deviation/CAPA તમે પોતે browser માંથી manually ચલાવવાના છે, કંઈ પણ auto-run/pre-create નથી કરેલું.**
+
+### 22.1 SG-180 reopened — Release હવે "manufacturing completeness" ચેક કરે છે
+
+**શું બદલાયું:** આ જ session માં, live testing દરમિયાન એક batch (`MJ-PFS-B-0000`, અલગ recipe) 3/9 step
+પૂરા હોવા છતાં review+release થઈ ગયો — આ §21.4 (SG-180) નું જ, પહેલેથી-documented, 2026-09-11 ના રોજ
+project-owner દ્વારા **જાણી-જોઈને decline કરેલું** behavior હતું (write-side auto-sync signature-policy
+conflict ને લીધે ના બનાવ્યું). આજે ફરી પુછતાં project owner એ **હવે hard gate ઉમેરવાનું** પસંદ કર્યું:
+`evaluate_eligibility()` (`app/modules/release/service.py`) હવે `batch.state != "production_complete"`
+હોય તો `PRODUCTION_NOT_COMPLETE` (CRITICAL) blocker ઉમેરે છે — "Evaluate eligibility" અને final "Release"
+બંને પર (એ જ function ફરી call થાય છે).
+
+**⚠️ આ §21 ના scenario માટે ખાસ અગત્યનું:** આ નવો gate **ફક્ત generic `gxp_batch_step` ચેઇન** વાંચે છે
+(`/batch-execution`ના પોતાના "Production Complete" બટન જે already ચેક કરે છે, એ જ) — DDCP ના પોતાના
+execution table (`constituent_handoff`/`fill_operation`/વગેરે) **નથી** વાંચતો (SG-180 નો બીજો, હજુ ખુલ્લો
+અડધો ભાગ — §21.4 માં જ "Progress sync" row). એટલે **ફક્ત §21.3.2 ના DDCP ops પૂરા કરવાથી Release eligible
+નહીં થાય** — batch નું પોતાનું generic step પણ `/batch-execution` પર Complete + Production Complete
+કરવું જ પડશે.
+
+**સારા સમાચાર:** `RCP-MJ-PFS-V1` **v1** (§21.3.2 જે વાપરે છે) માં **ફક્ત 1 જ** generic step છે —
+`FILL-01` — 9-step recipe (બીજા doc, `Batch_Create_Execution_Process_Guide_Gujarati.md` §16 ની v4) નહીં.
+Real, code-verified field data (2026-09-17):
+
+| Field | Value |
+|---|---|
+| Step code | `FILL-01` (`weigh` type, required role `Operator`, critical) |
+| Record results — parameter | `FILL_WEIGHT_MG` — decimal, `mg`, target `1000`, range `950`–`1050` (required) |
+| Link evidence — requirement | `photo` ×1 (allowed types `image/jpeg`, `image/png`) |
+| Material requirement (display-only, §17 ના જ honest gap) | Drug spec, target `1.05 mL`, range `1.00`–`1.10`, `full_container` |
+| Equipment requirement (display-only) | `FILLING_LINE` (કોઈ calibration/qualification/cleaning ફરજિયાત નથી) |
+
+**Steps (`/batch-execution`, `operator1`/`ChangeMe123!`, §11.3/§11.3.1 ના જ button pattern) — §21.3.2 ના
+step 1-2 (Create → Issue → Start) પછી:**
+
+1. `FILL-01` row → **Start**.
+2. **Record results** → `FILL_WEIGHT_MG` = `1002` (in range) → submit (signed).
+3. **Link evidence** — 2026-09-17 થી (SG-204) `operator1` હવે આ પોતે, એ જ session થી કરી શકે (પહેલા
+   Operator role `evidence.upload`/`.download` ધરાવતો નહોતો, ફક્ત Admin/QA Reviewer): sidebar →
+   **Platform ops → Evidence operations** → "Stage an evidence upload" (Owner type `batch_step`, Owner
+   = આ batch → `FILL-01` step — 2-level dropdown, raw UUID paste નહીં — Filename કોઈ પણ, Mime type
+   `image/jpeg`, File કોઈ પણ real image, Reason free text) → Finalize (એ જ પેજ પર). પછી પાછા
+   `/batch-execution` → `FILL-01` row → **Link evidence** → dropdown માંથી હમણાં staged evidence પસંદ
+   કરો (SHA-256/media type auto-fill) → Requirement code = `photo` → Submit.
+4. `FILL-01` row → **Complete** (signed).
+5. Batch action row → **Production Complete** (signed) — હવે જ `batch.state = production_complete` થાય.
+
+આ 5 પગલાં પછી જ `/release` પર "Evaluate eligibility" 0 blocker બતાવશે (ધારીને કે QA review પણ complete
+છે અને Vault snapshot integrity બરાબર છે, §16 પ્રમાણે જ).
+
+### 22.2 CAPA — §21.3.4 ના deviation પરથી (આ guide માં પહેલા ક્યારેય નહોતું)
+
+§21.3.4 batch `MJ-PFS-B-2701` પર deviation `DEV-2026-0201` બનાવે છે, Disposition+Close સુધી ચલાવે છે.
+CAPA એ deviation પરથી જ બને — batch ને સીધું નહીં (chain: Batch → Deviation → CAPA,
+`Batch_Create_Execution_Process_Guide_Gujarati.md` §13 જુઓ, code-verified
+`app/modules/qms/capa_commands.py` સામે). Field reference (`/capa`, `qa.reviewer` login,
+`capa.create`):
+
+| Field | આ scenario માટે Value |
+|---|---|
+| `source_type` | `deviation` |
+| `source_id` | §21.3.4 ની deviation — dropdown, `DEV-2026-0201` |
+| `problem_statement` | `Fill weight recorded near the low tolerance boundary on batch MJ-PFS-B-2701 — recurring pattern under investigation` |
+| `root_cause_ref` અથવા `proactive_rationale` | ઓછામાં ઓછું 1 ફરજિયાત — દા.ત. `root_cause_ref = "Filler pump wear identified during DEV-2026-0201 investigation"` |
+| `risk_class` | dropdown — તમારા site ના risk matrix પ્રમાણે (દા.ત. `MEDIUM`) |
+| `owner_subject_id` | કોઈ user — દા.ત. `qa.reviewer` પોતે અથવા `supervisor1` |
+| `target_date` | ભવિષ્યની કોઈ પણ date, દા.ત. `2026-10-15` |
+
+**Create** પછી: **Action** (`capa.action.add`/`.complete`) — દા.ત. 1 action "Replace filler pump wear
+component", owner `supervisor1`, પછી Complete mark કરો. **Effectiveness check** (`capa.effectiveness`)
+અને **Close** (`capa.close`) — બંને QA Reviewer/Releaser level permission, §13 ના જ ટેબલ પ્રમાણે.
+
+**⚠️ CAPA Release ને block નથી કરતું** — Deviation ની જેમ જ (§13 નો જ honest note) — chain traceability
+માટે છે, automatic blocker નથી. Release eligibility ફક્ત §22.1 નો production-complete gate + QA review
++ Vault integrity ચેક કરે છે (§8/§16 પ્રમાણે જ).
 
 ---

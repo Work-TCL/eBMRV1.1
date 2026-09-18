@@ -106,11 +106,13 @@ async def test_full_oos_flow_no_assignable_cause(client, seeded, db):
     assert dup.status_code == 409
     assert dup.json()["code"] == "OOS_ALREADY_EXISTS"
 
-    # classify-lab-cause before any investigation activity is rejected.
+    # classify-lab-cause before any investigation activity is rejected -- qa_reviewer_token, not
+    # op_token, isolates this from the 2026-09-18 oos_record.classify_lab_cause RBAC gate (Operator no
+    # longer holds it) so the assertion below exercises the business rule, not a permission denial.
     early = await client.post(
         f"/quality/oos/v1/{oos_id}/classify-lab-cause",
         json={"idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 1, "assignable": False},
-        headers=auth_headers(op_token),
+        headers=auth_headers(qa_reviewer_token),
     )
     assert early.status_code == 409
     assert early.json()["code"] == "INVESTIGATION_INCOMPLETE"
@@ -180,7 +182,7 @@ async def test_full_oos_flow_no_assignable_cause(client, seeded, db):
             "idempotency_key": idem(), "oos_record_id": oos_id, "justification": "Confirm assay via retest",
             "number_of_retests": 2, "method_ref": "HPLC-1",
         },
-        headers=auth_headers(op_token),
+        headers=auth_headers(qa_reviewer_token),
     )
     assert resp.status_code == 200, resp.text
     retest_plan = await db.get(OosRetestPlan, resp.json()["aggregate_id"])
@@ -199,7 +201,7 @@ async def test_full_oos_flow_no_assignable_cause(client, seeded, db):
             "idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 4,
             "impact_text": "No confirmed impact to other batches; hold pending disposition", "hold_status": "hold",
         },
-        headers=auth_headers(op_token),
+        headers=auth_headers(qa_reviewer_token),
     )
     assert resp.status_code == 200, resp.text
     await db.refresh(oos)
@@ -254,6 +256,11 @@ async def test_close_requires_independent_of_disposition_performer(client, seede
     recorded the original result cannot also close the OOS they own."""
     op_token = await login(client, "operator1")
     qa_releaser_token = await login(client, "qa.releaser")
+    # 2026-09-18: lab-investigation/classify-lab-cause/impact are now oos_record.* RBAC-gated to
+    # QC Reviewer/QA Reviewer/Admin, not Operator -- qa_reviewer_token performs those steps so the OOS
+    # record's version actually advances; op_token (Operator, who still lacks oos_record.close) remains
+    # the actor asserted against at the end, exercising the real RBAC-driven 403 this test expects.
+    qa_reviewer_token = await login(client, "qa.reviewer")
 
     async with db.begin():
         product_version = await _seed_product_version(db, seeded, code="OOS-PROD-2")
@@ -316,17 +323,17 @@ async def test_close_requires_independent_of_disposition_performer(client, seede
     await client.post(
         f"/quality/oos/v1/{oos_id}/lab-investigation",
         json={"idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 1, "activity_type": "checklist_review"},
-        headers=auth_headers(op_token),
+        headers=auth_headers(qa_reviewer_token),
     )
     await client.post(
         f"/quality/oos/v1/{oos_id}/classify-lab-cause",
         json={"idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 2, "assignable": True, "evidence_refs": ["evidence-1"]},
-        headers=auth_headers(op_token),
+        headers=auth_headers(qa_reviewer_token),
     )
     await client.post(
         f"/quality/oos/v1/{oos_id}/impact",
         json={"idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 3, "impact_text": "No impact"},
-        headers=auth_headers(op_token),
+        headers=auth_headers(qa_reviewer_token),
     )
     disp_challenge = (
         await client.post(f"/quality/oos/v1/{oos_id}/signature-challenges", json={"action": "disposition"}, headers=auth_headers(qa_releaser_token))

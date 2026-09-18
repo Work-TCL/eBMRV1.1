@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, canRaiseQualityEvent, newIdempotencyKey, type Nonconformance } from "@/lib/api";
+import { api, ApiError, hasPermission, newIdempotencyKey, type Nonconformance } from "@/lib/api";
 import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
@@ -83,7 +83,7 @@ export default function NonconformancesPage() {
         rowHref={(n) => `/nonconformances/${n.id}`}
         reloadToken={reloadToken}
         action={
-          canRaiseQualityEvent(me) ? (
+          hasPermission(me, "ncr.create") ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" /> Raise NCR
             </Button>

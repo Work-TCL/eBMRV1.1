@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, holdsAnyRole, newIdempotencyKey, pagedFetcher, type Me, type MutationReceipt, type Paged } from "@/lib/api";
+import { api, hasPermission, newIdempotencyKey, pagedFetcher, type Me, type MutationReceipt, type Paged } from "@/lib/api";
 import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
 import { useCommand } from "@/components/shared/RecordDetailShell";
 import { Fact, OpsRecordPage, type OpsRecordConfig } from "@/components/shared/OpsRecordPage";
@@ -31,7 +31,7 @@ const PROCESS_TYPES = [
 // reviews a cycle's data is not the same role that could have authored the spec it's reviewed against
 // (scripts/seed.py process_cycle_profile_version.create) — same "who defines vs who executes" split as
 // aseptic's own canCreateProfile.
-const canCreateCycleProfile = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer"]);
+const canCreateCycleProfile = (me: Me | null) => hasPermission(me, "process_cycle_profile_version.create");
 
 // Matches app/modules/equipment/sterilization_router.py::_profile_summary_dict.
 interface CycleProfile {
@@ -222,8 +222,16 @@ interface ProcessCycle {
   load_items?: LoadItem[];
 }
 
-const canOperate = (me: Me | null) => holdsAnyRole(me, ["Admin", "Operator", "Supervisor", "Sterilization Operator"]);
-const canReview = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer", "QC Reviewer"]);
+// process_cycle.create / .start (Document 42) — Admin, QA Reviewer, Sterilization Operator per
+// scripts/seed.py. Audit finding 2026-09-18: this previously included Operator/Supervisor (who hold no
+// process_cycle.* grant at all — silent 403) and omitted QA Reviewer (who does hold it — hidden feature,
+// SG-204 bug class). "Record cycle data" shares process_cycle.start's own backend check
+// (sterilization_router.py post_record_data), so the same role set applies there too.
+const canOperate = (me: Me | null) => hasPermission(me, "process_cycle.create");
+const canReview = (me: Me | null) => hasPermission(me, "process_cycle.review");
+// sterile_filter_use.create / .complete (Document 42) — Admin + Sterilization Operator only. Audit
+// finding 2026-09-18: FiltrationSection below had no role gate at all.
+const canOperateFilter = (me: Me | null) => hasPermission(me, "sterile_filter_use.create");
 
 const config: OpsRecordConfig<ProcessCycle> = {
   title: "Sterilization cycles",
@@ -498,7 +506,7 @@ export default function SterilizationPage() {
           }}
         />
       )}
-      <FiltrationSection siteId={siteId} />
+      {canOperateFilter(me) && <FiltrationSection siteId={siteId} />}
     </div>
   );
 }
@@ -509,7 +517,11 @@ export default function SterilizationPage() {
  * `/filtration/v1/uses/...` (verified in router.py — same underlying `SterileFilterUse` row, two path
  * prefixes) — `OpsRecordPage` assumes one `apiRoot` for every record-scoped action, so a plain
  * `FormConsole` + `SignedJsonForm` pair (each free to declare its own full path) fits this backend's
- * actual shape without changing a component every other WP-06 page depends on. */
+ * actual shape without changing a component every other WP-06 page depends on.
+ *
+ * Every op here requires sterile_filter_use.create/.complete (Admin + Sterilization Operator only) —
+ * gated at the call site above via canOperateFilter rather than per-op, since the whole section is one
+ * permission boundary (audit finding 2026-09-18: this had no gate at all before). */
 function FiltrationSection({ siteId }: { siteId: string | null }) {
   return (
     <>

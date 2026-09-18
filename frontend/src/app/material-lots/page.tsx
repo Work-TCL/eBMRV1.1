@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import {
   api,
   ApiError,
+  canDispositionMaterialLot,
+  canReleaseMaterialLotV2,
   formatDateTime,
   listAll,
   newIdempotencyKey,
@@ -14,7 +16,7 @@ import {
   type MutationReceipt,
   type Paged,
 } from "@/lib/api";
-import { useEntityOptions } from "@/lib/hooks";
+import { useEntityOptions, useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -32,15 +34,19 @@ import { EntityPickerField } from "@/components/shared/EntityPicker";
 const STATUS_OPTIONS = ["", "quarantine", "released", "rejected", "consumed", "expired"];
 
 export default function MaterialLotsPage() {
+  const { me } = useMe();
   const [statusFilter, setStatusFilter] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
 
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [dispositionLot, setDispositionLot] = useState<MaterialLot | null>(null);
+  const [releaseLot, setReleaseLot] = useState<MaterialLot | null>(null);
+  const [rejectLot, setRejectLot] = useState<MaterialLot | null>(null);
   const [samplingLot, setSamplingLot] = useState<MaterialLot | null>(null);
   const [collectingOrder, setCollectingOrder] = useState<{ id: string; version: number } | null>(null);
   const [qualityStatusLot, setQualityStatusLot] = useState<MaterialLot | null>(null);
   const [retestingLot, setRetestingLot] = useState<MaterialLot | null>(null);
+  const canReleaseV2 = canReleaseMaterialLotV2(me);
 
   function fetchLots(query: ListQuery): Promise<Paged<MaterialLot>> {
     const search = new URLSearchParams({
@@ -104,10 +110,20 @@ export default function MaterialLotsPage() {
               <Icon name="refresh" /> Retest
             </Button>
           )}
-          {l.status === "quarantine" && (
+          {l.status === "quarantine" && canDispositionMaterialLot(me) && (
             <Button size="sm" variant="secondary" onClick={() => setDispositionLot(l)}>
               <Icon name="badge-check" /> Disposition
             </Button>
+          )}
+          {l.status === "quarantine" && canReleaseV2 && (
+            <>
+              <Button size="sm" variant="secondary" onClick={() => setReleaseLot(l)}>
+                <Icon name="badge-check" /> Release (QA)
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setRejectLot(l)}>
+                <Icon name="x" /> Reject (QA)
+              </Button>
+            </>
           )}
         </div>
       ),
@@ -174,6 +190,30 @@ export default function MaterialLotsPage() {
           onClose={() => setDispositionLot(null)}
           onDone={() => {
             setDispositionLot(null);
+            setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
+
+      {releaseLot && (
+        <ReleaseRejectV2Modal
+          lot={releaseLot}
+          decision="release"
+          onClose={() => setReleaseLot(null)}
+          onDone={() => {
+            setReleaseLot(null);
+            setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
+
+      {rejectLot && (
+        <ReleaseRejectV2Modal
+          lot={rejectLot}
+          decision="reject"
+          onClose={() => setRejectLot(null)}
+          onDone={() => {
+            setRejectLot(null);
             setReloadToken((n) => n + 1);
           }}
         />
@@ -374,6 +414,65 @@ function DispositionModal({
           lot_id: lot.id,
           expected_version: lot.version,
           decision,
+          reason: reason || null,
+          challenge_id: p.challenge_id,
+          reauth_password: p.reauth_password,
+        })
+      }
+    />
+  );
+}
+
+/** Document 19 v2 (RCV-FR-026/027) — the formal QA release/reject path, distinct from the legacy
+ * `disposition` endpoint `DispositionModal` above uses. Backend (`POST /materials/v1/lots/{id}/release`
+ * or `.../reject`) enforces material_lot.release/.reject (QA Releaser + Admin only) and independence
+ * (signer must not be the receiver or sampler of this same lot) — both already built; this modal was the
+ * missing piece (2026-09-18), no backend change needed. `container_ids` left blank means the whole lot;
+ * the underlying command already supports a partial per-container decision if ever needed here. */
+function ReleaseRejectV2Modal({
+  lot,
+  decision,
+  onClose,
+  onDone,
+}: {
+  lot: MaterialLot;
+  decision: "release" | "reject";
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const label = decision === "release" ? "Release" : "Reject";
+
+  return (
+    <SignatureCeremony
+      open
+      onClose={onClose}
+      onDone={onDone}
+      challengePath={`/material-lots/${lot.id}/signature-challenges`}
+      action={decision}
+      title={`${label} (QA) - lot ${lot.internal_lot}`}
+      summary={
+        <>
+          {lot.material_name} ({lot.material_code}) - {lot.received_quantity} {lot.uom} received{" "}
+          {lot.received_at ? formatDateTime(lot.received_at) : ""}
+          {lot.expiry_date ? `, expires ${lot.expiry_date}` : ""}. Signer must be independent of this
+          lot&apos;s receiver and sampler (enforced server-side).
+        </>
+      }
+      submitLabel={`Sign & ${label.toLowerCase()}`}
+      submitVariant={decision === "reject" ? "danger" : "success"}
+      reason="none"
+      disabled={decision === "reject" && !reason.trim()}
+      extraFields={
+        <Field label="Reason" required={decision === "reject"} hint={decision === "release" ? "Optional." : "Required for a reject decision."}>
+          <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+      }
+      onSign={(p) =>
+        api.post<MutationReceipt>(`/materials/v1/lots/${lot.id}/${decision}`, {
+          idempotency_key: p.idempotency_key,
+          lot_id: lot.id,
+          expected_version: lot.version,
           reason: reason || null,
           challenge_id: p.challenge_id,
           reauth_password: p.reauth_password,

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.batch_execution.models import Batch
 from app.modules.qa_review import service as qa_review_service
+from app.modules.qms.models import DeviationRecord
 from app.modules.release.models import ReleaseDecision, ReleaseEvaluation, ReleaseScope
 from app.modules.vault import service as vault_service
 from app.mutation.errors import NotFoundError
@@ -67,13 +68,31 @@ def _blocker(code: str, severity: str, source_type: str, source_id: str | None, 
 
 
 async def evaluate_eligibility(session: AsyncSession, batch: Batch) -> tuple[list[dict], list[dict]]:
-    """REL-FR-003/004/025 (partial): only two of the nine named eligibility categories have a real data
-    source in this codebase -- QA review currency/completeness (Document 14) and Vault execution-snapshot
-    integrity (Document 06). QC, QMS, materials, equipment, environment, packaging, genealogy and yield/
+    """REL-FR-003/004/025 (partial): only three of the nine named eligibility categories have a real
+    data source in this codebase -- manufacturing completeness (BAT-FR-026's own `production_complete`
+    batch state), QA review currency/completeness (Document 14) and Vault execution-snapshot integrity
+    (Document 06). QC, QMS, materials, equipment, environment, packaging, genealogy and yield/
     reconciliation all depend on modules/entities that don't exist yet -- see SG-056; none of them can
     contribute a real blocker or warning this pass, so they are silently absent rather than guessed.
-    """
+
+    Manufacturing completeness (SG-180, reopened 2026-09-17 project-owner-directed after a live batch
+    was reviewed and released with 6 of 9 recipe steps still incomplete): REL-FR-003 names "manufacturing
+    completeness" as one of the nine eligibility categories, and BAT-FR-026 already defines what that
+    means -- `gxp_batch.state == "production_complete"`, which `complete_production()`
+    (batch_execution/commands.py) already refuses to set until every applicable step is `complete`. This
+    was simply never read on the release side. Blocking here (and on the final `release_release()` call,
+    which re-evaluates via this same function) closes exactly the gap SG-180 documented without touching
+    the separate, still-open DDCP/generic-step-sync question (SG-180's options B/C) -- this only reads
+    the batch's own already-enforced completeness state, no new step-sync logic."""
     blockers: list[dict] = []
+
+    if batch.state != "production_complete":
+        blockers.append(
+            _blocker(
+                "PRODUCTION_NOT_COMPLETE", "CRITICAL", "batch", str(batch.id),
+                "release.blocker.production_not_complete", "MARK_PRODUCTION_COMPLETE",
+            )
+        )
 
     package = await qa_review_service.get_package_for_batch(session, batch.id)
     if package is None:
@@ -108,6 +127,33 @@ async def evaluate_eligibility(session: AsyncSession, batch: Batch) -> tuple[lis
                     "release.blocker.integrity_failed", "INVESTIGATE_INTEGRITY_FAILURE",
                 )
             )
+
+    # SG-059 RESOLVED 2026-09-18, project-owner-directed (asked directly among "any open deviation" /
+    # "critical-only" / "don't block" -- chose the first, reading DEV-FR-022's "open... deviations"
+    # literally rather than adding an unwritten severity carve-out). Deviations attributed to this batch
+    # (`source_type="batch"`, `source_id=batch.id` -- the same attribution DEV-FR-002 defines and the demo
+    # walkthrough already uses) block release for as long as they haven't reached the only terminal state
+    # `deviation_record` has (`CLOSED` -- there is no CANCELLED for deviations, unlike CAPA). One blocker
+    # per open deviation so the caller can see exactly which records need resolving, matching the
+    # INTEGRITY_CHECK_FAILED pattern above. CAPA deliberately does NOT get an equivalent gate here --
+    # Document 27 has no requirement analogous to DEV-FR-022 to hang one on, and the project owner chose
+    # not to invent one.
+    open_deviations = (
+        await session.execute(
+            select(DeviationRecord.id).where(
+                DeviationRecord.source_type == "batch",
+                DeviationRecord.source_id == batch.id,
+                DeviationRecord.state != "CLOSED",
+            )
+        )
+    ).scalars().all()
+    for deviation_id in open_deviations:
+        blockers.append(
+            _blocker(
+                "OPEN_DEVIATION", "CRITICAL", "deviation_record", str(deviation_id),
+                "release.blocker.open_deviation", "RESOLVE_DEVIATION",
+            )
+        )
 
     warnings: list[dict] = []
     return blockers, warnings

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, clientPagedFetcher, formatDateTime, holdsAnyRole, newIdempotencyKey, type Me } from "@/lib/api";
+import { api, clientPagedFetcher, formatDateTime, hasPermission, newIdempotencyKey, type Me } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -85,11 +85,24 @@ interface GxpBatch {
   started_at: string | null;
 }
 
+// Known-limitations fix (docs/testing/demo-gujarati/08 §8.8): the FROZEN requirements
+// commands.py::_enforce_step_equipment actually checks at step-start (distinct from any live-recipe
+// display-only equipment info elsewhere in this view).
+interface StepEquipmentRequirement {
+  equipment_class: string;
+  equipment_class_id: string | null;
+  exact_equipment_optional: boolean;
+  require_current_calibration: boolean;
+  require_current_qualification: boolean;
+  require_current_cleaning: boolean;
+}
+
 interface BatchStep {
   step_id: string;
   batch_id: string;
   recipe_step_code: string;
   required_role_code: string | null;
+  equipment_requirements: StepEquipmentRequirement[];
   state: string;
   version: number;
   assigned_subject_id: string | null;
@@ -308,7 +321,7 @@ export default function BatchExecutionPage() {
     siteId ? `/batches/v1?site_id=${siteId}${state ? `&state=${state}` : ""}&_=${reloadToken}` : null
   );
 
-  const canCreate = holdsAnyRole(me, ["Admin", "Supervisor"]);
+  const canCreate = hasPermission(me, "batch_execution.create");
   const batches = list.data?.batches ?? [];
   const active = batches.filter((b) => b.state === "in_execution").length;
 
@@ -739,8 +752,8 @@ function ExecutionModal({
 
   const b = v.batch;
   const allowed = ALLOWED_FROM[b.state] ?? [];
-  const canExecute = holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
-  const canIssue = holdsAnyRole(me, ["Admin", "Supervisor"]);
+  const canExecute = hasPermission(me, "batch_execution.execute");
+  const canIssue = hasPermission(me, "batch_execution.issue");
   const hasBlockers = v.blockers.length > 0;
 
   function offered(a: Action): boolean {
@@ -1225,7 +1238,7 @@ function StepDetailModal({
 }) {
   const latestByCode = new Map<string, StepResultRow>();
   for (const r of results) latestByCode.set(r.parameter_code, r);
-  const canCorrect = holdsAnyRole(me, ["Admin", "Supervisor"]);
+  const canCorrect = hasPermission(me, "batch_step.correct");
   const [correctingResult, setCorrectingResult] = useState<{ result: StepResultRow; parameter: StepParameter | undefined } | null>(null);
   const [approvingCorrection, setApprovingCorrection] = useState<StepResultCorrectionRow | null>(null);
   // requirement_code == evidence_type (commands.py::complete_step()'s own naming symmetry) — counts here
@@ -1754,6 +1767,15 @@ function StartStepModal({
   const { busy, error, run } = useCommand(onDone);
   const [overrideReason, setOverrideReason] = useState("");
   const roleMismatch = error?.startsWith("STEP_ROLE_MISMATCH");
+  // Known-limitations fix (docs/testing/demo-gujarati/08 §8.8): one picker per declared equipment
+  // requirement -- the backend (commands.py::_enforce_step_equipment) is the real authority on whether a
+  // chosen asset actually satisfies the requirement (class match + calibration/qualification/cleaning
+  // currency), so this picker doesn't try to pre-filter by eligibility, only lets the operator name which
+  // asset(s) they're using.
+  const equipmentRequirements = step.equipment_requirements ?? [];
+  const [equipmentAssetIds, setEquipmentAssetIds] = useState<string[]>(() => equipmentRequirements.map(() => ""));
+  const entities = useEntityOptions();
+  const equipmentError = error?.startsWith("EQUIPMENT_");
 
   return (
     <Modal open onClose={onClose} title={`Start step ${step.recipe_step_code}`}>
@@ -1767,6 +1789,9 @@ function StartStepModal({
               step_id: step.step_id,
               expected_version: step.version,
               override_reason: overrideReason.trim() || undefined,
+              ...(equipmentAssetIds.some((id) => id)
+                ? { equipment_asset_ids: equipmentAssetIds.filter((id) => id) }
+                : {}),
             })
           );
         }}
@@ -1782,6 +1807,34 @@ function StartStepModal({
             <WorkflowStatePill state={step.state} />
           </Fact>
         </FactGrid>
+        {equipmentRequirements.length > 0 && (
+          <div className="mt-3">
+            <p className="hint mb-2">
+              This step declares {equipmentRequirements.length} equipment requirement
+              {equipmentRequirements.length === 1 ? "" : "s"} - name which asset you are using for each.
+            </p>
+            {equipmentRequirements.map((req, i) => (
+              <EntityPickerField
+                key={i}
+                label={`Equipment for "${req.equipment_class}"${req.exact_equipment_optional ? "" : " (required)"}`}
+                hint={
+                  [
+                    req.require_current_calibration && "requires current calibration",
+                    req.require_current_qualification && "requires current qualification",
+                    req.require_current_cleaning && "requires current cleaning",
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || undefined
+                }
+                value={equipmentAssetIds[i] ?? ""}
+                onChange={(v) => setEquipmentAssetIds((prev) => prev.map((id, idx) => (idx === i ? v : id)))}
+                options={entities.equipment}
+                status={entities.equipmentStatus}
+                kind="equipment asset"
+              />
+            ))}
+          </div>
+        )}
         {step.required_role_code && (
           <div className="mt-3">
             <label className="hint" style={{ display: "block", marginBottom: 4 }}>
@@ -1804,6 +1857,8 @@ function StartStepModal({
           <p className="error-text mt-3 mb-2">
             {roleMismatch
               ? "This step is reserved for another role. Enter an override reason above and retry (Supervisor/Admin only)."
+              : equipmentError
+              ? `Equipment requirement not satisfied: ${error}`
               : error}
           </p>
         )}

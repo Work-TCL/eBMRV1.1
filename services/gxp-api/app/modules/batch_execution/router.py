@@ -111,13 +111,27 @@ async def _recipe_context_by_id(session: AsyncSession, batches: list) -> dict[uu
     return {row.id: (row.recipe_code, row.version_no) for row in rows}
 
 
-def _step_dict(step, assigned_user: User | None = None) -> dict:
+def _frozen_equipment_requirement_dict(eq) -> dict:
+    return {
+        "equipment_class": eq.equipment_class,
+        "equipment_class_id": str(eq.equipment_class_id) if eq.equipment_class_id else None,
+        "exact_equipment_optional": eq.exact_equipment_optional,
+        "require_current_calibration": eq.require_current_calibration,
+        "require_current_qualification": eq.require_current_qualification,
+        "require_current_cleaning": eq.require_current_cleaning,
+    }
+
+
+def _step_dict(step, assigned_user: User | None = None, frozen_equipment_requirements: list | None = None) -> dict:
     return {
         "step_id": str(step.id),
         "batch_id": str(step.batch_id),
         "recipe_step_code": step.recipe_step_code,
         "required_role_code": step.required_role_code,
         "required_qualification_code": step.required_qualification_code,
+        # Known-limitations fix (docs/testing/demo-gujarati/08 §8.8): the frozen requirements
+        # commands.py::_enforce_step_equipment actually checks at step-start.
+        "equipment_requirements": [_frozen_equipment_requirement_dict(eq) for eq in (frozen_equipment_requirements or [])],
         "scope_type": step.scope_type,
         "scope_id": str(step.scope_id) if step.scope_id else None,
         "state": step.state,
@@ -675,7 +689,14 @@ async def get_execution_view(
     correction_users = await _users_by_id(session, correction_user_ids)
     return {
         "batch": _batch_dict(view["batch"], product_version, recipe_contexts.get(view["batch"].recipe_version_id)),
-        "steps": [_step_dict(s, assigned_users.get(s.assigned_subject_id)) for s in view["steps"]],
+        "steps": [
+            _step_dict(
+                s,
+                assigned_users.get(s.assigned_subject_id),
+                view["frozen_equipment_requirements_by_step_id"].get(s.id, []),
+            )
+            for s in view["steps"]
+        ],
         "blockers": view["blockers"],
         # BAT-FR-009 form definition + any already-recorded results, keyed by step_id so the UI can render
         # a per-step results form without a second round trip (SG-047 partial resolution).

@@ -9,15 +9,25 @@ from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy
 from app.modules.recipe_master import service as recipe_master_service
 from app.modules.recipe_master.commands import (
+    CreateEquipmentClassCommand,
     CreateRecipeDraftCommand,
+    ObsoleteRecipeVersionCommand,
+    ReinstateRecipeVersionCommand,
     ReleaseRecipeVersionCommand,
     SubmitRecipeDraftCommand,
+    SupersedeRecipeVersionCommand,
+    SuspendRecipeVersionCommand,
     UpdateRecipeDraftCommand,
     ValidateRecipeDraftCommand,
     create_draft,
+    create_equipment_class,
+    obsolete_recipe_version,
+    reinstate_recipe_version,
     release_recipe_version,
     simulate_draft,
     submit_draft,
+    supersede_recipe_version,
+    suspend_recipe_version,
     update_draft,
     validate_draft_command,
 )
@@ -30,10 +40,18 @@ router = APIRouter(prefix="/recipes/v2", tags=["recipe_master"])
 
 
 class RecipeSignatureChallengeRequest(BaseModel):
-    action: str  # "release" -- the only signed recipe_version action today
+    action: str  # "release" / "suspend" / "reinstate" / "obsolete" / "supersede"
 
 
-_CHALLENGE_MEANINGS = {"release": "Released"}
+_CHALLENGE_MEANINGS = {
+    "release": "Released",
+    # Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 1): no Document 106 section 9 row
+    # exists for any of the four; shape mirrors product_master's equivalent fix exactly (see SG-208).
+    "suspend": "Performed",
+    "reinstate": "Approved",
+    "obsolete": "Approved",
+    "supersede": "Approved",
+}
 
 
 def _version_dict(version) -> dict:
@@ -46,6 +64,7 @@ def _version_dict(version) -> dict:
         "batch_size_value": str(version.batch_size_value) if version.batch_size_value is not None else None,
         "batch_size_uom": version.batch_size_uom,
         "lifecycle_state": version.lifecycle_state,
+        "superseded_by_version_id": str(version.superseded_by_version_id) if version.superseded_by_version_id else None,
         "effective_from": version.effective_from.isoformat() if version.effective_from else None,
         "effective_to": version.effective_to.isoformat() if version.effective_to else None,
         "graph_version": version.graph_version,
@@ -144,6 +163,7 @@ def _equipment_requirement_dict(e) -> dict:
         "id": str(e.id),
         "step_id": str(e.step_id),
         "equipment_class": e.equipment_class,
+        "equipment_class_id": str(e.equipment_class_id) if e.equipment_class_id else None,
         "exact_equipment_optional": e.exact_equipment_optional,
         "require_current_calibration": e.require_current_calibration,
         "require_current_qualification": e.require_current_qualification,
@@ -255,6 +275,67 @@ async def post_release_draft(
         return await release_recipe_version(session, cmd, actor.user_id)
 
 
+@router.post("/{recipe_version_id}/suspend", response_model=MutationReceipt)
+async def post_suspend(
+    recipe_version_id: uuid.UUID,
+    cmd: SuspendRecipeVersionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    """Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 1)."""
+    if cmd.recipe_version_id != recipe_version_id:
+        raise ValidationFailedError("recipe_version_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="recipe.suspend", site_id=None)
+        return await suspend_recipe_version(session, cmd, actor.user_id)
+
+
+@router.post("/{recipe_version_id}/reinstate", response_model=MutationReceipt)
+async def post_reinstate(
+    recipe_version_id: uuid.UUID,
+    cmd: ReinstateRecipeVersionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    """Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 1)."""
+    if cmd.recipe_version_id != recipe_version_id:
+        raise ValidationFailedError("recipe_version_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="recipe.suspend", site_id=None)
+        return await reinstate_recipe_version(session, cmd, actor.user_id)
+
+
+@router.post("/{recipe_version_id}/obsolete", response_model=MutationReceipt)
+async def post_obsolete(
+    recipe_version_id: uuid.UUID,
+    cmd: ObsoleteRecipeVersionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    """Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 1)."""
+    if cmd.recipe_version_id != recipe_version_id:
+        raise ValidationFailedError("recipe_version_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="recipe.suspend", site_id=None)
+        return await obsolete_recipe_version(session, cmd, actor.user_id)
+
+
+@router.post("/{recipe_version_id}/supersede", response_model=MutationReceipt)
+async def post_supersede(
+    recipe_version_id: uuid.UUID,
+    cmd: SupersedeRecipeVersionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    """Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 1). `superseding_version_id` must
+    reference another RELEASED version of the same recipe family; enforced in supersede_recipe_version()."""
+    if cmd.recipe_version_id != recipe_version_id:
+        raise ValidationFailedError("recipe_version_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="recipe.suspend", site_id=None)
+        return await supersede_recipe_version(session, cmd, actor.user_id)
+
+
 @router.get("/families")
 async def get_families(
     session: AsyncSession = Depends(get_session),
@@ -264,6 +345,33 @@ async def get_families(
     of `/{recipe_family_id}/versions` so "families" is never parsed as a recipe_family_id UUID."""
     await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=None)
     return await recipe_master_service.list_recipe_families(session)
+
+
+def _equipment_class_dict(k) -> dict:
+    return {"id": str(k.id), "class_code": k.class_code, "name": k.name, "description": k.description, "status": k.status}
+
+
+@router.get("/equipment-classes")
+async def get_equipment_classes(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 4) -- registered ahead of
+    `/{recipe_family_id}/versions` so "equipment-classes" is never parsed as a recipe_family_id UUID."""
+    await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=None)
+    classes = await recipe_master_service.list_equipment_classes(session)
+    return [_equipment_class_dict(k) for k in classes]
+
+
+@router.post("/equipment-classes", response_model=MutationReceipt)
+async def post_create_equipment_class(
+    cmd: CreateEquipmentClassCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="recipe.author", site_id=None)
+        return await create_equipment_class(session, cmd, actor.user_id)
 
 
 @router.get("/{recipe_family_id}/versions")

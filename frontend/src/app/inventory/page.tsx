@@ -5,7 +5,7 @@ import {
   api,
   ApiError,
   formatDateTime,
-  holdsAnyRole,
+  hasPermission,
   listAll,
   listBatchesForSite,
   newIdempotencyKey,
@@ -213,9 +213,14 @@ export default function InventoryPage() {
   const [mergeSelection, setMergeSelection] = useState<Set<string>>(new Set());
   const [mergeOpen, setMergeOpen] = useState(false);
 
-  const canMove = holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
-  const canApprove = holdsAnyRole(me, ["Admin", "QA Releaser"]);
-  const canManageLocations = holdsAnyRole(me, ["Admin", "Supervisor"]);
+  // transfer/split/merge/cycle-count/consumption/return/loss/destruction share one grant.
+  const canMove = hasPermission(me, "inventory_transaction.transfer");
+  const canApprove = hasPermission(me, "inventory_adjustment_request.approve");
+  const canManageLocations = hasPermission(me, "warehouse_location.create");
+  // inventory_adjustment_request.create is its OWN, broader grant (also QA Releaser, unlike the
+  // Operator/Supervisor-only canMove bundle above) -- audit finding 2026-09-18: "Request adjustment" was
+  // gated on canMove and hid the button from QA Releaser despite holding this exact permission.
+  const canRequestAdjustment = hasPermission(me, "inventory_adjustment_request.create");
 
   // Populated once for the material picker; Phase 1 row counts sit well inside listAll's 100 cap.
   useEffect(() => {
@@ -542,7 +547,7 @@ export default function InventoryPage() {
                   independent approver. Cycle counts are the routine mechanism.
                   </p>
                   <div className="flex gap-2">
-                    {canMove && (
+                    {canRequestAdjustment && (
                       <Button variant="secondary" onClick={() => setAction("adjustment")}>
                         <Icon name="plus" /> Request adjustment
                       </Button>

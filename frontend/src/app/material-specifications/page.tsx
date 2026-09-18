@@ -6,7 +6,6 @@ import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
-import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
@@ -228,10 +227,6 @@ function ReleaseModal({
 }) {
   return (
     <>
-      <Banner tone="warn" title="Signature policy not yet configured">
-        The challenge below is real, but no signature policy is configured for releasing a material
-        specification version yet - the release itself will correctly fail closed until one is added.
-      </Banner>
       <SignatureCeremony
         open
         onClose={onClose}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, ApiError, holdsAnyRole, newIdempotencyKey, pagedFetcher } from "@/lib/api";
+import { api, ApiError, hasPermission, newIdempotencyKey, pagedFetcher } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -98,8 +98,9 @@ export default function QcPage() {
   const [specsReloadToken, setSpecsReloadToken] = useState(0);
   const [samplesReloadToken, setSamplesReloadToken] = useState(0);
 
-  const canAnalyse = holdsAnyRole(me, ["Admin", "Operator", "Supervisor", "QC Reviewer"]);
-  const canReview = holdsAnyRole(me, ["Admin", "QA Reviewer", "QC Reviewer"]);
+  // qc_sample.create/.receive, qc_test_order.create/.start/.record_raw_data/.complete share one grant.
+  const canAnalyse = hasPermission(me, "qc_test_order.start");
+  const canReview = hasPermission(me, "qc_test_order.review");
 
   // Feeds "Add test order"'s definition picker — every released spec's definitions, not just one page
   // of the browsable table below (same Phase-1 "cap at 100, no site scoping" precedent as every other
@@ -1231,11 +1232,7 @@ function MethodMasterCard({ canRelease, reloadToken }: { canRelease: boolean; re
   return (
     <Card pad className="mb-4">
       <CardHeader title="QC method master" meta="" />
-      <p className="fs-2 text-muted mb-3">
-        Look up a method&apos;s versions by its method code. No signature policy is configured yet for
-        <code> qc_method_version/release</code> - the challenge below is real, but the actual
-        release will correctly fail closed until a policy is added.
-      </p>
+      <p className="fs-2 text-muted mb-3">Look up a method&apos;s versions by its method code.</p>
       <div className="flex gap-2 items-end mb-3">
         <div style={{ flex: 1 }}>
           <Field label="Method code">

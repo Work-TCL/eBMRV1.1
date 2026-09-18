@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.batch_execution.models import (
     Batch,
     BatchStep,
+    BatchStepEquipmentRequirement,
     StepComment,
     StepEvidenceLink,
     StepHandover,
@@ -277,6 +278,27 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
                 if step_id:
                     corrections_by_step_id[step_id].append(c)
 
+    # Known-limitations fix (docs/testing/demo-gujarati/08 §8.8): the FROZEN equipment requirements
+    # (BatchStepEquipmentRequirement, set at issue_batch()) are the ones commands.py::
+    # _enforce_step_equipment actually checks -- distinct from equipment_requirements_by_code above, which
+    # reads the live recipe graph and is display-only. Surfaced so the step-start UI can build an accurate
+    # equipment-asset picker even if the recipe has since been edited.
+    frozen_equipment_requirements_by_step_id: dict[uuid.UUID, list[BatchStepEquipmentRequirement]] = defaultdict(list)
+    if steps:
+        frozen_eq_rows = (
+            (
+                await session.execute(
+                    select(BatchStepEquipmentRequirement).where(
+                        BatchStepEquipmentRequirement.batch_step_id.in_([s.id for s in steps])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for eq in frozen_eq_rows:
+            frozen_equipment_requirements_by_step_id[eq.batch_step_id].append(eq)
+
     return {
         "batch": batch,
         "steps": steps,
@@ -286,6 +308,7 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
         "evidence_by_code": evidence_by_code,
         "material_requirements_by_code": material_requirements_by_code,
         "equipment_requirements_by_code": equipment_requirements_by_code,
+        "frozen_equipment_requirements_by_step_id": frozen_equipment_requirements_by_step_id,
         "predecessors_of": predecessors_of,
         "successors_of": successors_of,
         "results_by_step_id": results_by_step_id,
