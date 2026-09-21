@@ -10,6 +10,7 @@ recipe_equipment_requirement schema decision, IAM qualification schema, exceptio
 -- SG-048.
 """
 
+import base64
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -32,8 +33,15 @@ from app.modules.batch_execution.models import (
     StepResult,
     StepResultCorrection,
 )
+from app.modules.batch_execution.record_service import build_batch_record
 from app.modules.equipment import commands as equipment_commands
 from app.modules.equipment.models import EquipmentAsset, EquipmentUseLog
+from app.modules.evidence.commands import (
+    FinalizeEvidenceUploadCommand,
+    StageEvidenceUploadCommand,
+    finalize_evidence_upload,
+    stage_evidence_upload,
+)
 from app.modules.genealogy import service as genealogy_service
 from app.modules.iam.models import Qualification, User
 from app.modules.qms import commands as qms_commands
@@ -48,6 +56,7 @@ from app.modules.recipe_master.models import (
 )
 from app.modules.rules import service as rules_service
 from app.modules.signature import service as signature_service
+from app.modules.validation.shared import render_pdf_report
 from app.modules.vault import service as vault_service
 from app.mutation.errors import (
     CalibrationExpiredError,
@@ -2008,4 +2017,122 @@ async def handover_step(session: AsyncSession, cmd: HandoverStepCommand, actor_u
     return MutationReceipt(
         command_id=receipt.id, aggregate_id=step.id, resulting_version=step.version, audit_event_id=audit_event.id,
         correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Client requirement #11 -- Batch Record PDF. Builds the aggregated view (record_service.py) and stores
+# the rendered PDF as an EvidenceObject owned by the batch, through the existing stage->finalize evidence
+# commands, so the generated record carries a real audit trail rather than being a fire-and-forget
+# download. Not signature-gated -- an export/report action, matching the `validation` module's own
+# export precedent (its PDF exports aren't signed either).
+# ---------------------------------------------------------------------------
+
+
+class GenerateBatchRecordPdfCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str
+    batch_id: uuid.UUID
+
+
+def _batch_record_pdf_bytes(batch_id: uuid.UUID, record: dict) -> bytes:
+    batch = record["batch"]
+    sections: list[tuple[str, list[str], list[list]]] = [
+        (
+            "Steps",
+            ["Step code", "State", "Started", "Completed"],
+            [[s["recipe_step_code"], s["state"], s["started_at"] or "", s["completed_at"] or ""] for s in record["steps"]],
+        ),
+        (
+            "Step results",
+            ["Step code", "Parameter", "Value", "UOM", "Quality status"],
+            [
+                [s["recipe_step_code"], r["parameter_code"], r["value"], r["uom"] or "", r["quality_status"] or ""]
+                for s in record["steps"]
+                for r in s["results"]
+            ],
+        ),
+        (
+            "Materials consumed",
+            ["Internal lot", "Quantity", "UOM", "Issued at"],
+            [[m["internal_lot"], m["quantity"], m["uom"], m["issued_at"]] for m in record["materials_consumed"]],
+        ),
+        (
+            "Equipment used",
+            ["Equipment asset", "Log type", "Occurred at"],
+            [[u["equipment_asset_id"], u["log_type"], u["occurred_at"]] for u in record["equipment_used"]],
+        ),
+        (
+            "Deviations",
+            ["Deviation number", "Type", "Source", "State"],
+            [[d["deviation_number"], d["deviation_type"], d["source_type"], d["state"]] for d in record["deviations"]],
+        ),
+        (
+            "QC results",
+            ["Sample", "Spec code", "Scope", "Test code", "Order state", "Outcome"],
+            [
+                [q["sample_number"], q["spec_code"], q["scope_type"], q["test_code"], q["order_state"], q["outcome"] or ""]
+                for q in record["qc_results"]
+            ],
+        ),
+        (
+            "Status history",
+            ["Occurred at", "Action", "Actor", "Signed"],
+            [
+                [e["occurred_at"], e["action"], e["actor_username"] or e["actor_id"], "Yes" if e["signature_id"] else "No"]
+                for e in record["status_history"]
+            ],
+        ),
+    ]
+    return render_pdf_report(
+        title=f"Batch Record — {batch['batch_number']}",
+        subtitle=f"Batch {batch_id} — state: {batch['state']} — target {batch['target_qty']} {batch['target_uom']}",
+        sections=sections,
+    )
+
+
+async def generate_batch_record_pdf(
+    session: AsyncSession, cmd: GenerateBatchRecordPdfCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    batch = await session.get(Batch, cmd.batch_id)
+    if batch is None:
+        raise NotFoundError("Batch not found")
+
+    record = await build_batch_record(session, cmd.batch_id)
+    pdf_bytes = _batch_record_pdf_bytes(cmd.batch_id, record)
+
+    staged = await stage_evidence_upload(
+        session,
+        StageEvidenceUploadCommand(
+            idempotency_key=str(uuid.uuid4()), owner_type="batch", owner_id=cmd.batch_id, site_id=batch.site_id,
+            filename=f"batch-record-{batch.batch_number}.pdf", mime_type="application/pdf",
+            provenance={"document_type": "batch_record_pdf", "generated_by": str(actor_user_id)},
+            reason=f"Batch record PDF generated for batch {batch.batch_number}",
+        ),
+        actor_user_id,
+    )
+    finalized = await finalize_evidence_upload(
+        session,
+        FinalizeEvidenceUploadCommand(
+            idempotency_key=str(uuid.uuid4()), evidence_id=staged.aggregate_id, expected_version=staged.resulting_version,
+            content_base64=base64.b64encode(pdf_bytes).decode("ascii"),
+            reason=f"Batch record PDF generated for batch {batch.batch_number}",
+        ),
+        actor_user_id,
+    )
+
+    receipt = await record_command_receipt(
+        session, site_id=batch.site_id, command_type="GenerateBatchRecordPdf", aggregate_type="batch",
+        aggregate_id=batch.id, expected_version=batch.version, resulting_version=batch.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=finalized.aggregate_id, resulting_version=finalized.resulting_version,
+        audit_event_id=finalized.audit_event_id, correlation_id=finalized.correlation_id,
     )
