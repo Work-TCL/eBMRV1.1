@@ -98,6 +98,25 @@ async def test_create_draft_requires_recipe_author_permission(client, seeded, db
     assert resp.json()["code"] == "ROLE_MISSING"
 
 
+async def test_create_draft_without_recipe_code_auto_generates_new_family(client, seeded, db):
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe.autocode")
+    admin_token = await login(client, "admin.recipe.autocode")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], "RCPPRD-AUTOCODE")
+
+    body = _two_step_body(product_version_id, seeded["site_id"])
+    body["product_business_id"] = "RCPPRD-AUTOCODE"
+    body.pop("recipe_code")
+    resp = await client.post("/recipes/v2/drafts", json=body, headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    version_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/recipes/v2/versions/{version_id}", headers=auth_headers(admin_token))).json()
+    families_resp = (await client.get("/recipes/v2/families", headers=auth_headers(admin_token))).json()
+    family = next(f for f in families_resp if f["recipe_family_id"] == detail["recipe_family_id"])
+    assert family["recipe_code"].startswith("RCP-")
+
+
 async def test_draft_rejects_unknown_product_version_with_404(client, seeded, db):
     async with db.begin():
         await _make_admin(db, seeded, "admin.recipe1b")

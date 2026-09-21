@@ -82,6 +82,29 @@ async def test_unauthorized_without_token_rejected(client):
     assert resp.status_code == 401
 
 
+async def test_create_draft_without_product_code_auto_generates_at_version_1(client, seeded, db):
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.product.autocode")
+    admin_token = await login(client, "admin.product.autocode")
+
+    body = _draft_body(seeded["site_id"], "PRD-AUTOCODE-1")
+    body.pop("product_code")
+    resp = await client.post("/products/v1/drafts", json=body, headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    version_id = resp.json()["aggregate_id"]
+    detail = (await client.get(f"/products/v1/{version_id}", headers=auth_headers(admin_token))).json()
+    assert detail["product_code"].startswith("PRD-")
+
+    body2 = _draft_body(seeded["site_id"], "PRD-AUTOCODE-2")
+    body2.pop("product_code")
+    resp2 = await client.post("/products/v1/drafts", json=body2, headers=auth_headers(admin_token))
+    assert resp2.status_code == 200, resp2.text
+    detail2 = (
+        await client.get(f"/products/v1/{resp2.json()['aggregate_id']}", headers=auth_headers(admin_token))
+    ).json()
+    assert detail2["product_code"] != detail["product_code"]
+
+
 async def test_create_draft_rejects_duplicate_product_code_under_a_different_business_id(client, seeded, db):
     """ProductVersion carries two independent UniqueConstraints -- (product_business_id, version_no) and
     (product_code, version_no) (migration d5d48a66187f). Only the first was pre-checked in application

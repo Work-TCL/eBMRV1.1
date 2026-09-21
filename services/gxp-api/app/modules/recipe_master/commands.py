@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.audit.models import AuditEvent
+from app.modules.codegen import service as codegen_service
 from app.modules.iam.models import Role, User
 from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import effective_role_names
@@ -180,17 +181,43 @@ class DependencyInput(BaseModel):
 
 
 async def _get_or_create_family(
-    session: AsyncSession, *, product_business_id: str, recipe_code: str, site_id: uuid.UUID, manufacturing_profile_code: str
+    session: AsyncSession,
+    *,
+    product_business_id: str,
+    recipe_code: str | None,
+    site_id: uuid.UUID,
+    manufacturing_profile_code: str,
 ) -> RecipeFamily:
-    existing = (await session.execute(select(RecipeFamily).where(RecipeFamily.recipe_code == recipe_code))).scalar_one_or_none()
-    if existing is not None:
-        if existing.product_business_id != product_business_id:
-            raise ValidationFailedError(
-                "recipe_code is already used by a different product_business_id",
-                recipe_code=recipe_code,
-                existing_product_business_id=existing.product_business_id,
+    if recipe_code:
+        existing = (
+            await session.execute(select(RecipeFamily).where(RecipeFamily.recipe_code == recipe_code))
+        ).scalar_one_or_none()
+        if existing is not None:
+            if existing.product_business_id != product_business_id:
+                raise ValidationFailedError(
+                    "recipe_code is already used by a different product_business_id",
+                    recipe_code=recipe_code,
+                    existing_product_business_id=existing.product_business_id,
+                )
+            return existing
+    else:
+        # Client requirement #1: recipe_code auto-generates only when there is no existing family for
+        # this (product_business_id, site, manufacturing profile) yet -- a later version/step-edit on an
+        # already-known family reuses its established code, matching the always-caller-supplied behavior
+        # this command had before auto-generation existed.
+        existing = (
+            await session.execute(
+                select(RecipeFamily).where(
+                    RecipeFamily.product_business_id == product_business_id,
+                    RecipeFamily.site_id == site_id,
+                    RecipeFamily.manufacturing_profile_code == manufacturing_profile_code,
+                )
             )
-        return existing
+        ).scalars().first()
+        if existing is not None:
+            return existing
+        recipe_code = await codegen_service.next_code(session, entity_type="RECIPE", prefix="RCP")
+
     family = RecipeFamily(
         product_business_id=product_business_id,
         recipe_code=recipe_code,
@@ -421,7 +448,7 @@ async def create_equipment_class(
 
 class CreateRecipeDraftCommand(CommandEnvelope):
     product_business_id: str
-    recipe_code: str
+    recipe_code: str | None = None
     version_no: int
     product_version_id: uuid.UUID
     site_id: uuid.UUID

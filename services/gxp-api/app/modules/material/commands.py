@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.referential import find_blocking_reference
 from app.core.security import verify_password
 from app.modules.batch_execution.models import Batch, BatchStep
+from app.modules.codegen import service as codegen_service
 from app.modules.genealogy import service as genealogy_service
 from app.modules.iam.models import Qualification, User
 from app.modules.material.models import (
@@ -114,7 +115,7 @@ def _receipt_from_existing(existing) -> MutationReceipt:
 
 class CreateMaterialCommand(CommandEnvelope):
     site_id: uuid.UUID
-    code: str
+    code: str | None = None
     name: str
     uom: str
 
@@ -127,8 +128,18 @@ async def create_material(
     if existing is not None:
         return _receipt_from_existing(existing)
 
+    if cmd.code:
+        clash = (
+            await session.execute(select(Material.id).where(Material.site_id == cmd.site_id, Material.code == cmd.code))
+        ).scalar_one_or_none()
+        if clash is not None:
+            raise ValidationFailedError("Material code already exists for this site", code=cmd.code)
+        code = cmd.code
+    else:
+        code = await codegen_service.next_code(session, entity_type="MATERIAL", prefix="MAT", site_id=cmd.site_id)
+
     material = Material(
-        site_id=cmd.site_id, code=cmd.code, name=cmd.name, uom=cmd.uom, uom_id=await _resolve_uom_id(session, cmd.uom),
+        site_id=cmd.site_id, code=code, name=cmd.name, uom=cmd.uom, uom_id=await _resolve_uom_id(session, cmd.uom),
         status="active", version=1,
     )
     session.add(material)

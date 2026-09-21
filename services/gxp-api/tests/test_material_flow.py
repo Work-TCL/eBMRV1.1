@@ -58,6 +58,32 @@ async def _release_lot(client, token, lot_id):
     return resp.json()
 
 
+async def test_create_material_without_code_auto_generates(client, seeded):
+    pe_token = await login(client, "process.engineer")
+    site_id = seeded["site_id"]
+
+    resp1 = await client.post(
+        "/materials",
+        json={"idempotency_key": idem(), "site_id": str(site_id), "name": "Auto Coded Material", "uom": "kg"},
+        headers=auth_headers(pe_token),
+    )
+    assert resp1.status_code == 200, resp1.text
+    resp2 = await client.post(
+        "/materials",
+        json={"idempotency_key": idem(), "site_id": str(site_id), "name": "Auto Coded Material 2", "uom": "kg"},
+        headers=auth_headers(pe_token),
+    )
+    assert resp2.status_code == 200, resp2.text
+
+    listing = (await client.get("/materials", headers=auth_headers(pe_token))).json()
+    codes = {item["id"]: item["code"] for item in listing["items"]}
+    code1 = codes[resp1.json()["aggregate_id"]]
+    code2 = codes[resp2.json()["aggregate_id"]]
+    assert code1.startswith("MAT-")
+    assert code2.startswith("MAT-")
+    assert code1 != code2
+
+
 async def test_receipt_enters_quarantine(client, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]

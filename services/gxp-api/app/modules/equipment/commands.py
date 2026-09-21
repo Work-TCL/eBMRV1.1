@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
+from app.modules.codegen import service as codegen_service
 from app.modules.equipment.cleaning_models import EquipmentArea
 from app.modules.equipment.models import (
     CALIBRATION_RESULTS,
@@ -175,7 +176,7 @@ async def _write_receipt(
 
 class CreateEquipmentAssetCommand(CommandEnvelope):
     site_id: uuid.UUID
-    equipment_code: str
+    equipment_code: str | None = None
     equipment_class_id: uuid.UUID | None = None
     manufacturer: str | None = None
     model: str | None = None
@@ -193,16 +194,18 @@ async def create_equipment_asset(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    if not cmd.equipment_code.strip():
-        raise ValidationFailedError("equipment_code is required")
-    conflict = (
-        await session.execute(select(EquipmentAsset).where(EquipmentAsset.equipment_code == cmd.equipment_code))
-    ).scalar_one_or_none()
-    if conflict is not None:
-        raise ValidationFailedError("equipment_code is already in use", equipment_code=cmd.equipment_code)
+    if cmd.equipment_code and cmd.equipment_code.strip():
+        conflict = (
+            await session.execute(select(EquipmentAsset).where(EquipmentAsset.equipment_code == cmd.equipment_code))
+        ).scalar_one_or_none()
+        if conflict is not None:
+            raise ValidationFailedError("equipment_code is already in use", equipment_code=cmd.equipment_code)
+        equipment_code = cmd.equipment_code
+    else:
+        equipment_code = await codegen_service.next_code(session, entity_type="EQUIPMENT_ASSET", prefix="EQP")
 
     asset = EquipmentAsset(
-        site_id=cmd.site_id, equipment_code=cmd.equipment_code, equipment_class_id=cmd.equipment_class_id,
+        site_id=cmd.site_id, equipment_code=equipment_code, equipment_class_id=cmd.equipment_class_id,
         manufacturer=cmd.manufacturer, model=cmd.model, serial_no=cmd.serial_no, location_id=cmd.location_id,
         state="INSTALLED", dedicated=cmd.dedicated, firmware_version=cmd.firmware_version, version=1,
     )
@@ -232,7 +235,7 @@ async def create_equipment_asset(
 
 class CreateEquipmentAreaCommand(CommandEnvelope):
     site_id: uuid.UUID
-    area_code: str
+    area_code: str | None = None
     area_type: str | None = None
     classification: str | None = None
     criticality: str | None = None
@@ -247,17 +250,21 @@ async def create_equipment_area(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    if not cmd.area_code.strip():
-        raise ValidationFailedError("area_code is required")
-    # Matches the DB's own UniqueConstraint("area_code") — table-wide, not per-site.
-    conflict = (
-        await session.execute(select(EquipmentArea).where(EquipmentArea.area_code == cmd.area_code))
-    ).scalar_one_or_none()
-    if conflict is not None:
-        raise ValidationFailedError("area_code is already in use", area_code=cmd.area_code, existing_id=str(conflict.id))
+    if cmd.area_code and cmd.area_code.strip():
+        # Matches the DB's own UniqueConstraint("area_code") — table-wide, not per-site.
+        conflict = (
+            await session.execute(select(EquipmentArea).where(EquipmentArea.area_code == cmd.area_code))
+        ).scalar_one_or_none()
+        if conflict is not None:
+            raise ValidationFailedError(
+                "area_code is already in use", area_code=cmd.area_code, existing_id=str(conflict.id)
+            )
+        area_code = cmd.area_code
+    else:
+        area_code = await codegen_service.next_code(session, entity_type="EQUIPMENT_AREA", prefix="ARE")
 
     area = EquipmentArea(
-        site_id=cmd.site_id, area_code=cmd.area_code, area_type=cmd.area_type,
+        site_id=cmd.site_id, area_code=area_code, area_type=cmd.area_type,
         classification=cmd.classification, criticality=cmd.criticality,
         cleanliness_status=cmd.cleanliness_status, status="active", version=1,
     )

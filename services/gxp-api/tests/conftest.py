@@ -59,6 +59,7 @@ DEMO_PASSWORD = "ChangeMe123!"
 DEMO_EDGE_BOOTSTRAP_TOKEN = "demo-edge-bootstrap-token-0001"
 
 APP_TABLES = [
+    "codegen.code_sequence_counter",
     "ebmr.reconciliation_records",
     "ebmr.manufacturing_calculations",
     "machine_integration.machine_replay_jobs",

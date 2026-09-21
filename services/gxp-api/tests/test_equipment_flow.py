@@ -81,6 +81,29 @@ async def test_create_asset_enters_installed(client, seeded):
     assert detail["version"] == 1
 
 
+async def test_create_asset_without_code_auto_generates(client, seeded):
+    admin_token = await login(client, "equipment.admin")
+    site_id = seeded["site_id"]
+    resp = await client.post(
+        "/equipment/v1/assets",
+        json={"idempotency_key": idem(), "site_id": str(site_id), "manufacturer": "Acme", "model": "M1"},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    asset_id = resp.json()["aggregate_id"]
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    assert detail["equipment_code"].startswith("EQP-")
+
+    resp2 = await client.post(
+        "/equipment/v1/assets",
+        json={"idempotency_key": idem(), "site_id": str(site_id), "manufacturer": "Acme", "model": "M2"},
+        headers=auth_headers(admin_token),
+    )
+    assert resp2.status_code == 200, resp2.text
+    detail2 = (await client.get(f"/equipment/v1/assets/{resp2.json()['aggregate_id']}")).json()
+    assert detail2["equipment_code"] != detail["equipment_code"]
+
+
 async def test_create_asset_requires_equipment_administrator_role(client, seeded):
     op_token = await login(client, "operator1")
     resp = await client.post(

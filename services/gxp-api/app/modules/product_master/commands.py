@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.audit.models import AuditEvent
+from app.modules.codegen import service as codegen_service
 from app.modules.equipment import aseptic_commands as aseptic_service
 from app.modules.iam.models import Role, User
 from app.modules.policy.service import effective_role_names
@@ -245,7 +246,7 @@ async def create_product_family(
 
 class CreateProductDraftCommand(CommandEnvelope):
     product_business_id: str
-    product_code: str
+    product_code: str | None = None
     name: str
     version_no: int
     site_id: uuid.UUID
@@ -284,6 +285,29 @@ async def create_draft(session: AsyncSession, cmd: CreateProductDraftCommand, ac
             version_no=cmd.version_no,
         )
 
+    # Client requirement #1: product_code auto-generates only for the first version of a new product
+    # (product_business_id stays caller-supplied always -- it's the stable ERP-style identity key).
+    # Later versions of an already-known product_business_id reuse its established product_code, exactly
+    # as a caller-supplied product_code always had to match today.
+    if cmd.product_code:
+        product_code = cmd.product_code
+    elif cmd.version_no == 1:
+        product_code = await codegen_service.next_code(session, entity_type="PRODUCT", prefix="PRD")
+    else:
+        prior_code = (
+            await session.execute(
+                select(ProductVersion.product_code)
+                .where(ProductVersion.product_business_id == cmd.product_business_id)
+                .order_by(ProductVersion.version_no.desc())
+            )
+        ).scalars().first()
+        if prior_code is None:
+            raise ValidationFailedError(
+                "product_code is required when no prior version exists for this product_business_id",
+                product_business_id=cmd.product_business_id,
+            )
+        product_code = prior_code
+
     # `ProductVersion` also carries a second, independent UniqueConstraint("product_code", "version_no")
     # (migration d5d48a66187f) -- a different product_business_id reusing the same product_code+version_no
     # was previously left to hit that raw DB constraint uncaught, surfacing as an opaque SYSTEM_FAULT
@@ -293,7 +317,7 @@ async def create_draft(session: AsyncSession, cmd: CreateProductDraftCommand, ac
     code_conflict = (
         await session.execute(
             select(ProductVersion).where(
-                ProductVersion.product_code == cmd.product_code,
+                ProductVersion.product_code == product_code,
                 ProductVersion.version_no == cmd.version_no,
             )
         )
@@ -301,7 +325,7 @@ async def create_draft(session: AsyncSession, cmd: CreateProductDraftCommand, ac
     if code_conflict is not None:
         raise ValidationFailedError(
             "A draft or released version already exists at this product_code/version_no",
-            product_code=cmd.product_code,
+            product_code=product_code,
             version_no=cmd.version_no,
             existing_business_id=code_conflict.product_business_id,
         )
@@ -318,7 +342,7 @@ async def create_draft(session: AsyncSession, cmd: CreateProductDraftCommand, ac
     version = ProductVersion(
         product_business_id=cmd.product_business_id,
         version_no=cmd.version_no,
-        product_code=cmd.product_code,
+        product_code=product_code,
         name=cmd.name,
         site_id=cmd.site_id,
         product_family_id=cmd.product_family_id,

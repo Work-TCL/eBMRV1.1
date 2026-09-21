@@ -52,6 +52,34 @@ async def _create_qualification(client, token, supplier_id, site_id, quality_agr
     return resp.json()["aggregate_id"]
 
 
+async def test_create_supplier_without_code_auto_generates(client, seeded, db):
+    pe_token = await login(client, "process.engineer")
+    resp1 = await client.post(
+        "/suppliers/v1",
+        json={
+            "idempotency_key": idem(), "legal_name": "Auto Coded Supplier One", "role_type": "supplier",
+            "country": "US", "sites": [],
+        },
+        headers=auth_headers(pe_token),
+    )
+    assert resp1.status_code == 200, resp1.text
+    resp2 = await client.post(
+        "/suppliers/v1",
+        json={
+            "idempotency_key": idem(), "legal_name": "Auto Coded Supplier Two", "role_type": "supplier",
+            "country": "US", "sites": [],
+        },
+        headers=auth_headers(pe_token),
+    )
+    assert resp2.status_code == 200, resp2.text
+
+    supplier1 = await db.get(Supplier, resp1.json()["aggregate_id"])
+    supplier2 = await db.get(Supplier, resp2.json()["aggregate_id"])
+    assert supplier1.supplier_code.startswith("SUP-")
+    assert supplier2.supplier_code.startswith("SUP-")
+    assert supplier1.supplier_code != supplier2.supplier_code
+
+
 async def test_create_supplier_and_site(client, seeded, db):
     pe_token = await login(client, "process.engineer")
     supplier_id = await _create_supplier(client, pe_token)
