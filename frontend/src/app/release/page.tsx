@@ -15,7 +15,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
-import { Field } from "@/components/ui/Field";
+import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
@@ -139,7 +139,11 @@ export default function ReleasePage() {
         blockers and the decision record are the parts available today.
       </p>
 
-      <form onSubmit={evaluate} className="flex flex-wrap items-end gap-4 mb-4">
+      {/* items-start, not items-end: the Batch field carries a hint line below its select, which
+         items-end would bottom-align the row to instead of the select itself — dragging the button down
+         below where it visually belongs. RowButtonSlot gives the button a same-height invisible label so
+         it lines up with the real inputs regardless of hint presence. */}
+      <form onSubmit={evaluate} className="flex flex-wrap items-start gap-4 mb-4">
         <Field label="Scope type">
           <Select value={scopeType} onChange={(e) => setScopeType(e.target.value)}>
             {SCOPE_TYPES.map((s) => (
@@ -167,9 +171,11 @@ export default function ReleasePage() {
           </Select>
         </Field>
         {canEvaluateRelease(me) && (
-          <Button type="submit" variant="secondary" disabled={evaluating || !targetId.trim()}>
-            <Icon name="refresh" /> {evaluating ? "Evaluating…" : "Evaluate eligibility"}
-          </Button>
+          <RowButtonSlot>
+            <Button type="submit" variant="secondary" disabled={evaluating || !targetId.trim()}>
+              <Icon name="refresh" /> {evaluating ? "Evaluating…" : "Evaluate eligibility"}
+            </Button>
+          </RowButtonSlot>
         )}
       </form>
 

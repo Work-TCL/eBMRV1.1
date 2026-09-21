@@ -251,6 +251,103 @@ async def test_hold_makes_package_blocked_and_completion_rejected(client, seeded
     assert resp.json()["code"] == "VALIDATION_FAILED"
 
 
+async def test_material_blocker_and_em_warning_wired_into_completeness(client, seeded, db):
+    """2026-09-19, project-owner-directed: QA review completeness now also checks materials (a lot
+    consumed by the batch that was never cleared for use) as a hard blocker, and EM 'alert'-level
+    readings as a non-blocking warning surfaced through `GET .../exceptions`. Same reasoning as
+    `release/service.py::_material_signals`/`_em_signals` -- see those docstrings."""
+    import uuid as uuid_mod
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from app.modules.equipment.em_models import EmSampleOrReading
+    from app.modules.material.models import Material, MaterialIssue, MaterialLot
+
+    admin_token, batch_id = await _setup(db, client, seeded, "6")
+
+    async with db.begin():
+        admin_user = (await db.execute(select(User).where(User.username == "admin.qa6"))).scalar_one()
+        material = Material(site_id=seeded["site_id"], code="RM-QA6", name="QA Test Material", uom="kg", status="active")
+        db.add(material)
+        await db.flush()
+        internal_lot = f"LOT-QA6-{uuid_mod.uuid4().hex[:6]}"
+        lot = MaterialLot(
+            material_id=material.id, site_id=seeded["site_id"], internal_lot=internal_lot,
+            received_quantity=Decimal("10"), available_quantity=Decimal("10"), uom="kg", status="quarantine",
+            received_by_user_id=admin_user.id,
+        )
+        db.add(lot)
+        await db.flush()
+        db.add(MaterialIssue(material_lot_id=lot.id, batch_id=uuid_mod.UUID(batch_id), quantity=Decimal("1"), uom="kg", issued_by_user_id=admin_user.id))
+
+        em_location_id = next(iter(seeded["em_locations"].values())).id
+        db.add(
+            EmSampleOrReading(
+                site_id=seeded["site_id"], program_version_id=seeded["em_program"].id, location_id=em_location_id,
+                monitoring_type="viable_air", batch_id=uuid_mod.UUID(batch_id), alert_action_status="alert", state="REVIEWED",
+            )
+        )
+
+    resp = await client.post(
+        f"/qa-review/v1/batches/{batch_id}/packages",
+        json={"idempotency_key": idem(), "batch_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    package_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/qa-review/v1/packages/{package_id}", headers=auth_headers(admin_token))).json()
+    assert detail["completeness_status"] == "blocked"
+
+    exceptions = (await client.get(f"/qa-review/v1/packages/{package_id}/exceptions", headers=auth_headers(admin_token))).json()
+    assert any(internal_lot in b for b in exceptions["blockers"])
+    assert any("alert" in w for w in exceptions["warnings"])
+
+    resp = await client.post(
+        f"/qa-review/v1/packages/{package_id}/complete",
+        json={"idempotency_key": idem(), "package_id": package_id, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_yield_reconciliation_blocker_wired_into_completeness(client, seeded, db):
+    """2026-09-19, project-owner-directed follow-up, correcting a stale claim: Document 17 (yield/
+    reconciliation) was NOT "never built" -- see release/service.py::_yield_signals docstring for the
+    full story. An OUT_OF_LIMIT manufacturing calculation blocks completeness the same way a failing QC
+    result does."""
+    import uuid as uuid_mod
+
+    from app.modules.yield_reconciliation.models import ManufacturingCalculation
+
+    admin_token, batch_id = await _setup(db, client, seeded, "7")
+
+    async with db.begin():
+        calc = ManufacturingCalculation(
+            site_id=seeded["site_id"], batch_id=uuid_mod.UUID(batch_id), calculation_type="YIELD",
+            input_refs={"note": "test"}, input_hash="deadbeef", state="OUT_OF_LIMIT",
+        )
+        db.add(calc)
+        await db.flush()
+        calc_id = calc.id
+
+    resp = await client.post(
+        f"/qa-review/v1/batches/{batch_id}/packages",
+        json={"idempotency_key": idem(), "batch_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    package_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/qa-review/v1/packages/{package_id}", headers=auth_headers(admin_token))).json()
+    assert detail["completeness_status"] == "blocked"
+
+    exceptions = (await client.get(f"/qa-review/v1/packages/{package_id}/exceptions", headers=auth_headers(admin_token))).json()
+    assert any(str(calc_id) in b for b in exceptions["blockers"])
+
+
 async def test_complete_package_and_reopen_on_batch_change(client, seeded, db):
     admin_token, batch_id = await _setup(db, client, seeded, "5")
     resp = await client.post(

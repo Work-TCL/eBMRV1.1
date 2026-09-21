@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.referential import find_blocking_reference
 from app.core.security import verify_password
 from app.modules.batch_execution.models import Batch, BatchStep
+from app.modules.genealogy import service as genealogy_service
 from app.modules.iam.models import Qualification, User
 from app.modules.material.models import (
     PRE_DISPOSITION_LOT_STATES,
@@ -501,16 +502,33 @@ async def issue_material_to_batch(
         lot.status = "consumed"
     lot.version += 1
 
-    session.add(
-        MaterialIssue(
-            material_lot_id=lot.id,
-            batch_id=cmd.batch_id,
-            batch_step_id=cmd.batch_step_id,
-            quantity=cmd.quantity,
-            uom=lot.uom,
-            uom_id=lot.uom_id,  # copied from the lot's own already-resolved value, not re-queried
-            issued_by_user_id=actor_user_id,
-        )
+    issue = MaterialIssue(
+        material_lot_id=lot.id,
+        batch_id=cmd.batch_id,
+        batch_step_id=cmd.batch_step_id,
+        quantity=cmd.quantity,
+        uom=lot.uom,
+        uom_id=lot.uom_id,  # copied from the lot's own already-resolved value, not re-queried
+        issued_by_user_id=actor_user_id,
+    )
+    session.add(issue)
+    await session.flush()  # need issue.id for the genealogy edge's idempotent source_event_id below
+
+    # 2026-09-19, project-owner-directed: Document 13 §8's own "MaterialConsumed" event, wired directly --
+    # this command IS that event, so no separate outbox consumer is needed (SG-052's deferred wiring
+    # otherwise waits for a Material Service that already exists here as this module).
+    material_lot_node = await genealogy_service.get_or_create_node(
+        session, site_id=site_id, node_type="material_lot", authoritative_record_type="material_lot",
+        authoritative_record_id=lot.id, business_ref=lot.internal_lot, actor_user_id=actor_user_id,
+    )
+    drug_batch_node = await genealogy_service.get_or_create_node(
+        session, site_id=site_id, node_type="drug_batch", authoritative_record_type="batch",
+        authoritative_record_id=batch.id, business_ref=batch.batch_number, actor_user_id=actor_user_id,
+    )
+    await genealogy_service.create_edge(
+        session, from_node_id=material_lot_node.id, to_node_id=drug_batch_node.id, edge_type="CONSUMED_IN",
+        quantity=cmd.quantity, uom=lot.uom, step_id=cmd.batch_step_id, source_event_id=issue.id,
+        actor_user_id=actor_user_id,
     )
 
     correlation_id = uuid.uuid4()

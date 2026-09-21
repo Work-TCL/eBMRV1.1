@@ -24,7 +24,7 @@
 |---|---|---|
 | Admin | બધું જ કરી શકે — બ્રેક-ગ્લાસ સુપરયુઝર; `platform.administer` ધરાવતો એકમાત્ર role | `admin` |
 | Operator | શોપ-ફ્લોર પર batch/step execution, dispensing, cleaning | `operator1` |
-| Supervisor | batch issue, step-start authorize, deviation triage | **નથી** |
+| Supervisor | batch issue, step-start authorize, deviation triage | `supervisor1` (✅ 2026-09-18 ઉમેર્યો) |
 | QA Reviewer | પૂરા થયેલા batch/deviation/CAPA વગેરે રિવ્યુ કરે | `qa.reviewer` |
 | QA Releaser | batch/product/recipe release, deviation close, change approve | `qa.releaser` |
 | QC Reviewer | લેબ: material lot disposition, OOS/OOT review | `qc.reviewer` |
@@ -53,9 +53,9 @@
 > **2026-09-18 ઉમેરો:** ઉપરના ૫ security roles માટે હવે demo users seed થયેલ છે (`scripts/sync_demo_
 > users.py`) — અગાઉ role/permission તરીકે અસ્તિત્વમાં હતા પણ કોઈ login નહોતું.
 
-> ડેમો માટે ઉપલબ્ધ **૨૫ demo users** છે (કુલ ૩૬ roles માંથી ૩૩ role માટે). **Supervisor** જેવો core
-> production role માટે પણ કોઈ demo user નથી — જો ક્લાયન્ટ ડેમોમાં એ role જોવો હોય તો live બનાવવો પડશે
-> (નીચે ૨.૫ જુઓ).
+> ડેમો માટે ઉપલબ્ધ **૨૬ demo users** છે (કુલ ૩૬ roles માંથી ૩૪ role માટે — ✅ 2026-09-18 `supervisor1`
+> ઉમેરાયો). ફક્ત **Postmarket Safety Reviewer**/**Postmarket Regulatory Affairs** માટે હજુ કોઈ demo
+> user નથી.
 
 Password બધા demo users માટે સરખો: **`ChangeMe123!`**
 
@@ -94,29 +94,13 @@ Password બધા demo users માટે સરખો: **`ChangeMe123!`**
 
 **Login:** `admin` / `ChangeMe123!`
 
-### Step 1 — ખૂટતો "Supervisor" user બનાવવો (`/admin/users`)
+### Step 1 — `supervisor1` હવે પહેલેથી seed થયેલ છે (✅ 2026-09-18)
 
-| Field | Example Value |
-|---|---|
-| Username | `supervisor1` |
-| Email | `supervisor1@example.com` |
-| Full name | `Sara Supervisor` |
-| Password | `ChangeMe123!` (અથવા કોઈ પણ 8+ char) |
+પહેલાં Supervisor role માટે demo user manually બનાવવો પડતો હતો — હવે `supervisor1` / `ChangeMe123!`
+સીધું login કરી શકાય, Supervisor role ની actions (batch issue, step-start authorize, deviation triage)
+તરત જોવા. `/admin/users`/"Assign Role" form નો ઉપયોગ ફક્ત નવો/વધારાનો user જોઈએ ત્યારે જ કરવો.
 
-Submit → `POST /users` → user બને છે.
-
-### Step 2 — Role Assign કરવો (`/admin/users`, "Assign Role" form)
-
-| Field | Example Value |
-|---|---|
-| User | `supervisor1` |
-| Site | `SITE1` — Demo Site 1 |
-| Role | `Supervisor` |
-
-Submit → `POST /users/{id}/roles` → હવે `supervisor1` / `ChangeMe123!` login કરીને Supervisor role ની
-actions (batch issue, step-start authorize, deviation triage) બતાવી શકાય.
-
-### Step 3 — Access Review Decision Check (`/admin/access-review`)
+### Step 2 — Access Review Decision Check (`/admin/access-review`)
 
 Example: `supervisor1` ખરેખર batch issue કરી શકે કે નહીં — તે live ચકાસવા:
 
@@ -137,5 +121,6 @@ Result: ALLOW/DENY + કારણ સ્ક્રીન પર બતાવા�
    seed થયેલ (ઉપર ૨.૨ જુઓ) — હવે `security.architect` વગેરે login થી real console બતાવી શકાય.
 2. **Access Review નું Decision Check કોઈ audit trail entry બનાવતું નથી** — એ ફક્ત live "what-if"
    ચેક છે, permanent record નથી.
-3. **`Supervisor` જેવો core role ડેમોમાં હજુ કોઈ user ધરાવતો નથી** — ડેમો પહેલાં ઉપર ૨.૫
-   પ્રમાણે જરૂરી user બનાવી લેવો.
+3. ~~`Supervisor` જેવો core role ડેમોમાં હજુ કોઈ user ધરાવતો નથી~~ **✅ Fixed (2026-09-18)** —
+   `supervisor1` હવે seed થયેલ છે, manual create ની જરૂર નથી. **Postmarket Safety Reviewer**/
+   **Postmarket Regulatory Affairs** માટે હજુ demo user નથી.

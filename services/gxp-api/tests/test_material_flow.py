@@ -69,6 +69,29 @@ async def test_receipt_enters_quarantine(client, seeded):
     assert detail["available_quantity"] == "100.000000"
 
 
+async def test_receive_lot_requires_material_receipt_create_permission(client, seeded):
+    """2026-09-19, docs/testing/demo-gujarati/03 gap: this legacy direct-lot-creation endpoint had no
+    evaluate_policy() call at all -- any authenticated user, any role, could receive a lot. Now reuses
+    `material_receipt.create`, the same permission the real Document 19 receipt flow gates."""
+    qc_token = await login(client, "qc.reviewer")  # holds no material_receipt.create
+    site_id = seeded["site_id"]
+    material_id = await _create_material(client, site_id)
+    resp = await client.post(
+        f"/materials/{material_id}/lots",
+        json={
+            "idempotency_key": idem(),
+            "material_id": material_id,
+            "site_id": str(site_id),
+            "internal_lot": "LOT-RBAC-1",
+            "received_quantity": "10.000000",
+            "uom": "kg",
+        },
+        headers=auth_headers(qc_token),
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+
 async def test_disposition_requires_qc_reviewer_role(client, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
@@ -170,6 +193,46 @@ async def test_full_material_genealogy_flow(client, seeded, db):
     # is a no-op, and the issue's uom_id is copied from the lot's own (also unresolved) value.
     assert rows[0].uom == "kg"
     assert rows[0].uom_id is None
+
+    # 2026-09-19, project-owner-directed: Document 13 §8's "MaterialConsumed" event, wired directly from
+    # this same command -- previously no module ever populated genealogy at all (schema-only, SG-052).
+    import uuid as uuid_mod
+
+    from app.modules.genealogy.models import GenealogyEdge, GenealogyNode
+
+    lot_node = (
+        await db.execute(
+            select(GenealogyNode).where(
+                GenealogyNode.authoritative_record_type == "material_lot",
+                GenealogyNode.authoritative_record_id == uuid_mod.UUID(lot_id),
+            )
+        )
+    ).scalar_one()
+    batch_node = (
+        await db.execute(
+            select(GenealogyNode).where(
+                GenealogyNode.authoritative_record_type == "batch",
+                GenealogyNode.authoritative_record_id == uuid_mod.UUID(batch_id),
+            )
+        )
+    ).scalar_one()
+    assert lot_node.node_type == "material_lot"
+    assert batch_node.node_type == "drug_batch"
+    edge = (
+        await db.execute(
+            select(GenealogyEdge).where(
+                GenealogyEdge.from_node_id == lot_node.id, GenealogyEdge.to_node_id == batch_node.id,
+                GenealogyEdge.edge_type == "CONSUMED_IN",
+            )
+        )
+    ).scalar_one()
+    assert edge.quantity == rows[0].quantity
+
+    # Real read-path proof too: GET /genealogy/v1/nodes/{id}/ancestors from the batch node finds the lot.
+    ancestors = (
+        await client.get(f"/genealogy/v1/nodes/{batch_node.id}/ancestors", headers=auth_headers(op_token))
+    ).json()
+    assert str(lot_node.id) in {n["node_id"] for n in ancestors["nodes"]}
 
 
 async def test_over_issue_rejected(client, seeded):

@@ -1834,6 +1834,20 @@ async def test_start_step_blocked_without_required_equipment_then_succeeds_with_
     )
     assert resp.status_code == 200, resp.text
 
+    # 2026-09-19, project-owner-directed: the asset that satisfied the requirement is now persisted
+    # (EquipmentUseLog, log_type="production") -- previously checked live here and discarded, so
+    # qa_review/release had no record of which equipment a batch actually used (see their own
+    # _equipment_signals docstrings).
+    from app.modules.equipment.models import EquipmentUseLog
+
+    async with db.begin():
+        use_log = (
+            await db.execute(select(EquipmentUseLog).where(EquipmentUseLog.equipment_asset_id == uuid.UUID(asset_id)))
+        ).scalar_one()
+        assert use_log.batch_id == uuid.UUID(batch_id)
+        assert use_log.step_id == uuid.UUID(ready_step["step_id"])
+        assert use_log.log_type == "production"
+
 
 async def test_out_of_range_result_auto_opens_a_deviation(client, seeded, db):
     """Known-limitations fix (docs/testing/demo-gujarati/08 §8.8 item 2), project-owner-directed

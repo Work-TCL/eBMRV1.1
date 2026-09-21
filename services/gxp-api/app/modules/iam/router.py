@@ -115,7 +115,10 @@ async def me(
 
 
 @organization_router.get("")
-async def get_organization(session: AsyncSession = Depends(get_session)) -> dict:
+async def get_organization(
+    session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor)
+) -> dict:
+    await evaluate_policy(session, actor.user_id, action="platform.administer", site_id=None)
     org = (await session.execute(select(Organization).limit(1))).scalar_one_or_none()
     if org is None:
         raise NotFoundError("No organization exists yet")
@@ -134,7 +137,14 @@ async def patch_organization(
 
 
 @sites_router.get("")
-async def list_sites(session: AsyncSession = Depends(get_session)) -> list[dict]:
+async def list_sites(
+    session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor)
+) -> list[dict]:
+    # Deliberately no evaluate_policy() beyond authentication itself -- `useSiteId()`
+    # (frontend/src/lib/hooks.ts) calls this for every signed-in user's site picker, app-wide, not just
+    # the Admin-only /admin/sites management page. Gating it behind platform.administer would 403 every
+    # non-admin user's site scoping across the entire app.
+    del actor
     result = await session.execute(select(Site))
     return [{"id": str(s.id), "code": s.code, "name": s.name} for s in result.scalars().all()]
 
@@ -204,8 +214,13 @@ async def post_create_user(
 
 @users_router.get("")
 async def list_users(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)
+    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
+    # Authentication only, deliberately no evaluate_policy() -- `useEntityOptions()`
+    # (frontend/src/lib/hooks.ts) calls this app-wide for "assign to user" pickers used by many
+    # non-admin roles (deviation triage, CAPA ownership, etc.), not just the Admin-only /admin/users page.
+    del actor
     stmt = select(User)
     if params.q:
         needle = f"%{params.q}%"
@@ -320,8 +335,12 @@ async def post_create_role(
 
 @roles_router.get("")
 async def list_roles(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)
+    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
+    # Authentication only, deliberately no evaluate_policy() -- `frontend/src/app/recipe-master/
+    # shared.tsx` calls this for a role picker used well beyond the Admin-only /admin/roles page.
+    del actor
     stmt = select(Role)
     if params.q:
         needle = f"%{params.q}%"
@@ -331,6 +350,18 @@ async def list_roles(
         **envelope,
         "items": [{"id": str(r.id), "name": r.name, "description": r.description} for (r,) in rows],
     }
+
+
+@roles_router.get("/{role_id}")
+async def get_role(
+    role_id: uuid.UUID, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    await evaluate_policy(session, actor.user_id, action="platform.administer", site_id=None)
+    role = await session.get(Role, role_id)
+    if role is None:
+        raise NotFoundError("Role not found")
+    return {"id": str(role.id), "name": role.name, "description": role.description}
 
 
 @roles_router.patch("/{role_id}", response_model=MutationReceipt)
@@ -363,8 +394,10 @@ async def delete_role_endpoint(
 
 @roles_router.get("/{role_id}/permissions")
 async def get_role_permissions(
-    role_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    role_id: uuid.UUID, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
+    await evaluate_policy(session, actor.user_id, action="platform.administer", site_id=None)
     rows = await session.execute(
         select(Permission)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
@@ -397,7 +430,13 @@ async def post_role_permissions(
 
 
 @permissions_router.get("")
-async def list_permissions(session: AsyncSession = Depends(get_session)) -> list[dict]:
+async def list_permissions(
+    session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor)
+) -> list[dict]:
+    # Authentication only, deliberately no evaluate_policy() -- a read-only reference catalog any
+    # authenticated user may list (test_policy_engine.py::test_list_permissions_includes_seeded_catalog
+    # already asserts a non-admin operator gets 200 here), same treatment as /sites/users/roles above.
+    del actor
     rows = await session.execute(select(Permission).order_by(Permission.code))
     return [
         {

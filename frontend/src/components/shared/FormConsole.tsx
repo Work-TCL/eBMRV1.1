@@ -41,15 +41,24 @@ export interface FormField {
     | "equipmentSelect"
     | "areaSelect"
     | "userSelect"
-    // A batch → step cascading picker for a field that references a specific batch step (e.g. evidence
-    // staging's "Owner ID" when Owner type is "batch_step") — picking a step also sets the sibling
-    // "owner_type" field to "batch_step" for the caller, since a raw id alone doesn't say what kind of
-    // record it is. Manual-ID fallback available, same as every other "*Select" type.
-    | "batchStepSelect"
+    // `owner_type`/`owner_id` pair for a polymorphic-owner command (e.g. evidence staging). `owner_type`
+    // has no backend enum (it's a free String(80) column — grep-verified across every module), so
+    // "ownerTypeSelect" offers only the values this codebase actually creates evidence against today
+    // ("batch_step", "gxp_batch") plus an "Other…" escape hatch to free text — never a closed dropdown
+    // that could block a real owner_type this list doesn't happen to know about. "ownerIdSelect" reads
+    // the sibling "owner_type" field's current value and swaps in the matching picker: batch→step
+    // cascade, a plain batch picker, or free text for "Other".
+    | "ownerTypeSelect"
+    | "ownerIdSelect"
     // A file picker for a command field the backend expects as base64 content (e.g. evidence upload) —
     // reads the chosen file client-side and stores its base64 encoding, so the operator picks a file
     // instead of pasting a base64 blob into a text box.
     | "fileBase64"
+    // An evidence object picker: the caller enters the owner_type/owner_id the evidence was staged
+    // under (self-contained, not sent as form fields — GET /evidence/v1/objects has no unfiltered list,
+    // Document 72 declares none, so it must stay owner-scoped) and picks from the resulting list instead
+    // of pasting a raw evidence_id UUID. Manual-ID fallback available, same as every other picker type.
+    | "evidenceSelect"
     | "repeat"
     | "kv"
     | "stringList";
@@ -271,14 +280,57 @@ export function FormFieldsGrid({
             status={entities.usersStatus}
             kind="user"
           />
-        ) : f.type === "batchStepSelect" ? (
-          <BatchStepOwnerPicker
+        ) : f.type === "ownerTypeSelect" ? (
+          <OwnerTypeField
             key={f.name}
             label={f.label}
             required={f.required}
             hint={f.hint}
             value={values[f.name] ?? ""}
-            onChange={(stepId) => setValues((c) => ({ ...c, [f.name]: stepId, owner_type: "batch_step" }))}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+          />
+        ) : f.type === "ownerIdSelect" ? (
+          values.owner_type === "batch_step" ? (
+            <BatchStepOwnerPicker
+              key={f.name}
+              label={f.label}
+              required={f.required}
+              hint={f.hint}
+              value={values[f.name] ?? ""}
+              onChange={(stepId) => setValues((c) => ({ ...c, [f.name]: stepId }))}
+              batchOptions={entities.batches}
+              batchOptionsStatus={entities.batchesStatus}
+            />
+          ) : values.owner_type === "gxp_batch" ? (
+            <EntityPickerField
+              key={f.name}
+              label={f.label}
+              required={f.required}
+              hint={f.hint}
+              value={values[f.name] ?? ""}
+              onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+              options={entities.batches}
+              status={entities.batchesStatus}
+              kind="batch"
+            />
+          ) : (
+            <Field key={f.name} label={f.label} required={f.required} hint={f.hint ?? "Select an owner type above first."}>
+              <Input
+                type="text"
+                value={values[f.name] ?? ""}
+                onChange={(e) => setValues((c) => ({ ...c, [f.name]: e.target.value }))}
+                placeholder="Owner ID"
+              />
+            </Field>
+          )
+        ) : f.type === "evidenceSelect" ? (
+          <EvidenceObjectOwnerPicker
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
             batchOptions={entities.batches}
             batchOptionsStatus={entities.batchesStatus}
           />
@@ -391,6 +443,74 @@ const pickerLinkStyle = {
   textDecoration: "underline",
 } as const;
 
+/** The only `owner_type` values this codebase actually stages evidence against today (grep-verified:
+ * `batch_step` in the batch-execution "Link evidence" flow, `gxp_batch` in the evidence lifecycle test
+ * suite). `owner_type` itself has no backend enum — it's a free `String(80)` column — so this is a
+ * convenience shortlist, never a hard restriction: "Other…" drops to free text for anything else. */
+const KNOWN_OWNER_TYPES = [
+  { value: "batch_step", label: "Batch step" },
+  { value: "gxp_batch", label: "Batch (whole)" },
+];
+
+function OwnerTypeField({
+  label,
+  required,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const isKnown = KNOWN_OWNER_TYPES.some((o) => o.value === value);
+  const [manual, setManual] = useState(value !== "" && !isKnown);
+
+  if (manual) {
+    return (
+      <Field label={label} required={required} hint={hint}>
+        <Input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Owner type" />
+        <button
+          type="button"
+          style={{ ...pickerLinkStyle, marginTop: 6 }}
+          onClick={() => {
+            setManual(false);
+            onChange("");
+          }}
+        >
+          Choose from list instead
+        </button>
+      </Field>
+    );
+  }
+
+  return (
+    <Field label={label} required={required} hint={hint}>
+      <Select
+        value={value}
+        onChange={(e) => {
+          if (e.target.value === "__other__") {
+            setManual(true);
+            onChange("");
+          } else {
+            onChange(e.target.value);
+          }
+        }}
+      >
+        <option value="">Select an owner type</option>
+        {KNOWN_OWNER_TYPES.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+        <option value="__other__">Other…</option>
+      </Select>
+    </Field>
+  );
+}
+
 /** Batch → step cascading picker, for a field referencing one specific batch step (e.g. evidence
  * staging's "Owner ID" when "Owner type" is "batch_step") — the batch id alone isn't the field's value,
  * so a plain `EntityPickerField` (one flat list) doesn't fit; this fetches the chosen batch's steps on
@@ -470,6 +590,221 @@ function BatchStepOwnerPicker({
       )}
       <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManual(true)}>
         Not a batch step? Enter the owner ID manually
+      </button>
+    </Field>
+  );
+}
+
+interface EvidenceObjectRow {
+  id: string;
+  filename: string | null;
+  state: string;
+  content_hash: string | null;
+}
+
+/** Picks an evidence object by its real id instead of a pasted (and easily mistyped/truncated) UUID —
+ * the bug this fixes: "Finalize an upload", "Apply a legal hold" and "Download evidence" all took a
+ * free-text `evidence_id` with nothing to copy it from. `GET /evidence/v1/objects` has no unfiltered
+ * list (Document 72 declares none), so the operator scopes by owner first — the same `KNOWN_OWNER_TYPES`
+ * shortlist and batch/step cascade as `OwnerTypeField`/`BatchStepOwnerPicker` above, so picking an owner
+ * here feels identical to picking one when staging — then picks from that owner's evidence objects.
+ * The owner scope is local state only, never part of the submitted form fields (only the chosen
+ * evidence_id is). */
+export function EvidenceObjectOwnerPicker({
+  label,
+  required,
+  hint,
+  value,
+  onChange,
+  batchOptions,
+  batchOptionsStatus,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  value: string;
+  onChange: (evidenceId: string) => void;
+  batchOptions: EntityOption[];
+  batchOptionsStatus: EntityOptionsStatus;
+}) {
+  const [manualEvidence, setManualEvidence] = useState(false);
+  const [ownerKind, setOwnerKind] = useState<"batch_step" | "gxp_batch" | "other">("batch_step");
+  const [batchId, setBatchId] = useState("");
+  const [stepId, setStepId] = useState("");
+  const [steps, setSteps] = useState<{ step_id: string; recipe_step_code: string }[]>([]);
+  const [stepsStatus, setStepsStatus] = useState<EntityOptionsStatus>("empty");
+  const [manualOwnerType, setManualOwnerType] = useState("");
+  const [manualOwnerId, setManualOwnerId] = useState("");
+  const [rows, setRows] = useState<EvidenceObjectRow[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("empty");
+
+  function fetchObjects(ot: string, oid: string) {
+    if (!ot.trim() || !oid.trim()) {
+      setRows([]);
+      setStatus("empty");
+      return;
+    }
+    setStatus("loading");
+    api
+      .get<{ evidence_objects: EvidenceObjectRow[] }>(
+        `/evidence/v1/objects?owner_type=${encodeURIComponent(ot.trim())}&owner_id=${encodeURIComponent(oid.trim())}`
+      )
+      .then((res) => {
+        setRows(res.evidence_objects);
+        setStatus(res.evidence_objects.length ? "ready" : "empty");
+      })
+      .catch(() => setStatus("error"));
+  }
+
+  function resetScope(kind: "batch_step" | "gxp_batch" | "other") {
+    setOwnerKind(kind);
+    setBatchId("");
+    setStepId("");
+    setSteps([]);
+    setStepsStatus("empty");
+    setManualOwnerType("");
+    setManualOwnerId("");
+    setRows([]);
+    setStatus("empty");
+    onChange("");
+  }
+
+  function selectBatchForStep(id: string) {
+    setBatchId(id);
+    setStepId("");
+    setSteps([]);
+    onChange("");
+    setRows([]);
+    setStatus("empty");
+    if (!id) {
+      setStepsStatus("empty");
+      return;
+    }
+    setStepsStatus("loading");
+    api
+      .get<{ steps: { step_id: string; recipe_step_code: string }[] }>(`/batches/v1/${id}/execution-view`)
+      .then((res) => {
+        setSteps(res.steps);
+        setStepsStatus(res.steps.length ? "ready" : "empty");
+      })
+      .catch(() => setStepsStatus("error"));
+  }
+
+  function selectStep(id: string) {
+    setStepId(id);
+    fetchObjects("batch_step", id);
+  }
+
+  function selectBatchForWhole(id: string) {
+    setBatchId(id);
+    fetchObjects("gxp_batch", id);
+  }
+
+  if (manualEvidence) {
+    return (
+      <Field label={label} required={required} hint={hint}>
+        <Input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Evidence object ID" />
+        <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManualEvidence(false)}>
+          Pick from a list instead
+        </button>
+      </Field>
+    );
+  }
+
+  return (
+    <Field label={label} required={required} hint={hint ?? "Pick the owner this evidence was staged under, then select it below."}>
+      <Select value={ownerKind} onChange={(e) => resetScope(e.target.value as "batch_step" | "gxp_batch" | "other")}>
+        <option value="batch_step">Owner: Batch step</option>
+        <option value="gxp_batch">Owner: Batch (whole)</option>
+        <option value="other">Owner: Other…</option>
+      </Select>
+
+      {ownerKind === "batch_step" && (
+        <>
+          <Select
+            value={batchId}
+            onChange={(e) => selectBatchForStep(e.target.value)}
+            disabled={batchOptionsStatus === "loading"}
+            style={{ marginTop: 6 }}
+          >
+            <option value="">{batchOptionsStatus === "loading" ? "Loading batches…" : "Select a batch"}</option>
+            {batchOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          {batchId && (
+            <Select value={stepId} onChange={(e) => selectStep(e.target.value)} disabled={stepsStatus === "loading"} style={{ marginTop: 6 }}>
+              <option value="">{stepsStatus === "loading" ? "Loading steps…" : "Select a step"}</option>
+              {steps.map((s) => (
+                <option key={s.step_id} value={s.step_id}>
+                  {s.recipe_step_code}
+                </option>
+              ))}
+            </Select>
+          )}
+        </>
+      )}
+
+      {ownerKind === "gxp_batch" && (
+        <Select
+          value={batchId}
+          onChange={(e) => selectBatchForWhole(e.target.value)}
+          disabled={batchOptionsStatus === "loading"}
+          style={{ marginTop: 6 }}
+        >
+          <option value="">{batchOptionsStatus === "loading" ? "Loading batches…" : "Select a batch"}</option>
+          {batchOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+      )}
+
+      {ownerKind === "other" && (
+        <div className="grid grid-cols-2 gap-2" style={{ marginTop: 6 }}>
+          <Input
+            type="text"
+            value={manualOwnerType}
+            onChange={(e) => setManualOwnerType(e.target.value)}
+            onBlur={() => fetchObjects(manualOwnerType, manualOwnerId)}
+            placeholder="Owner type"
+          />
+          <Input
+            type="text"
+            value={manualOwnerId}
+            onChange={(e) => setManualOwnerId(e.target.value)}
+            onBlur={() => fetchObjects(manualOwnerType, manualOwnerId)}
+            placeholder="Owner ID"
+          />
+        </div>
+      )}
+
+      <Select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={status !== "ready"}
+        style={{ marginTop: 6 }}
+      >
+        <option value="">
+          {status === "loading"
+            ? "Loading evidence objects…"
+            : status === "error"
+              ? "Couldn't load — enter the ID manually below"
+              : status === "empty"
+                ? "No evidence objects found for this owner"
+                : "Select an evidence object"}
+        </option>
+        {rows.map((r) => (
+          <option key={r.id} value={r.id}>
+            {`${r.filename ?? r.id} — ${r.state}${r.content_hash ? ` (${r.content_hash.slice(0, 10)}…)` : ""}`}
+          </option>
+        ))}
+      </Select>
+      <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManualEvidence(true)}>
+        Enter the evidence object ID manually
       </button>
     </Field>
   );

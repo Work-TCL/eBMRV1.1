@@ -9,8 +9,16 @@
 
 **Equipment Area** (batch/equipment નહીં, area) સાથે જોડાયેલ ચેક — પાછલા batch ની ઓળખ/material ને
 area માંથી સંપૂર્ણપણે clear કર્યા વગર આગલો batch શરૂ ના થઈ શકે. Previous/next batch reference (traceability
-માટે) optional રાખી શકાય. **DDCP readiness check અને Packaging બંને, area ના clearance status ને
-lookup કરે છે** — એટલે line clearance ના થાય ત્યાં સુધી DDCP/Packaging blocked રહી શકે.
+માટે) optional રાખી શકાય. **DDCP readiness check** area ના real clearance status ને lookup કરે છે
+(`cleaning_commands.get_area_line_clearance_status()`) — line clearance ના થાય ત્યાં સુધી DDCP blocked
+રહી શકે.
+
+> ⚠️ **સુધારો (2026-09-19):** આ doc ની જૂની આવૃત્તિ કહેતી હતી કે "Packaging પણ" area clearance status
+> lookup કરે છે — એ ખોટું છે. **Packaging નું પોતાનું, અલગ, self-attested `line_clearance_completed`
+> flag છે** (`packaging_run` ટેબલ પર) જે operator જાતે "true" set કરે છે — તે ક્યારેય real
+> `LineClearance`/`EquipmentArea` status query નથી કરતું (`packaging/commands.py`). એટલે real line
+> clearance ના થયું હોય તો પણ Packaging run આગળ વધી શકે — genuine integration gap, ડોક્યુમેન્ટ ૦૮ ના
+> Packaging row માં પણ નોંધેલ.
 
 ## ૫.૨ Checklist Types
 
@@ -67,3 +75,7 @@ check હવે આ area ને eligible ગણશે.
    રાખવો પડે.
 2. Line Clearance area-level છે, ચોક્કસ batch-level નથી — same area પર multiple batch વચ્ચે clearance
    history traceable રહે છે prev/next batch reference થી.
+3. **Packaging, real line clearance status સાથે wired નથી** (ઉપર ૫.૧ ની 2026-09-19 સુધારા-નોંધ જુઓ) —
+   `packaging_run.line_clearance_completed` self-attested flag છે, `LineClearance`/`EquipmentArea` ને
+   query નથી કરતું. મૂળ કારણ: `PackagingRun.line_ref` free-text field છે, `EquipmentArea` ને real FK
+   નથી (SG-050/055) — સાચું fix schema change (migration) માંગે, honestly ખુલ્લું નોંધેલ.

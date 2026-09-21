@@ -45,7 +45,7 @@ lot-level release readiness.
 
 | Route | કરે છે |
 |---|---|
-| `/devices` | Serial lookup (browsable list નથી), unit hold, device-lot readiness check, (Admin/Supervisor) lot create + bulk unit create |
+| `/devices` | Serial lookup (browsable list ઇરાદાપૂર્વક નથી — નીચે ૪.૪ જુઓ), unit hold, device-lot readiness check, (Admin/Supervisor) lot create + bulk unit create |
 
 | Action | Permission | કોણ | Signed? |
 |---|---|---|---|
@@ -72,6 +72,12 @@ lot-level release readiness.
 ## ૪.૪ ધ્યાન રાખવા જેવી બાબતો
 
 1. **Equipment lifecycle માં ફક્ત Hold signed છે**, બાકીના actions RBAC-only.
-2. **`/devices` પર browsable list નથી** — ફક્ત serial-number lookup દ્વારા જ શોધી શકાય.
-3. **"Hold unit" બટન `canViewDevices` ચેક વાપરે છે**, અલગ hold-specific permission function નહીં —
-   functionally બરાબર (સરખો broad role-set), પણ naming imprecise છે.
+2. **`/devices` પર browsable list નથી — આ deliberate spec boundary છે, bug/gap નથી** (2026-09-19
+   ચકાસાયેલ): Document 12 નું પોતાનું ૧૧-API list (`ebmr-edhr/docs/generated/06_API_CATALOGUE.yaml`)
+   માં કોઈ `GET /devices/v1/units` (list) operation જ નથી — ફક્ત by-serial lookup
+   (`GET .../units/by-serial/{serial}`), unit history, અને lot release-readiness. "Document ના own
+   API list ની બહાર endpoint invent ના કરવું" — આ codebase ની throughout followed discipline પ્રમાણે,
+   list endpoint ઉમેરવું ખોટું ગણાય.
+3. ~~"Hold unit" બટન `canViewDevices` ચેક વાપરે છે, naming imprecise~~ **✅ Fixed** — હવે
+   `canExecuteDevice()` (`device.execute`) વાપરે છે, backend ના `device.execute` gate સાથે
+   1:1 match (`frontend/src/app/devices/page.tsx`, commit `f7a2899`).

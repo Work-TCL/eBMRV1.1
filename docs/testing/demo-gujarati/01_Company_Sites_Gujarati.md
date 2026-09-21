@@ -101,10 +101,14 @@ Submit કરતા `POST /sites` call થાય છે → નવો Site recor
 
 > આ મુદ્દા client demo દરમિયાન honest રીતે જણાવવા — આ bugs નથી, પણ હાલની baseline ની જાણીતી મર્યાદાઓ છે.
 
-1. **Read endpoints પર authentication check નથી.** `GET /organization` અને `GET /sites` — બંને backend
-   endpoints કોઈ પણ authenticated actor વગર જ કામ કરે છે (કોડમાં કોઈ `actor` પેરામીટર જ નથી, અને
-   `app/main.py` માં કોઈ global auth middleware પણ નથી). મતલબ frontend UI ભલે Admin-only દેખાડે, પણ
-   કોઈ પણ વ્યક્તિ સીધું API call કરીને Organization/Sites ની માહિતી વાંચી શકે છે. આ frontend-only gate
-   છે, backend-level access control નથી — future hardening માટે નોંધવા જેવો મુદ્દો.
+1. ~~Read endpoints પર authentication check નથી~~ **✅ Fixed (2026-09-19)** — `GET /organization`,
+   `/sites`, `/users`, `/roles`, `/roles/{id}/permissions`, `/permissions` છ એ છ endpoints પર `actor`
+   dependency ઉમેર્યું (પહેલાં કોઈ પણ, login વગર, સીધું API call કરીને આ ડેટા વાંચી શકતું — `/organization`/
+   `/sites` બહાર, `/users`/`/roles`/`/permissions` પણ એ જ ગેપ ધરાવતા હતા, ફક્ત doc માં નોંધાયેલ નહોતા).
+   `/sites`/`/users`/`/roles`/`/permissions` ને `platform.administer` ગેટ નથી આપ્યો — ફક્ત login
+   required, કારણ કે `frontend/src/lib/hooks.ts` ના site/user/role pickers દરેક role વાપરે છે,
+   Admin-only નહીં, અને `/permissions` એક read-only reference catalog છે (non-admin ને 200 મળે એવો
+   existing test પહેલેથી હતો). `/organization`/`/roles/{id}/permissions` Admin-only જ રહ્યા (ફક્ત
+   Admin-only પેજ જ એ વાપરે છે).
 2. **ડેમોમાં ફક્ત ૧ Organization અને ૧ Site seed થયેલ છે** — multi-site behavior (દા.ત. same user, અલગ
    sites પર અલગ roles) બતાવવા માટે ઉપર Step 2 પ્રમાણે live બીજી site બનાવવી પડશે.

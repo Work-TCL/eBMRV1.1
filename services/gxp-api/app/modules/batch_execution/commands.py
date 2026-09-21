@@ -33,7 +33,8 @@ from app.modules.batch_execution.models import (
     StepResultCorrection,
 )
 from app.modules.equipment import commands as equipment_commands
-from app.modules.equipment.models import EquipmentAsset
+from app.modules.equipment.models import EquipmentAsset, EquipmentUseLog
+from app.modules.genealogy import service as genealogy_service
 from app.modules.iam.models import Qualification, User
 from app.modules.qms import commands as qms_commands
 from app.modules.policy.service import effective_role_names, evaluate_policy
@@ -575,21 +576,26 @@ _EQUIPMENT_REASON_ERRORS = {
 
 async def _enforce_step_equipment(
     session: AsyncSession, *, step: BatchStep, equipment_asset_ids: list[uuid.UUID] | None
-) -> None:
+) -> list[EquipmentAsset]:
     """Known-limitations fix (docs/testing/demo-gujarati/08 §8.8, and this module's own docstring naming
     "Equipment master eligibility wiring" as not-yet-built). Compares the frozen
     `BatchStepEquipmentRequirement` rows for this step against the equipment_asset_ids the actor supplied
     at step-start, reusing `equipment.commands.get_eligibility()` (calibration_status/qualification_status/
     cleanliness_status) rather than reinventing equipment-currency logic -- only the reason codes relevant
     to the flags a requirement actually declares are blocking, plus EQUIPMENT_OUT_OF_SERVICE/post-
-    maintenance-verification which always block regardless of flags."""
+    maintenance-verification which always block regardless of flags.
+
+    Returns the asset that satisfied each requirement, so the caller can persist a usage record
+    (2026-09-19, project-owner-directed follow-up: eligibility was checked live here but never recorded
+    anywhere, so review/release could never retrospectively see which equipment a batch actually used --
+    see `EquipmentUseLog` writes in `start_step()` below)."""
     requirements = (
         await session.execute(
             select(BatchStepEquipmentRequirement).where(BatchStepEquipmentRequirement.batch_step_id == step.id)
         )
     ).scalars().all()
     if not requirements:
-        return
+        return []
 
     supplied_ids = equipment_asset_ids or []
     assets: dict[uuid.UUID, EquipmentAsset] = {}
@@ -601,6 +607,7 @@ async def _enforce_step_equipment(
             )
         assets[asset_id] = asset
 
+    used: list[EquipmentAsset] = []
     for req in requirements:
         mandatory = req.require_current_calibration or req.require_current_qualification or req.require_current_cleaning or not req.exact_equipment_optional
         if req.equipment_class_id is not None:
@@ -638,6 +645,9 @@ async def _enforce_step_equipment(
             raise _EQUIPMENT_REASON_ERRORS[first["code"]](
                 first["message"], asset_id=str(asset.id), equipment_class=req.equipment_class
             )
+        used.append(asset)
+
+    return used
 
 
 async def start_step(session: AsyncSession, cmd: StartStepCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
@@ -658,7 +668,19 @@ async def start_step(session: AsyncSession, cmd: StartStepCommand, actor_user_id
         session, step=step, batch=batch, actor_user_id=actor_user_id, override_reason=cmd.override_reason
     )
     await _enforce_step_qualification(session, step=step, actor_user_id=actor_user_id)
-    await _enforce_step_equipment(session, step=step, equipment_asset_ids=cmd.equipment_asset_ids)
+    used_equipment = await _enforce_step_equipment(session, step=step, equipment_asset_ids=cmd.equipment_asset_ids)
+    for asset in used_equipment:
+        # 2026-09-19, project-owner-directed: persist which asset satisfied this step's equipment
+        # requirement -- previously checked live and discarded, so review/release had no way to
+        # retrospectively see equipment that later went on hold or fell out of calibration/qualification
+        # after this batch used it (`qa_review`/`release` service.py's `_equipment_signals`).
+        session.add(
+            EquipmentUseLog(
+                equipment_asset_id=asset.id, site_id=batch.site_id, log_type="production",
+                batch_id=batch.id, step_id=step.id, operator_user_id=actor_user_id, source="system",
+                event_reference=step.recipe_step_code,
+            )
+        )
 
     step.state = "in_progress"
     step.assigned_subject_id = actor_user_id
@@ -1475,6 +1497,16 @@ async def production_complete_batch(
     batch.state = "production_complete"
     batch.production_completed_at = datetime.now(timezone.utc)
     batch.version += 1
+
+    # 2026-09-19, project-owner-directed: Document 13 §8's own "DrugBatchProduced" event, wired directly.
+    # Most batches already get their `drug_batch` node lazily the first time material is issued to them
+    # (`material.commands.issue_material_to_batch`) -- this covers the batch that reached
+    # production_complete without ever consuming a genealogy-tracked material lot, so every produced batch
+    # is guaranteed a node regardless of material-consumption order.
+    await genealogy_service.get_or_create_node(
+        session, site_id=batch.site_id, node_type="drug_batch", authoritative_record_type="batch",
+        authoritative_record_id=batch.id, business_ref=batch.batch_number, actor_user_id=actor_user_id,
+    )
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(

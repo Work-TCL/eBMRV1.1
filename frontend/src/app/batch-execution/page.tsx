@@ -1886,11 +1886,19 @@ interface EvidenceObjectOption {
 }
 
 /** Local to this modal only, same "page-local fetch, not promoted to useEntityOptions()" precedent as
- * `useEligibleSterileItems` on the aseptic page — nothing else needs an owner-filtered evidence list yet. */
+ * `useEligibleSterileItems` on the aseptic page — nothing else needs an owner-filtered evidence list yet.
+ *
+ * Only FINALIZED/ARCHIVED objects are offered — a STAGED object has no `content_hash` yet (it's computed
+ * at finalize time), so picking one auto-filled `evidence_sha256` with an empty string, which the backend
+ * silently dropped from the request body (an empty coerced value isn't sent) and rejected as a 422
+ * "field required" — a confusing failure for what looked like a normal pick-and-submit. `pendingCount`
+ * (STAGED objects filtered out) drives a hint distinguishing "nothing staged yet" from "staged but still
+ * needs finalizing". */
 function useStepEvidenceOptions(stepId: string): {
   options: EntityOption[];
   status: EntityOptionsStatus;
   byId: Map<string, EvidenceObjectOption>;
+  pendingCount: number;
 } {
   const [rows, setRows] = useState<EvidenceObjectOption[]>([]);
   const [status, setStatus] = useState<EntityOptionsStatus>("loading");
@@ -1902,7 +1910,7 @@ function useStepEvidenceOptions(stepId: string): {
       .then((res) => {
         if (cancelled) return;
         setRows(res.evidence_objects);
-        setStatus(res.evidence_objects.length ? "ready" : "empty");
+        setStatus(res.evidence_objects.some((r) => r.state === "FINALIZED" || r.state === "ARCHIVED") ? "ready" : "empty");
       })
       .catch(() => {
         if (!cancelled) setStatus("error");
@@ -1912,15 +1920,28 @@ function useStepEvidenceOptions(stepId: string): {
     };
   }, [stepId]);
 
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  const options: EntityOption[] = rows.map((r) => ({
+  const linkable = rows.filter((r) => r.state === "FINALIZED" || r.state === "ARCHIVED");
+  const byId = new Map(linkable.map((r) => [r.id, r]));
+  const options: EntityOption[] = linkable.map((r) => ({
     value: r.id,
     label: `${r.filename ?? r.id} — ${r.state}${r.content_hash ? ` (${r.content_hash.slice(0, 10)}…)` : ""}`,
   }));
-  return { options, status, byId };
+  const pendingCount = rows.length - linkable.length;
+  return { options, status, byId, pendingCount };
 }
 
-function evidenceLinkSubfields(evidenceOptions: EntityOption[], evidenceOptionsStatus: EntityOptionsStatus): RepeatSubField[] {
+/** `requirementOptions` comes from the step's declared `evidence_requirements` (already in scope on the
+ * modal — no extra fetch needed). `complete_step()` gates on `link.requirement_code == req.evidence_type`
+ * as a plain, case-sensitive dict-key match (services/gxp-api .../commands.py `complete_step()`), and the
+ * live "N of M required" counter above uses the same comparison — a free-text field that doesn't exactly
+ * match silently linked evidence nobody's requirement checklist ever counted (the bug this fixes: a link
+ * submitted fine, but "photo: 0 of 1 linked" never moved). A dropdown of the real `evidence_type` values
+ * makes a mismatch impossible. Left free text when a step has no declared requirements at all. */
+function evidenceLinkSubfields(
+  evidenceOptions: EntityOption[],
+  evidenceOptionsStatus: EntityOptionsStatus,
+  requirementOptions: { value: string; label: string }[]
+): RepeatSubField[] {
   return [
     {
       name: "evidence_id", label: "Evidence object", required: true,
@@ -1929,7 +1950,12 @@ function evidenceLinkSubfields(evidenceOptions: EntityOption[], evidenceOptionsS
     },
     { name: "evidence_sha256", label: "Evidence SHA-256", required: true },
     { name: "media_type", label: "Media type" },
-    { name: "requirement_code", label: "Requirement code", placeholder: "Matches a declared evidence requirement" },
+    requirementOptions.length > 0
+      ? {
+          name: "requirement_code", label: "Requirement code", required: true,
+          type: "select", options: requirementOptions,
+        }
+      : { name: "requirement_code", label: "Requirement code", placeholder: "No declared requirements for this step" },
   ];
 }
 
@@ -1956,8 +1982,9 @@ function LinkEvidenceModal({
 }) {
   const { busy, error, run } = useCommand(onDone);
   const [links, setLinks] = useState<RepeatRow[]>([]);
-  const { options: evidenceOptions, status: evidenceOptionsStatus, byId: evidenceById } = useStepEvidenceOptions(step.step_id);
-  const subFields = evidenceLinkSubfields(evidenceOptions, evidenceOptionsStatus);
+  const { options: evidenceOptions, status: evidenceOptionsStatus, byId: evidenceById, pendingCount } = useStepEvidenceOptions(step.step_id);
+  const requirementOptions = Array.from(new Set(requirements.map((r) => r.evidence_type))).map((t) => ({ value: t, label: t }));
+  const subFields = evidenceLinkSubfields(evidenceOptions, evidenceOptionsStatus, requirementOptions);
   // Live "N of M required" — the same requirement_code<->evidence_type match complete_step()'s gate uses,
   // recomputed with the rows currently staged in this form so it updates as the tester fills them in.
   const linkedCountByType = new Map<string, number>();
@@ -2001,8 +2028,16 @@ function LinkEvidenceModal({
       >
         <p className="fs-3 mb-3">
           Stage and finalize the evidence object first (Platform ops → Evidence operations, owner type
-          &quot;batch_step&quot;, owner ID = this step), then pick it below.
+          &quot;batch_step&quot;, owner ID = this step), then pick it below. Only finalized evidence is
+          offered — a staged-but-not-yet-finalized object has no hash yet to link.
         </p>
+        {pendingCount > 0 && (
+          <p className="fs-2 text-muted mb-3">
+            {pendingCount} evidence object{pendingCount === 1 ? "" : "s"} staged for this step{" "}
+            {pendingCount === 1 ? "is" : "are"} not yet finalized, so {pendingCount === 1 ? "it isn't" : "they aren't"}{" "}
+            listed below — finalize {pendingCount === 1 ? "it" : "them"} via Platform ops → Evidence operations first.
+          </p>
+        )}
         {requirements.length > 0 && (
           <div className="mb-3">
             <p className="fact-k mb-1">Required evidence</p>

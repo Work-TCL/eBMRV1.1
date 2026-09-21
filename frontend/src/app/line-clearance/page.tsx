@@ -33,7 +33,7 @@ const canClear = (me: Me | null) => hasPermission(me, "line_clearance.create");
 const config: OpsRecordConfig<LineClearanceRecord> = {
   title: "Line clearance",
   subtitle:
- "Confirm an equipment area is clear of the previous batch and its materials before the next one starts the check DDCP batch readiness (“Line clearance state is NOT_STARTED”) and Packaging both depend on, previously reachable only via direct API call.",
+ "Confirm an equipment area is clear of the previous batch and its materials before the next one starts - the check DDCP batch readiness (“Line clearance state is NOT_STARTED”) depends on. Packaging has its own separate, self-attested line-clearance flag and does not look this up.",
   idLabel: "Line clearance ID",
   apiRoot: "/line-clearance/v1",
   create: {
@@ -43,7 +43,7 @@ const config: OpsRecordConfig<LineClearanceRecord> = {
     fields: [
       {
         name: "area_id", label: "Equipment area / line", type: "areaSelect", required: true,
- hint: "The area this clearance covers the same area a batch readiness check (DDCP, Packaging, …) looks up by id.",
+ hint: "The area this clearance covers - the same area a DDCP batch readiness check looks up by id (Packaging does not).",
       },
       { name: "previous_batch_id", label: "Previous batch", type: "batchSelect", hint: "The batch/product being cleared out of this area, if known." },
       { name: "next_batch_id", label: "Next batch", type: "batchSelect", hint: "The batch about to use this area, if known yet." },

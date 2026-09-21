@@ -262,6 +262,14 @@ async def post_receive_lot(
     if cmd.material_id != material_id:
         raise ValidationFailedError("material_id in path and body must match")
     async with session.begin():
+        # 2026-09-19, docs/testing/demo-gujarati/03 gap: this legacy direct-lot-creation path (still
+        # actively used by frontend/src/app/material-lots/page.tsx, unlike the retired /batches scaffold)
+        # had no evaluate_policy() call at all -- any authenticated user, any role, could receive a lot.
+        # Reuses `material_receipt.create`, the permission the real Document 19 receipt flow
+        # (POST /materials/v1/receipts) already gates the equivalent action with, rather than inventing a
+        # new code. That flow is unsigned too (receipt/receiving is RBAC-only in this codebase; e-signature
+        # applies to QC disposition/release, not raw receipt) -- so no signature ceremony is added here either.
+        await evaluate_policy(session, actor.user_id, action="material_receipt.create", site_id=cmd.site_id)
         return await receive_material_lot(session, cmd, actor.user_id)
 
 

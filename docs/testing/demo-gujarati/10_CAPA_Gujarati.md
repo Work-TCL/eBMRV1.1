@@ -19,8 +19,12 @@
 > નથી).
 >
 > ✅ **2026-09-18 fix (project-owner-directed):** Open deviation હવે batch release ને **block કરે છે**
-> (SG-059 RESOLVED — નીચે ૧૦.૬ મુદ્દા ૪ જુઓ). CAPA blocking જાણી જોઈને ઉમેર્યું નથી — Document 27 માં
-> આવી કોઈ requirement જ નથી.
+> (SG-059 RESOLVED — નીચે ૧૦.૬ મુદ્દા ૪ જુઓ).
+>
+> ✅ **2026-09-19 fix:** CAPA હવે પણ batch release block કરે છે — batch ને directly નહીં (Document 27
+> નું `source_type` "batch" support જ નથી કરતું, spec ની બહાર જઈને invent નથી કર્યું), પણ batch પર
+> attributed deviation/OOS માંથી ખોલાયેલ કોઈ CAPA હજુ ખુલ્લું હોય તો (`OPEN_CAPA` blocker,
+> `release/service.py::_capa_signals`) — નીચે ૧૦.૬ મુદ્દા ૪ જુઓ.
 
 ---
 
@@ -164,8 +168,10 @@ Sign → password re-entry → CAPA `CLOSED`.
 3. ~~CAPA↔Deviation (અને oos/oot/ncr/complaint/audit/supplier/risk) link ચેક નથી થતી~~
    **✅ Fixed (2026-09-18)** — `source_id` હવે એ 8 `source_type` માટે FK-validated છે; `trend`/
    `security`/`validation` માટે કોઈ backing table ન હોવાથી unvalidated રહે છે (SG-063, open gap).
-4. ~~Deviation/CAPA batch release ને block નથી કરતા~~ **✅ Fixed for deviations (2026-09-18,
-   project-owner-directed, SG-059 RESOLVED)** — batch પર attributed કોઈ પણ open deviation (state ≠
-   `CLOSED`) હવે release ને `OPEN_DEVIATION` blocker સાથે block કરે છે (`release/service.py::
-   evaluate_eligibility()`). **CAPA જાણી જોઈને block નથી કરતું** — Document 27 માં DEV-FR-022 જેવી કોઈ
-   requirement જ નથી, project owner એ ઇરાદાપૂર્વક ઉમેર્યું નહીં (guess ટાળવા).
+4. ~~Deviation/CAPA batch release ને block નથી કરતા~~ **✅ Fixed for deviations (2026-09-18) અને CAPA
+   (2026-09-19)** — batch પર attributed કોઈ પણ open deviation (state ≠ `CLOSED`) `OPEN_DEVIATION`
+   blocker સાથે release block કરે છે. **CAPA — batch ને directly નહીં** (Document 27 નું `source_type`
+   "batch" support કરતું જ નથી, DEV-FR-022 જેવી કોઈ direct requirement પણ નથી — spec ની બહાર જઈને નવો
+   source_type invent નથી કર્યો) **પણ real ૨-hop સંબંધ દ્વારા**: batch પર attributed deviation/OOS ને
+   source બનાવીને ખોલાયેલ કોઈ CAPA હજુ ખુલ્લું (state CLOSED/CANCELLED સિવાય) હોય તો `OPEN_CAPA`
+   blocker (`release/service.py::_capa_signals`).

@@ -74,6 +74,12 @@ captured હતા, કંઈ ચેક નહોતું થતું.
 `EquipmentClass` entity (`/recipes/v2/equipment-classes`) સાથે link થઈ શકે છે — Recipe Master ના
 equipment requirement editor માં dropdown તરીકે.
 
+**Usage હવે persisted છે (✅ 2026-09-19 નવું):** Step start eligible થાય ત્યારે, જે asset requirement
+satisfy કર્યું એ `equipment.equipment_use_logs` માં (`log_type="production"`, `batch_id`/`step_id` સાથે)
+save થાય છે — પહેલાં ફક્ત live check થઈને discard થઈ જતું હતું. આનાથી QA Review/Release હવે
+retrospectively ચેક કરી શકે છે કે batch એ વાપરેલ equipment અત્યારે (batch execution પછી hold/calibration/
+qualification expire થવાથી) ineligible તો નથી થયું ને (ડોક્યુમેન્ટ ૧૨.૧/૧૨.૨ જુઓ).
+
 ---
 
 ## ૮.૪ Permission મેટ્રિક્સ
@@ -161,9 +167,9 @@ status અલગ સ્ક્રીન પર જોવું.
 
 | Module | શું કરે છે | નોંધ |
 |---|---|---|
-| **Genealogy** (`/genealogy`) | Lot/batch/device parent-child ટ્રેસિબિલિટી ગ્રાફ | Read-only UI; write API હજુ internal-event-driven, બહારથી કોઈ create endpoint નથી — ડેમોમાં ડેટા ઓછો દેખાઈ શકે |
+| **Genealogy** (`/genealogy`) | Lot/batch/device parent-child ટ્રેસિબિલિટી ગ્રાફ | Read-only UI; write API હજુ internal-event-driven, બહારથી કોઈ create endpoint નથી. **✅ 2026-09-19: material issue (batch માં) અને production-complete હવે real nodes/edges auto-populate કરે છે** (પહેલાં કોઈ module ડેટા લખતું જ નહોતું, schema-only) — material issue કરેલ batch ના ancestors માં હવે data દેખાશે (ડોક્યુમેન્ટ ૧૨.૫ જુઓ) |
 | **Yield Reconciliation** (`/yield`) | Yield/potency calculation + material/packaging/label mass-balance | Calculate = Operator/Supervisor; **Verify = QA Reviewer only** (real SoD split); e-signature required verify પર |
-| **Packaging** (`/packaging`) | Post-batch packaging/labeling/reconciliation run | Permission: `packaging.execute` (Operator/Supervisor/Admin); **કોઈ e-signature નથી**; **કોઈ GET/read API નથી** (known baseline gap) |
+| **Packaging** (`/packaging`) | Post-batch packaging/labeling/reconciliation run | Permission: `packaging.execute` (Operator/Supervisor/Admin); **કોઈ e-signature નથી**; `GET /packaging/v1/runs?batch_id=`/`GET .../runs/{id}` read API ✅ already exists (2026-09-19 ચકાસાયેલ — આ doc ની જૂની "no GET API" નોંધ ખોટી હતી); hold state હજુ પહોંચી ના શકાય તેવું (કોઈ hold endpoint નથી) |
 | **Field Actions** (`/field-actions`) | Released product પર recall/correction/removal | QA Reviewer = investigate/scope; **QA Releaser = regulatory decision/approve/close** (SoD) |
 
 ---
@@ -177,8 +183,9 @@ status અલગ સ્ક્રીન પર જોવું.
    out-of-range trigger, step-hold/equipment-block triggers હજુ future scope.
 3. ~~Supervisor role માટે demo user નથી~~ **✅ Fixed (2026-09-18)** — `supervisor1` હવે seed થયેલ છે
    (password `ChangeMe123!`), manual create કરવાની જરૂર નથી.
-4. **Packaging module માં read API જ નથી, hold state પણ પહોંચી ના શકાય તેવું છે** — હજુ ખુલ્લું
-   (આ પાસમાં ટચ નથી કર્યું) — baseline spec ગેપ તરીકે honestly નોંધવું.
+4. **Packaging hold state પહોંચી ના શકાય તેવું છે** — હજુ ખુલ્લું (કોઈ hold endpoint નથી, આ પાસમાં ટચ
+   નથી કર્યું) — baseline spec ગેપ તરીકે honestly નોંધવું. (read API હવે અસ્તિત્વમાં છે — ✅ 2026-09-19
+   ચકાસાયેલ, નીચે ૮.૭ જુઓ.)
 5. ~~`packaging`, `genealogy`, `yield`, `field-actions` પેજ પર frontend role-based button hide/disable
    નથી~~ **✅ ચકાસાયેલ (2026-09-18)** — `packaging`/`yield`/`field-actions` પહેલેથી જ role-gated હતા;
    `genealogy` પેજ સંપૂર્ણપણે read-only છે (કોઈ write action જ નથી) એટલે gating ની જરૂર જ નહોતી.

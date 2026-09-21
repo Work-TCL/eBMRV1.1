@@ -7,7 +7,7 @@ import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { StatePill } from "@/components/ui/StatePill";
-import { Field } from "@/components/ui/Field";
+import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
@@ -115,7 +115,7 @@ export default function AccessReviewPage() {
           Evaluates whether <strong>you</strong> are currently authorized for an action at a site - the same
           policy the mutation gateway enforces. Read-only; nothing is written.
         </p>
-        <form onSubmit={runDecision} className="flex items-end gap-4" style={{ flexWrap: "wrap" }}>
+        <form onSubmit={runDecision} className="flex items-start gap-4" style={{ flexWrap: "wrap" }}>
           <Field label="Action" required>
             <Input
               value={action}
@@ -135,9 +135,11 @@ export default function AccessReviewPage() {
               ))}
             </Select>
           </Field>
-          <Button type="submit" variant="secondary" disabled={busy || !action.trim()}>
-            <Icon name="shield-check" /> {busy ? "Checking…" : "Check"}
-          </Button>
+          <RowButtonSlot>
+            <Button type="submit" variant="secondary" disabled={busy || !action.trim()}>
+              <Icon name="shield-check" /> {busy ? "Checking…" : "Check"}
+            </Button>
+          </RowButtonSlot>
         </form>
 
         {error && <p className="error-text mt-3">{error}</p>}

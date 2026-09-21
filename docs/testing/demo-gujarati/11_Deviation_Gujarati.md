@@ -139,13 +139,14 @@ Manual create ને બદલે, **live auto-trigger બતાવવા**:
 2. ~~REOPENED પછી મર્યાદિત options~~ **✅ Fixed (2026-09-18)** — REOPENED state હવે Contain/
    Investigation/Impact/Disposition/Close/Extend — backend જે ખરેખર allow કરે છે એ બધું જ UI માં
    બતાવે છે.
-3. ~~Deviation/CAPA હાલ batch release ને block નથી કરતા~~ **✅ Fixed for deviations (2026-09-18,
-   project-owner-directed, SG-059 RESOLVED)** — batch પર attributed (`source_type="batch"`,
-   `source_id=<batch>`) કોઈ પણ deviation જે `CLOSED` state માં ન હોય, એ હવે release ને `OPEN_DEVIATION`
-   blocker સાથે block કરે છે (`release/service.py::evaluate_eligibility()`; `POST /release/v1/
-   scopes/.../evaluate` અને final `.../release` બંને પર enforced). Rule પસંદ કરેલો: severity threshold
-   નહીં, ANY open deviation. **CAPA જાણી જોઈને block નથી કરતું** — Document 27 માં DEV-FR-022 જેવી કોઈ
-   requirement જ નથી, ડોક્યુમેન્ટ ૧૦.૬ મુદ્દા ૪ જુઓ.
+3. ~~Deviation/CAPA હાલ batch release ને block નથી કરતા~~ **✅ Fixed for deviations (2026-09-18) અને
+   CAPA (2026-09-19)** — batch પર attributed (`source_type="batch"`, `source_id=<batch>`) કોઈ પણ
+   deviation જે `CLOSED` state માં ન હોય, એ release ને `OPEN_DEVIATION` blocker સાથે block કરે છે
+   (`release/service.py::evaluate_eligibility()`; `POST /release/v1/scopes/.../evaluate` અને final
+   `.../release` બંને પર enforced). Rule પસંદ કરેલો: severity threshold નહીં, ANY open deviation.
+   **CAPA હવે પણ block કરે છે** — batch પર attributed deviation/OOS ને source બનાવીને ખોલાયેલ કોઈ CAPA
+   હજુ ખુલ્લું હોય તો `OPEN_CAPA` blocker (batch ને directly નહીં — Document 27 નું `source_type`
+   "batch" support કરતું જ નથી, ડોક્યુમેન્ટ ૧૦.૬ મુદ્દા ૪ જુઓ).
 4. ~~`process.engineer` role deviation જોઈ પણ ના શકે~~ **✅ Fixed (2026-09-18)** — `process.engineer`
    ને હવે `qms_deviation.view` (read-only) મળે છે; triage/contain/investigate/disposition/close માટે
    હજુ `qa.reviewer`/`qa.releaser` જ વાપરવા (એ actions Process Engineer ને assign નથી).

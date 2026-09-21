@@ -13,6 +13,7 @@ import {
   formatDateTime,
   newIdempotencyKey,
   type EquipmentAsset,
+  type Me,
   type MutationReceipt,
 } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
@@ -213,7 +214,14 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
             id: "maintenance",
             label: "Maintenance",
             badge: history.data?.maintenance_work_orders.length,
-            content: <MaintenanceTab workOrders={history.data?.maintenance_work_orders ?? []} />,
+            content: (
+              <MaintenanceTab
+                workOrders={history.data?.maintenance_work_orders ?? []}
+                asset={a}
+                me={me}
+                onDone={reloadAll}
+              />
+            ),
           },
           {
             id: "use",
@@ -297,7 +305,19 @@ function CalibrationTab({ calibrations }: { calibrations: Calibration[] }) {
   );
 }
 
-function MaintenanceTab({ workOrders }: { workOrders: WorkOrder[] }) {
+function MaintenanceTab({
+  workOrders,
+  asset,
+  me,
+  onDone,
+}: {
+  workOrders: WorkOrder[];
+  asset: EquipmentAsset;
+  me: Me | null;
+  onDone: () => void;
+}) {
+  const [completing, setCompleting] = useState<WorkOrder | null>(null);
+
   if (workOrders.length === 0) {
     return <EmptyState icon="refresh">No maintenance work orders for this asset.</EmptyState>;
   }
@@ -307,7 +327,14 @@ function MaintenanceTab({ workOrders }: { workOrders: WorkOrder[] }) {
         <Card key={w.id} pad className="mb-3">
           <div className="flex justify-between items-center mb-3">
             <span className="font-semibold">{w.type ?? "Maintenance"} work order</span>
-            <WorkflowStatePill state={w.state} />
+            <div className="flex items-center gap-3">
+              <WorkflowStatePill state={w.state} />
+              {w.state !== "verified" && canMaintainEquipment(me) && (
+                <Button variant="secondary" onClick={() => setCompleting(w)}>
+                  Complete maintenance
+                </Button>
+              )}
+            </div>
           </div>
           <FactGrid>
             <Fact label="Started">{formatDateTime(w.started_at)}</Fact>
@@ -340,7 +367,96 @@ function MaintenanceTab({ workOrders }: { workOrders: WorkOrder[] }) {
           </div>
         </Card>
       ))}
+      {completing && (
+        <CompleteMaintenanceModal
+          asset={asset}
+          workOrder={completing}
+          onClose={() => setCompleting(null)}
+          onDone={() => {
+            setCompleting(null);
+            onDone();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/** Closes out an open/in-progress work order — the step the equipment detail page had no UI for:
+ * `record_maintenance` only clears `maintenance_status` (and any maintenance-sourced hold) when
+ * called again with this work order's id and `verified: true`; without it, Return to service keeps
+ * failing with POST_MAINTENANCE_VERIFICATION_REQUIRED no matter how many times it's clicked. */
+function CompleteMaintenanceModal({
+  asset,
+  workOrder,
+  onClose,
+  onDone,
+}: {
+  asset: EquipmentAsset;
+  workOrder: WorkOrder;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [workPerformed, setWorkPerformed] = useState(workOrder.work_performed ?? "");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post<MutationReceipt>(`/equipment/v1/${asset.id}/maintenance`, {
+        idempotency_key: newIdempotencyKey(),
+        asset_id: asset.id,
+        expected_version: asset.version,
+        work_order_id: workOrder.id,
+        work_performed: workPerformed || null,
+        verified: true,
+        reason: reason || null,
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={
+        <span className="flex items-center gap-2">
+          Complete maintenance - {asset.equipment_code}
+        </span>
+      }
+    >
+      <form onSubmit={submit}>
+        <Field label="Work performed">
+          <textarea
+            className="input"
+            rows={3}
+            value={workPerformed}
+            onChange={(e) => setWorkPerformed(e.target.value)}
+          />
+        </Field>
+        <Field label="Reason" hint="Optional. Recorded in the audit trail.">
+          <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy}>
+            {busy ? "Saving…" : "Mark verified"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

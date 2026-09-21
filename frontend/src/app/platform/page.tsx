@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, canManageEvidenceIntegrity, canOperateEvidence, downloadEvidence, isAdminAnywhere } from "@/lib/api";
-import { useMe } from "@/lib/hooks";
+import { useEntityOptions, useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -11,7 +11,7 @@ import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
-import { FormConsole } from "@/components/shared/FormConsole";
+import { FormConsole, EvidenceObjectOwnerPicker } from "@/components/shared/FormConsole";
 import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 
 /** The rest of this page (data ownership, projections, backup/DR, search, workflow ops, report
@@ -159,8 +159,8 @@ export default function PlatformPage() {
             label: "Stage an evidence upload",
             about: "Stages the metadata row only. Once staged, use \"Finalize an upload\" below (same panel, pick it from the Operation list above) to attach the actual file and compute its hash.",
             fields: [
-              { name: "owner_type", label: "Owner type", required: true, placeholder: "e.g. batch, oos_record — auto-filled to \"batch_step\" if you pick a step below" },
-              { name: "owner_id", label: "Owner ID", required: true, type: "batchStepSelect", hint: "Pick a batch step, or enter any other owner's ID manually." },
+              { name: "owner_type", label: "Owner type", type: "ownerTypeSelect", required: true, hint: "Batch step and Batch (whole) are the two owner types this system stages evidence against today; pick \"Other…\" for anything else." },
+              { name: "owner_id", label: "Owner ID", type: "ownerIdSelect", required: true, hint: "Picker depends on the Owner type selected above." },
               { name: "filename", label: "Filename", required: true },
               { name: "mime_type", label: "MIME type", required: true, default: "application/pdf" },
               { name: "reason", label: "Reason", required: true },
@@ -170,7 +170,7 @@ export default function PlatformPage() {
             path: "{evidence_id}:finalize",
             label: "Finalize an upload",
             fields: [
-              { name: "evidence_id", label: "Evidence object ID", required: true, hint: "The ID returned when the upload was staged." },
+              { name: "evidence_id", label: "Evidence object ID", type: "evidenceSelect", required: true, hint: "Pick the staged evidence object by its owner type/ID." },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
               { name: "content_base64", label: "File", type: "fileBase64", required: true, hint: "The file this evidence object's content hash will be finalized against." },
               { name: "reason", label: "Reason", required: true },
@@ -227,7 +227,7 @@ export default function PlatformPage() {
             label: "Apply a legal hold",
             action: "legal_hold",
             fields: [
-              { name: "evidence_id", label: "Evidence object ID", required: true },
+              { name: "evidence_id", label: "Evidence object ID", type: "evidenceSelect", required: true, hint: "Pick the evidence object by its owner type/ID." },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
               { name: "hold_ref", label: "Hold reference", required: true },
               { name: "reason", label: "Reason", required: true },
@@ -313,6 +313,7 @@ function DownloadEvidenceCard() {
   const [purpose, setPurpose] = useState("inspection");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const entities = useEntityOptions();
 
   async function download() {
     setBusy(true);
@@ -333,9 +334,13 @@ function DownloadEvidenceCard() {
       Only a FINALIZED or ARCHIVED evidence object can be downloaded.
       </p>
       <div className="grid grid-cols-3 gap-4 mb-3">
-        <Field label="Evidence object ID">
-          <Input value={evidenceId} onChange={(e) => setEvidenceId(e.target.value)} />
-        </Field>
+        <EvidenceObjectOwnerPicker
+          label="Evidence object ID"
+          value={evidenceId}
+          onChange={setEvidenceId}
+          batchOptions={entities.batches}
+          batchOptionsStatus={entities.batchesStatus}
+        />
         <Field label="Purpose" hint="Recorded in the audit trail for this download.">
           <Input value={purpose} onChange={(e) => setPurpose(e.target.value)} />
         </Field>

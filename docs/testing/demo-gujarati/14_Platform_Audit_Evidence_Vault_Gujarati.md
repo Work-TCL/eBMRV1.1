@@ -131,11 +131,16 @@ transaction માં છે, એટલે crash/network failure/bug ગમે �
 
    બંને actions હવે ડેમોમાં live બતાવી શકાય — `qa.reviewer`/`admin` (evidence upload/legal-hold),
    `qa.reviewer` (document submit) → `qa.releaser` (document release).
-2. **બે અલગ Qualification ledgers જોડાયેલી નથી (SG-086, code માં જ self-documented):** Training module
-   "grant qualification" `qms.qualification_record` માં લખે છે; batch execution નું hard qualification-
-   gate `iam.qualifications` માંથી વાંચે છે — અને એ ટેબલમાં **લખવાનો કોઈ રસ્તો જ UI/code માં ક્યાંય
-   નથી**. વ્યવહારમાં demo data માં કોઈ batch step `required_qualification_code` વાપરતું નથી એટલે આ ગેપ
-   ડેમોમાં નડશે નહીં — પણ future roadmap item તરીકે client ને જણાવવા યોગ્ય.
-3. **Vault ની "Request Correction" ઇરાદાપૂર્વક અધૂરી છે** — UI પોતે જ કહે છે કે correction પૂરું કરવા
-   માટે signature policy હજુ define નથી થઈ (UI text અને backend state બંને સહમત છે — honest gap).
-4. **`Supervisor` role માટે કોઈ demo user seed નથી** (ડોક્યુમેન્ટ ૦૨ પ્રમાણે live બનાવવો પડે).
+2. ~~બે અલગ Qualification ledgers જોડાયેલી નથી, `iam.qualifications` માં લખવાનો કોઈ રસ્તો નથી~~
+   **✅ Fixed (2026-09-17, SG-086 write-through)** — Training ના "Grant qualification"
+   (`POST /training/v1/qualifications`) હવે `qms.qualification_record` ની સાથે-સાથે `iam.qualifications`
+   માં પણ row લખે છે (`training_commands.py::create_qualification`). Schema/version reconciliation
+   વચ્ચે હજુ ખુલ્લું છે, પણ "લખવાનો રસ્તો જ નથી" હવે ખોટું છે.
+3. ~~Vault ની "Request Correction" ઇરાદાપૂર્વક અધૂરી છે, signature policy define નથી~~
+   **UI ની જૂની claim ખોટી હતી — backend 2026-09-11 થી જ પૂરું છે** (`record_correction`/`complete`
+   signature policy, 2-signer chain: corrector + independent QA Releaser approver,
+   `vault/commands.py::complete_correction`). **✅ 2026-09-19 Fixed:** frontend માં "Complete correction"
+   UI હવે ઉમેર્યું — પહેલાં ફક્ત "Request correction" જ હતું, already-working backend ceremony સુધી
+   કોઈ રસ્તો જ નહોતો.
+4. ~~`Supervisor` role માટે કોઈ demo user seed નથી~~ **✅ Fixed (2026-09-18)** — `supervisor1` હવે
+   seed થયેલ (ડોક્યુમેન્ટ ૦૨ જુઓ).

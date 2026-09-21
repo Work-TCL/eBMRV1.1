@@ -2,6 +2,8 @@
 engine (evaluate_policy, action="platform.administer") — anywhere for creation, at the target site for
 assignment."""
 
+import uuid
+
 from sqlalchemy import select
 
 from app.modules.iam.models import Role, UserSiteRole
@@ -124,6 +126,13 @@ async def test_role_edit_and_delete_blocked_then_succeeds(client, seeded, db):
     resp = await client.get("/roles", params={"q": "Shift Lead"}, headers=auth_headers(admin_token))
     assert resp.json()["items"][0]["description"] == "updated"
 
+    resp = await client.get(f"/roles/{role_id}", headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"id": role_id, "name": "Shift Lead", "description": "updated"}
+
+    resp = await client.get(f"/roles/{uuid.uuid4()}", headers=auth_headers(admin_token))
+    assert resp.status_code == 404
+
     # Assign it to someone, then deletion must be blocked.
     resp = await client.post(
         f"/users/{seeded['users']['operator1'].id}/roles",
@@ -212,3 +221,38 @@ async def test_organization_edit_requires_admin_then_succeeds(client, seeded, db
 
     resp = await client.get("/organization", headers=auth_headers(admin_token))
     assert resp.json()["name"] == "Renamed Manufacturing Co."
+
+
+async def test_read_endpoints_require_authentication(client, seeded):
+    """2026-09-19, docs/testing/demo-gujarati/01 gap: GET /organization, /sites, /users, /roles,
+    /roles/{id}/permissions and /permissions had no `actor` dependency at all -- fully open to an
+    unauthenticated caller, unlike every mutating endpoint in the same router. /sites, /users, /roles and
+    /permissions stay authentication-only (no platform.administer gate) -- frontend/src/lib/hooks.ts's
+    useSiteId()/useEntityOptions() call the first three for pickers used by every role, and
+    test_policy_engine.py::test_list_permissions_includes_seeded_catalog already asserts a non-admin
+    operator gets 200 from /permissions (a read-only reference catalog); /organization and
+    /roles/{id}/permissions are Admin-only (only the Admin-only /admin/company and /admin/roles pages
+    ever call them)."""
+    for path in ("/organization", "/sites", "/users", "/roles", "/permissions"):
+        resp = await client.get(path, headers={})
+        assert resp.status_code == 401, f"{path}: {resp.status_code} {resp.text}"
+
+    op_token = await login(client, "operator1")
+    role_id = str((await client.get("/roles", headers=auth_headers(op_token))).json()["items"][0]["id"])
+    resp = await client.get(f"/roles/{role_id}/permissions", headers={})
+    assert resp.status_code == 401
+
+    # Authenticated-but-non-admin: site/user/role/permission lists succeed (picker/reference data),
+    # only the two genuinely Admin-only reads 403.
+    resp = await client.get("/sites", headers=auth_headers(op_token))
+    assert resp.status_code == 200, resp.text
+    resp = await client.get("/users", headers=auth_headers(op_token))
+    assert resp.status_code == 200, resp.text
+    resp = await client.get("/roles", headers=auth_headers(op_token))
+    assert resp.status_code == 200, resp.text
+    resp = await client.get("/permissions", headers=auth_headers(op_token))
+    assert resp.status_code == 200, resp.text
+    resp = await client.get("/organization", headers=auth_headers(op_token))
+    assert resp.status_code == 403
+    resp = await client.get(f"/roles/{role_id}/permissions", headers=auth_headers(op_token))
+    assert resp.status_code == 403

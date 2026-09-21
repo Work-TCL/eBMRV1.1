@@ -309,6 +309,323 @@ async def test_evaluate_blocked_by_open_deviation(client, seeded, db):
     assert not any(b["code"] == "OPEN_DEVIATION" for b in detail["evaluation"]["blockers"])
 
 
+async def test_evaluate_blocked_by_qc_material_em_signals(client, seeded, db):
+    """2026-09-19, project-owner-directed: release eligibility now also checks QC (failing result on a
+    release-blocking test order), materials (a consumed lot never cleared for use) and environmental
+    monitoring (an action-excursion reading) attributed to the batch. One row of each, inserted directly
+    the same way the OPEN_DEVIATION test above inserts a DeviationRecord -- these three modules' own
+    create-command ceremonies are exercised by their own test suites (test_qc.py/test_material_flow.py/
+    test_em_flow.py); this test only proves release/service.py reads what they'd produce."""
+    import uuid as uuid_mod
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from app.modules.equipment.em_models import EmSampleOrReading
+    from app.modules.material.models import Material, MaterialIssue, MaterialLot
+    from app.modules.qc.models import QcResult, QcSample, QcTestDefinition, QcTestOrder, QcTestRun, QcTestSpecification
+
+    admin_token, batch_id = await _setup(db, client, seeded, "8")
+
+    async with db.begin():
+        admin_user = (await db.execute(select(User).where(User.username == "admin.rel8"))).scalar_one()
+
+        spec = QcTestSpecification(spec_code="SPEC-REL8", version_no=1, scope_type="product", scope_version_id=uuid_mod.uuid4(), status="released")
+        db.add(spec)
+        await db.flush()
+        definition = QcTestDefinition(specification_id=spec.id, test_code="ASSAY", test_name="Assay", result_data_type="numeric", required=True, release_blocking=True)
+        db.add(definition)
+        await db.flush()
+        sample = QcSample(sample_number=f"SMP-REL8-{uuid_mod.uuid4().hex[:6]}", sample_type="in_process", source_type="batch", source_id=uuid_mod.UUID(batch_id), state="testing_complete")
+        db.add(sample)
+        await db.flush()
+        order = QcTestOrder(sample_id=sample.id, test_definition_id=definition.id, state="reviewed", blocking=True)
+        db.add(order)
+        await db.flush()
+        run = QcTestRun(test_order_id=order.id)
+        db.add(run)
+        await db.flush()
+        qc_result = QcResult(test_order_id=order.id, test_run_id=run.id, result_type="numeric", outcome="oos")
+        db.add(qc_result)
+        await db.flush()
+        qc_result_id = qc_result.id
+
+        material = Material(site_id=seeded["site_id"], code="RM-REL8", name="Release Test Material", uom="kg", status="active")
+        db.add(material)
+        await db.flush()
+        lot = MaterialLot(
+            material_id=material.id, site_id=seeded["site_id"], internal_lot=f"LOT-REL8-{uuid_mod.uuid4().hex[:6]}",
+            received_quantity=Decimal("10"), available_quantity=Decimal("10"), uom="kg", status="quarantine",
+            received_by_user_id=admin_user.id,
+        )
+        db.add(lot)
+        await db.flush()
+        db.add(MaterialIssue(material_lot_id=lot.id, batch_id=uuid_mod.UUID(batch_id), quantity=Decimal("1"), uom="kg", issued_by_user_id=admin_user.id))
+        lot_id = lot.id
+
+        em_location_id = next(iter(seeded["em_locations"].values())).id
+        reading = EmSampleOrReading(
+            site_id=seeded["site_id"], program_version_id=seeded["em_program"].id, location_id=em_location_id,
+            monitoring_type="viable_air", batch_id=uuid_mod.UUID(batch_id), alert_action_status="action_excursion", state="REVIEWED",
+        )
+        db.add(reading)
+        await db.flush()
+        em_reading_id = reading.id
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    scope_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert detail["scope"]["state"] == "blocked"
+    assert detail["evaluation"]["eligible"] is False
+    blockers_by_code = {b["code"]: b for b in detail["evaluation"]["blockers"]}
+    assert blockers_by_code["QC_RESULT_FAILED"]["source_id"] == str(qc_result_id)
+    assert blockers_by_code["MATERIAL_LOT_NOT_RELEASED"]["source_id"] == str(lot_id)
+    assert blockers_by_code["EM_ACTION_EXCURSION"]["source_id"] == str(em_reading_id)
+
+    # Releasing the lot clears exactly its own blocker, not the others.
+    async with db.begin():
+        released_lot = await db.get(MaterialLot, lot_id)
+        released_lot.status = "released"
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    codes = {b["code"] for b in detail["evaluation"]["blockers"]}
+    assert "MATERIAL_LOT_NOT_RELEASED" not in codes
+    assert "QC_RESULT_FAILED" in codes
+    assert "EM_ACTION_EXCURSION" in codes
+
+
+async def test_evaluate_warnings_are_non_blocking(client, seeded, db):
+    """QC 'oot', EM 'alert' and an incomplete packaging run are all real signals (2026-09-19) but
+    deliberately warning-only -- project-owner-directed: OOT/alert are watch-level, not confirmed
+    failures, and packaging is not a release gate at all. None of them may appear in `blockers` or flip
+    `eligible` to false."""
+    import uuid as uuid_mod
+
+    from app.modules.batch_execution.models import Batch
+    from app.modules.equipment.em_models import EmSampleOrReading
+    from app.modules.packaging.models import PackagingRun
+    from app.modules.qc.models import QcResult, QcSample, QcTestDefinition, QcTestOrder, QcTestRun, QcTestSpecification
+
+    admin_token, batch_id = await _setup(db, client, seeded, "9")
+
+    async with db.begin():
+        batch = await db.get(Batch, uuid_mod.UUID(batch_id))
+        spec = QcTestSpecification(spec_code="SPEC-REL9", version_no=1, scope_type="product", scope_version_id=uuid_mod.uuid4(), status="released")
+        db.add(spec)
+        await db.flush()
+        definition = QcTestDefinition(specification_id=spec.id, test_code="ASSAY", test_name="Assay", result_data_type="numeric", required=True, release_blocking=True)
+        db.add(definition)
+        await db.flush()
+        sample = QcSample(sample_number=f"SMP-REL9-{uuid_mod.uuid4().hex[:6]}", sample_type="in_process", source_type="batch", source_id=uuid_mod.UUID(batch_id), state="testing_complete")
+        db.add(sample)
+        await db.flush()
+        order = QcTestOrder(sample_id=sample.id, test_definition_id=definition.id, state="reviewed", blocking=True)
+        db.add(order)
+        await db.flush()
+        run = QcTestRun(test_order_id=order.id)
+        db.add(run)
+        await db.flush()
+        db.add(QcResult(test_order_id=order.id, test_run_id=run.id, result_type="numeric", outcome="oot"))
+
+        em_location_id = next(iter(seeded["em_locations"].values())).id
+        db.add(
+            EmSampleOrReading(
+                site_id=seeded["site_id"], program_version_id=seeded["em_program"].id, location_id=em_location_id,
+                monitoring_type="viable_air", batch_id=uuid_mod.UUID(batch_id), alert_action_status="alert", state="REVIEWED",
+            )
+        )
+
+        db.add(
+            PackagingRun(
+                site_id=seeded["site_id"], batch_id=uuid_mod.UUID(batch_id),
+                product_version_id=batch.product_version_id, state="in_progress", reconciliation_state="not_started",
+            )
+        )
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    scope_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert detail["scope"]["state"] == "eligible"
+    assert detail["evaluation"]["eligible"] is True
+    assert detail["evaluation"]["blockers"] == []
+    warning_codes = {w["code"] for w in detail["evaluation"]["warnings"]}
+    assert warning_codes == {"QC_RESULT_OOT", "EM_ALERT", "PACKAGING_INCOMPLETE"}
+
+    resp = await client.post(
+        f"/release/v1/scopes/{scope_id}/release",
+        json={"idempotency_key": idem(), "scope_id": scope_id, "expected_version": 2},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_evaluate_blocked_by_equipment_and_capa_signals(client, seeded, db):
+    """2026-09-19, project-owner-directed follow-up (equipment + CAPA):
+
+    Equipment: `EquipmentUseLog` now records which asset satisfied a step's requirement
+    (batch_execution/commands.py::start_step); release re-checks that asset's *current* eligibility
+    (equipment_commands.get_eligibility) so a batch is caught if its equipment went on hold afterward.
+
+    CAPA: `CAPA_SOURCE_TYPES` deliberately does NOT gain "batch" (Document 27 names exactly 11 source
+    types and "batch" isn't one -- see release/service.py::_capa_signals docstring). Instead this checks
+    the real 2-hop path: a CAPA whose source is a deviation/OOS that IS attributed to this batch."""
+    import uuid as uuid_mod
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from app.modules.equipment.models import EquipmentAsset, EquipmentUseLog
+    from app.modules.qms.capa_models import CapaRecord
+    from app.modules.qms.models import DeviationRecord
+
+    admin_token, batch_id = await _setup(db, client, seeded, "10")
+
+    async with db.begin():
+        admin_user = (await db.execute(select(User).where(User.username == "admin.rel10"))).scalar_one()
+
+        asset = EquipmentAsset(
+            site_id=seeded["site_id"], equipment_code=f"EQ-REL10-{uuid_mod.uuid4().hex[:6]}",
+            state="QUALIFIED_AVAILABLE", qualification_status="QUALIFIED",
+            hold_flag=True, hold_source="manual", hold_reason="Found leaking post-use",
+        )
+        db.add(asset)
+        await db.flush()
+        db.add(
+            EquipmentUseLog(
+                equipment_asset_id=asset.id, site_id=seeded["site_id"], log_type="production",
+                batch_id=uuid_mod.UUID(batch_id), operator_user_id=admin_user.id, source="system",
+            )
+        )
+        asset_id = asset.id
+
+        deviation = DeviationRecord(
+            site_id=seeded["site_id"], deviation_number=f"DEV-REL10-{uuid_mod.uuid4().hex[:6]}",
+            deviation_type="process", source_type="batch", source_id=uuid_mod.UUID(batch_id),
+            severity="major", owner_subject_id=admin_user.id, state="CLOSED",
+        )
+        db.add(deviation)
+        await db.flush()
+        capa = CapaRecord(
+            site_id=seeded["site_id"], capa_number=f"CAPA-REL10-{uuid_mod.uuid4().hex[:6]}",
+            source_type="deviation", source_id=deviation.id, problem_statement="Recurring leak",
+            risk_class="medium", root_cause_ref={"note": "test"}, state="OPEN",
+            owner_subject_id=admin_user.id, target_date=datetime.now(timezone.utc),
+        )
+        db.add(capa)
+        await db.flush()
+        capa_id = capa.id
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    scope_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert detail["scope"]["state"] == "blocked"
+    blockers_by_code = {b["code"]: b for b in detail["evaluation"]["blockers"]}
+    assert blockers_by_code["EQUIPMENT_OUT_OF_SERVICE"]["source_id"] == str(asset_id)
+    assert blockers_by_code["OPEN_CAPA"]["source_id"] == str(capa_id)
+
+    # Closing the CAPA and releasing the equipment from hold clears both blockers.
+    async with db.begin():
+        released_asset = await db.get(EquipmentAsset, asset_id)
+        released_asset.hold_flag = False
+        closed_capa = await db.get(CapaRecord, capa_id)
+        closed_capa.state = "CLOSED"
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert detail["evaluation"]["eligible"] is True, detail["evaluation"]["blockers"]
+
+
+async def test_evaluate_blocked_by_yield_reconciliation_signals(client, seeded, db):
+    """2026-09-19, project-owner-directed follow-up, correcting a stale claim: Document 17 (yield/
+    reconciliation) was NOT "never built" -- `yield_reconciliation/commands.py::get_batch_summary`
+    already computed a `release_blocked` flag from `_UNRESOLVED_STATES = (FAILED, OUT_OF_LIMIT,
+    OUT_OF_TOLERANCE)` (YLD-FR-028/029's own "release-blocker flag"), it was just never consulted from
+    release/service.py. A calculated-but-not-yet-verified row is a non-blocking warning; a SUPERSEDED row
+    (the module's own append-only correction marker) counts as neither."""
+    import uuid as uuid_mod
+
+    from app.modules.yield_reconciliation.models import ManufacturingCalculation, ReconciliationRecord
+
+    admin_token, batch_id = await _setup(db, client, seeded, "11")
+
+    async with db.begin():
+        calc = ManufacturingCalculation(
+            site_id=seeded["site_id"], batch_id=uuid_mod.UUID(batch_id), calculation_type="YIELD",
+            input_refs={"note": "test"}, input_hash="deadbeef", state="OUT_OF_LIMIT",
+        )
+        db.add(calc)
+        rec = ReconciliationRecord(
+            site_id=seeded["site_id"], batch_id=uuid_mod.UUID(batch_id), reconciliation_type="MATERIAL",
+            item_ref={"note": "test"}, quantities={"consumed": "10"}, state="CALCULATED",
+        )
+        db.add(rec)
+        # A superseded row (e.g. a prior failed run someone already corrected) must NOT still block.
+        superseded = ManufacturingCalculation(
+            site_id=seeded["site_id"], batch_id=uuid_mod.UUID(batch_id), calculation_type="POTENCY",
+            input_refs={"note": "test"}, input_hash="deadbeef2", state="SUPERSEDED",
+        )
+        db.add(superseded)
+        await db.flush()
+        calc_id, rec_id = calc.id, rec.id
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    scope_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert detail["scope"]["state"] == "blocked"
+    blockers_by_code = {b["code"]: b for b in detail["evaluation"]["blockers"]}
+    assert blockers_by_code["YIELD_CALCULATION_UNRESOLVED"]["source_id"] == str(calc_id)
+    warning_codes = {w["code"]: w for w in detail["evaluation"]["warnings"]}
+    assert warning_codes["RECONCILIATION_NOT_VERIFIED"]["source_id"] == str(rec_id)
+
+    async with db.begin():
+        fixed_calc = await db.get(ManufacturingCalculation, calc_id)
+        fixed_calc.state = "VERIFIED"
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert not any(b["code"] == "YIELD_CALCULATION_UNRESOLVED" for b in detail["evaluation"]["blockers"])
+
+
 async def test_release_rejected_when_blocked(client, seeded, db):
     admin_token, batch_id = await _setup(db, client, seeded, "4", complete_review=False)
     resp = await client.post(

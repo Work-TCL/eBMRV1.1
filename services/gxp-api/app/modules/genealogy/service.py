@@ -246,6 +246,43 @@ async def create_node(
     return node
 
 
+async def get_or_create_node(
+    session: AsyncSession,
+    *,
+    site_id: uuid.UUID,
+    node_type: str,
+    authoritative_record_type: str,
+    authoritative_record_id: uuid.UUID,
+    business_ref: str | None = None,
+    authoritative_version: int | None = None,
+    record_hash: str | None = None,
+    actor_user_id: uuid.UUID,
+) -> GenealogyNode:
+    """2026-09-19, project-owner-directed: the real event-driven population Document 13 §8 always intended
+    (MaterialConsumed/DrugBatchProduced/...) but that this module's own docstring above notes never got
+    wired because those producing modules didn't exist yet when Document 13 was built. `create_node()`
+    itself has no dedup check (by design -- it's a thin, one-shot write primitive used directly by tests
+    today), so a producer calling it on every event would create a duplicate node per call. This wraps it
+    with the lookup a real producer needs: one node per (authoritative_record_type, authoritative_record_id)
+    pair, looked up first and reused, so `issue_material_to_batch()`/`complete_production()` etc. can call
+    this on every event without needing their own dedup logic or an idempotency table of their own."""
+    existing = (
+        await session.execute(
+            select(GenealogyNode).where(
+                GenealogyNode.authoritative_record_type == authoritative_record_type,
+                GenealogyNode.authoritative_record_id == authoritative_record_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    return await create_node(
+        session, site_id=site_id, node_type=node_type, business_ref=business_ref,
+        authoritative_record_type=authoritative_record_type, authoritative_record_id=authoritative_record_id,
+        authoritative_version=authoritative_version, record_hash=record_hash, actor_user_id=actor_user_id,
+    )
+
+
 async def _would_close_cycle(session: AsyncSession, from_node_id: uuid.UUID, to_node_id: uuid.UUID) -> bool:
     """GEN-FR-024: adding from_node_id -> to_node_id closes a cycle iff from_node_id is already
     reachable as a descendant of to_node_id (i.e. a path to_node_id -> ... -> from_node_id already

@@ -169,6 +169,7 @@ role/permission તરીકે અસ્તિત્વમાં હતા, પ
 | ~~Equipment calibration/qualification/cleaning flags enforce નથી થતા~~ | Batch-step-start પર હવે real enforcement (equipment module ના existing eligibility check reuse કરીને) | ૦૭/૦૮ |
 | ~~Supervisor role માટે demo user નથી~~ | `supervisor1` seed થયેલ | ૦૮ |
 | ~~In-process out-of-range result auto-deviation trigger નથી કરતું~~ | હવે આપોઆપ OPEN/unassigned deviation ખૂલે છે (severity=minor, deviation_type=process) | ૦૮/૧૧ |
+| ~~QA Review completeness / Release eligibility માત્ર ૩-૪ signal પર (SG-054/056)~~ | QC/materials/environment/equipment/CAPA/yield-reconciliation હવે real hard blocker તરીકે wired (QC oos/invalid + open OOS, material lot not released, EM action_excursion, equipment currently ineligible, batch-attributed deviation/OOS પરથી ખોલાયેલ open CAPA, yield/reconciliation FAILED/OUT_OF_LIMIT/OUT_OF_TOLERANCE — Document 17 "never built" claim ખોટી હતી, module પહેલેથી જ built હતું); QC oot/EM alert/yield-not-verified/packaging incomplete non-blocking warning તરીકે; genealogy nodes/edges હવે real events (material issue, production-complete) પર auto-populate થાય છે પણ completeness rule તરીકે વપરાતા નથી (Document 13 કોઈ rule define નથી કરતું) — genealogy completeness rule એકમાત્ર બાકી ગેપ | ૧૨ |
 
 **હજુ ખુલ્લા ગેપ (આ પાસમાં ટચ નથી કર્યા — મોટા feature builds, પોતાની regulated decisions સાથે):**
 
@@ -177,10 +178,9 @@ role/permission તરીકે અસ્તિત્વમાં હતા, પ
 | `gxp_batch.state` ક્યારેય "Released" નથી બતાવતું — release અલગ module માં (by design, bug નથી) | ૦૮/૧૨ |
 | ~~Deviation/CAPA batch release ને block નથી કરતા~~ — **✅ Deviation half Fixed (SG-059 RESOLVED, બીજા session દ્વારા, ડોક્યુમેન્ટ ૧૧ જુઓ)**: open (non-CLOSED) deviation હવે batch release ને `OPEN_DEVIATION` blocker સાથે block કરે છે — auto-created deviations (ઉપર જુઓ) પણ આમાં ગણાય છે. **CAPA half હજુ ખુલ્લો.** | ૧૦/૧૧/૧૨ |
 | Release ફક્ત `scope_type="batch"` support કરે છે (SG-056) | ૧૨ |
-| Packaging module માં read API જ નથી, hold state પહોંચી ના શકાય તેવું | ૦૮ |
+| Packaging hold state પહોંચી ના શકાય તેવું (read API `GET /packaging/v1/runs` ✅ already exists — 08 doc ની જૂની "no GET API" નોંધ ખોટી હતી, ચકાસાયેલ 2026-09-19) | ૦૮ |
 | **Material consumption inventory ને link નથી કરતું** (નવું મળેલ, 2026-09-18) — batch ના `material_consume` step ના recipe-level auto inventory deduct નથી કરતું; `MaterialLot.available_quantity` અને `InventoryBalanceProjection` **બે અલગ, unsynchronized tracks** છે | ૦૩/૦૮ |
 | DDCP ના કોઈ પણ action પર e-signature નથી, RBAC-only (SG-148, ~૧૪ actions) | ૦૯ |
-| QA Review completeness માત્ર ૩ signal પર (full-scope નથી, SG-054) | ૧૨ |
 | Recipe Master ના ૪ raw-UUID policy fields (`qualification_policy_id` વગેરે) — કોઈ backing entity નથી, deliberately unbuilt | ૦૭ |
 
 ---
