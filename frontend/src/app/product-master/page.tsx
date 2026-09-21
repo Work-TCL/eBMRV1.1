@@ -18,6 +18,7 @@ import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { CodeField } from "@/components/ui/CodeField";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -680,7 +681,7 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
       await api.post("/products/v1/drafts", {
         idempotency_key: newIdempotencyKey(),
         product_business_id: businessId,
-        product_code: code || businessId,
+        product_code: code || undefined,
         name,
         version_no: Number(versionNo),
         site_id: siteId,
@@ -721,9 +722,12 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
           <Field label="Business ID" required>
             <Input value={businessId} onChange={(e) => setBusinessId(e.target.value)} required autoFocus />
           </Field>
-          <Field label="Product code" hint="Defaults to business ID">
-            <Input value={code} onChange={(e) => setCode(e.target.value)} />
-          </Field>
+          <CodeField
+            label="Product code"
+            value={code}
+            onChange={setCode}
+            hint="Only used for a version 1 draft; later versions reuse the product's established code."
+          />
           <Field label="Version no." required>
             <Input type="number" min={1} value={versionNo} onChange={(e) => setVersionNo(e.target.value)} required />
           </Field>

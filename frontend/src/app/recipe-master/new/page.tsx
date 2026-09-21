@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
+import { CodeField } from "@/components/ui/CodeField";
 import { Button, LinkButton } from "@/components/ui/Button";
 import {
   type ProductBusinessIdOption,
@@ -87,7 +88,7 @@ export default function NewRecipeDraftPage() {
       const receipt = await api.post<{ aggregate_id: string }>("/recipes/v2/drafts", {
         idempotency_key: newIdempotencyKey(),
         product_business_id: productBusinessId,
-        recipe_code: recipeCode,
+        recipe_code: recipeCode || undefined,
         version_no: Number(versionNo),
         product_version_id: productVersionId,
         site_id: siteId,
@@ -125,9 +126,12 @@ export default function NewRecipeDraftPage() {
                 ))}
               </Select>
             </Field>
-            <Field label="Recipe code" required>
-              <Input value={recipeCode} onChange={(e) => setRecipeCode(e.target.value)} required />
-            </Field>
+            <CodeField
+              label="Recipe code"
+              value={recipeCode}
+              onChange={setRecipeCode}
+              hint="Only used for a new recipe family; a later version of an existing family reuses its code."
+            />
             <Field label="Version no." required>
               <Input type="number" min={1} value={versionNo} onChange={(e) => setVersionNo(e.target.value)} required />
             </Field>
@@ -209,7 +213,6 @@ export default function NewRecipeDraftPage() {
               disabled={
                 busy ||
                 !productBusinessId.trim() ||
-                !recipeCode.trim() ||
                 !siteId ||
                 !productVersionId.trim() ||
                 sections.length === 0 ||

@@ -11,6 +11,7 @@ import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { CodeField } from "@/components/ui/CodeField";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 
@@ -45,7 +46,7 @@ export default function MaterialsPage() {
       await api.post<MutationReceipt>("/materials", {
         idempotency_key: newIdempotencyKey(),
         site_id: sites[0].id,
-        code,
+        code: code || undefined,
         name,
         uom,
       });
@@ -160,9 +161,7 @@ export default function MaterialsPage() {
 
       <Modal open={open} onClose={() => setOpen(false)} title="New material">
         <form onSubmit={onSubmit}>
-          <Field label="Code" required>
-            <Input value={code} onChange={(e) => setCode(e.target.value)} required autoFocus />
-          </Field>
+          <CodeField label="Code" value={code} onChange={setCode} required />
           <Field label="Name" required>
             <Input value={name} onChange={(e) => setName(e.target.value)} required />
           </Field>
