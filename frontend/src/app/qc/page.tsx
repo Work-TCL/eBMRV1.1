@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, ApiError, holdsAnyRole, newIdempotencyKey, pagedFetcher } from "@/lib/api";
-import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
+import { api, ApiError, hasPermission, newIdempotencyKey, pagedFetcher } from "@/lib/api";
+import { useApiResource, useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -14,11 +14,14 @@ import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { ProductVersionPickerField } from "@/components/shared/ProductVersionPicker";
+import { RecipeVersionPickerField } from "@/components/shared/RecipeVersionPicker";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 import { RepeatableRows, buildRepeatArray, type RepeatRow, type RepeatSubField } from "@/components/shared/RepeatableFields";
@@ -70,14 +73,30 @@ const SAMPLE_TYPES = ["release", "stability", "in_process", "environmental", "ra
 const SOURCE_TYPES = ["batch", "material_lot", "environment", "stability_study", "equipment"];
 const SCOPE_TYPES = ["product", "in_process", "device"];
 
-const TEST_DEFINITION_SUBFIELDS: RepeatSubField[] = [
-  { name: "test_code", label: "Test code", required: true, placeholder: "e.g. FILL-WEIGHT" },
-  { name: "test_name", label: "Test name", required: true, placeholder: "e.g. Fill weight" },
-  { name: "result_data_type", label: "Result data type", required: true, placeholder: "numeric / text / pass_fail / json" },
-  { name: "uom", label: "Unit of measure" },
-  { name: "required", label: "Required", type: "bool", default: "true" },
-  { name: "release_blocking", label: "Release blocking", type: "bool", default: "true" },
-];
+function testDefinitionSubfields(
+  uomOptions: EntityOption[],
+  uomOptionsStatus: EntityOptionsStatus
+): RepeatSubField[] {
+  return [
+    { name: "test_code", label: "Test code", required: true, placeholder: "e.g. FILL-WEIGHT" },
+    { name: "test_name", label: "Test name", required: true, placeholder: "e.g. Fill weight" },
+    { name: "result_data_type", label: "Result data type", required: true, placeholder: "numeric / text / pass_fail / json" },
+    // Client requirements #2/#3: the released rules.gxp_uom list, not free text.
+    { name: "uom", label: "Unit of measure", type: "customSelect", options: uomOptions, optionsStatus: uomOptionsStatus, optionsNoun: "unit" },
+    { name: "required", label: "Required", type: "bool", default: "true" },
+    { name: "release_blocking", label: "Release blocking", type: "bool", default: "true" },
+  ];
+}
+
+/** Client requirements #2/#3 -- released UOM codes for the test-definition editor's "customSelect"
+ * unit-of-measure field. `/rules/v1/uom` returns a flat array, not a paginated envelope, so this fetches
+ * directly rather than through `useListEntityOptions`/`listAll` (both assume pagination). */
+function useUomOptions(): { options: EntityOption[]; status: EntityOptionsStatus } {
+  const { data, error } = useApiResource<{ code: string }[]>("/rules/v1/uom");
+  if (error) return { options: [], status: "error" };
+  if (data === null) return { options: [], status: "loading" };
+  return { options: data.map((u) => ({ value: u.code, label: u.code })), status: data.length ? "ready" : "empty" };
+}
 
 type OrderAction = "start" | "complete" | "review";
 
@@ -96,8 +115,9 @@ export default function QcPage() {
   const [specsReloadToken, setSpecsReloadToken] = useState(0);
   const [samplesReloadToken, setSamplesReloadToken] = useState(0);
 
-  const canAnalyse = holdsAnyRole(me, ["Admin", "Operator", "Supervisor", "QC Reviewer"]);
-  const canReview = holdsAnyRole(me, ["Admin", "QA Reviewer", "QC Reviewer"]);
+  // qc_sample.create/.receive, qc_test_order.create/.start/.record_raw_data/.complete share one grant.
+  const canAnalyse = hasPermission(me, "qc_test_order.start");
+  const canReview = hasPermission(me, "qc_test_order.review");
 
   // Feeds "Add test order"'s definition picker — every released spec's definitions, not just one page
   // of the browsable table below (same Phase-1 "cap at 100, no site scoping" precedent as every other
@@ -616,9 +636,7 @@ function CreateSampleModal({ onClose, onDone }: { onClose: () => void; onDone: (
           <Field label="Sample quantity">
             <Input type="number" step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
           </Field>
-          <Field label="UOM">
-            <Input value={uom} onChange={(e) => setUom(e.target.value)} />
-          </Field>
+          <UomSelect value={uom} onChange={setUom} />
         </div>
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-2">
@@ -910,9 +928,7 @@ function RecordResultModal({
               <option value="pass_fail">pass_fail</option>
             </Select>
           </Field>
-          <Field label="UOM">
-            <Input value={uom} onChange={(e) => setUom(e.target.value)} placeholder="e.g. mL" />
-          </Field>
+          <UomSelect value={uom} onChange={setUom} />
         </div>
         {resultType === "numeric" ? (
           <Field label="Value" required>
@@ -1067,6 +1083,8 @@ function NewSpecificationModal({ onClose, onDone }: { onClose: () => void; onDon
   const [scopeType, setScopeType] = useState("product");
   const [scopeVersionId, setScopeVersionId] = useState("");
   const [definitions, setDefinitions] = useState<RepeatRow[]>([]);
+  const { options: uomOptions, status: uomOptionsStatus } = useUomOptions();
+  const subFields = testDefinitionSubfields(uomOptions, uomOptionsStatus);
 
   return (
     <Modal open onClose={onClose} title="New test specification" large>
@@ -1079,7 +1097,7 @@ function NewSpecificationModal({ onClose, onDone }: { onClose: () => void; onDon
               spec_code: specCode,
               scope_type: scopeType,
               scope_version_id: scopeVersionId,
-              test_definitions: buildRepeatArray(TEST_DEFINITION_SUBFIELDS, definitions),
+              test_definitions: buildRepeatArray(subFields, definitions),
             })
           );
         }}
@@ -1089,7 +1107,13 @@ function NewSpecificationModal({ onClose, onDone }: { onClose: () => void; onDon
             <Input value={specCode} onChange={(e) => setSpecCode(e.target.value)} placeholder="e.g. QC-SPEC-PFS-001" required autoFocus />
           </Field>
           <Field label="Scope type" required>
-            <Select value={scopeType} onChange={(e) => setScopeType(e.target.value)}>
+            <Select
+              value={scopeType}
+              onChange={(e) => {
+                setScopeType(e.target.value);
+                setScopeVersionId("");
+              }}
+            >
               {SCOPE_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {t}
@@ -1098,24 +1122,32 @@ function NewSpecificationModal({ onClose, onDone }: { onClose: () => void; onDon
             </Select>
           </Field>
         </div>
-        <Field
-          label="Scope version ID"
-          required
-          hint={
-            scopeType === "product"
-              ? "The product version this specification governs - find it on /product-master."
-              : scopeType === "in_process"
-                ? "The recipe version this specification governs - find it on /recipe-master."
-                : "The device version this specification governs."
-          }
-        >
-          <Input value={scopeVersionId} onChange={(e) => setScopeVersionId(e.target.value)} required />
-        </Field>
+        {scopeType === "product" ? (
+          <ProductVersionPickerField
+            label="Scope version ID"
+            required
+            hint="The product version this specification governs."
+            value={scopeVersionId}
+            onChange={setScopeVersionId}
+          />
+        ) : scopeType === "in_process" ? (
+          <RecipeVersionPickerField
+            label="Scope version ID"
+            required
+            hint="The recipe version this specification governs."
+            value={scopeVersionId}
+            onChange={setScopeVersionId}
+          />
+        ) : (
+          <Field label="Scope version ID" required hint="The device version this specification governs.">
+            <Input value={scopeVersionId} onChange={(e) => setScopeVersionId(e.target.value)} required />
+          </Field>
+        )}
         <RepeatableRows
           label="Test definitions"
           itemLabel="Test definition"
           hint="Every test this specification defines - at least one is required for a test order to ever be created against it."
-          subFields={TEST_DEFINITION_SUBFIELDS}
+          subFields={subFields}
           value={definitions}
           onChange={setDefinitions}
         />
@@ -1215,11 +1247,7 @@ function MethodMasterCard({ canRelease, reloadToken }: { canRelease: boolean; re
   return (
     <Card pad className="mb-4">
       <CardHeader title="QC method master" meta="" />
-      <p className="fs-2 text-muted mb-3">
-        Look up a method&apos;s versions by its method code. No signature policy is configured yet for
-        <code> qc_method_version/release</code> - the challenge below is real, but the actual
-        release will correctly fail closed until a policy is added.
-      </p>
+      <p className="fs-2 text-muted mb-3">Look up a method&apos;s versions by its method code.</p>
       <div className="flex gap-2 items-end mb-3">
         <div style={{ flex: 1 }}>
           <Field label="Method code">
@@ -1283,10 +1311,10 @@ function MethodMasterCard({ canRelease, reloadToken }: { canRelease: boolean; re
 
 function NewQcMethodDraftModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { busy, error, run } = useCommand(onDone);
+  const { siteId } = useSiteId();
   const [methodCode, setMethodCode] = useState("");
   const [methodType, setMethodType] = useState("internal");
   const [name, setName] = useState("");
-  const [siteId, setSiteId] = useState("");
   const [validationEvidenceReference, setValidationEvidenceReference] = useState("");
   const [modificationReason, setModificationReason] = useState("");
 
@@ -1295,6 +1323,7 @@ function NewQcMethodDraftModal({ onClose, onDone }: { onClose: () => void; onDon
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (!siteId) return;
           run(() =>
             api.post("/qc/v1/methods/drafts", {
               idempotency_key: newIdempotencyKey(),
@@ -1324,9 +1353,6 @@ function NewQcMethodDraftModal({ onClose, onDone }: { onClose: () => void; onDon
           <Field label="Name" required>
             <Input value={name} onChange={(e) => setName(e.target.value)} required />
           </Field>
-          <Field label="Site ID" required>
-            <Input value={siteId} onChange={(e) => setSiteId(e.target.value)} required />
-          </Field>
         </div>
         <Field label="Validation evidence reference" hint="Required in practice for a validated method - not enforced client-side.">
           <Input value={validationEvidenceReference} onChange={(e) => setValidationEvidenceReference(e.target.value)} />
@@ -1339,7 +1365,7 @@ function NewQcMethodDraftModal({ onClose, onDone }: { onClose: () => void; onDon
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !methodCode.trim() || !name.trim() || !siteId.trim()}>
+          <Button type="submit" variant="primary" disabled={busy || !methodCode.trim() || !name.trim() || !siteId}>
             {busy ? "Creating…" : "Create draft"}
           </Button>
         </div>

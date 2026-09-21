@@ -3,11 +3,13 @@
 `recipe_material_requirement` (Document 10, SG-045) key on. Mirrors `product_master.commands`'s
 create_draft/release_product_version shape (see migration d2d738c7f191's docstring for why).
 
-Release intentionally has no seeded Document 106 signature policy yet (this record type did not exist
-before this pass) -- `resolve_signature_requirement()` therefore fails closed with
-SIGNATURE_POLICY_UNRESOLVED (SIGP-FR-004), the same state `product_version/release` and `vault_object/
-release` were correctly left in before their own project-owner-directed resolutions (SG-035). See
-docs/generated/18_SPEC_GAPS.md SG-185.
+SG-185 RESOLVED (2026-09-18, project-owner-directed: option A, "same as product/recipe release" —
+scripts/seed.py's SIGNATURE_POLICY_FLOOR now carries `(material_specification_version, release,
+Released, QA Releaser, independent=True, signature_required=True, reason_required=False)`, the exact
+product_version/release / recipe_version/release shape. `resolve_signature_requirement()` itself still
+does not read `required_role_id`/`requires_independent_signer`, so — same bespoke pattern
+`release_product_version()`/`release_recipe_version()` use — this command enforces the required role and
+independence (drafting author != releaser) itself, against the version's own `Created` audit event.
 """
 
 import uuid
@@ -17,15 +19,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
-from app.modules.iam.models import User
+from app.modules.audit.models import AuditEvent
+from app.modules.iam.models import Role, User
 from app.modules.material.models import Material
 from app.modules.material_specification.models import MaterialSpecificationVersion
+from app.modules.policy.service import effective_role_names
 from app.modules.signature import service as signature_service
 from app.modules.vault import service as vault_service
 from app.mutation.errors import (
     InvalidTransitionError,
     MissingSignatureError,
     NotFoundError,
+    RoleMissingError,
+    SodConflictError,
     StaleVersionError,
     ValidationFailedError,
 )
@@ -181,13 +187,37 @@ async def release_material_spec_version(
             requested="released",
         )
 
-    # SG-185 (2026-09-11): no Document 106 policy row exists yet for this brand-new record type --
-    # resolve_signature_requirement() fails closed with SIGNATURE_POLICY_UNRESOLVED (SIGP-FR-004) until a
-    # project-owner decision seeds one, matching how product_version/release and vault_object/release were
-    # correctly left before SG-035.
     policy = await signature_service.resolve_signature_requirement(
         session, record_type="material_specification_version", action="release"
     )
+
+    # SG-185 RESOLVED (2026-09-18): same bespoke enforcement release_product_version() uses --
+    # resolve_signature_requirement() does not read required_role_id/requires_independent_signer.
+    if policy.required_role_id is not None:
+        required_role_name = await session.scalar(select(Role.name).where(Role.id == policy.required_role_id))
+        if required_role_name not in await effective_role_names(session, actor_user_id, version.site_id):
+            raise RoleMissingError(
+                "Releasing a material specification version requires the signing role named by the signature policy",
+                action="material_spec.release",
+                required_role=required_role_name,
+            )
+    if policy.requires_independent_signer:
+        author_id = await session.scalar(
+            select(AuditEvent.actor_id)
+            .where(
+                AuditEvent.aggregate_type == "material_specification_version",
+                AuditEvent.aggregate_id == version.id,
+                AuditEvent.action == "Created",
+            )
+            .order_by(AuditEvent.occurred_at)
+            .limit(1)
+        )
+        if author_id is not None and author_id == actor_user_id:
+            raise SodConflictError(
+                "The author of a material specification version cannot also release it (author != releaser)",
+                record_type="material_specification_version",
+                action="release",
+            )
 
     signature_id = None
     if policy.signature_required:

@@ -10,6 +10,7 @@ recipe_equipment_requirement schema decision, IAM qualification schema, exceptio
 -- SG-048.
 """
 
+import base64
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -24,6 +25,7 @@ from app.modules.batch_execution.models import (
     ALLOWED_TRANSITIONS,
     Batch,
     BatchStep,
+    BatchStepEquipmentRequirement,
     StepComment,
     StepEvidenceLink,
     StepHandover,
@@ -31,19 +33,44 @@ from app.modules.batch_execution.models import (
     StepResult,
     StepResultCorrection,
 )
+from app.modules.batch_execution.record_service import build_batch_record
+from app.modules.equipment import commands as equipment_commands
+from app.modules.equipment.models import EquipmentAsset, EquipmentUseLog
+from app.modules.evidence.commands import (
+    FinalizeEvidenceUploadCommand,
+    StageEvidenceUploadCommand,
+    finalize_evidence_upload,
+    stage_evidence_upload,
+)
+from app.modules.genealogy import service as genealogy_service
 from app.modules.iam.models import Qualification, User
+from app.modules.qms import commands as qms_commands
 from app.modules.policy.service import effective_role_names, evaluate_policy
 from app.modules.product_master.models import ProductVersion
 from app.modules.recipe_master import service as recipe_master_service
-from app.modules.recipe_master.models import RecipeEvidenceRequirement, RecipeParameter
+from app.modules.recipe_master.models import (
+    RecipeEquipmentRequirement,
+    RecipeEvidenceRequirement,
+    RecipeParameter,
+    RecipeStepQcRequirement,
+)
 from app.modules.rules import service as rules_service
 from app.modules.signature import service as signature_service
+from app.modules.validation.shared import render_pdf_report
 from app.modules.vault import service as vault_service
 from app.mutation.errors import (
+    CalibrationExpiredError,
+    CalibrationOotImpactRequiredError,
+    CleaningRequiredError,
+    EquipmentClassMismatchError,
+    EquipmentNotQualifiedError,
+    EquipmentOutOfServiceError,
+    EquipmentRequirementNotMetError,
     InvalidTransitionError,
     MissingSignatureError,
     NotFoundError,
     ParameterRequiredError,
+    PostMaintenanceVerificationRequiredError,
     ProductionNotCompleteError,
     QualificationExpiredError,
     QualificationMissingError,
@@ -67,6 +94,18 @@ async def _resolve_uom_id(session: AsyncSession, uom: str | None) -> uuid.UUID |
     except UomUnknownError:
         return None
     return row.uom_id
+
+
+async def _resolve_uom_id_strict(session: AsyncSession, uom: str | None) -> uuid.UUID | None:
+    """Client requirements #2/#3: the batch-creation UI's UomSelect only ever submits a code drawn from
+    the released UOM list, so an unresolvable non-empty code here means a caller sent something outside
+    it -- reject instead of silently leaving target_uom_id NULL."""
+    if not uom:
+        return None
+    uom_id = await _resolve_uom_id(session, uom)
+    if uom_id is None:
+        raise ValidationFailedError("Unrecognized or unreleased UOM code", uom=uom)
+    return uom_id
 
 
 def _receipt_from_existing(existing) -> MutationReceipt:
@@ -166,7 +205,7 @@ async def create_batch(session: AsyncSession, cmd: CreateBatchCommand, actor_use
         recipe_vault_object_id=recipe_version.released_vault_object_id,
         target_qty=cmd.target_qty,
         target_uom=cmd.target_uom,
-        target_uom_id=await _resolve_uom_id(session, cmd.target_uom),
+        target_uom_id=await _resolve_uom_id_strict(session, cmd.target_uom),
         production_order_ref=cmd.production_order_ref,
         state="planned",
     )
@@ -242,6 +281,20 @@ async def issue_batch(session: AsyncSession, cmd: IssueBatchCommand, actor_user_
         [s.stable_step_code for s in steps], dependencies, code_by_step_id
     )
 
+    # Known-limitations fix (docs/testing/demo-gujarati/08 §8.8): freeze RecipeEquipmentRequirement rows
+    # the same way required_role_code/required_qualification_code are already frozen below -- a step can
+    # declare more than one, grouped by the RecipeStep id they belong to.
+    equipment_requirements_by_step_id: dict[uuid.UUID, list[RecipeEquipmentRequirement]] = {}
+    step_ids = [s.id for s in steps]
+    if step_ids:
+        eq_rows = (
+            await session.execute(
+                select(RecipeEquipmentRequirement).where(RecipeEquipmentRequirement.step_id.in_(step_ids))
+            )
+        ).scalars().all()
+        for eq in eq_rows:
+            equipment_requirements_by_step_id.setdefault(eq.step_id, []).append(eq)
+
     vault_object = await vault_service.release_master(
         session,
         object_type="batch_execution_snapshot",
@@ -268,6 +321,19 @@ async def issue_batch(session: AsyncSession, cmd: IssueBatchCommand, actor_user_
                     "required_role_code": s.required_role_code,
                     # BAT-FR-014, SG-048 #014: same freeze-at-issue treatment for qualification.
                     "required_qualification_code": s.required_qualification_code,
+                    # Known-limitations fix (docs/testing/demo-gujarati/08 §8.8): same treatment for
+                    # equipment requirements.
+                    "equipment_requirements": [
+                        {
+                            "equipment_class": eq.equipment_class,
+                            "equipment_class_id": str(eq.equipment_class_id) if eq.equipment_class_id else None,
+                            "exact_equipment_optional": eq.exact_equipment_optional,
+                            "require_current_calibration": eq.require_current_calibration,
+                            "require_current_qualification": eq.require_current_qualification,
+                            "require_current_cleaning": eq.require_current_cleaning,
+                        }
+                        for eq in equipment_requirements_by_step_id.get(s.id, [])
+                    ],
                 }
                 for s in steps
             ],
@@ -280,8 +346,10 @@ async def issue_batch(session: AsyncSession, cmd: IssueBatchCommand, actor_user_
     batch.execution_snapshot_id = vault_object.object_id
 
     for s in steps:
+        batch_step_id = uuid.uuid4()
         session.add(
             BatchStep(
+                id=batch_step_id,
                 batch_id=batch.id,
                 recipe_step_code=s.stable_step_code,
                 required_role_code=s.required_role_code,
@@ -289,6 +357,18 @@ async def issue_batch(session: AsyncSession, cmd: IssueBatchCommand, actor_user_
                 state=initial_states[s.stable_step_code],
             )
         )
+        for eq in equipment_requirements_by_step_id.get(s.id, []):
+            session.add(
+                BatchStepEquipmentRequirement(
+                    batch_step_id=batch_step_id,
+                    equipment_class=eq.equipment_class,
+                    equipment_class_id=eq.equipment_class_id,
+                    exact_equipment_optional=eq.exact_equipment_optional,
+                    require_current_calibration=eq.require_current_calibration,
+                    require_current_qualification=eq.require_current_qualification,
+                    require_current_cleaning=eq.require_current_cleaning,
+                )
+            )
 
     old_state = batch.state
     batch.state = "issued"
@@ -442,6 +522,10 @@ class StartStepCommand(CommandEnvelope):
     # reason plus the batch_step.role_override permission (Supervisor/Admin) lets a cross-trained actor
     # proceed; the reason is preserved in the audit event.
     override_reason: str | None = None
+    # Known-limitations fix (docs/testing/demo-gujarati/08 §8.8): the specific EquipmentAsset(s) the actor
+    # is using for this step, checked against the step's frozen equipment requirements in
+    # _enforce_step_equipment(). Only consulted when the step actually declares a requirement.
+    equipment_asset_ids: list[uuid.UUID] | None = None
 
 
 async def _enforce_step_role(
@@ -503,6 +587,95 @@ async def _enforce_step_qualification(session: AsyncSession, *, step: BatchStep,
         )
 
 
+# Reason codes that always block regardless of which require_current_* flags a requirement declares --
+# an out-of-service or pending-post-maintenance-verification asset shouldn't be usable for any requirement.
+_EQUIPMENT_ALWAYS_BLOCKING_CODES = {"EQUIPMENT_OUT_OF_SERVICE", "POST_MAINTENANCE_VERIFICATION_REQUIRED"}
+_EQUIPMENT_REASON_ERRORS = {
+    "EQUIPMENT_NOT_QUALIFIED": EquipmentNotQualifiedError,
+    "CALIBRATION_EXPIRED": CalibrationExpiredError,
+    "CALIBRATION_OOT_IMPACT_REQUIRED": CalibrationOotImpactRequiredError,
+    "EQUIPMENT_OUT_OF_SERVICE": EquipmentOutOfServiceError,
+    "POST_MAINTENANCE_VERIFICATION_REQUIRED": PostMaintenanceVerificationRequiredError,
+    "CLEANING_REQUIRED": CleaningRequiredError,
+}
+
+
+async def _enforce_step_equipment(
+    session: AsyncSession, *, step: BatchStep, equipment_asset_ids: list[uuid.UUID] | None
+) -> list[EquipmentAsset]:
+    """Known-limitations fix (docs/testing/demo-gujarati/08 §8.8, and this module's own docstring naming
+    "Equipment master eligibility wiring" as not-yet-built). Compares the frozen
+    `BatchStepEquipmentRequirement` rows for this step against the equipment_asset_ids the actor supplied
+    at step-start, reusing `equipment.commands.get_eligibility()` (calibration_status/qualification_status/
+    cleanliness_status) rather than reinventing equipment-currency logic -- only the reason codes relevant
+    to the flags a requirement actually declares are blocking, plus EQUIPMENT_OUT_OF_SERVICE/post-
+    maintenance-verification which always block regardless of flags.
+
+    Returns the asset that satisfied each requirement, so the caller can persist a usage record
+    (2026-09-19, project-owner-directed follow-up: eligibility was checked live here but never recorded
+    anywhere, so review/release could never retrospectively see which equipment a batch actually used --
+    see `EquipmentUseLog` writes in `start_step()` below)."""
+    requirements = (
+        await session.execute(
+            select(BatchStepEquipmentRequirement).where(BatchStepEquipmentRequirement.batch_step_id == step.id)
+        )
+    ).scalars().all()
+    if not requirements:
+        return []
+
+    supplied_ids = equipment_asset_ids or []
+    assets: dict[uuid.UUID, EquipmentAsset] = {}
+    for asset_id in supplied_ids:
+        asset = await session.get(EquipmentAsset, asset_id)
+        if asset is None:
+            raise NotFoundError(
+                "equipment_asset_ids references an equipment asset that does not exist", asset_id=str(asset_id)
+            )
+        assets[asset_id] = asset
+
+    used: list[EquipmentAsset] = []
+    for req in requirements:
+        mandatory = req.require_current_calibration or req.require_current_qualification or req.require_current_cleaning or not req.exact_equipment_optional
+        if req.equipment_class_id is not None:
+            candidates = [a for a in assets.values() if a.equipment_class_id == req.equipment_class_id]
+        else:
+            # Legacy rows authored before the equipment-class-master fix have no controlled reference to
+            # match against -- any supplied asset is accepted (equipment_class stays a captured label).
+            candidates = list(assets.values())
+
+        if not candidates:
+            if not mandatory:
+                continue
+            if not supplied_ids:
+                raise EquipmentRequirementNotMetError(
+                    "This step requires equipment_asset_ids for a declared equipment requirement",
+                    equipment_class=req.equipment_class,
+                )
+            raise EquipmentClassMismatchError(
+                "None of the supplied equipment assets match this step's required equipment class",
+                equipment_class=req.equipment_class,
+            )
+
+        asset = candidates[0]
+        eligibility = await equipment_commands.get_eligibility(session, asset.id)
+        relevant_codes = set(_EQUIPMENT_ALWAYS_BLOCKING_CODES)
+        if req.require_current_calibration:
+            relevant_codes |= {"CALIBRATION_OOT_IMPACT_REQUIRED", "CALIBRATION_EXPIRED"}
+        if req.require_current_qualification:
+            relevant_codes.add("EQUIPMENT_NOT_QUALIFIED")
+        if req.require_current_cleaning:
+            relevant_codes.add("CLEANING_REQUIRED")
+        blocking = [r for r in eligibility["reasons"] if r["code"] in relevant_codes]
+        if blocking:
+            first = blocking[0]
+            raise _EQUIPMENT_REASON_ERRORS[first["code"]](
+                first["message"], asset_id=str(asset.id), equipment_class=req.equipment_class
+            )
+        used.append(asset)
+
+    return used
+
+
 async def start_step(session: AsyncSession, cmd: StartStepCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
     payload_hash = sha256_hex(cmd.model_dump(mode="json"))
     existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
@@ -521,6 +694,19 @@ async def start_step(session: AsyncSession, cmd: StartStepCommand, actor_user_id
         session, step=step, batch=batch, actor_user_id=actor_user_id, override_reason=cmd.override_reason
     )
     await _enforce_step_qualification(session, step=step, actor_user_id=actor_user_id)
+    used_equipment = await _enforce_step_equipment(session, step=step, equipment_asset_ids=cmd.equipment_asset_ids)
+    for asset in used_equipment:
+        # 2026-09-19, project-owner-directed: persist which asset satisfied this step's equipment
+        # requirement -- previously checked live and discarded, so review/release had no way to
+        # retrospectively see equipment that later went on hold or fell out of calibration/qualification
+        # after this batch used it (`qa_review`/`release` service.py's `_equipment_signals`).
+        session.add(
+            EquipmentUseLog(
+                equipment_asset_id=asset.id, site_id=batch.site_id, log_type="production",
+                batch_id=batch.id, step_id=step.id, operator_user_id=actor_user_id, source="system",
+                event_reference=step.recipe_step_code,
+            )
+        )
 
     step.state = "in_progress"
     step.assigned_subject_id = actor_user_id
@@ -653,6 +839,18 @@ async def _recipe_evidence_requirements_for_step(
     return [e for e in graph["evidence"] if e.step_id == recipe_step_id]
 
 
+async def _required_qc_specs_for_step(
+    session: AsyncSession, batch: Batch, step: BatchStep
+) -> list[RecipeStepQcRequirement]:
+    """Client requirement #12. Same lookup shape as `_recipe_parameters_for_step`/
+    `_recipe_evidence_requirements_for_step`, against the recipe's declared
+    `gxp_recipe_step_qc_requirement` rows instead."""
+    graph = await recipe_master_service.get_graph(session, batch.recipe_version_id)
+    code_by_step_id = {s.id: s.stable_step_code for s in graph["steps"]}
+    step_id_by_code = {code: sid for sid, code in code_by_step_id.items()}
+    recipe_step_id = step_id_by_code.get(step.recipe_step_code)
+    return [r for r in graph["qc_requirements"] if r.step_id == recipe_step_id and r.required]
+
 
 # BAT-FR-011, SG-048 #011 partial resolution: a human may tag a result 'device_transcribed' -- they read
 # it off a device/instrument and are keying it in, distinct from their own direct observation ('manual').
@@ -673,6 +871,48 @@ def _step_result_quality_status(parameter: RecipeParameter, value_numeric: Decim
     if parameter.max_value is not None and value_numeric > parameter.max_value:
         return "out_of_range"
     return "in_range"
+
+
+async def _auto_open_deviation_for_out_of_range(
+    session: AsyncSession, *, batch: Batch, step: BatchStep, result: StepResult, actor_user_id: uuid.UUID
+) -> None:
+    """Known-limitations fix (docs/testing/demo-gujarati/08 §8.8 item 2), project-owner-directed
+    2026-09-18: an in-process result outside its declared min/max previously stayed purely informational
+    (StepResult.quality_status="out_of_range", nothing else) -- now it automatically opens a
+    DeviationRecord instead of relying on a human noticing.
+
+    Scope and shape were explicitly chosen by the project owner, not guessed:
+    - Trigger: out-of-range in-process result ONLY (this pass). Step-hold and equipment-ineligibility
+      triggers were explicitly deferred, not bundled in.
+    - Auto-created in OPEN state with `owner_subject_id=None` -- a human (Supervisor/QA Reviewer) must
+      triage and claim it at Investigation, same as `investigator_subject_id` already works. This is why
+      `qms.deviation_record.owner_subject_id` became nullable (migration 9da2e9e4d481_0114).
+    - `severity="minor"`, `deviation_type="process"` always -- conservative default; a human reclassifies
+      at triage. Never auto-assigns an elevated severity.
+    - `source_type="batch"`, `source_id=batch.id` (the existing generic SOURCE_TYPES pointer -- no
+      dedicated step-level field exists on DeviationRecord, so the step/parameter identity is carried in
+      the `reason` narrative instead, visible on the deviation's own "Created" audit event).
+
+    Deliberately idempotent against duplicate submission the same way every other command in this
+    module is: `deviation_number` is derived from the StepResult's own id (unique per result), so
+    replaying the same idempotency key can never collide on `create_deviation`'s own
+    UniqueConstraint("deviation_number") check.
+    """
+    cmd = qms_commands.CreateDeviationCommand(
+        idempotency_key=f"auto-deviation-step-result-{result.id}",
+        site_id=batch.site_id,
+        deviation_number=f"DEV-AUTO-{batch.batch_number}-{step.recipe_step_code}-{result.id.hex[:8]}",
+        deviation_type="process",
+        source_type="batch",
+        source_id=batch.id,
+        severity="minor",
+        owner_subject_id=None,
+        reason=(
+            f"Auto-opened: in-process result for parameter '{result.parameter_code}' on step "
+            f"'{step.recipe_step_code}' (batch {batch.batch_number}) was out of range."
+        ),
+    )
+    await qms_commands.create_deviation(session, cmd, actor_user_id)
 
 
 class StepResultInput(BaseModel):
@@ -728,9 +968,12 @@ async def record_step_results(
     )
 
     recorded: list[StepResult] = []
+    out_of_range: list[StepResult] = []
     for item in cmd.results:
         parameter = parameters_by_code[item.parameter_code]
+        quality_status = _step_result_quality_status(parameter, item.value_numeric)
         result = StepResult(
+            id=uuid.uuid4(),
             step_id=step.id,
             parameter_code=item.parameter_code,
             data_type=parameter.data_type,
@@ -739,13 +982,15 @@ async def record_step_results(
             value_bool=item.value_bool,
             uom=item.uom or parameter.uom,
             source_type=item.source_type,
-            quality_status=_step_result_quality_status(parameter, item.value_numeric),
+            quality_status=quality_status,
             source_timestamp=item.source_timestamp,
             created_by=actor_user_id,
             signature_id=signature_id,
         )
         session.add(result)
         recorded.append(result)
+        if quality_status == "out_of_range":
+            out_of_range.append(result)
 
     # Every write against the batch_step aggregate bumps its version (MUT-FR-009) even though `state`
     # itself doesn't change here -- a concurrent second submission (or a stale `complete` call issued
@@ -779,6 +1024,15 @@ async def record_step_results(
         },
         correlation_id=correlation_id,
     )
+
+    # Known-limitations fix (docs/testing/demo-gujarati/08 §8.8 item 2): after the step-result write
+    # itself is durable, auto-open a deviation for every out-of-range result -- same transaction, so a
+    # DeviationRecord can never exist without the StepResult that caused it, or vice versa.
+    for oor_result in out_of_range:
+        await _auto_open_deviation_for_out_of_range(
+            session, batch=batch, step=step, result=oor_result, actor_user_id=actor_user_id
+        )
+
     receipt = await record_command_receipt(
         session,
         site_id=batch.site_id,
@@ -961,6 +1215,19 @@ async def complete_step(session: AsyncSession, cmd: CompleteStepCommand, actor_u
         )
         if missing_evidence:
             raise ValidationFailedError("Required evidence has not been linked", missing_evidence_types=missing_evidence)
+
+    # Client requirement #12: every in-process QC test the recipe step declares required must have a
+    # passing result recorded against this step before it can be marked complete.
+    qc_requirements = await _required_qc_specs_for_step(session, batch, step)
+    if qc_requirements:
+        required_spec_ids = {r.qc_test_specification_id for r in qc_requirements}
+        passed_spec_ids = await batch_execution_service.get_passed_qc_spec_ids_for_step(session, step.id)
+        missing_qc = sorted(str(s) for s in required_spec_ids - passed_spec_ids)
+        if missing_qc:
+            raise ValidationFailedError(
+                "Required in-process QC test(s) have not reached a passing result",
+                missing_qc_test_specification_ids=missing_qc,
+            )
 
     signature_id = await _require_step_signature(
         session, step=step, action="complete", challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
@@ -1281,6 +1548,16 @@ async def production_complete_batch(
     batch.state = "production_complete"
     batch.production_completed_at = datetime.now(timezone.utc)
     batch.version += 1
+
+    # 2026-09-19, project-owner-directed: Document 13 §8's own "DrugBatchProduced" event, wired directly.
+    # Most batches already get their `drug_batch` node lazily the first time material is issued to them
+    # (`material.commands.issue_material_to_batch`) -- this covers the batch that reached
+    # production_complete without ever consuming a genealogy-tracked material lot, so every produced batch
+    # is guaranteed a node regardless of material-consumption order.
+    await genealogy_service.get_or_create_node(
+        session, site_id=batch.site_id, node_type="drug_batch", authoritative_record_type="batch",
+        authoritative_record_id=batch.id, business_ref=batch.batch_number, actor_user_id=actor_user_id,
+    )
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
@@ -1740,4 +2017,122 @@ async def handover_step(session: AsyncSession, cmd: HandoverStepCommand, actor_u
     return MutationReceipt(
         command_id=receipt.id, aggregate_id=step.id, resulting_version=step.version, audit_event_id=audit_event.id,
         correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Client requirement #11 -- Batch Record PDF. Builds the aggregated view (record_service.py) and stores
+# the rendered PDF as an EvidenceObject owned by the batch, through the existing stage->finalize evidence
+# commands, so the generated record carries a real audit trail rather than being a fire-and-forget
+# download. Not signature-gated -- an export/report action, matching the `validation` module's own
+# export precedent (its PDF exports aren't signed either).
+# ---------------------------------------------------------------------------
+
+
+class GenerateBatchRecordPdfCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str
+    batch_id: uuid.UUID
+
+
+def _batch_record_pdf_bytes(batch_id: uuid.UUID, record: dict) -> bytes:
+    batch = record["batch"]
+    sections: list[tuple[str, list[str], list[list]]] = [
+        (
+            "Steps",
+            ["Step code", "State", "Started", "Completed"],
+            [[s["recipe_step_code"], s["state"], s["started_at"] or "", s["completed_at"] or ""] for s in record["steps"]],
+        ),
+        (
+            "Step results",
+            ["Step code", "Parameter", "Value", "UOM", "Quality status"],
+            [
+                [s["recipe_step_code"], r["parameter_code"], r["value"], r["uom"] or "", r["quality_status"] or ""]
+                for s in record["steps"]
+                for r in s["results"]
+            ],
+        ),
+        (
+            "Materials consumed",
+            ["Internal lot", "Quantity", "UOM", "Issued at"],
+            [[m["internal_lot"], m["quantity"], m["uom"], m["issued_at"]] for m in record["materials_consumed"]],
+        ),
+        (
+            "Equipment used",
+            ["Equipment asset", "Log type", "Occurred at"],
+            [[u["equipment_asset_id"], u["log_type"], u["occurred_at"]] for u in record["equipment_used"]],
+        ),
+        (
+            "Deviations",
+            ["Deviation number", "Type", "Source", "State"],
+            [[d["deviation_number"], d["deviation_type"], d["source_type"], d["state"]] for d in record["deviations"]],
+        ),
+        (
+            "QC results",
+            ["Sample", "Spec code", "Scope", "Test code", "Order state", "Outcome"],
+            [
+                [q["sample_number"], q["spec_code"], q["scope_type"], q["test_code"], q["order_state"], q["outcome"] or ""]
+                for q in record["qc_results"]
+            ],
+        ),
+        (
+            "Status history",
+            ["Occurred at", "Action", "Actor", "Signed"],
+            [
+                [e["occurred_at"], e["action"], e["actor_username"] or e["actor_id"], "Yes" if e["signature_id"] else "No"]
+                for e in record["status_history"]
+            ],
+        ),
+    ]
+    return render_pdf_report(
+        title=f"Batch Record — {batch['batch_number']}",
+        subtitle=f"Batch {batch_id} — state: {batch['state']} — target {batch['target_qty']} {batch['target_uom']}",
+        sections=sections,
+    )
+
+
+async def generate_batch_record_pdf(
+    session: AsyncSession, cmd: GenerateBatchRecordPdfCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    batch = await session.get(Batch, cmd.batch_id)
+    if batch is None:
+        raise NotFoundError("Batch not found")
+
+    record = await build_batch_record(session, cmd.batch_id)
+    pdf_bytes = _batch_record_pdf_bytes(cmd.batch_id, record)
+
+    staged = await stage_evidence_upload(
+        session,
+        StageEvidenceUploadCommand(
+            idempotency_key=str(uuid.uuid4()), owner_type="batch", owner_id=cmd.batch_id, site_id=batch.site_id,
+            filename=f"batch-record-{batch.batch_number}.pdf", mime_type="application/pdf",
+            provenance={"document_type": "batch_record_pdf", "generated_by": str(actor_user_id)},
+            reason=f"Batch record PDF generated for batch {batch.batch_number}",
+        ),
+        actor_user_id,
+    )
+    finalized = await finalize_evidence_upload(
+        session,
+        FinalizeEvidenceUploadCommand(
+            idempotency_key=str(uuid.uuid4()), evidence_id=staged.aggregate_id, expected_version=staged.resulting_version,
+            content_base64=base64.b64encode(pdf_bytes).decode("ascii"),
+            reason=f"Batch record PDF generated for batch {batch.batch_number}",
+        ),
+        actor_user_id,
+    )
+
+    receipt = await record_command_receipt(
+        session, site_id=batch.site_id, command_type="GenerateBatchRecordPdf", aggregate_type="batch",
+        aggregate_id=batch.id, expected_version=batch.version, resulting_version=batch.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=finalized.aggregate_id, resulting_version=finalized.resulting_version,
+        audit_event_id=finalized.audit_event_id, correlation_id=finalized.correlation_id,
     )

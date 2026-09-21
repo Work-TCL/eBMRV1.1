@@ -1,15 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   ApiError,
   canEvaluateYield,
   canVerifyReconciliation,
+  listAll,
   newIdempotencyKey,
   type MutationReceipt,
 } from "@/lib/api";
-import { useEntityOptions, useMe } from "@/lib/hooks";
+import { useEntityOptions, useMe, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -17,6 +18,7 @@ import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Icon } from "@/components/ui/Icon";
 import { StatePill } from "@/components/ui/StatePill";
 import { summarizeJson } from "@/components/ui/JsonPanel";
@@ -282,7 +284,7 @@ export default function YieldPage() {
             defaultBatchId={batchId}
             entities={entities}
           />
-          <EvaluateLabelReconciliationCard onEvaluated={() => load()} />
+          <EvaluateLabelReconciliationCard onEvaluated={() => load()} entities={entities} />
           <EvaluateComponentReconciliationCard onEvaluated={() => load()} defaultBatchId={batchId} entities={entities} />
         </div>
       )}
@@ -382,9 +384,7 @@ function EvaluateYieldCard({
         <Field label="Phase code" hint="Optional - omit for a whole-batch yield.">
           <Input value={phaseCode} onChange={(e) => setPhaseCode(e.target.value)} />
         </Field>
-        <Field label="UOM" required>
-          <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
-        </Field>
+        <UomSelect value={uom} onChange={setUom} required />
         <Field label="Theoretical quantity" required>
           <Input value={theoretical} onChange={(e) => setTheoretical(e.target.value)} required />
         </Field>
@@ -523,12 +523,16 @@ function EvaluatePotencyCard({
         <Field label="Phase code" hint="Optional - omit for a whole-batch calculation.">
           <Input value={phaseCode} onChange={(e) => setPhaseCode(e.target.value)} />
         </Field>
-        <Field label="Rule ID" required>
-          <Input value={ruleId} onChange={(e) => setRuleId(e.target.value)} required />
-        </Field>
-        <Field label="UOM" hint="Optional.">
-          <Input value={uom} onChange={(e) => setUom(e.target.value)} />
-        </Field>
+        <EntityPickerField
+          label="Rule ID"
+          required
+          value={ruleId}
+          onChange={setRuleId}
+          options={entities.rules}
+          status={entities.rulesStatus}
+          kind="rule"
+        />
+        <UomSelect value={uom} onChange={setUom} hint="Optional." />
       </form>
       <div className="mt-3">
         <KeyValueRows
@@ -624,12 +628,16 @@ function ReconciliationCard({
           status={entities.batchesStatus}
           kind="batch"
         />
-        <Field label="UOM" required>
-          <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
-        </Field>
-        <Field label="Linked deviation ID" hint="An existing QMS deviation - only relevant alongside an approved_loss quantity.">
-          <Input value={linkedDeviationId} onChange={(e) => setLinkedDeviationId(e.target.value)} />
-        </Field>
+        <UomSelect value={uom} onChange={setUom} required />
+        <EntityPickerField
+          label="Linked deviation ID"
+          hint="An existing QMS deviation - only relevant alongside an approved_loss quantity."
+          value={linkedDeviationId}
+          onChange={setLinkedDeviationId}
+          options={entities.deviations}
+          status={entities.deviationsStatus}
+          kind="deviation"
+        />
         <ToleranceRuleFields
           type={toleranceType}
           setType={setToleranceType}
@@ -674,7 +682,42 @@ function ReconciliationCard({
   );
 }
 
-function EvaluateLabelReconciliationCard({ onEvaluated }: { onEvaluated: () => void }) {
+/** Local to this file only (per the picker-fix scope) — `GET /packaging/v1/runs` has no shared hook in
+ * `lib/hooks.ts` yet since no other page needs it. Same "fetch once, map to {value,label}" shape as
+ * `useEntityOptions`'s other fields; `listAll` handles the paginated envelope
+ * (`packaging/router.py::list_packaging_runs` returns the same `{items, ...}` shape every other
+ * `listAll` consumer does). */
+function usePackagingRuns(): { options: EntityOption[]; status: EntityOptionsStatus } {
+  const [options, setOptions] = useState<EntityOption[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    listAll<{ id: string; line_ref: string; state: string }>("/packaging/v1/runs")
+      .then((rows) => {
+        if (cancelled) return;
+        setOptions(rows.map((r) => ({ value: r.id, label: `${r.line_ref} (${r.state})` })));
+        setStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { options, status };
+}
+
+function EvaluateLabelReconciliationCard({
+  onEvaluated,
+  entities,
+}: {
+  onEvaluated: () => void;
+  entities: ReturnType<typeof useEntityOptions>;
+}) {
+  const packagingRuns = usePackagingRuns();
   const [packagingRunId, setPackagingRunId] = useState("");
   const [toleranceType, setToleranceType] = useState("percentage");
   const [toleranceValue, setToleranceValue] = useState("");
@@ -715,12 +758,24 @@ function EvaluateLabelReconciliationCard({ onEvaluated }: { onEvaluated: () => v
         tolerance rule - the batch and quantities are derived from the packaging run, not entered here.
       </p>
       <form onSubmit={submit} className="grid grid-cols-3 gap-4">
-        <Field label="Packaging run ID" required>
-          <Input value={packagingRunId} onChange={(e) => setPackagingRunId(e.target.value)} required />
-        </Field>
-        <Field label="Linked deviation ID" hint="An existing QMS deviation - only relevant alongside an approved_loss quantity.">
-          <Input value={linkedDeviationId} onChange={(e) => setLinkedDeviationId(e.target.value)} />
-        </Field>
+        <EntityPickerField
+          label="Packaging run ID"
+          required
+          value={packagingRunId}
+          onChange={setPackagingRunId}
+          options={packagingRuns.options}
+          status={packagingRuns.status}
+          kind="packaging run"
+        />
+        <EntityPickerField
+          label="Linked deviation ID"
+          hint="An existing QMS deviation - only relevant alongside an approved_loss quantity."
+          value={linkedDeviationId}
+          onChange={setLinkedDeviationId}
+          options={entities.deviations}
+          status={entities.deviationsStatus}
+          kind="deviation"
+        />
         <div />
         <ToleranceRuleFields
           type={toleranceType}
@@ -822,9 +877,7 @@ function EvaluateComponentReconciliationCard({
         <Field label="Device unit ID" hint="Optional - only for a serialized case; must belong to this batch.">
           <Input value={deviceUnitId} onChange={(e) => setDeviceUnitId(e.target.value)} />
         </Field>
-        <Field label="UOM" required>
-          <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
-        </Field>
+        <UomSelect value={uom} onChange={setUom} required />
         <ToleranceRuleFields
           type={toleranceType}
           setType={setToleranceType}
@@ -833,9 +886,15 @@ function EvaluateComponentReconciliationCard({
           inclusive={toleranceInclusive}
           setInclusive={setToleranceInclusive}
         />
-        <Field label="Linked deviation ID" hint="An existing QMS deviation - only relevant alongside an approved_loss quantity.">
-          <Input value={linkedDeviationId} onChange={(e) => setLinkedDeviationId(e.target.value)} />
-        </Field>
+        <EntityPickerField
+          label="Linked deviation ID"
+          hint="An existing QMS deviation - only relevant alongside an approved_loss quantity."
+          value={linkedDeviationId}
+          onChange={setLinkedDeviationId}
+          options={entities.deviations}
+          status={entities.deviationsStatus}
+          kind="deviation"
+        />
       </form>
       <div className="grid grid-cols-2 gap-4 mt-3">
         <KeyValueRows label="Item reference" value={itemRef} onChange={setItemRef} />

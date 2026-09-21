@@ -780,6 +780,16 @@ class EquipmentClassMismatchError(GxPError):
     status_code = 422
 
 
+# Known-limitations fix (docs/testing/demo-gujarati/08 §8.8, batch-step-start equipment enforcement):
+# raised when a step declares an equipment requirement (recipe_master.RecipeEquipmentRequirement, frozen
+# onto batch_execution.BatchStepEquipmentRequirement at issue) but no supplied equipment_asset_id
+# satisfies it -- distinct from EquipmentClassMismatchError (a supplied asset of the wrong class) and from
+# the Document 38 currency errors above (a supplied asset of the right class that fails eligibility).
+class EquipmentRequirementNotMetError(GxPError):
+    code = "EQUIPMENT_REQUIREMENT_NOT_MET"
+    status_code = 422
+
+
 # Document 39 (SPEC-EQP-002) §16 stable error codes.
 class CleaningRequiredError(GxPError):
     code = "CLEANING_REQUIRED"

@@ -208,11 +208,11 @@ async def test_full_qc_flow_pass_result(client, seeded, db):
 
     result = await db.get(QcResult, result_id)
     assert result.outcome == "pass"
-    # SG-146 (remainder): "mg" has no released rules.gxp_uom row in this environment -- the free-text
-    # uom column stays authoritative and the dual-write is a no-op (expand-phase contract, nothing
-    # breaks).
+    # Client requirements #2/#3 (2026-09-21): "mg" is now a baseline released rules.gxp_uom row (see
+    # conftest.py's `seeded` fixture) and record_result hardens uom resolution via
+    # `_resolve_uom_id_strict` -- the dual-write resolves.
     assert result.uom == "mg"
-    assert result.uom_id is None
+    assert result.uom_id is not None
 
     resp = await client.post(
         f"/qc/v1/test-orders/{order_id}/complete",

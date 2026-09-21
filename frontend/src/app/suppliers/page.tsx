@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { CodeField } from "@/components/ui/CodeField";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
@@ -151,7 +152,7 @@ function CreateSupplierModal({ onClose, onDone }: { onClose: () => void; onDone:
           run(() =>
             api.post("/suppliers/v1", {
               idempotency_key: newIdempotencyKey(),
-              supplier_code: supplierCode,
+              supplier_code: supplierCode || undefined,
               legal_name: legalName,
               role_type: roleType,
               country: country || null,
@@ -170,9 +171,7 @@ function CreateSupplierModal({ onClose, onDone }: { onClose: () => void; onDone:
         }}
       >
         <div className="grid grid-cols-3 gap-4">
-          <Field label="Supplier code" required>
-            <Input value={supplierCode} onChange={(e) => setSupplierCode(e.target.value)} required autoFocus />
-          </Field>
+          <CodeField label="Supplier code" value={supplierCode} onChange={setSupplierCode} />
           <Field label="Role type" required>
             <Select value={roleType} onChange={(e) => setRoleType(e.target.value)}>
               {ROLE_TYPES.map((r) => (
@@ -211,7 +210,7 @@ function CreateSupplierModal({ onClose, onDone }: { onClose: () => void; onDone:
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !supplierCode.trim() || !legalName.trim()}>
+          <Button type="submit" variant="primary" disabled={busy || !legalName.trim()}>
             {busy ? "Registering…" : "Register supplier"}
           </Button>
         </div>

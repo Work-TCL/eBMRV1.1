@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api } from "@/lib/api";
-import { useRequireAdmin } from "@/lib/hooks";
+import { useRequireAdmin, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Banner } from "@/components/ui/Banner";
@@ -16,6 +16,7 @@ import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 
 export default function MachineIntegrationPage() {
   const { isAdmin } = useRequireAdmin();
+  const { siteId } = useSiteId();
   if (!isAdmin) return null;
 
   return (
@@ -114,7 +115,7 @@ export default function MachineIntegrationPage() {
             label: "Replay historical evidence",
             mirrorBodyInChallenge: true,
             fields: [
-              { name: "site_id", label: "Site ID", required: true, pathOnly: true },
+              { name: "site_id", label: "Site ID", required: true, pathOnly: true, hint: `This deployment's site ID: ${siteId ?? "loading…"}` },
               { name: "event_ids", label: "Event IDs", type: "stringList", required: true, itemLabel: "Event ID" },
               { name: "mode", label: "Mode", type: "select", required: true, options: [
                 { value: "BACKFILL", label: "Backfill" }, { value: "REPLAY", label: "Replay" }] },

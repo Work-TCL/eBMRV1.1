@@ -281,9 +281,9 @@ async def post_qc_method_signature_challenge(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    """SG-186: no Document 106 policy row exists yet for qc_method_version/release -- the challenge
-    endpoint is real, but release_qc_method_version()'s resolve_signature_requirement() fails closed
-    until a policy row is seeded."""
+    """SG-186 RESOLVED (2026-09-18): qc_method_version/release now has a real Document 106 signature
+    policy row (scripts/seed.py SIGNATURE_POLICY_FLOOR) -- "Released" by an independent QA Releaser,
+    same shape as the nearest in-module precedent, qc_test_specification/release (row 58)."""
     async with session.begin():
         method = await session.get(QcMethodVersion, method_version_id)
         if method is None:
@@ -317,7 +317,11 @@ async def post_create_sample(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
+    # 2026-09-18 RBAC gap closure: gated here, not inside create_sample() itself, because that function
+    # is also called internally (already-authorized) by material/commands.py::collect_sample(),
+    # equipment/cleaning_commands.py and lims_integration/commands.py.
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qc_sample.create", site_id=None)
         return await create_sample(session, cmd, actor.user_id)
 
 
@@ -330,7 +334,10 @@ async def post_receive_sample(
 ) -> MutationReceipt:
     if str(cmd.sample_id) != sample_id:
         raise ValidationFailedError("sample_id in path and body must match")
+    # 2026-09-18 RBAC gap closure: gated here (see post_create_sample's comment above) -- also called
+    # internally by lims_integration/commands.py's already-authorized flow.
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qc_sample.receive", site_id=None)
         return await receive_sample(session, cmd, actor.user_id)
 
 
@@ -358,9 +365,20 @@ async def get_sample_record(sample_id: str, session: AsyncSession = Depends(get_
     return {
         "id": str(sample.id),
         "sample_number": sample.sample_number,
+        "sample_type": sample.sample_type,
         "state": sample.state,
         "version": sample.version,
         "source_type": sample.source_type,
+        "source_id": str(sample.source_id) if sample.source_id else None,
+        "source_location_ref": sample.source_location_ref,
+        "lot_batch_serial_ref": sample.lot_batch_serial_ref,
+        "sample_quantity": str(sample.sample_quantity) if sample.sample_quantity is not None else None,
+        "sample_uom": sample.sample_uom,
+        "sample_uom_id": str(sample.sample_uom_id) if sample.sample_uom_id else None,
+        "sampled_at": sample.sampled_at.isoformat() if sample.sampled_at else None,
+        "received_at": sample.received_at.isoformat() if sample.received_at else None,
+        "sampler_subject_id": str(sample.sampler_subject_id) if sample.sampler_subject_id else None,
+        "stability_study_ref": sample.stability_study_ref,
         "test_orders": order_payload,
     }
 
@@ -432,7 +450,10 @@ async def post_start_test_order(
 ) -> MutationReceipt:
     if str(cmd.test_order_id) != test_order_id:
         raise ValidationFailedError("test_order_id in path and body must match")
+    # 2026-09-18 RBAC gap closure: gated here (see post_create_sample's comment above) -- also called
+    # internally by lims_integration/commands.py's already-authorized flow.
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qc_test_order.start", site_id=None)
         return await start_test_order(session, cmd, actor.user_id)
 
 
@@ -445,7 +466,10 @@ async def post_record_raw_data(
 ) -> MutationReceipt:
     if str(cmd.test_order_id) != test_order_id:
         raise ValidationFailedError("test_order_id in path and body must match")
+    # 2026-09-18 RBAC gap closure: gated here (see post_create_sample's comment above) -- also called
+    # internally by lims_integration/commands.py's already-authorized flow.
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qc_test_order.record_raw_data", site_id=None)
         return await record_raw_data(session, cmd, actor.user_id)
 
 
@@ -458,7 +482,10 @@ async def post_record_result(
 ) -> MutationReceipt:
     if str(cmd.test_order_id) != test_order_id:
         raise ValidationFailedError("test_order_id in path and body must match")
+    # 2026-09-18 RBAC gap closure: gated here (see post_create_sample's comment above) -- also called
+    # internally by lims_integration/commands.py's already-authorized flow.
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="qc_result.record", site_id=None)
         return await record_result(session, cmd, actor.user_id)
 
 
@@ -593,17 +620,51 @@ async def get_oos_record(oos_id: str, session: AsyncSession = Depends(get_sessio
     resample_plans = (await session.execute(select(OosResamplePlan).where(OosResamplePlan.oos_record_id == oos.id))).scalars().all()
     return {
         "id": str(oos.id),
+        "site_id": str(oos.site_id) if oos.site_id else None,
         "oos_number": oos.oos_number,
+        "source_result_id": str(oos.source_result_id),
+        "sample_id": str(oos.sample_id) if oos.sample_id else None,
+        "test_order_id": str(oos.test_order_id) if oos.test_order_id else None,
+        "batch_id": str(oos.batch_id) if oos.batch_id else None,
+        "material_lot_id": str(oos.material_lot_id) if oos.material_lot_id else None,
         "state": oos.state,
         "severity": oos.severity,
         "hold_status": oos.hold_status,
         "final_classification": oos.final_classification,
         "root_cause_code": oos.root_cause_code,
         "version": oos.version,
-        "source_result_id": str(oos.source_result_id),
-        "activities": [{"id": str(a.id), "phase": a.phase, "activity_type": a.activity_type} for a in activities],
-        "retest_plans": [{"id": str(p.id), "status": p.status} for p in retest_plans],
-        "resample_plans": [{"id": str(p.id), "status": p.status} for p in resample_plans],
+        "opened_at": oos.opened_at.isoformat() if oos.opened_at else None,
+        "closed_at": oos.closed_at.isoformat() if oos.closed_at else None,
+        "activities": [
+            {
+                "id": str(a.id), "phase": a.phase, "activity_type": a.activity_type,
+                "checklist_item": a.checklist_item, "response_text": a.response_text,
+                "evidence_refs": a.evidence_refs, "investigator_user_id": str(a.investigator_user_id),
+                "occurred_at": a.occurred_at.isoformat() if a.occurred_at else None, "version": a.version,
+            }
+            for a in activities
+        ],
+        "retest_plans": [
+            {
+                "id": str(p.id), "justification": p.justification, "number_of_retests": p.number_of_retests,
+                "method_ref": p.method_ref, "analyst_criteria": p.analyst_criteria,
+                "instrument_criteria": p.instrument_criteria, "interpretation_rule": p.interpretation_rule,
+                "status": p.status, "version": p.version,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in retest_plans
+        ],
+        "resample_plans": [
+            {
+                "id": str(p.id), "scientific_rationale": p.scientific_rationale,
+                "sampling_plan_ref": p.sampling_plan_ref, "sampling_plan_version": p.sampling_plan_version,
+                "source_ref": p.source_ref,
+                "approver_user_id": str(p.approver_user_id) if p.approver_user_id else None,
+                "resulting_sample_ids": p.resulting_sample_ids, "status": p.status, "version": p.version,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in resample_plans
+        ],
     }
 
 

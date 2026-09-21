@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, type ListQuery, type Paged, type Site } from "@/lib/api";
-import { useSites } from "@/lib/hooks";
+import { useEntityOptions, useSites } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 
 // Matches app/modules/audit/service.py::event_to_dict — GET /audit/v1/search.
 interface AuditEvent {
@@ -46,6 +47,7 @@ const HAS_SIGNATURE_OPTIONS = [
 
 export default function AuditLedgerPage() {
   const { sites } = useSites();
+  const entities = useEntityOptions();
   const [aggregateType, setAggregateType] = useState("");
   const [aggregateId, setAggregateId] = useState("");
   const [actorId, setActorId] = useState("");
@@ -156,14 +158,15 @@ export default function AuditLedgerPage() {
             style={{ maxWidth: 210 }}
           />
         </Field>
-        <Field label="Actor ID" hint="One user's activity.">
-          <Input
-            value={actorId}
-            onChange={(e) => setActorId(e.target.value)}
-            placeholder="subject UUID"
-            style={{ maxWidth: 210 }}
-          />
-        </Field>
+        <EntityPickerField
+          label="Actor ID"
+          hint="One user's activity."
+          value={actorId}
+          onChange={setActorId}
+          options={entities.users}
+          status={entities.usersStatus}
+          kind="user"
+        />
         <Field label="Record type">
           <Input
             value={aggregateType}

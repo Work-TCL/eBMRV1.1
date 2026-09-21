@@ -1,6 +1,6 @@
 {
  "package": "eBMR / eDHR platform build status",
- "generated": "2026-09-15",
+ "generated": "2026-09-18",
  "baseline": "Documents 01-115",
  "stage_model": [
   "NOT_STARTED",
@@ -690,9 +690,9 @@
     "RUL-FR-032": "IN_PROGRESS"
    },
    "entities": 2,
-   "apis": 6,
+   "apis": 7,
    "events": 0,
-   "test_cases": 134,
+   "test_cases": 135,
    "stage": "IN_DEVELOPMENT",
    "stage_history": [
     {
@@ -706,12 +706,17 @@
      "at": "2026-08-27",
      "by": "Claude Code",
      "note": "SG-143 closure: app/modules/rules/precision.py implements Document 110 (SPEC-GXP-008) \u00a71/\u00a72's ten calculation classes table-driven. precision_policy.calculation_class is now required and validated at draft time (PRECISION_POLICY_UNRESOLVED, 409). evaluate_rule()/simulate_rule() round comparisons at the class's declared precision (N4) and, for a presentation-stage class (CC-4/CC-5/CC-9), the final COMPUTED result, retaining the raw pre-rounding value and applied Document 110 policy version on the persisted evaluation (new nullable RuleEvaluation.raw_result/.applied_policy_version columns, migration f3a8c1e5b7d2). Division by zero raises a typed DivisionUndefinedError (CALC-FR-010). A new rules.gxp_uom/gxp_uom_conversion released/versioned master (Document 110 \u00a73) is validated by the evaluator's unit_policy (UOM_UNKNOWN/UOM_CONVERSION_UNAVAILABLE). Module remains IN_DEVELOPMENT, not CODE_COMPLETE: yield/reconciliation/time-window/sequence rule types, deviation-trigger linkage, independent verification, decision explanation, engine versioning, caching, external-result rules, release-path integration, a UOM master authoring command surface, and migration of the pre-existing free-text UOM columns elsewhere in the platform remain out of scope (SG-145, SG-146)."
+    },
+    {
+     "at": "2026-09-17",
+     "by": "Claude Code",
+     "note": "Closed a real functionality gap found while auditing docs/testing/DDCP_Client_Demo_Guide_Gujarati.md #9.6: GET /uom/{code}/versions could look up one already-known released UOM code, but nothing let a caller discover which codes exist at all, so Recipe Master's parameter/material/batch-size UOM fields stayed free text despite rules.gxp_uom already existing as released reference data. New read-only rules_service.list_released_uoms() + GET /rules/v1/uom (SG-081 read-side precedent -- a plain GET listing doesn't conflict with any future write/CRUD contract), wired into those 3 frontend fields as <datalist> suggestions (not a hard-validated select, so a legacy/free-typed value that predates a code's release stays typeable). Module remains IN_DEVELOPMENT -- this is additive picker/discoverability, not the yield/reconciliation/time-window/sequence/deviation-trigger/independent-verification/engine-versioning/caching/external-result-rules/release-path-integration work still open from the prior entries. TC-008-008-04 added; test-cases/WP-01/Document_08_SPEC-GXP-006_TEST_CASES.md and services/gxp-api/tests/test_rules.py (79/79 full-module regression, no dedicated endpoint test added this pass)."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-22",
    "completed_at": null,
-   "test_pass": 43,
+   "test_pass": 44,
    "test_fail": 0,
    "test_blocked": 83,
    "open_defects": 0,
@@ -1681,9 +1686,9 @@
     "CON-FR-032": "IN_PROGRESS"
    },
    "entities": 5,
-   "apis": 8,
-   "events": 9,
-   "test_cases": 109,
+   "apis": 9,
+   "events": 10,
+   "test_cases": 111,
    "stage": "CODE_COMPLETE",
    "stage_history": [
     {
@@ -1697,12 +1702,18 @@
      "by": "Claude Code",
      "stage": "CODE_COMPLETE",
      "note": "WP-11 Stage 4 (ADR-0011, SG-183/SG-098): CON-FR-025's required-behaviour clause (post consumption after GxP commit, idempotent retries) is now real -- app/modules/erp/consumer.py subscribes to MaterialConsumed and calls the pre-existing queue_erp_command(POST_CONSUMPTION), scoped to ERPNext only (no vendor-neutral payload mapping exists for SAP/Oracle/Dynamics anywhere in this codebase). Migration 0103 adds ErpInstance.service_actor_user_id (mirrors lims_instance's own SG-067 stand-in) for the audit actor a background consumer otherwise has none of. Tests: tests/test_erp_consumer.py, 3 real tests against the live broker + real Postgres through the real dispense-to-consume REST flow, 3/3 passed, none mocked. TC-022-025-01 moved BLOCKED -> PASS. CON-FR-025-02/03 (inbound replay/timeout-uncertain lookup) and all of CON-FR-026 (discrepancy reconciliation) remain open, SG-098 stays PARTIALLY_RESOLVED for those pieces."
+    },
+    {
+     "at": "2026-09-17",
+     "by": "Claude Code",
+     "stage": "CODE_COMPLETE",
+     "note": "Closed a real functionality gap found while auditing docs/testing/DDCP_Client_Demo_Guide_Gujarati.md #19 #7: reject_inventory_adjustment_request() built as approve_inventory_adjustment_request()'s missing counterpart -- until this pass a wrong/unwanted adjustment request had no path out of \"requested\" at all. Signed (Rejected meaning, independent QA Releaser -- Document 106 has no dedicated reject row, reuses row 55's approve shape + P1's own principle + this codebase's material_lot.reject precedent), no InventoryTransaction/balance side effect. Also fixed a latent bug found wiring this in: POST .../signature-challenges always issued an Approved-meaning challenge regardless of the requested action. New: POST /inventory/v1/adjustments/{request_id}/reject, InventoryAdjustmentRejected event. Tests: services/gxp-api/tests/test_material_consumption_flow.py, 2 new (test_adjustment_request_create_and_reject, test_adjustment_self_rejection_denied), 36/36 module tests pass. TC-022-013-03/TC-022-014-04 added."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-25",
    "completed_at": null,
-   "test_pass": 68,
+   "test_pass": 70,
    "test_fail": 0,
    "test_blocked": 21,
    "open_defects": 0,
@@ -7633,7 +7644,7 @@
  "totals": {
   "modules": 103,
   "requirements": 2965,
-  "test_cases": 9150,
+  "test_cases": 9153,
   "modules_started": 100,
   "modules_released": 0
  },

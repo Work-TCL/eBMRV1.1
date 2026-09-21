@@ -128,6 +128,37 @@ export interface EntityOption {
   label: string;
 }
 
+/** Loads one flat, unfiltered list-endpoint's rows into `EntityOption[]` — the repeated shape behind
+ * every QMS quality-event picker below (deviations/complaints/capas/nonconformances/internal audits/
+ * risks/rules all follow the identical "fetch once on mount, map to {value,label}, empty/error status"
+ * shape `useEntityOptions`'s other fields already hand-wrote individually). Kept private to this file;
+ * a field needing a *dependent* (cascading) list — e.g. QC results scoped to a chosen batch — still
+ * fetches locally in its own component, the same way `inventory/page.tsx`'s container picker already
+ * does, since this helper's single fixed `path` can't express that. */
+function useListEntityOptions<T>(path: string, toOption: (row: T) => EntityOption): { options: EntityOption[]; status: EntityOptionsStatus } {
+  const [options, setOptions] = useState<EntityOption[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    listAll<T>(path)
+      .then((rows) => {
+        if (cancelled) return;
+        setOptions(rows.map(toOption));
+        setStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `path` is a literal per call site; `toOption` is a fresh closure every render by design (it always reads the freshest labeling logic) and must not retrigger the fetch.
+  }, [path]);
+
+  return { options, status };
+}
+
 /** Populates the batch, equipment and equipment-area pickers used across write-heavy forms. Loaded once
  * per mounted form (not per field/operation), so switching an operation dropdown never re-fetches.
  * Phase-1 row counts sit inside `listAll`'s 100-row cap; a field that needs one falls back to manual ID
@@ -171,8 +202,10 @@ export function useEntityOptions(): {
    * would silently turn a human-readable reference into an opaque UUID. */
   materialLotCodes: EntityOption[];
   materialLotCodesStatus: EntityOptionsStatus;
-  /** RELEASED aseptic process profile versions (Document 40) — reuses the same picker feed
-   * (`GET /products/v1/sterile-profiles`) Product Master's own sterile-profile field already uses. */
+  /** RELEASED aseptic process profile versions (Document 40) — `GET /aseptic/v1/profiles`, this
+   * module's own read endpoint with no RBAC gate (2026-09-16: switched off `GET /products/v1/
+   * sterile-profiles`, which required `product.view` — a permission neither Aseptic Operator nor
+   * Aseptic Supervisor holds, so this field 403'd for the two roles that need it most). */
   asepticProfiles: EntityOption[];
   asepticProfilesStatus: EntityOptionsStatus;
   /** QC samples (Document 21) — every state, not just released/complete, since a deviation's "qc" source
@@ -180,6 +213,33 @@ export function useEntityOptions(): {
    * browsable list `/qc`'s own Samples section reads. */
   qcSamples: EntityOption[];
   qcSamplesStatus: EntityOptionsStatus;
+  /** QMS quality-event records (Document 26/24/25/23/27) — every state, unfiltered, since a picker
+   * referencing one of these (a CAPA/field-action's "source"/"trigger" record, a deviation reference from
+   * Yield) needs to find records in any lifecycle state, not just closed ones. Each feeds its own
+   * module's already-real `GET .../v1/<plural>` list endpoint (`qms_deviation.view`/`capa.view`/etc. —
+   * same policy check each module's own list page already passes). */
+  deviations: EntityOption[];
+  deviationsStatus: EntityOptionsStatus;
+  complaints: EntityOption[];
+  complaintsStatus: EntityOptionsStatus;
+  capas: EntityOption[];
+  capasStatus: EntityOptionsStatus;
+  nonconformances: EntityOption[];
+  nonconformancesStatus: EntityOptionsStatus;
+  internalAudits: EntityOption[];
+  internalAuditsStatus: EntityOptionsStatus;
+  risks: EntityOption[];
+  risksStatus: EntityOptionsStatus;
+  /** Released rules (Document 22, RUL-FR-003) — one row per `rule_id` with its currently-effective
+   * released version. Same feed Recipe Master's `condition_rule_id`/parameter `rule_id` pickers already
+   * use (`GET /rules/v1`); centralised here so every other module referencing a rule by its `rule_id`
+   * business key (Yield's potency-evaluation rule, `/rules`' own lookup box) doesn't re-implement the
+   * fetch. A picker needing the rule's real object id instead (a genuine UUID FK, e.g. a Risk record's
+   * `methodology_id`) fetches `/rules/v1` separately — see `RiskMethodologyPickerField` — since that
+   * shape needs the raw `rule_type` to filter on, which this flattened `{value,label}` list doesn't
+   * carry. */
+  rules: EntityOption[];
+  rulesStatus: EntityOptionsStatus;
 } {
   const { siteId } = useSiteId();
   const [batches, setBatches] = useState<EntityOption[]>([]);
@@ -359,17 +419,24 @@ export function useEntityOptions(): {
   useEffect(() => {
     if (!siteId) return;
     let cancelled = false;
-    // Plain array, not the paginated envelope `listAll` expects (product_master_router.get_sterile_
-    // profiles returns `list[dict]` directly) — the same feed Product Master's own sterile-profile
-    // field already uses, restricted to this site's RELEASED rows.
+    // 2026-09-16 fix: was `GET /products/v1/sterile-profiles` (gated `product.view`) — the same feed
+    // Product Master's own sterile-profile field uses, reused here on the assumption any caller of this
+    // picker would also hold `product.view`. Aseptic Operator/Supervisor don't (scripts/seed.py grants
+    // them nothing product-related at all), so this field 403'd for exactly the two roles that need it
+    // most (Create aseptic operation's own required "Aseptic profile version" field) — `EntityPickerField`
+    // silently degrades a 403 the same as a genuinely empty list (manual-entry fallback), so it read as
+    // "no dropdown" rather than a loud error. Switched to `GET /aseptic/v1/profiles` — this module's own
+    // read endpoint, no RBAC gate at all (any authenticated actor), so no permission dependency at all.
+    // Full history (RELEASED+SUPERSEDED), filtered to RELEASED client-side to match the old behaviour.
     api
       .get<{ id: string; profile_number: string; version_no: number; state: string }[]>(
-        `/products/v1/sterile-profiles?site_id=${siteId}`,
+        `/aseptic/v1/profiles?site_id=${siteId}`,
       )
       .then((rows) => {
         if (cancelled) return;
-        setAsepticProfiles(rows.map((p) => ({ value: p.id, label: `${p.profile_number} v${p.version_no}` })));
-        setAsepticProfilesStatus(rows.length ? "ready" : "empty");
+        const released = rows.filter((p) => p.state === "RELEASED");
+        setAsepticProfiles(released.map((p) => ({ value: p.id, label: `${p.profile_number} v${p.version_no}` })));
+        setAsepticProfilesStatus(released.length ? "ready" : "empty");
       })
       .catch(() => {
         if (!cancelled) setAsepticProfilesStatus("error");
@@ -395,6 +462,64 @@ export function useEntityOptions(): {
     };
   }, []);
 
+  const { options: deviations, status: deviationsStatus } = useListEntityOptions<{
+    id: string;
+    deviation_number: string;
+    state: string;
+  }>("/qms/v1/deviations", (d) => ({ value: d.id, label: `${d.deviation_number} (${d.state})` }));
+
+  const { options: complaints, status: complaintsStatus } = useListEntityOptions<{
+    id: string;
+    complaint_number: string;
+    state: string;
+  }>("/qms/v1/complaints", (c) => ({ value: c.id, label: `${c.complaint_number} (${c.state})` }));
+
+  const { options: capas, status: capasStatus } = useListEntityOptions<{
+    id: string;
+    capa_number: string;
+    state: string;
+  }>("/qms/v1/capas", (c) => ({ value: c.id, label: `${c.capa_number} (${c.state})` }));
+
+  const { options: nonconformances, status: nonconformancesStatus } = useListEntityOptions<{
+    id: string;
+    ncr_number: string;
+    state: string;
+  }>("/qms/v1/nonconformances", (n) => ({ value: n.id, label: `${n.ncr_number} (${n.state})` }));
+
+  const { options: internalAudits, status: internalAuditsStatus } = useListEntityOptions<{
+    id: string;
+    audit_number: string;
+    state: string;
+  }>("/qms/v1/audits", (a) => ({ value: a.id, label: `${a.audit_number} (${a.state})` }));
+
+  const { options: risks, status: risksStatus } = useListEntityOptions<{
+    id: string;
+    risk_number: string;
+    state: string;
+  }>("/qms/v1/risks", (r) => ({ value: r.id, label: `${r.risk_number} (${r.state})` }));
+
+  const [rules, setRules] = useState<EntityOption[]>([]);
+  const [rulesStatus, setRulesStatus] = useState<EntityOptionsStatus>("loading");
+  useEffect(() => {
+    let cancelled = false;
+    // Plain array, not the paginated envelope `listAll` expects (rules_router.get_released_rules returns
+    // `list[dict]` directly, same shape as sterile-profiles above) — the same feed Recipe Master's own
+    // rule pickers already use (`GET /rules/v1`).
+    api
+      .get<{ rule_object_id: string; rule_id: string; rule_type: string; semantic_version: string }[]>("/rules/v1")
+      .then((rows) => {
+        if (cancelled) return;
+        setRules(rows.map((r) => ({ value: r.rule_id, label: `${r.rule_id} - ${r.rule_type} v${r.semantic_version}` })));
+        setRulesStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setRulesStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return {
     batches, batchesStatus, equipment, equipmentStatus, areas, areasStatus, users, usersStatus,
     materialLots, materialLotsStatus, releasedBatches, releasedBatchesStatus,
@@ -403,5 +528,12 @@ export function useEntityOptions(): {
     materialLotCodes, materialLotCodesStatus,
     asepticProfiles, asepticProfilesStatus,
     qcSamples, qcSamplesStatus,
+    deviations, deviationsStatus,
+    complaints, complaintsStatus,
+    capas, capasStatus,
+    nonconformances, nonconformancesStatus,
+    internalAudits, internalAuditsStatus,
+    risks, risksStatus,
+    rules, rulesStatus,
   };
 }

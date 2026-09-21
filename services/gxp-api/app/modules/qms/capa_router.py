@@ -35,7 +35,7 @@ from app.mutation.schemas import MutationReceipt
 capa_router = APIRouter(prefix="/qms/v1/capas", tags=["qms-capa"])
 capa_action_router = APIRouter(prefix="/qms/v1/actions", tags=["qms-capa"])
 
-CAPA_SIGNATURE_ACTIONS = ("close",)
+CAPA_SIGNATURE_ACTIONS = ("close", "effectiveness")
 
 
 @capa_router.post("", response_model=MutationReceipt)

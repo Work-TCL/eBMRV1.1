@@ -12,6 +12,7 @@ from app.modules.equipment.aseptic_models import AsepticProfileVersion
 from app.modules.product_master.models import (
     STERILE_REQUIRED_PROFILES,
     ProductConstituent,
+    ProductFamily,
     ProductVersion,
 )
 from app.mutation.errors import NotFoundError
@@ -87,6 +88,12 @@ async def list_product_business_ids(session: AsyncSession) -> list[ProductVersio
     for row in rows:
         latest.setdefault(row.product_business_id, row)
     return sorted(latest.values(), key=lambda v: v.product_business_id)
+
+
+async def list_product_families(session: AsyncSession) -> list[ProductFamily]:
+    """Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 2): picker data for the
+    product_family_id field, backing commands.py::create_product_family and _validate_product_family."""
+    return (await session.execute(select(ProductFamily).order_by(ProductFamily.family_code))).scalars().all()
 
 
 async def list_sterile_profiles(session: AsyncSession, site_id: uuid.UUID) -> list[AsepticProfileVersion]:

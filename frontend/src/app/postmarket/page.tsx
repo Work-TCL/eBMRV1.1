@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, holdsAnyRole, newIdempotencyKey, type Me, type MutationReceipt } from "@/lib/api";
+import { api, ApiError, hasAnyPermission, hasPermission, newIdempotencyKey, type Me, type MutationReceipt } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -25,10 +25,31 @@ const REPORT_TYPE_OPTIONS = [
   { value: "FOLLOWUP", label: "Follow-up" },
 ];
 
-const canWork = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer", "QA Releaser"]);
+// Document 58/59 (WP-09) actor-specific roles: Postmarket Safety Reviewer owns safety_case.*/
+// safety_signal.*/postmarket_source.register/postmarket_dataset.freeze; Postmarket Regulatory Affairs
+// owns reportability_track.*/regulatory_report.*/applicant_relationship.*/correction_removal.*/
+// regulatory_obligation.*/periodic_reporting_cycle.*. This page previously gated everything on
+// QA Reviewer/QA Releaser -- neither role holds ANY of these codes -- which meant the two roles this
+// page actually exists for could never reach it, and the two roles it accidentally granted access to
+// couldn't do anything real here either (audit finding 2026-09-18: this module has zero demo users, so
+// nobody had exercised it end-to-end since it was built).
+const canManageSafetyCases = (me: Me | null) => hasPermission(me, "safety_case.create");
+const canManageReportability = (me: Me | null) => hasPermission(me, "reportability_track.create");
+// The big "operations console" below bundles ~25 ops spanning both personas' whole surface in one
+// FormConsole (which has no per-op permission gating) -- shown if the user holds an entry permission
+// from either persona; the backend still enforces each individual op's own exact code.
+const canWork = (me: Me | null) =>
+  hasAnyPermission(me, [
+    "safety_case.create", "postmarket_source.register", "safety_signal.open", "postmarket_dataset.freeze",
+    "safety_case.followup", "safety_case.link_duplicates",
+    "reportability_track.create", "regulatory_report.create", "applicant_relationship.configure",
+    "correction_removal.create", "regulatory_obligation.create", "periodic_reporting_cycle.generate",
+  ]);
 
 export default function PostmarketPage() {
   const { me } = useMe();
+  const { siteId } = useSiteId();
+  const siteIdHint = `This deployment's site ID: ${siteId ?? "loading…"}`;
 
   return (
     <div>
@@ -39,8 +60,8 @@ export default function PostmarketPage() {
 
       <DashboardCards />
 
-      {canWork(me) && <CreateSafetyCaseCard />}
-      {canWork(me) && <ReportabilityCard />}
+      {canManageSafetyCases(me) && <CreateSafetyCaseCard />}
+      {canManageReportability(me) && <ReportabilityCard />}
 
       {canWork(me) && (
         <>
@@ -96,7 +117,7 @@ export default function PostmarketPage() {
                 path: "sources",
                 label: "Register a postmarket source",
                 fields: [
-                  { name: "site_id", label: "Site ID", required: true },
+                  { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "source_type", label: "Source type", required: true },
                   { name: "organization_or_system", label: "Organization or system", required: true },
                   { name: "channel", label: "Channel", required: true },
@@ -143,7 +164,7 @@ export default function PostmarketPage() {
                   { name: "interval_end", label: "Interval end", type: "datetime", required: true },
                   { name: "report_type", label: "Report type", required: true },
                   { name: "cutoff", label: "Cutoff", type: "datetime", required: true },
-                  { name: "site_id", label: "Site ID" },
+                  { name: "site_id", label: "Site ID", hint: siteIdHint },
                 ],
               },
             ]}
@@ -162,7 +183,7 @@ export default function PostmarketPage() {
                 mirrorBodyInChallenge: true,
                 about: "The challenge signs the signal_code before the record exists - the rest of the fields still go to the mutation.",
                 fields: [
-                  { name: "site_id", label: "Site ID", required: true },
+                  { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "signal_code", label: "Signal code", required: true },
                   { name: "detection_source", label: "Detection source", required: true },
                   {
@@ -308,7 +329,7 @@ export default function PostmarketPage() {
                 fields: [
                   { name: "safety_case_id", label: "Safety case ID", hint: "Set this, or specific report IDs below, or both." },
                   { name: "report_ids", label: "Report IDs", type: "stringList", itemLabel: "Report ID" },
-                  { name: "site_id", label: "Site ID" },
+                  { name: "site_id", label: "Site ID", hint: siteIdHint },
                 ],
               },
             ]}
@@ -354,7 +375,7 @@ export default function PostmarketPage() {
                 path: "field-alerts",
                 label: "Raise a field alert obligation",
                 fields: [
-                  { name: "site_id", label: "Site ID", required: true },
+                  { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "source_type", label: "Source type", required: true },
                   { name: "source_id", label: "Source ID", required: true },
                   { name: "source_version", label: "Source version", type: "number" },
@@ -380,7 +401,7 @@ export default function PostmarketPage() {
                 path: "applicant-relationships",
                 label: "Register an applicant/constituent relationship",
                 fields: [
-                  { name: "site_id", label: "Site ID", required: true },
+                  { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "product_version_reference", label: "Product version reference", type: "kv", required: true },
                   { name: "applicant_role", label: "Applicant role", required: true },
                   { name: "applicant_name", label: "Applicant name", required: true },
@@ -396,7 +417,7 @@ export default function PostmarketPage() {
                 label: "Evaluate Part 4 sharing",
                 fields: [
                   { name: "safety_case_id", label: "Safety case ID", required: true },
-                  { name: "site_id", label: "Site ID", required: true },
+                  { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "applicant_relationship_id", label: "Applicant relationship ID", required: true },
                   { name: "company_receipt_at", label: "Company receipt at", type: "datetime", required: true },
                 ],
@@ -427,7 +448,7 @@ export default function PostmarketPage() {
                 about: "The field action in the URL is the source of this assessment.",
                 fields: [
                   { name: "field_action_id", label: "Field action ID", pathOnly: true, required: true },
-                  { name: "site_id", label: "Site ID", required: true },
+                  { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "field_action_reference", label: "Field action reference", type: "kv", required: true },
                   { name: "initiation_at", label: "Initiated at", type: "datetime", required: true },
                 ],
@@ -469,7 +490,7 @@ export default function PostmarketPage() {
                 path: "bpdr-tracks",
                 label: "Open a BPDR track",
                 fields: [
-                  { name: "site_id", label: "Site ID", required: true },
+                  { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "source_type", label: "Source type", required: true },
                   { name: "source_id", label: "Source ID", required: true },
                   { name: "source_version", label: "Source version", type: "number" },
@@ -483,7 +504,7 @@ export default function PostmarketPage() {
                 path: "periodic-cycles:generate",
                 label: "Generate periodic safety cycles",
                 fields: [
-                  { name: "site_id", label: "Site ID", required: true },
+                  { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "application_reference", label: "Application reference", required: true },
                   { name: "cycle_type", label: "Cycle type", required: true },
                   { name: "period_start", label: "Period start", type: "datetime", required: true },
@@ -504,7 +525,7 @@ export default function PostmarketPage() {
                 path: "fda-requests",
                 label: "Log an FDA request / correspondence",
                 fields: [
-                  { name: "site_id", label: "Site ID", required: true },
+                  { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "application_id", label: "Application ID", required: true },
                   { name: "agency_reference", label: "Agency reference", required: true },
                   { name: "requested_events_or_information", label: "Requested events or information", type: "textarea", required: true },

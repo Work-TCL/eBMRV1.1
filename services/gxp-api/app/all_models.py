@@ -5,6 +5,7 @@ from app.modules.ai_governance import models as ai_governance_models  # noqa: F4
 from app.modules.audit import models as audit_models  # noqa: F401
 from app.modules.batch import models as batch_models  # noqa: F401
 from app.modules.batch_execution import models as batch_execution_models  # noqa: F401
+from app.modules.codegen import models as codegen_models  # noqa: F401
 from app.modules.dataops import models as dataops_models  # noqa: F401
 from app.modules.ddcp import models as ddcp_models  # noqa: F401
 from app.modules.deployment import models as deployment_models  # noqa: F401

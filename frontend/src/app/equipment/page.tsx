@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { CodeField } from "@/components/ui/CodeField";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
@@ -336,7 +337,7 @@ function CreateAssetModal({
       await api.post<MutationReceipt>("/equipment/v1/assets", {
         idempotency_key: newIdempotencyKey(),
         site_id: siteId,
-        equipment_code: equipmentCode,
+        equipment_code: equipmentCode || undefined,
         manufacturer: manufacturer || null,
         model: model || null,
         serial_no: serialNo || null,
@@ -354,9 +355,7 @@ function CreateAssetModal({
   return (
     <Modal open onClose={onClose} title="New equipment asset" large>
       <form onSubmit={onSubmit}>
-        <Field label="Equipment code" required>
-          <Input value={equipmentCode} onChange={(e) => setEquipmentCode(e.target.value)} required autoFocus />
-        </Field>
+        <CodeField label="Equipment code" value={equipmentCode} onChange={setEquipmentCode} required />
         <div className="grid grid-cols-3 gap-4">
           <Field label="Manufacturer">
             <Input value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} />
@@ -380,7 +379,7 @@ function CreateAssetModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !equipmentCode.trim() || !siteId}>
+          <Button type="submit" variant="primary" disabled={busy || !siteId}>
             {busy ? "Creating…" : "Create asset"}
           </Button>
         </div>
@@ -421,7 +420,7 @@ function CreateAreaModal({
       await api.post<MutationReceipt>("/equipment/v1/areas", {
         idempotency_key: newIdempotencyKey(),
         site_id: siteId,
-        area_code: areaCode,
+        area_code: areaCode || undefined,
         area_type: areaType || null,
         classification: classification || null,
         criticality: criticality || null,
@@ -444,9 +443,7 @@ function CreateAreaModal({
           readiness as area_id/line_id.
         </p>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Area code" required hint="Unique across all sites.">
-            <Input value={areaCode} onChange={(e) => setAreaCode(e.target.value)} required autoFocus placeholder="AREA-GRADE-C" />
-          </Field>
+          <CodeField label="Area code" value={areaCode} onChange={setAreaCode} required hint="Unique across all sites." />
           <Field label="Area type" hint="Free text, e.g. fill_suite, gowning_room, warehouse.">
             <Input value={areaType} onChange={(e) => setAreaType(e.target.value)} />
           </Field>
@@ -475,7 +472,7 @@ function CreateAreaModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !areaCode.trim() || !siteId}>
+          <Button type="submit" variant="primary" disabled={busy || !siteId}>
             {busy ? "Creating…" : "Create area"}
           </Button>
         </div>

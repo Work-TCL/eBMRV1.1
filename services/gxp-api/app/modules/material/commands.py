@@ -8,9 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.referential import find_blocking_reference
 from app.core.security import verify_password
 from app.modules.batch_execution.models import Batch, BatchStep
+from app.modules.codegen import service as codegen_service
+from app.modules.genealogy import service as genealogy_service
 from app.modules.iam.models import Qualification, User
 from app.modules.material.models import (
     PRE_DISPOSITION_LOT_STATES,
+    STORAGE_CONDITIONS,
     DestructionRecord,
     DispensedContainer,
     DispensingOrder,
@@ -96,6 +99,20 @@ async def _resolve_uom_id(session: AsyncSession, uom: str | None) -> uuid.UUID |
     return row.uom_id
 
 
+async def _resolve_uom_id_strict(session: AsyncSession, uom: str | None) -> uuid.UUID | None:
+    """Client requirements #2/#3: the UI's UomSelect only ever submits a code drawn from the released
+    UOM list, so an unresolvable non-empty code here means a caller (this UI or a direct API call) sent
+    something outside it -- reject instead of silently leaving uom_id NULL. Scoped to the specific
+    user-facing commands whose UI now sources this value from UomSelect; every other, purely internal or
+    derived `_resolve_uom_id` call site in this module is untouched."""
+    if not uom:
+        return None
+    uom_id = await _resolve_uom_id(session, uom)
+    if uom_id is None:
+        raise ValidationFailedError("Unrecognized or unreleased UOM code", uom=uom)
+    return uom_id
+
+
 def _receipt_from_existing(existing) -> MutationReceipt:
     return MutationReceipt(
         command_id=existing.id,
@@ -113,9 +130,11 @@ def _receipt_from_existing(existing) -> MutationReceipt:
 
 class CreateMaterialCommand(CommandEnvelope):
     site_id: uuid.UUID
-    code: str
+    code: str | None = None
     name: str
     uom: str
+    is_in_house: bool = False
+    default_storage_condition: str | None = None
 
 
 async def create_material(
@@ -126,8 +145,26 @@ async def create_material(
     if existing is not None:
         return _receipt_from_existing(existing)
 
+    if cmd.code:
+        clash = (
+            await session.execute(select(Material.id).where(Material.site_id == cmd.site_id, Material.code == cmd.code))
+        ).scalar_one_or_none()
+        if clash is not None:
+            raise ValidationFailedError("Material code already exists for this site", code=cmd.code)
+        code = cmd.code
+    else:
+        code = await codegen_service.next_code(session, entity_type="MATERIAL", prefix="MAT", site_id=cmd.site_id)
+
+    if cmd.default_storage_condition is not None and cmd.default_storage_condition not in STORAGE_CONDITIONS:
+        raise ValidationFailedError(
+            "default_storage_condition must be one of the controlled list",
+            default_storage_condition=cmd.default_storage_condition, allowed=list(STORAGE_CONDITIONS),
+        )
+
     material = Material(
-        site_id=cmd.site_id, code=cmd.code, name=cmd.name, uom=cmd.uom, uom_id=await _resolve_uom_id(session, cmd.uom),
+        site_id=cmd.site_id, code=code, name=cmd.name, uom=cmd.uom,
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
+        is_in_house=cmd.is_in_house, default_storage_condition=cmd.default_storage_condition,
         status="active", version=1,
     )
     session.add(material)
@@ -192,6 +229,8 @@ class ReceiveMaterialLotCommand(CommandEnvelope):
     uom: str
     expiry_date: date | None = None
     retest_date: date | None = None
+    storage_location_id: uuid.UUID | None = None
+    storage_condition: str | None = None
 
 
 async def receive_material_lot(
@@ -213,6 +252,14 @@ async def receive_material_lot(
             "A material lot with this internal lot number already exists", internal_lot=cmd.internal_lot
         )
 
+    if cmd.storage_condition is not None and cmd.storage_condition not in STORAGE_CONDITIONS:
+        raise ValidationFailedError(
+            "storage_condition must be one of the controlled list",
+            storage_condition=cmd.storage_condition, allowed=list(STORAGE_CONDITIONS),
+        )
+    if cmd.storage_location_id is not None and await session.get(WarehouseLocation, cmd.storage_location_id) is None:
+        raise NotFoundError("Warehouse location not found", storage_location_id=str(cmd.storage_location_id))
+
     lot = MaterialLot(
         material_id=cmd.material_id,
         site_id=cmd.site_id,
@@ -223,10 +270,12 @@ async def receive_material_lot(
         received_quantity=cmd.received_quantity,
         available_quantity=cmd.received_quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         status="quarantine",
         expiry_date=cmd.expiry_date,
         retest_date=cmd.retest_date,
+        storage_location_id=cmd.storage_location_id,
+        storage_condition=cmd.storage_condition,
         received_by_user_id=actor_user_id,
         version=1,
     )
@@ -501,16 +550,33 @@ async def issue_material_to_batch(
         lot.status = "consumed"
     lot.version += 1
 
-    session.add(
-        MaterialIssue(
-            material_lot_id=lot.id,
-            batch_id=cmd.batch_id,
-            batch_step_id=cmd.batch_step_id,
-            quantity=cmd.quantity,
-            uom=lot.uom,
-            uom_id=lot.uom_id,  # copied from the lot's own already-resolved value, not re-queried
-            issued_by_user_id=actor_user_id,
-        )
+    issue = MaterialIssue(
+        material_lot_id=lot.id,
+        batch_id=cmd.batch_id,
+        batch_step_id=cmd.batch_step_id,
+        quantity=cmd.quantity,
+        uom=lot.uom,
+        uom_id=lot.uom_id,  # copied from the lot's own already-resolved value, not re-queried
+        issued_by_user_id=actor_user_id,
+    )
+    session.add(issue)
+    await session.flush()  # need issue.id for the genealogy edge's idempotent source_event_id below
+
+    # 2026-09-19, project-owner-directed: Document 13 §8's own "MaterialConsumed" event, wired directly --
+    # this command IS that event, so no separate outbox consumer is needed (SG-052's deferred wiring
+    # otherwise waits for a Material Service that already exists here as this module).
+    material_lot_node = await genealogy_service.get_or_create_node(
+        session, site_id=site_id, node_type="material_lot", authoritative_record_type="material_lot",
+        authoritative_record_id=lot.id, business_ref=lot.internal_lot, actor_user_id=actor_user_id,
+    )
+    drug_batch_node = await genealogy_service.get_or_create_node(
+        session, site_id=site_id, node_type="drug_batch", authoritative_record_type="batch",
+        authoritative_record_id=batch.id, business_ref=batch.batch_number, actor_user_id=actor_user_id,
+    )
+    await genealogy_service.create_edge(
+        session, from_node_id=material_lot_node.id, to_node_id=drug_batch_node.id, edge_type="CONSUMED_IN",
+        quantity=cmd.quantity, uom=lot.uom, step_id=cmd.batch_step_id, source_event_id=issue.id,
+        actor_user_id=actor_user_id,
     )
 
     correlation_id = uuid.uuid4()
@@ -571,6 +637,8 @@ class UpdateMaterialCommand(CommandEnvelope):
     material_id: uuid.UUID
     name: str
     status: str
+    is_in_house: bool | None = None
+    default_storage_condition: str | None = None
 
 
 async def update_material(
@@ -585,9 +653,22 @@ async def update_material(
     if material is None:
         raise NotFoundError("Material not found")
 
-    old_value = {"name": material.name, "status": material.status}
+    if cmd.default_storage_condition is not None and cmd.default_storage_condition not in STORAGE_CONDITIONS:
+        raise ValidationFailedError(
+            "default_storage_condition must be one of the controlled list",
+            default_storage_condition=cmd.default_storage_condition, allowed=list(STORAGE_CONDITIONS),
+        )
+
+    old_value = {
+        "name": material.name, "status": material.status, "is_in_house": material.is_in_house,
+        "default_storage_condition": material.default_storage_condition,
+    }
     material.name = cmd.name
     material.status = cmd.status
+    if cmd.is_in_house is not None:
+        material.is_in_house = cmd.is_in_house
+    if cmd.default_storage_condition is not None:
+        material.default_storage_condition = cmd.default_storage_condition
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
@@ -600,7 +681,10 @@ async def update_material(
         actor_id=actor_user_id,
         correlation_id=correlation_id,
         old_value=old_value,
-        new_value={"name": material.name, "status": material.status},
+        new_value={
+            "name": material.name, "status": material.status, "is_in_house": material.is_in_house,
+            "default_storage_condition": material.default_storage_condition,
+        },
     )
     await write_outbox_event(
         session,
@@ -780,7 +864,7 @@ async def create_material_receipt(
         received_net_quantity=cmd.received_net_quantity,
         accepted_quantity=cmd.accepted_quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         manufacture_date=cmd.manufacture_date,
         expiry_date=cmd.expiry_date,
         retest_date=cmd.retest_date,
@@ -856,6 +940,8 @@ class ExamineReceiptCommand(CommandEnvelope):
     internal_lot: str
     container_count: int = 1
     discrepancy_reason: str | None = None
+    storage_location_id: uuid.UUID | None = None
+    storage_condition: str | None = None
 
 
 async def examine_receipt(
@@ -934,6 +1020,13 @@ async def examine_receipt(
             raise ValidationFailedError(
                 "A material lot with this internal lot number already exists", internal_lot=cmd.internal_lot
             )
+        if cmd.storage_condition is not None and cmd.storage_condition not in STORAGE_CONDITIONS:
+            raise ValidationFailedError(
+                "storage_condition must be one of the controlled list",
+                storage_condition=cmd.storage_condition, allowed=list(STORAGE_CONDITIONS),
+            )
+        if cmd.storage_location_id is not None and await session.get(WarehouseLocation, cmd.storage_location_id) is None:
+            raise NotFoundError("Warehouse location not found", storage_location_id=str(cmd.storage_location_id))
 
         receipt_row.state = "examined"
         accepted_qty = receipt_row.accepted_quantity or receipt_row.received_gross_quantity
@@ -951,6 +1044,8 @@ async def examine_receipt(
             status="quarantine",
             expiry_date=receipt_row.expiry_date,
             retest_date=receipt_row.retest_date,
+            storage_location_id=cmd.storage_location_id,
+            storage_condition=cmd.storage_condition,
             received_by_user_id=receipt_row.receiver_subject_id,
             version=1,
             receipt_id=receipt_row.id,
@@ -1935,7 +2030,7 @@ async def create_inventory_reservation(
     balance.available -= cmd.quantity
     balance.version += 1
 
-    cmd_uom_id = await _resolve_uom_id(session, cmd.uom)
+    cmd_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
     txn = InventoryTransaction(
         site_id=cmd.site_id,
         material_lot_id=chosen_lot.id,
@@ -2952,7 +3047,7 @@ async def create_dispensing_order(
         material_spec_version_id=cmd.material_spec_version_id,
         target_qty=cmd.target_qty,
         target_uom=cmd.target_uom,
-        target_uom_id=await _resolve_uom_id(session, cmd.target_uom),
+        target_uom_id=await _resolve_uom_id_strict(session, cmd.target_uom),
         tolerance_low=cmd.tolerance_low,
         tolerance_high=cmd.tolerance_high,
         state="created",
@@ -4031,7 +4126,7 @@ async def record_consumption(
     await evaluate_policy(session, actor_user_id, action="material_consumption.create", site_id=site_id)
 
     material_lot_id = await _resolve_consumption_lot(session, container, cmd.material_lot_id)
-    cmd_uom_id = await _resolve_uom_id(session, cmd.uom)
+    cmd_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
 
     txn = InventoryTransaction(
         site_id=site_id,
@@ -4175,7 +4270,7 @@ async def record_return(
     # caller-supplied `condition_acceptable` flag is a captured classification, not an inferred quality
     # judgment — same treatment as every other captured-not-derived boolean/enum in this module.
     resulting_status = "released" if cmd.condition_acceptable else "quarantine"
-    cmd_uom_id = await _resolve_uom_id(session, cmd.uom)
+    cmd_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
 
     txn = InventoryTransaction(
         site_id=site_id,
@@ -4336,7 +4431,7 @@ async def record_material_loss(
         transaction_type=cmd.loss_type,
         quantity=cmd.quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         from_location_id=cmd.location_id,
         reference_type="dispensed_container",
         reference_id=container.id,
@@ -4654,6 +4749,126 @@ async def approve_inventory_adjustment_request(
     )
 
 
+class RejectInventoryAdjustmentRequestCommand(CommandEnvelope):
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+async def reject_inventory_adjustment_request(
+    session: AsyncSession,
+    request_id: uuid.UUID,
+    cmd: RejectInventoryAdjustmentRequestCommand,
+    actor_user_id: uuid.UUID,
+    site_id: uuid.UUID,
+) -> MutationReceipt:
+    """Approve's missing counterpart -- until this pass a rejected/wrong adjustment request had no path
+    out of "requested" at all (docs/testing/DDCP_Client_Demo_Guide_Gujarati.md §19 #7). No dedicated
+    Document 106 row exists for reject (only row 55's approve is registered), but Document 106 P1 ("a
+    signature is required when the action ... approves ... rejects ... a predicate-rule record") and this
+    codebase's own material_lot.reject precedent (row 44, same "Rejected" meaning + independence as its
+    "release"/"approve" sibling) both point the same way -- reuses approve's independence/signature shape
+    rather than leaving reject unsigned. Unlike approve, no InventoryTransaction/balance mutation happens:
+    a rejected request never touched inventory in the first place."""
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(
+        select(InventoryAdjustmentRequest).where(InventoryAdjustmentRequest.id == request_id).with_for_update()
+    )
+    request = result.scalar_one_or_none()
+    if request is None:
+        raise NotFoundError("Inventory adjustment request not found")
+    if request.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Inventory adjustment request was modified by another actor since it was read",
+            expected_version=cmd.expected_version,
+            current_version=request.version,
+        )
+    if request.status != "requested":
+        raise InvalidTransitionError(
+            "Only a requested adjustment can be rejected (CON-FR-013)", current_status=request.status
+        )
+
+    await evaluate_policy(session, actor_user_id, action="inventory_adjustment_request.reject", site_id=site_id)
+
+    # CON-FR-014: same independence rule as approve -- a requester cannot dispose of their own request.
+    if actor_user_id == request.requested_by_user_id:
+        raise ValidationFailedError(
+            "Rejecter must be independent of the requester of this adjustment (CON-FR-014)"
+        )
+
+    signature_id = await _material_sign(
+        session,
+        record_type="inventory_adjustment_request",
+        action="reject",
+        actor_user_id=actor_user_id,
+        record_version=request.version,
+        record_hash=inventory_adjustment_request_record_hash(request),
+        challenge_id=cmd.challenge_id,
+        reauth_password=cmd.reauth_password,
+        reason=cmd.reason,
+    )
+    if signature_id is None:
+        raise AdjustmentApprovalRequiredError("Adjustment rejection requires a signature (Document 106 P1)")
+
+    old_status = request.status
+    request.status = "rejected"
+    request.signature_id = signature_id
+    request.approved_by_user_id = actor_user_id
+    request.approved_at = datetime.now(timezone.utc)
+    request.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=site_id,
+        aggregate_type="inventory_adjustment_request",
+        aggregate_id=request.id,
+        aggregate_version=request.version,
+        action="Rejected",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        old_value={"status": old_status},
+        new_value={"status": request.status},
+        signature_id=signature_id,
+        reason=cmd.reason,
+    )
+    await write_outbox_event(
+        session,
+        event_type="InventoryAdjustmentRejected",
+        aggregate_type="inventory_adjustment_request",
+        aggregate_id=request.id,
+        aggregate_version=request.version,
+        payload={"id": str(request.id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=site_id,
+        command_type="RejectInventoryAdjustmentRequest",
+        aggregate_type="inventory_adjustment_request",
+        aggregate_id=request.id,
+        expected_version=cmd.expected_version,
+        resulting_version=request.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=request.id,
+        resulting_version=request.version,
+        audit_event_id=audit_event.id,
+        signature_id=signature_id,
+        correlation_id=correlation_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CreateDestructionRequest / ExecuteDestruction — CON-FR-015/016/017/018. Document 106 row 56 registers
 # exactly one signer for `execute` (`Performed`, count=1, no independence, no reason) — `witnesses` is
@@ -4702,7 +4917,7 @@ async def create_destruction_request(
         dispensed_container_id=cmd.dispensed_container_id,
         quantity=cmd.quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         reason=cmd.reason,
         method=cmd.method,
         vendor_name=cmd.vendor_name,

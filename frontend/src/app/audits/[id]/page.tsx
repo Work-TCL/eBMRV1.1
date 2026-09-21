@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDate,
   formatDateTime,
   isOverdue,
@@ -41,6 +40,19 @@ type FindingAction = "respond" | "verify";
 // SG-138: no Document 106 policy rows for internal_audit start/close or audit_finding.verify.
 const SIGNATURE_GATED: (AuditAction | FindingAction)[] = ["start", "close", "verify"];
 
+// The exact permission code app/modules/qms/internal_audit_router.py checks for each action. Note
+// internal_audit.start and .finding.add/.finding.response are held by QA Reviewer, NOT QA Releaser
+// (only .close and .finding.verify are QA Releaser) -- the old code gated "start" on the QA-Releaser-
+// class canApproveQms, which would have hidden the Start button from the QA Reviewer who actually holds
+// it (audit finding 2026-09-18).
+const PERMISSION_FOR_ACTION: Record<AuditAction | FindingAction, string> = {
+  start: "internal_audit.start",
+  add_finding: "internal_audit.finding.add",
+  close: "internal_audit.close",
+  respond: "internal_audit.finding.response",
+  verify: "internal_audit.finding.verify",
+};
+
 const FINDING_SEVERITIES = ["critical", "major", "minor", "observation"];
 // app/modules/qms/internal_audit_models.py FINDING_STATES — a finding is closed once VERIFIED.
 const FINDING_CLOSED_STATES = ["VERIFIED"];
@@ -54,9 +66,9 @@ export default function AuditDetailPage({ params }: { params: Promise<{ id: stri
 
   const openFindings = data?.findings.filter((f) => !FINDING_CLOSED_STATES.includes(f.state)) ?? [];
 
-  const canStart = data?.state === "SCHEDULED" && canApproveQms(me);
-  const canAddFinding = (data?.state === "IN_PROGRESS" || data?.state === "FINDINGS_OPEN") && canInvestigateQms(me);
-  const canClose = data?.state === "FINDINGS_OPEN" && openFindings.length === 0 && canApproveQms(me);
+  const canStart = data?.state === "SCHEDULED" && hasPermission(me, PERMISSION_FOR_ACTION.start);
+  const canAddFinding = (data?.state === "IN_PROGRESS" || data?.state === "FINDINGS_OPEN") && hasPermission(me, PERMISSION_FOR_ACTION.add_finding);
+  const canClose = data?.state === "FINDINGS_OPEN" && openFindings.length === 0 && hasPermission(me, PERMISSION_FOR_ACTION.close);
 
   return (
     <QmsDetailShell
@@ -168,12 +180,12 @@ export default function AuditDetailPage({ params }: { params: Promise<{ id: stri
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <div className="flex gap-2 justify-end">
-                            {!closed && canInvestigateQms(me) && (
+                            {!closed && hasPermission(me, PERMISSION_FOR_ACTION.respond) && (
                               <Button size="sm" variant="secondary" onClick={() => setFinding({ record: f, action: "respond" })}>
                                 Respond
                               </Button>
                             )}
-                            {!closed && canApproveQms(me) && (
+                            {!closed && hasPermission(me, PERMISSION_FOR_ACTION.verify) && (
                               <Button size="sm" variant="secondary" onClick={() => setFinding({ record: f, action: "verify" })}>
                                 <Icon name="pen" /> Verify
                               </Button>

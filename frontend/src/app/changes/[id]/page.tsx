@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDate,
   formatDateTime,
   isOverdue,
@@ -91,6 +90,20 @@ const LABEL: Record<Transition, string> = {
   close: "Close",
 };
 
+// The exact permission code app/modules/qms/change_router.py checks for each transition. Note
+// change.impact and change.verify are NOT held by Supervisor (unlike change.task.add/.implement) --
+// the old shared "investigator" bucket lumped all four together and would have shown Supervisor a
+// button it has no backend grant for (audit finding 2026-09-18).
+const PERMISSION_FOR_TRANSITION: Record<Transition, string> = {
+  impact: "change.impact",
+  approve: "change.approve",
+  add_task: "change.task.add",
+  implement: "change.implement",
+  verify: "change.verify",
+  make_effective: "change.make_effective",
+  close: "change.close",
+};
+
 export default function ChangeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { me } = useMe();
@@ -98,8 +111,7 @@ export default function ChangeDetailPage({ params }: { params: Promise<{ id: str
   const { data, loading, error, reload } = useApiResource<ChangeDetail>(`/qms/v1/changes/${id}`);
 
   const allowed = data ? (ALLOWED_FROM[data.state] ?? []) : [];
-  const canDo = (t: Transition) =>
-    allowed.includes(t) && (SIGNATURE_GATED.includes(t) || t === "make_effective" ? canApproveQms(me) : canInvestigateQms(me));
+  const canDo = (t: Transition) => allowed.includes(t) && hasPermission(me, PERMISSION_FOR_TRANSITION[t]);
 
   return (
     <QmsDetailShell

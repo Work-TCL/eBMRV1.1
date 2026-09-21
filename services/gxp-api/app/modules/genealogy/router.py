@@ -24,11 +24,28 @@ def _node_dict(node) -> dict:
     }
 
 
+def _edge_dict(edge) -> dict:
+    return {
+        "id": str(edge.id),
+        "from_node_id": str(edge.from_node_id),
+        "to_node_id": str(edge.to_node_id),
+        "edge_type": edge.edge_type,
+        "quantity": str(edge.quantity) if edge.quantity is not None else None,
+        "uom": edge.uom,
+        "step_id": str(edge.step_id) if edge.step_id else None,
+        "source_event_id": str(edge.source_event_id) if edge.source_event_id else None,
+        "state": edge.state,
+        "supersedes_edge_id": str(edge.supersedes_edge_id) if edge.supersedes_edge_id else None,
+        "created_at": edge.created_at.isoformat(),
+    }
+
+
 def _trace_dict(trace: dict) -> dict:
     return {
         "root_node_id": str(trace["root_node_id"]),
         "nodes": [_node_dict(n) for n in trace["nodes"]],
         "edge_ids": [str(e) for e in trace["edge_ids"]],
+        "edges": [_edge_dict(e) for e in trace["edges"]],
         "truncated": trace["truncated"],
     }
 

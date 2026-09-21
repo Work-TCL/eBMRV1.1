@@ -68,7 +68,7 @@ async def get_ancestors(session: AsyncSession, node_id: uuid.UUID, *, max_depth:
     are validated acyclic at write time, GEN-FR-024)."""
     await get_node(session, node_id)  # 404s cleanly if the root doesn't exist
     visited: dict[uuid.UUID, int] = {}
-    edge_ids: set[uuid.UUID] = set()
+    edges_by_id: dict[uuid.UUID, GenealogyEdge] = {}
     frontier = {node_id}
     depth = 0
     truncated = False
@@ -79,7 +79,7 @@ async def get_ancestors(session: AsyncSession, node_id: uuid.UUID, *, max_depth:
         depth += 1
         next_frontier: set[uuid.UUID] = set()
         for e in edges:
-            edge_ids.add(e.id)
+            edges_by_id[e.id] = e
             if e.from_node_id not in visited:
                 visited[e.from_node_id] = depth
                 next_frontier.add(e.from_node_id)
@@ -91,7 +91,13 @@ async def get_ancestors(session: AsyncSession, node_id: uuid.UUID, *, max_depth:
         if visited
         else []
     )
-    return {"root_node_id": node_id, "nodes": nodes, "edge_ids": list(edge_ids), "truncated": truncated}
+    return {
+        "root_node_id": node_id,
+        "nodes": nodes,
+        "edge_ids": list(edges_by_id.keys()),
+        "edges": list(edges_by_id.values()),
+        "truncated": truncated,
+    }
 
 
 async def _one_hop_descendants(session: AsyncSession, node_id: uuid.UUID, edge_types: tuple[str, ...]) -> list[GenealogyEdge]:
@@ -112,7 +118,7 @@ async def get_descendants(session: AsyncSession, node_id: uuid.UUID, *, max_dept
     """GEN-FR-003 forward trace: mirror of get_ancestors, walking edges forward."""
     await get_node(session, node_id)
     visited: dict[uuid.UUID, int] = {}
-    edge_ids: set[uuid.UUID] = set()
+    edges_by_id: dict[uuid.UUID, GenealogyEdge] = {}
     frontier = {node_id}
     depth = 0
     truncated = False
@@ -123,7 +129,7 @@ async def get_descendants(session: AsyncSession, node_id: uuid.UUID, *, max_dept
         depth += 1
         next_frontier: set[uuid.UUID] = set()
         for e in edges:
-            edge_ids.add(e.id)
+            edges_by_id[e.id] = e
             if e.to_node_id not in visited:
                 visited[e.to_node_id] = depth
                 next_frontier.add(e.to_node_id)
@@ -135,7 +141,13 @@ async def get_descendants(session: AsyncSession, node_id: uuid.UUID, *, max_dept
         if visited
         else []
     )
-    return {"root_node_id": node_id, "nodes": nodes, "edge_ids": list(edge_ids), "truncated": truncated}
+    return {
+        "root_node_id": node_id,
+        "nodes": nodes,
+        "edge_ids": list(edges_by_id.keys()),
+        "edges": list(edges_by_id.values()),
+        "truncated": truncated,
+    }
 
 
 FINAL_PRODUCT_NODE_TYPES = (
@@ -232,6 +244,43 @@ async def create_node(
         correlation_id=correlation_id,
     )
     return node
+
+
+async def get_or_create_node(
+    session: AsyncSession,
+    *,
+    site_id: uuid.UUID,
+    node_type: str,
+    authoritative_record_type: str,
+    authoritative_record_id: uuid.UUID,
+    business_ref: str | None = None,
+    authoritative_version: int | None = None,
+    record_hash: str | None = None,
+    actor_user_id: uuid.UUID,
+) -> GenealogyNode:
+    """2026-09-19, project-owner-directed: the real event-driven population Document 13 §8 always intended
+    (MaterialConsumed/DrugBatchProduced/...) but that this module's own docstring above notes never got
+    wired because those producing modules didn't exist yet when Document 13 was built. `create_node()`
+    itself has no dedup check (by design -- it's a thin, one-shot write primitive used directly by tests
+    today), so a producer calling it on every event would create a duplicate node per call. This wraps it
+    with the lookup a real producer needs: one node per (authoritative_record_type, authoritative_record_id)
+    pair, looked up first and reused, so `issue_material_to_batch()`/`complete_production()` etc. can call
+    this on every event without needing their own dedup logic or an idempotency table of their own."""
+    existing = (
+        await session.execute(
+            select(GenealogyNode).where(
+                GenealogyNode.authoritative_record_type == authoritative_record_type,
+                GenealogyNode.authoritative_record_id == authoritative_record_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    return await create_node(
+        session, site_id=site_id, node_type=node_type, business_ref=business_ref,
+        authoritative_record_type=authoritative_record_type, authoritative_record_id=authoritative_record_id,
+        authoritative_version=authoritative_version, record_hash=record_hash, actor_user_id=actor_user_id,
+    )
 
 
 async def _would_close_cycle(session: AsyncSession, from_node_id: uuid.UUID, to_node_id: uuid.UUID) -> bool:

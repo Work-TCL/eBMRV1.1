@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, clientPagedFetcher, formatDateTime, holdsAnyRole, newIdempotencyKey } from "@/lib/api";
-import { useApiResource, useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
+import { api, ApiError, clientPagedFetcher, downloadEvidence, formatDateTime, hasPermission, newIdempotencyKey, type Me } from "@/lib/api";
+import { useApiResource, useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table } from "@/components/ui/Table";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Banner } from "@/components/ui/Banner";
 import { KpiRow, KpiTile } from "@/components/ui/KpiTile";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
@@ -22,11 +23,46 @@ import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { RepeatableRows, buildRepeatArray, type RepeatRow, type RepeatSubField } from "@/components/shared/RepeatableFields";
 
+// §19 #33's own finding: the Batch ID was plain, selectable UUID text with no copy affordance at all --
+// a tester had to click-drag/select it by hand. `document.execCommand` fallback isn't needed here: every
+// deployment target for this app is a modern browser with the async Clipboard API.
+function CopyIdButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="secondary"
+      onClick={() => {
+        navigator.clipboard
+          .writeText(value)
+          .then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          })
+          .catch(() => {
+            /* clipboard permission denied - the id is still selectable text, nothing else to fall back to */
+          });
+      }}
+    >
+      {copied ? "Copied" : "Copy"}
+    </Button>
+  );
+}
+
 function isNumericParameter(dataType: string): boolean {
   return ["numeric", "decimal", "number", "float", "integer"].includes(dataType.toLowerCase());
 }
 function isBooleanParameter(dataType: string): boolean {
   return ["bool", "boolean"].includes(dataType.toLowerCase());
+}
+
+// SG-048 #018, visibility-only — true only when the recipe step declared an expected hold duration AND
+// the hold has been open longer than it. Purely a display flag: nothing is blocked or auto-escalated.
+function isHoldOverdue(heldAt: string | null, expectedMinutes: number | null | undefined): boolean {
+  if (!heldAt || !expectedMinutes) return false;
+  const elapsedMinutes = (Date.now() - new Date(heldAt).getTime()) / 60000;
+  return elapsedMinutes > expectedMinutes;
 }
 
 interface GxpBatch {
@@ -50,11 +86,24 @@ interface GxpBatch {
   started_at: string | null;
 }
 
+// Known-limitations fix (docs/testing/demo-gujarati/08 §8.8): the FROZEN requirements
+// commands.py::_enforce_step_equipment actually checks at step-start (distinct from any live-recipe
+// display-only equipment info elsewhere in this view).
+interface StepEquipmentRequirement {
+  equipment_class: string;
+  equipment_class_id: string | null;
+  exact_equipment_optional: boolean;
+  require_current_calibration: boolean;
+  require_current_qualification: boolean;
+  require_current_cleaning: boolean;
+}
+
 interface BatchStep {
   step_id: string;
   batch_id: string;
   recipe_step_code: string;
   required_role_code: string | null;
+  equipment_requirements: StepEquipmentRequirement[];
   state: string;
   version: number;
   assigned_subject_id: string | null;
@@ -96,6 +145,32 @@ interface StepResultRow {
   uom: string | null;
   received_at: string | null;
   signature_id: string | null;
+  // Computed server-side (commands.py::_step_result_quality_status), informational only — never blocks
+  // save/complete. Was already in the API response but not read/shown anywhere in this UI.
+  quality_status: "in_range" | "out_of_range" | "not_evaluated" | null;
+}
+
+// Recipe-declared material/equipment requirement (Document 10/21, SG-045) — display-only in this view;
+// lot consumption/reservation and specific-asset linking at execution time are not built (SG-048 #012/
+// #013 stays open).
+interface StepMaterialRequirement {
+  material_spec_version_id: string;
+  material_spec_business_id: string | null;
+  material_name: string | null;
+  target_value: string | null;
+  min_value: string | null;
+  max_value: string | null;
+  uom: string | null;
+  consume_mode: string | null;
+  substitution_allowed: boolean;
+  genealogy_required: boolean;
+}
+interface StepEquipmentRequirement {
+  equipment_class: string;
+  exact_equipment_optional: boolean;
+  require_current_calibration: boolean;
+  require_current_qualification: boolean;
+  require_current_cleaning: boolean;
 }
 
 // Recipe-declared evidence requirement (Document 10) — upload itself isn't built yet (SG-047), but the
@@ -107,6 +182,20 @@ interface StepEvidenceRequirement {
   retention_class: string | null;
 }
 
+// gxp_step_evidence_link (SG-047 half) — a link already recorded against a step. `requirement_code`, when
+// set, matches a StepEvidenceRequirement's `evidence_type` one-for-one (same symmetry commands.py's
+// complete_step() evidence-count gate uses) — was already in the API response but never read/shown here.
+interface StepEvidenceLinkRow {
+  id: string;
+  evidence_id: string;
+  evidence_version: number | null;
+  evidence_sha256: string | null;
+  media_type: string | null;
+  requirement_code: string | null;
+  linked_by: string;
+  created_at: string | null;
+}
+
 // "Step detail" — BAT-FR-005's "immutable parent instruction" + Document 11 §9's execution-UI field list
 // (instruction, section, dependencies), read from the live recipe graph (2026-09-09, client-requested).
 interface StepDetail {
@@ -116,9 +205,14 @@ interface StepDetail {
   sequence_hint: number | null;
   section_code: string | null;
   section_name: string | null;
+  // SG-048 #018, visibility-only slice — declared by the recipe step (optional); null means no overdue
+  // flag is ever computed for a hold on this step.
+  expected_hold_duration_minutes: number | null;
   predecessor_codes: string[];
   successor_codes: string[];
   evidence_requirements: StepEvidenceRequirement[];
+  material_requirements: StepMaterialRequirement[];
+  equipment_requirements: StepEquipmentRequirement[];
 }
 
 // Active step-level hold (BAT-FR-020 step scope, SG-047 further partial resolution).
@@ -127,14 +221,36 @@ interface ActiveHold {
   held_at: string | null;
 }
 
+// gxp_step_result_correction (SG-048 #023) — a request to correct one result on an already-Complete
+// step, needing an independent (not the requester) approver's signature before it takes effect.
+interface StepResultCorrectionRow {
+  correction_id: string;
+  original_result_id: string;
+  parameter_code: string | null;
+  reason_text: string;
+  corrected_value_numeric: string | null;
+  corrected_value_text: string | null;
+  corrected_value_bool: boolean | null;
+  status: "requested" | "completed";
+  requested_by_user_id: string;
+  requested_by_username: string | null;
+  approved_by_user_id: string | null;
+  approved_by_username: string | null;
+  resulting_result_id: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+}
+
 interface ExecutionView {
   batch: GxpBatch;
   steps: BatchStep[];
   blockers: ExecutionBlocker[];
   parameters_by_step_id: Record<string, StepParameter[]>;
   results_by_step_id: Record<string, StepResultRow[]>;
+  corrections_by_step_id: Record<string, StepResultCorrectionRow[]>;
   step_detail_by_step_id: Record<string, StepDetail>;
   active_hold_by_step_id: Record<string, ActiveHold>;
+  evidence_links_by_step_id: Record<string, StepEvidenceLinkRow[]>;
 }
 
 // GET /products/v1/business-ids — one row per Product Master Business ID (its latest version).
@@ -206,7 +322,7 @@ export default function BatchExecutionPage() {
     siteId ? `/batches/v1?site_id=${siteId}${state ? `&state=${state}` : ""}&_=${reloadToken}` : null
   );
 
-  const canCreate = holdsAnyRole(me, ["Admin", "Supervisor"]);
+  const canCreate = hasPermission(me, "batch_execution.create");
   const batches = list.data?.batches ?? [];
   const active = batches.filter((b) => b.state === "in_execution").length;
 
@@ -579,9 +695,7 @@ function CreateBatchModal({
           <Field label="Target quantity" required>
             <Input type="number" step="any" value={targetQty} onChange={(e) => setTargetQty(e.target.value)} required />
           </Field>
-          <Field label="UOM" required>
-            <Input value={targetUom} onChange={(e) => setTargetUom(e.target.value)} required />
-          </Field>
+          <UomSelect label="UOM" value={targetUom} onChange={setTargetUom} required />
           <Field label="Production order ref">
             <Input value={orderRef} onChange={(e) => setOrderRef(e.target.value)} />
           </Field>
@@ -625,6 +739,7 @@ function ExecutionModal({
   const [linkingEvidenceStep, setLinkingEvidenceStep] = useState<BatchStep | null>(null);
   const [handingOverStep, setHandingOverStep] = useState<BatchStep | null>(null);
   const [completingProduction, setCompletingProduction] = useState(false);
+  const [showingRecord, setShowingRecord] = useState(false);
 
   const v = view.data;
   if (!v) {
@@ -637,8 +752,8 @@ function ExecutionModal({
 
   const b = v.batch;
   const allowed = ALLOWED_FROM[b.state] ?? [];
-  const canExecute = holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
-  const canIssue = holdsAnyRole(me, ["Admin", "Supervisor"]);
+  const canExecute = hasPermission(me, "batch_execution.execute");
+  const canIssue = hasPermission(me, "batch_execution.issue");
   const hasBlockers = v.blockers.length > 0;
 
   function offered(a: Action): boolean {
@@ -686,7 +801,23 @@ function ExecutionModal({
         <Fact label="Started">{b.started_at ? formatDateTime(b.started_at) : "—"}</Fact>
         <Fact label="Production order">{b.production_order_ref ?? "—"}</Fact>
         <Fact label="Record version">{b.version}</Fact>
-        <IdFact label="Batch ID" value={b.batch_id} />
+        <IdFact
+          label="Batch ID"
+          value={b.batch_id}
+          action={
+            <>
+              <CopyIdButton value={b.batch_id} />
+              {/* §19 #33's own finding: no navigation link, query param or copy-button bridged this page
+               * to /ddcp -- a tester had to manually select/copy this UUID, go to /ddcp from the sidebar,
+               * pick the right Product family by hand, then paste it in. /ddcp now reads ?batch_id= to
+               * pre-fill its Batch field and auto-detects family for PFS/Inhalation (not Autoinjector/
+               * Coated device -- SG-175's own residual gap, not guessed here either). */}
+              <LinkButton href={`/ddcp?batch_id=${b.batch_id}`} variant="secondary" size="sm">
+                Open in DDCP <Icon name="arrow-right" />
+              </LinkButton>
+            </>
+          }
+        />
         <Fact label="Product">{b.product_name ? `${b.product_name} (${b.product_code})` : b.product_version_id}</Fact>
         <Fact label="Recipe">{b.recipe_code ? `${b.recipe_code} v${b.recipe_version_no}` : b.recipe_version_id}</Fact>
         <IdFact label="Recipe vault object" value={b.recipe_vault_object_id} />
@@ -720,6 +851,11 @@ function ExecutionModal({
                   {s.state === "on_hold" && v.active_hold_by_step_id[s.step_id] && (
                     <p className="hint" style={{ marginTop: 2 }}>
                       {v.active_hold_by_step_id[s.step_id].reason}
+                      {isHoldOverdue(v.active_hold_by_step_id[s.step_id].held_at, v.step_detail_by_step_id[s.step_id]?.expected_hold_duration_minutes) && (
+                        <span className="error-text" style={{ marginLeft: 6 }} title="Open longer than this step's declared expected hold duration — informational only, nothing is blocked or escalated automatically">
+                          <Icon name="alert-triangle" /> overdue
+                        </span>
+                      )}
                     </p>
                   )}
                 </td>
@@ -776,6 +912,9 @@ function ExecutionModal({
           Close
         </Button>
         <div className="flex gap-2 flex-wrap">
+          <Button size="sm" variant="secondary" onClick={() => setShowingRecord(true)}>
+            <Icon name="file-text" /> Batch record
+          </Button>
           {(Object.keys(ACTION_LABEL) as Action[]).filter(offered).map((a) => (
             <Button
               key={a}
@@ -794,6 +933,7 @@ function ExecutionModal({
         </div>
       </div>
 
+      {showingRecord && <BatchRecordModal batchId={b.batch_id} batchNumber={b.batch_number} onClose={() => setShowingRecord(false)} />}
       {action && (
         <BatchActionModal
           batch={b}
@@ -848,11 +988,19 @@ function ExecutionModal({
       )}
       {detailStep && (
         <StepDetailModal
+          batch={b}
           step={detailStep}
           detail={v.step_detail_by_step_id[detailStep.step_id]}
           parameters={v.parameters_by_step_id[detailStep.step_id] ?? []}
           results={v.results_by_step_id[detailStep.step_id] ?? []}
+          corrections={v.corrections_by_step_id[detailStep.step_id] ?? []}
+          evidenceLinks={v.evidence_links_by_step_id[detailStep.step_id] ?? []}
+          me={me}
           onClose={() => setDetailStep(null)}
+          onReload={() => {
+            view.reload();
+            onChanged();
+          }}
         />
       )}
       {holdingStep && (
@@ -884,6 +1032,8 @@ function ExecutionModal({
         <LinkEvidenceModal
           batch={b}
           step={linkingEvidenceStep}
+          requirements={v.step_detail_by_step_id[linkingEvidenceStep.step_id]?.evidence_requirements ?? []}
+          existingLinks={v.evidence_links_by_step_id[linkingEvidenceStep.step_id] ?? []}
           onClose={() => setLinkingEvidenceStep(null)}
           onDone={() => {
             setLinkingEvidenceStep(null);
@@ -915,6 +1065,229 @@ function ExecutionModal({
           }}
         />
       )}
+    </Modal>
+  );
+}
+
+interface BatchRecordView {
+  batch: { id: string; batch_number: string; state: string; target_qty: string; target_uom: string };
+  steps: {
+    id: string;
+    recipe_step_code: string;
+    state: string;
+    started_at: string | null;
+    completed_at: string | null;
+    results: { parameter_code: string; value: string; uom: string | null; quality_status: string | null }[];
+  }[];
+  materials_consumed: { internal_lot: string; quantity: string; uom: string; issued_at: string }[];
+  equipment_used: { equipment_asset_id: string; log_type: string; occurred_at: string }[];
+  deviations: { deviation_number: string; deviation_type: string; source_type: string; state: string }[];
+  qc_results: { sample_number: string; spec_code: string; scope_type: string; test_code: string; order_state: string; outcome: string | null }[];
+  status_history: { occurred_at: string; action: string; actor_username: string | null; actor_id: string; signature_id: string | null }[];
+}
+
+/** Client requirement #11 -- the aggregated Batch Record view (steps/results, material consumption,
+ * equipment used, deviations, QC results, signature/status history) plus a "Generate PDF" action that
+ * stores the rendered PDF as evidence owned by the batch. */
+function BatchRecordModal({ batchId, batchNumber, onClose }: { batchId: string; batchNumber: string; onClose: () => void }) {
+  const { data: record, error } = useApiResource<BatchRecordView>(`/batches/v1/${batchId}/record`);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [evidenceId, setEvidenceId] = useState<string | null>(null);
+
+  async function onGeneratePdf() {
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const receipt = await api.post<{ aggregate_id: string }>(`/batches/v1/${batchId}/record:generate-pdf`, {
+        idempotency_key: newIdempotencyKey(),
+        batch_id: batchId,
+      });
+      setEvidenceId(receipt.aggregate_id);
+    } catch (err) {
+      setGenError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed to generate batch record PDF");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Batch record — ${batchNumber}`} large>
+      {error && <p className="error-text mb-2">{error}</p>}
+      {!record && !error && <p>Loading…</p>}
+      {record && (
+        <>
+          <p className="fact-k mb-2">Steps</p>
+          <Table>
+            <thead>
+              <tr>
+                <th>Step</th>
+                <th>State</th>
+                <th>Results</th>
+              </tr>
+            </thead>
+            <tbody>
+              {record.steps.map((s) => (
+                <tr key={s.id}>
+                  <td className="font-semibold tabular">{s.recipe_step_code}</td>
+                  <td>
+                    <WorkflowStatePill state={s.state} />
+                  </td>
+                  <td className="fs-2">
+                    {s.results.length === 0
+                      ? "—"
+                      : s.results.map((r) => `${r.parameter_code}=${r.value}${r.uom ? ` ${r.uom}` : ""}`).join(", ")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+
+          <p className="fact-k mb-2 mt-4">Materials consumed</p>
+          {record.materials_consumed.length === 0 ? (
+            <p className="hint mb-2">No material issuances recorded.</p>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <th>Internal lot</th>
+                  <th>Quantity</th>
+                  <th>Issued at</th>
+                </tr>
+              </thead>
+              <tbody>
+                {record.materials_consumed.map((m, i) => (
+                  <tr key={i}>
+                    <td className="tabular fs-2">{m.internal_lot}</td>
+                    <td className="tabular fs-2">
+                      {m.quantity} {m.uom}
+                    </td>
+                    <td className="fs-2">{formatDateTime(m.issued_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+
+          <p className="fact-k mb-2 mt-4">Equipment used</p>
+          {record.equipment_used.length === 0 ? (
+            <p className="hint mb-2">No equipment use logged.</p>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <th>Equipment asset</th>
+                  <th>Log type</th>
+                  <th>Occurred at</th>
+                </tr>
+              </thead>
+              <tbody>
+                {record.equipment_used.map((u, i) => (
+                  <tr key={i}>
+                    <td className="tabular fs-2">{u.equipment_asset_id}</td>
+                    <td className="fs-2">{u.log_type}</td>
+                    <td className="fs-2">{formatDateTime(u.occurred_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+
+          <p className="fact-k mb-2 mt-4">Deviations</p>
+          {record.deviations.length === 0 ? (
+            <p className="hint mb-2">No deviations attributed to this batch.</p>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <th>Deviation</th>
+                  <th>Type</th>
+                  <th>State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {record.deviations.map((d, i) => (
+                  <tr key={i}>
+                    <td className="tabular fs-2">{d.deviation_number}</td>
+                    <td className="fs-2">{d.deviation_type}</td>
+                    <td className="fs-2">{d.state}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+
+          <p className="fact-k mb-2 mt-4">QC results</p>
+          {record.qc_results.length === 0 ? (
+            <p className="hint mb-2">No QC results attributed to this batch.</p>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <th>Sample</th>
+                  <th>Spec</th>
+                  <th>Scope</th>
+                  <th>Test</th>
+                  <th>Outcome</th>
+                </tr>
+              </thead>
+              <tbody>
+                {record.qc_results.map((q, i) => (
+                  <tr key={i}>
+                    <td className="tabular fs-2">{q.sample_number}</td>
+                    <td className="fs-2">{q.spec_code}</td>
+                    <td className="fs-2">{q.scope_type}</td>
+                    <td className="fs-2">{q.test_code}</td>
+                    <td className="fs-2">{q.outcome ?? "pending"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+
+          <p className="fact-k mb-2 mt-4">Status history</p>
+          <Table>
+            <thead>
+              <tr>
+                <th>Occurred at</th>
+                <th>Action</th>
+                <th>Actor</th>
+                <th>Signed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {record.status_history.map((e, i) => (
+                <tr key={i}>
+                  <td className="fs-2">{formatDateTime(e.occurred_at)}</td>
+                  <td className="fs-2">{e.action}</td>
+                  <td className="fs-2">{e.actor_username ?? e.actor_id}</td>
+                  <td className="fs-2">{e.signature_id ? "Yes" : "No"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </>
+      )}
+
+      {genError && <p className="error-text mt-3">{genError}</p>}
+      {evidenceId && (
+        <div className="mt-3">
+          <Banner tone="ok" title="Batch record PDF generated">
+            <Button size="sm" variant="secondary" onClick={() => downloadEvidence(evidenceId)}>
+              <Icon name="download" /> Download PDF
+            </Button>
+          </Banner>
+        </div>
+      )}
+
+      <div className="flex justify-between gap-3 mt-4">
+        <Button variant="secondary" onClick={onClose}>
+          Close
+        </Button>
+        <Button variant="primary" onClick={onGeneratePdf} disabled={generating || !record}>
+          <Icon name="file-text" /> {generating ? "Generating…" : "Generate PDF"}
+        </Button>
+      </div>
     </Modal>
   );
 }
@@ -1068,20 +1441,39 @@ function ProductionCompleteModal({
 // "Step detail" — read-only, BAT-FR-005/§9's execution-UI field list (instruction, section, dependencies,
 // evidence requirements, target/limits) plus current progress (2026-09-09, client-requested).
 function StepDetailModal({
+  batch,
   step,
   detail,
   parameters,
   results,
+  corrections,
+  evidenceLinks,
+  me,
   onClose,
+  onReload,
 }: {
+  batch: GxpBatch;
   step: BatchStep;
   detail: StepDetail | undefined;
   parameters: StepParameter[];
   results: StepResultRow[];
+  corrections: StepResultCorrectionRow[];
+  evidenceLinks: StepEvidenceLinkRow[];
+  me: Me | null;
   onClose: () => void;
+  onReload: () => void;
 }) {
   const latestByCode = new Map<string, StepResultRow>();
   for (const r of results) latestByCode.set(r.parameter_code, r);
+  const canCorrect = hasPermission(me, "batch_step.correct");
+  const [correctingResult, setCorrectingResult] = useState<{ result: StepResultRow; parameter: StepParameter | undefined } | null>(null);
+  const [approvingCorrection, setApprovingCorrection] = useState<StepResultCorrectionRow | null>(null);
+  // requirement_code == evidence_type (commands.py::complete_step()'s own naming symmetry) — counts here
+  // mirror exactly what the Complete-step evidence gate checks, so "N of M linked" never disagrees with it.
+  const linkedCountByType = new Map<string, number>();
+  for (const link of evidenceLinks) {
+    if (link.requirement_code) linkedCountByType.set(link.requirement_code, (linkedCountByType.get(link.requirement_code) ?? 0) + 1);
+  }
 
   return (
     <Modal open onClose={onClose} title={`Step detail - ${step.recipe_step_code}`} large>
@@ -1143,6 +1535,7 @@ function StepDetailModal({
                 <th>Target / range</th>
                 <th>Recorded value</th>
                 <th>When</th>
+                {step.state === "complete" && canCorrect && <th></th>}
               </tr>
             </thead>
             <tbody>
@@ -1168,8 +1561,24 @@ function StepDetailModal({
                     <td className="tabular fs-2">
                       {p.target_value ? `target ${p.target_value}` : p.min_value || p.max_value ? `${p.min_value ?? "—"}–${p.max_value ?? "—"}` : "—"}
                     </td>
-                    <td className="tabular fs-2">{recorded ?? <span className="text-muted">not recorded</span>}</td>
+                    <td className="tabular fs-2">
+                      {recorded ?? <span className="text-muted">not recorded</span>}
+                      {r?.quality_status === "out_of_range" && (
+                        <span className="error-text" style={{ marginLeft: 6 }} title="Outside the recipe's declared min/max — captured, does not block save or Complete">
+                          <Icon name="alert-triangle" /> out of range
+                        </span>
+                      )}
+                    </td>
                     <td className="tabular fs-2">{r?.received_at ? formatDateTime(r.received_at) : "—"}</td>
+                    {step.state === "complete" && canCorrect && (
+                      <td style={{ textAlign: "right" }}>
+                        {r && (
+                          <Button size="sm" variant="secondary" onClick={() => setCorrectingResult({ result: r, parameter: p })}>
+                            <Icon name="pen" /> Correct
+                          </Button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -1177,6 +1586,42 @@ function StepDetailModal({
           </Table>
         )}
       </div>
+
+      {corrections.length > 0 && (
+        <div className="mt-4">
+          <p className="fact-k mb-2">Result corrections</p>
+          <Table>
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>Requested by</th>
+                <th>Reason</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {corrections.map((c) => (
+                <tr key={c.correction_id}>
+                  <td className="font-semibold tabular">{c.parameter_code ?? "—"}</td>
+                  <td className="fs-2">{c.requested_by_username ?? c.requested_by_user_id}</td>
+                  <td className="fs-2">{c.reason_text}</td>
+                  <td className="fs-2">
+                    {c.status === "requested" ? "Awaiting independent approval" : `Approved by ${c.approved_by_username ?? c.approved_by_user_id}`}
+                  </td>
+                  <td style={{ textAlign: "right" }}>
+                    {c.status === "requested" && canCorrect && me?.user_id !== c.requested_by_user_id && (
+                      <Button size="sm" variant="primary" onClick={() => setApprovingCorrection(c)}>
+                        <Icon name="check-circle" /> Approve
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      )}
 
       <div className="mt-4">
         <p className="fact-k mb-2">Evidence requirements</p>
@@ -1188,17 +1633,33 @@ function StepDetailModal({
               <tr>
                 <th>Evidence type</th>
                 <th>Count required</th>
+                <th>Linked so far</th>
                 <th>Allowed file types</th>
               </tr>
             </thead>
             <tbody>
-              {detail.evidence_requirements.map((e, i) => (
-                <tr key={`${e.evidence_type}-${i}`}>
-                  <td className="fs-2">{e.evidence_type}</td>
-                  <td className="tabular fs-2">{e.required_count}</td>
-                  <td className="fs-2">{e.allowed_mime_types ?? <span className="text-muted">any</span>}</td>
-                </tr>
-              ))}
+              {detail.evidence_requirements.map((e, i) => {
+                const linked = linkedCountByType.get(e.evidence_type) ?? 0;
+                const met = linked >= e.required_count;
+                return (
+                  <tr key={`${e.evidence_type}-${i}`}>
+                    <td className="fs-2">{e.evidence_type}</td>
+                    <td className="tabular fs-2">{e.required_count}</td>
+                    <td className="tabular fs-2">
+                      {met ? (
+                        <span className="flex items-center gap-1">
+                          <Icon name="check-circle" /> {linked} of {e.required_count}
+                        </span>
+                      ) : (
+                        <span className="error-text" style={{ marginTop: 0 }}>
+                          <Icon name="alert-triangle" /> {linked} of {e.required_count}
+                        </span>
+                      )}
+                    </td>
+                    <td className="fs-2">{e.allowed_mime_types ?? <span className="text-muted">any</span>}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </Table>
         )}
@@ -1208,12 +1669,233 @@ function StepDetailModal({
         </p>
       </div>
 
+      <div className="mt-4">
+        <p className="fact-k mb-2">Material requirements</p>
+        {!detail || detail.material_requirements.length === 0 ? (
+          <p className="hint">This step has no declared material requirement.</p>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <th>Material</th>
+                <th>Target / range</th>
+                <th>Consume mode</th>
+                <th>Substitution / genealogy</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.material_requirements.map((m, i) => (
+                <tr key={`${m.material_spec_version_id}-${i}`}>
+                  <td className="fs-2">
+                    {m.material_name ? `${m.material_name} (${m.material_spec_business_id})` : m.material_spec_version_id}
+                  </td>
+                  <td className="tabular fs-2">
+                    {m.target_value ? `target ${m.target_value}${m.uom ? ` ${m.uom}` : ""}` : `${m.min_value ?? "—"}–${m.max_value ?? "—"}${m.uom ? ` ${m.uom}` : ""}`}
+                  </td>
+                  <td className="fs-2">{m.consume_mode ?? <span className="text-muted">—</span>}</td>
+                  <td className="fs-2">
+                    {m.substitution_allowed ? "Substitution allowed" : "No substitution"}
+                    {m.genealogy_required ? ", genealogy required" : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+        <p className="hint mt-2">
+          Declared by the recipe, shown for reference only — lot reservation/consumption at execution
+          time is not built yet (SG-045/SG-048).
+        </p>
+      </div>
+
+      <div className="mt-4">
+        <p className="fact-k mb-2">Equipment requirements</p>
+        {!detail || detail.equipment_requirements.length === 0 ? (
+          <p className="hint">This step has no declared equipment requirement.</p>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <th>Equipment class</th>
+                <th>Specific asset required?</th>
+                <th>Calibration / qualification / cleaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.equipment_requirements.map((eq, i) => (
+                <tr key={`${eq.equipment_class}-${i}`}>
+                  <td className="fs-2">{eq.equipment_class}</td>
+                  <td className="fs-2">{eq.exact_equipment_optional ? "No (any qualifying asset)" : "Yes"}</td>
+                  <td className="fs-2">
+                    {[
+                      eq.require_current_calibration && "calibration",
+                      eq.require_current_qualification && "qualification",
+                      eq.require_current_cleaning && "cleaning",
+                    ]
+                      .filter(Boolean)
+                      .join(", ") || <span className="text-muted">none required</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+        <p className="hint mt-2">
+          Declared by the recipe, shown for reference only — linking a specific equipment asset at
+          execution time is not built yet (SG-045/SG-048).
+        </p>
+      </div>
+
       <div className="flex justify-end mt-4">
         <Button variant="secondary" onClick={onClose}>
           Close
         </Button>
       </div>
+
+      {correctingResult && (
+        <RequestCorrectionModal
+          batch={batch}
+          step={step}
+          result={correctingResult.result}
+          parameter={correctingResult.parameter}
+          onClose={() => setCorrectingResult(null)}
+          onDone={() => {
+            setCorrectingResult(null);
+            onReload();
+          }}
+        />
+      )}
+      {approvingCorrection && (
+        <ApproveCorrectionModal
+          batch={batch}
+          step={step}
+          correction={approvingCorrection}
+          onClose={() => setApprovingCorrection(null)}
+          onDone={() => {
+            setApprovingCorrection(null);
+            onReload();
+          }}
+        />
+      )}
     </Modal>
+  );
+}
+
+// BAT-FR-023, SG-048 #023 — the request half of the existing 2-signature correction flow (backend built
+// 2026-09-14, no UI until now). Bound to the *result's* own version/hash, not the step's.
+function RequestCorrectionModal({
+  batch,
+  step,
+  result,
+  parameter,
+  onClose,
+  onDone,
+}: {
+  batch: GxpBatch;
+  step: BatchStep;
+  result: StepResultRow;
+  parameter: StepParameter | undefined;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reasonText, setReasonText] = useState("");
+  const dataType = parameter?.data_type ?? result.data_type;
+  const currentDisplay = result.value_bool !== null ? (result.value_bool ? "true" : "false") : (result.value_numeric ?? result.value_text ?? "—");
+  const [value, setValue] = useState<string>(result.value_bool !== null ? (result.value_bool ? "true" : "false") : (result.value_numeric ?? result.value_text ?? ""));
+
+  return (
+    <SignatureCeremony
+      open
+      onClose={onClose}
+      onDone={onDone}
+      challengePath={`/batches/v1/${batch.batch_id}/steps/${step.step_id}/results/${result.result_id}/signature-challenges`}
+      action="correct_request"
+      title={
+        <span className="flex items-center gap-2">
+          <Icon name="pen" /> Request correction - {result.parameter_code}
+        </span>
+      }
+      summary="Requesting a correction to a completed step's result is a signed act. An independent approver (not you) must sign it before the correction takes effect."
+      submitLabel="Sign & request"
+      reason="none"
+      disabled={!reasonText.trim() || !value.trim()}
+      extraFields={
+        <>
+          <Field label="Corrected value" hint={`Current value: ${currentDisplay}`}>
+            {isBooleanParameter(dataType) ? (
+              <Select value={value} onChange={(e) => setValue(e.target.value)}>
+                <option value="">—</option>
+                <option value="true">Pass / Yes</option>
+                <option value="false">Fail / No</option>
+              </Select>
+            ) : (
+              <Input type={isNumericParameter(dataType) ? "number" : "text"} step="any" value={value} onChange={(e) => setValue(e.target.value)} />
+            )}
+          </Field>
+          <Field label="Reason" required hint="Why this result needs correcting — part of the permanent record.">
+            <textarea className="input" rows={3} value={reasonText} onChange={(e) => setReasonText(e.target.value)} />
+          </Field>
+        </>
+      }
+      onSign={(payload) =>
+        api.post(`/batches/v1/${batch.batch_id}/steps/${step.step_id}/correct`, {
+          idempotency_key: payload.idempotency_key,
+          batch_id: batch.batch_id,
+          step_id: step.step_id,
+          result_id: result.result_id,
+          reason_text: reasonText,
+          challenge_id: payload.challenge_id,
+          reauth_password: payload.reauth_password,
+          ...(isBooleanParameter(dataType)
+            ? { corrected_value_bool: value === "true" }
+            : isNumericParameter(dataType)
+              ? { corrected_value_numeric: value }
+              : { corrected_value_text: value }),
+        })
+      }
+    />
+  );
+}
+
+// BAT-FR-023, SG-048 #023 — the approval half. SoD is enforced server-side (requester cannot approve
+// their own request); the button that opens this modal is already hidden for the requester client-side.
+function ApproveCorrectionModal({
+  batch,
+  step,
+  correction,
+  onClose,
+  onDone,
+}: {
+  batch: GxpBatch;
+  step: BatchStep;
+  correction: StepResultCorrectionRow;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  return (
+    <SignatureCeremony
+      open
+      onClose={onClose}
+      onDone={onDone}
+      challengePath={`/batches/v1/${batch.batch_id}/steps/${step.step_id}/results/${correction.original_result_id}/signature-challenges`}
+      action="correct_approve"
+      title={
+        <span className="flex items-center gap-2">
+          <Icon name="check-circle" /> Approve correction - {correction.parameter_code}
+        </span>
+      }
+      summary={`Requested by ${correction.requested_by_username ?? correction.requested_by_user_id}: "${correction.reason_text}". Approving is an independent signed act.`}
+      submitLabel="Sign & approve"
+      reason="none"
+      onSign={(payload) =>
+        api.post(`/batches/v1/${batch.batch_id}/steps/${step.step_id}/corrections/${correction.correction_id}/approve`, {
+          idempotency_key: payload.idempotency_key,
+          correction_id: correction.correction_id,
+          challenge_id: payload.challenge_id,
+          reauth_password: payload.reauth_password,
+        })
+      }
+    />
   );
 }
 
@@ -1312,6 +1994,15 @@ function StartStepModal({
   const { busy, error, run } = useCommand(onDone);
   const [overrideReason, setOverrideReason] = useState("");
   const roleMismatch = error?.startsWith("STEP_ROLE_MISMATCH");
+  // Known-limitations fix (docs/testing/demo-gujarati/08 §8.8): one picker per declared equipment
+  // requirement -- the backend (commands.py::_enforce_step_equipment) is the real authority on whether a
+  // chosen asset actually satisfies the requirement (class match + calibration/qualification/cleaning
+  // currency), so this picker doesn't try to pre-filter by eligibility, only lets the operator name which
+  // asset(s) they're using.
+  const equipmentRequirements = step.equipment_requirements ?? [];
+  const [equipmentAssetIds, setEquipmentAssetIds] = useState<string[]>(() => equipmentRequirements.map(() => ""));
+  const entities = useEntityOptions();
+  const equipmentError = error?.startsWith("EQUIPMENT_");
 
   return (
     <Modal open onClose={onClose} title={`Start step ${step.recipe_step_code}`}>
@@ -1325,6 +2016,9 @@ function StartStepModal({
               step_id: step.step_id,
               expected_version: step.version,
               override_reason: overrideReason.trim() || undefined,
+              ...(equipmentAssetIds.some((id) => id)
+                ? { equipment_asset_ids: equipmentAssetIds.filter((id) => id) }
+                : {}),
             })
           );
         }}
@@ -1340,6 +2034,34 @@ function StartStepModal({
             <WorkflowStatePill state={step.state} />
           </Fact>
         </FactGrid>
+        {equipmentRequirements.length > 0 && (
+          <div className="mt-3">
+            <p className="hint mb-2">
+              This step declares {equipmentRequirements.length} equipment requirement
+              {equipmentRequirements.length === 1 ? "" : "s"} - name which asset you are using for each.
+            </p>
+            {equipmentRequirements.map((req, i) => (
+              <EntityPickerField
+                key={i}
+                label={`Equipment for "${req.equipment_class}"${req.exact_equipment_optional ? "" : " (required)"}`}
+                hint={
+                  [
+                    req.require_current_calibration && "requires current calibration",
+                    req.require_current_qualification && "requires current qualification",
+                    req.require_current_cleaning && "requires current cleaning",
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || undefined
+                }
+                value={equipmentAssetIds[i] ?? ""}
+                onChange={(v) => setEquipmentAssetIds((prev) => prev.map((id, idx) => (idx === i ? v : id)))}
+                options={entities.equipment}
+                status={entities.equipmentStatus}
+                kind="equipment asset"
+              />
+            ))}
+          </div>
+        )}
         {step.required_role_code && (
           <div className="mt-3">
             <label className="hint" style={{ display: "block", marginBottom: 4 }}>
@@ -1362,6 +2084,8 @@ function StartStepModal({
           <p className="error-text mt-3 mb-2">
             {roleMismatch
               ? "This step is reserved for another role. Enter an override reason above and retry (Supervisor/Admin only)."
+              : equipmentError
+              ? `Equipment requirement not satisfied: ${error}`
               : error}
           </p>
         )}
@@ -1378,31 +2102,140 @@ function StartStepModal({
   );
 }
 
-const EVIDENCE_LINK_SUBFIELDS: RepeatSubField[] = [
-  { name: "evidence_id", label: "Evidence object ID", required: true, placeholder: "From Platform ops → Evidence operations" },
-  { name: "evidence_sha256", label: "Evidence SHA-256", required: true },
-  { name: "media_type", label: "Media type" },
-  { name: "requirement_code", label: "Requirement code", placeholder: "Matches a declared evidence requirement" },
-];
+// GET /evidence/v1/objects?owner_type=&owner_id= — one row per staged/finalized evidence object owned
+// by this step (convention: evidence is staged with owner_type "batch_step", owner_id = the step id).
+interface EvidenceObjectOption {
+  id: string;
+  filename: string | null;
+  mime_type: string;
+  state: string;
+  content_hash: string | null;
+}
+
+/** Local to this modal only, same "page-local fetch, not promoted to useEntityOptions()" precedent as
+ * `useEligibleSterileItems` on the aseptic page — nothing else needs an owner-filtered evidence list yet.
+ *
+ * Only FINALIZED/ARCHIVED objects are offered — a STAGED object has no `content_hash` yet (it's computed
+ * at finalize time), so picking one auto-filled `evidence_sha256` with an empty string, which the backend
+ * silently dropped from the request body (an empty coerced value isn't sent) and rejected as a 422
+ * "field required" — a confusing failure for what looked like a normal pick-and-submit. `pendingCount`
+ * (STAGED objects filtered out) drives a hint distinguishing "nothing staged yet" from "staged but still
+ * needs finalizing". */
+function useStepEvidenceOptions(stepId: string): {
+  options: EntityOption[];
+  status: EntityOptionsStatus;
+  byId: Map<string, EvidenceObjectOption>;
+  pendingCount: number;
+} {
+  const [rows, setRows] = useState<EvidenceObjectOption[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ evidence_objects: EvidenceObjectOption[] }>(`/evidence/v1/objects?owner_type=batch_step&owner_id=${stepId}`)
+      .then((res) => {
+        if (cancelled) return;
+        setRows(res.evidence_objects);
+        setStatus(res.evidence_objects.some((r) => r.state === "FINALIZED" || r.state === "ARCHIVED") ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [stepId]);
+
+  const linkable = rows.filter((r) => r.state === "FINALIZED" || r.state === "ARCHIVED");
+  const byId = new Map(linkable.map((r) => [r.id, r]));
+  const options: EntityOption[] = linkable.map((r) => ({
+    value: r.id,
+    label: `${r.filename ?? r.id} — ${r.state}${r.content_hash ? ` (${r.content_hash.slice(0, 10)}…)` : ""}`,
+  }));
+  const pendingCount = rows.length - linkable.length;
+  return { options, status, byId, pendingCount };
+}
+
+/** `requirementOptions` comes from the step's declared `evidence_requirements` (already in scope on the
+ * modal — no extra fetch needed). `complete_step()` gates on `link.requirement_code == req.evidence_type`
+ * as a plain, case-sensitive dict-key match (services/gxp-api .../commands.py `complete_step()`), and the
+ * live "N of M required" counter above uses the same comparison — a free-text field that doesn't exactly
+ * match silently linked evidence nobody's requirement checklist ever counted (the bug this fixes: a link
+ * submitted fine, but "photo: 0 of 1 linked" never moved). A dropdown of the real `evidence_type` values
+ * makes a mismatch impossible. Left free text when a step has no declared requirements at all. */
+function evidenceLinkSubfields(
+  evidenceOptions: EntityOption[],
+  evidenceOptionsStatus: EntityOptionsStatus,
+  requirementOptions: { value: string; label: string }[]
+): RepeatSubField[] {
+  return [
+    {
+      name: "evidence_id", label: "Evidence object", required: true,
+      type: "customSelect", options: evidenceOptions, optionsStatus: evidenceOptionsStatus,
+      optionsNoun: "evidence object", placeholder: "From Platform ops → Evidence operations",
+    },
+    { name: "evidence_sha256", label: "Evidence SHA-256", required: true },
+    { name: "media_type", label: "Media type" },
+    requirementOptions.length > 0
+      ? {
+          name: "requirement_code", label: "Requirement code", required: true,
+          type: "select", options: requirementOptions,
+        }
+      : { name: "requirement_code", label: "Requirement code", placeholder: "No declared requirements for this step" },
+  ];
+}
 
 /** SG-047 (`gxp_step_evidence_link` half) — unsigned by design (attaching evidence is a capture, not a
  * release/disposition decision). Links already-staged/finalized evidence objects (stage + finalize an
- * upload via Platform ops → Evidence operations first, then paste the resulting id/hash here) rather than
- * re-implementing file upload inline — the evidence object lifecycle is owned by `app/modules/evidence`,
- * not this module. */
+ * upload via Platform ops → Evidence operations first) — this modal offers a picker of evidence already
+ * staged for this step (owner_type "batch_step", owner_id this step's id), auto-filling the hash/media
+ * type from the real record; manual entry stays available as a fallback (e.g. evidence staged under a
+ * different owner_id). */
 function LinkEvidenceModal({
   batch,
   step,
+  requirements,
+  existingLinks,
   onClose,
   onDone,
 }: {
   batch: GxpBatch;
   step: BatchStep;
+  requirements: StepEvidenceRequirement[];
+  existingLinks: StepEvidenceLinkRow[];
   onClose: () => void;
   onDone: () => void;
 }) {
   const { busy, error, run } = useCommand(onDone);
   const [links, setLinks] = useState<RepeatRow[]>([]);
+  const { options: evidenceOptions, status: evidenceOptionsStatus, byId: evidenceById, pendingCount } = useStepEvidenceOptions(step.step_id);
+  const requirementOptions = Array.from(new Set(requirements.map((r) => r.evidence_type))).map((t) => ({ value: t, label: t }));
+  const subFields = evidenceLinkSubfields(evidenceOptions, evidenceOptionsStatus, requirementOptions);
+  // Live "N of M required" — the same requirement_code<->evidence_type match complete_step()'s gate uses,
+  // recomputed with the rows currently staged in this form so it updates as the tester fills them in.
+  const linkedCountByType = new Map<string, number>();
+  for (const link of existingLinks) {
+    if (link.requirement_code) linkedCountByType.set(link.requirement_code, (linkedCountByType.get(link.requirement_code) ?? 0) + 1);
+  }
+  for (const row of links) {
+    const code = row.requirement_code;
+    if (code) linkedCountByType.set(code, (linkedCountByType.get(code) ?? 0) + 1);
+  }
+
+  function handleLinksChange(rows: RepeatRow[]) {
+    // Picking a real evidence object auto-fills its actual hash/media type instead of requiring them
+    // typed by hand — only for rows whose evidence_id matches a known fetched object; a manually-typed
+    // id (evidence staged under a different owner) leaves those fields untouched.
+    setLinks(
+      rows.map((row) => {
+        const picked = evidenceById.get(row.evidence_id ?? "");
+        return picked
+          ? { ...row, evidence_sha256: picked.content_hash ?? row.evidence_sha256, media_type: row.media_type || picked.mime_type }
+          : row;
+      })
+    );
+  }
 
   return (
     <Modal open onClose={onClose} title={`Link evidence - ${step.recipe_step_code}`}>
@@ -1415,22 +2248,47 @@ function LinkEvidenceModal({
               batch_id: batch.batch_id,
               step_id: step.step_id,
               expected_version: step.version,
-              links: buildRepeatArray(EVIDENCE_LINK_SUBFIELDS, links),
+              links: buildRepeatArray(subFields, links),
             })
           );
         }}
       >
         <p className="fs-3 mb-3">
-          Stage and finalize the evidence object first (Platform ops → Evidence operations), then link its
-          id and content hash to this step.
+          Stage and finalize the evidence object first (Platform ops → Evidence operations, owner type
+          &quot;batch_step&quot;, owner ID = this step), then pick it below. Only finalized evidence is
+          offered — a staged-but-not-yet-finalized object has no hash yet to link.
         </p>
+        {pendingCount > 0 && (
+          <p className="fs-2 text-muted mb-3">
+            {pendingCount} evidence object{pendingCount === 1 ? "" : "s"} staged for this step{" "}
+            {pendingCount === 1 ? "is" : "are"} not yet finalized, so {pendingCount === 1 ? "it isn't" : "they aren't"}{" "}
+            listed below — finalize {pendingCount === 1 ? "it" : "them"} via Platform ops → Evidence operations first.
+          </p>
+        )}
+        {requirements.length > 0 && (
+          <div className="mb-3">
+            <p className="fact-k mb-1">Required evidence</p>
+            <ul className="fs-2" style={{ margin: 0, paddingLeft: 18 }}>
+              {requirements.map((req, i) => {
+                const linked = linkedCountByType.get(req.evidence_type) ?? 0;
+                const met = linked >= req.required_count;
+                return (
+                  <li key={`${req.evidence_type}-${i}`} className={met ? undefined : "error-text"} style={met ? undefined : { display: "list-item", marginTop: 0 }}>
+                    {req.evidence_type}: {linked} of {req.required_count} linked
+                    {!met && " (add a link with this requirement code below)"}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
         <RepeatableRows
           label="Evidence links"
           required
           itemLabel="Evidence link"
-          subFields={EVIDENCE_LINK_SUBFIELDS}
+          subFields={subFields}
           value={links}
-          onChange={setLinks}
+          onChange={handleLinksChange}
         />
         {error && <p className="error-text mt-3 mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-3">

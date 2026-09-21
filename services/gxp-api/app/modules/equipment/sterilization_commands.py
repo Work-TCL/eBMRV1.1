@@ -1,6 +1,8 @@
-"""Document 42 (SPEC-EQP-005) — exactly the 9 declared operations (§6). `POST /sterilization/v1/cycles`
-and `POST /cip-sip/v1/cycles` both create a `ProcessCycle` row (distinguished by `process_type`), matching
-the data model's single `process_cycle` entity.
+"""Document 42 (SPEC-EQP-005) — the 9 declared operations (§6) plus `CreateProcessCycleProfileVersion`
+(added 2026-09-16, SG-203 -- outside the declared 9, same "beyond-the-declared-list, project-owner-
+directed" precedent as aseptic_profile_version's own create/supersede, SG-176). `POST
+/sterilization/v1/cycles` and `POST /cip-sip/v1/cycles` both create a `ProcessCycle` row (distinguished by
+`process_type`), matching the data model's single `process_cycle` entity.
 """
 
 import uuid
@@ -134,6 +136,95 @@ class LoadItemInput(BaseModel):
     item_type: str
     item_reference: str
     position: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# CreateProcessCycleProfileVersion — added 2026-09-16, project-owner-directed (SG-203: this table had no
+# create command anywhere, seed/migration-only master data, unlike aseptic_profile_version's own real
+# create endpoint). Asked directly who should author a profile's critical parameters and whether to match
+# a draft/review lifecycle or aseptic's direct-to-RELEASED shape; chose QA Reviewer (not Sterilization
+# Operator, keeping the role that independently reviews a cycle's data separate from the role that could
+# otherwise have authored the very spec it's reviewed against) and direct-to-RELEASED, mirroring
+# `create_profile_version()` (aseptic_commands.py, SG-176) field-for-field in structure. No signature —
+# Document 106 has no row for this action, same "row absent, not optional" precedent as every other
+# unsigned create in this module (`install_filter`, `create_process_cycle`).
+# ---------------------------------------------------------------------------
+
+
+class CreateProcessCycleProfileVersionCommand(CommandEnvelope):
+    site_id: uuid.UUID
+    profile_number: str
+    version_no: int = 1
+    process_type: str
+    equipment_class_id: uuid.UUID | None = None
+    load_pattern: dict | None = None
+    controller_recipe_ref: str | None = None
+    critical_parameters: dict | None = None
+    indicator_requirements: dict | None = None
+    review_policy: dict | None = None
+    validation_reference: str | None = None
+    sterile_status_validity_hours: int | None = None
+
+
+async def create_process_cycle_profile_version(
+    session: AsyncSession, cmd: CreateProcessCycleProfileVersionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.profile_number.strip():
+        raise ValidationFailedError("profile_number is required")
+    if not cmd.process_type.strip():
+        raise ValidationFailedError("process_type is required")
+
+    # Matches the DB's own UniqueConstraint("profile_number", "version_no") -- table-wide, not per-site,
+    # same precedent as AsepticProfileVersion's identical constraint.
+    duplicate = (
+        await session.execute(
+            select(ProcessCycleProfileVersion).where(
+                ProcessCycleProfileVersion.profile_number == cmd.profile_number,
+                ProcessCycleProfileVersion.version_no == cmd.version_no,
+            )
+        )
+    ).scalar_one_or_none()
+    if duplicate is not None:
+        raise ValidationFailedError(
+            "A sterilization cycle profile with this profile number and version already exists",
+            existing_id=str(duplicate.id),
+        )
+
+    profile = ProcessCycleProfileVersion(
+        site_id=cmd.site_id,
+        profile_number=cmd.profile_number,
+        version_no=cmd.version_no,
+        process_type=cmd.process_type,
+        equipment_class_id=cmd.equipment_class_id,
+        load_pattern=cmd.load_pattern,
+        controller_recipe_ref=cmd.controller_recipe_ref,
+        critical_parameters=cmd.critical_parameters,
+        indicator_requirements=cmd.indicator_requirements,
+        review_policy=cmd.review_policy,
+        validation_reference=cmd.validation_reference,
+        sterile_status_validity_hours=cmd.sterile_status_validity_hours,
+        state="RELEASED",
+        version=1,
+    )
+    session.add(profile)
+    await session.flush()
+
+    return await _write_receipt(
+        session, cmd=cmd, payload_hash=payload_hash, site_id=cmd.site_id,
+        aggregate_type="process_cycle_profile_version", aggregate_id=profile.id, version=1, action="Created",
+        actor_user_id=actor_user_id, reason=None, old_state=None,
+        event_type="ProcessCycleProfileVersionCreated",
+        event_payload={
+            "id": str(profile.id), "profile_number": profile.profile_number, "version_no": profile.version_no,
+            "process_type": profile.process_type,
+        },
+        expected_version=None, command_type="CreateProcessCycleProfileVersion",
+    )
 
 
 class CreateProcessCycleCommand(CommandEnvelope):
