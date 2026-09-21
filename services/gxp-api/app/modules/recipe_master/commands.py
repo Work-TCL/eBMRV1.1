@@ -19,6 +19,7 @@ from app.modules.iam.models import Role, User
 from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import effective_role_names
 from app.modules.product_master.models import ProductVersion
+from app.modules.qc.models import QcTestSpecification
 from app.modules.recipe_master import service as recipe_master_service
 from app.modules.recipe_master.models import (
     ALLOWED_TRANSITIONS,
@@ -31,6 +32,7 @@ from app.modules.recipe_master.models import (
     RecipeSection,
     RecipeStep,
     RecipeStepDependency,
+    RecipeStepQcRequirement,
     RecipeVersion,
 )
 from app.modules.rules import service as rules_service
@@ -155,6 +157,14 @@ class EquipmentRequirementInput(BaseModel):
     require_current_cleaning: bool = False
 
 
+class QcRequirementInput(BaseModel):
+    """Client requirement #12: an in-process QC test this step requires a passing result for before it
+    can be marked complete."""
+
+    qc_test_specification_id: uuid.UUID
+    required: bool = True
+
+
 class StepInput(BaseModel):
     stable_step_code: str
     section_code: str
@@ -174,6 +184,7 @@ class StepInput(BaseModel):
     evidence_requirements: list[EvidenceRequirementInput] = []
     material_requirements: list[MaterialRequirementInput] = []
     equipment_requirements: list[EquipmentRequirementInput] = []
+    qc_requirements: list[QcRequirementInput] = []
 
 
 class SectionInput(BaseModel):
@@ -257,6 +268,8 @@ async def _replace_graph(
             await session.delete(mr)
         for er in (await session.execute(select(RecipeEquipmentRequirement).where(RecipeEquipmentRequirement.step_id.in_(old_step_ids)))).scalars().all():
             await session.delete(er)
+        for qr in (await session.execute(select(RecipeStepQcRequirement).where(RecipeStepQcRequirement.step_id.in_(old_step_ids)))).scalars().all():
+            await session.delete(qr)
     for step in old_steps:
         await session.delete(step)
     old_sections = (await session.execute(select(RecipeSection).where(RecipeSection.recipe_version_id == recipe_version_id))).scalars().all()
@@ -375,6 +388,19 @@ async def _replace_graph(
                     require_current_calibration=eq.require_current_calibration,
                     require_current_qualification=eq.require_current_qualification,
                     require_current_cleaning=eq.require_current_cleaning,
+                )
+            )
+        for qr in st.qc_requirements:
+            if (await session.get(QcTestSpecification, qr.qc_test_specification_id)) is None:
+                raise ValidationFailedError(
+                    "qc_requirement references an unknown qc_test_specification_id",
+                    qc_test_specification_id=str(qr.qc_test_specification_id),
+                )
+            session.add(
+                RecipeStepQcRequirement(
+                    step_id=row.id,
+                    qc_test_specification_id=qr.qc_test_specification_id,
+                    required=qr.required,
                 )
             )
 

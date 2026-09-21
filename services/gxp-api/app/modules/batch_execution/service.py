@@ -20,6 +20,7 @@ from app.modules.batch_execution.models import (
     StepResult,
     StepResultCorrection,
 )
+from app.modules.qc.models import QcResult, QcSample, QcTestDefinition, QcTestOrder
 from app.modules.recipe_master import service as recipe_master_service
 from app.modules.recipe_master.models import RecipeStepDependency
 from app.mutation.errors import NotFoundError
@@ -323,3 +324,26 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
             if s.state == "pending"
         ],
     }
+
+
+async def get_passed_qc_spec_ids_for_step(session: AsyncSession, step_id: uuid.UUID) -> set[uuid.UUID]:
+    """Client requirement #12: the set of `qc.QcTestSpecification.id`s with a passing result recorded
+    against this specific step's in-process QC samples. Join chain: `QcSample(source_type="batch_step",
+    source_id=step_id)` -> `QcTestOrder(sample_id)` -> `QcTestDefinition(test_definition_id)
+    .specification_id` -> the spec id being checked, keyed on each order's latest `QcResult.outcome`
+    (qc_result is append-only, AG-08, so a later corrected/retested row naturally supersedes an earlier
+    one by being later, same reasoning as `release.service._qc_signals`)."""
+    rows = (
+        await session.execute(
+            select(QcTestDefinition.specification_id, QcResult)
+            .join(QcTestOrder, QcTestOrder.test_definition_id == QcTestDefinition.id)
+            .join(QcSample, QcSample.id == QcTestOrder.sample_id)
+            .join(QcResult, QcResult.test_order_id == QcTestOrder.id)
+            .where(QcSample.source_type == "batch_step", QcSample.source_id == step_id)
+            .order_by(QcTestOrder.id, QcResult.created_at.desc(), QcResult.id.desc())
+        )
+    ).all()
+    latest_by_order: dict[uuid.UUID, tuple[uuid.UUID, QcResult]] = {}
+    for specification_id, result in rows:
+        latest_by_order.setdefault(result.test_order_id, (specification_id, result))
+    return {spec_id for spec_id, result in latest_by_order.values() if result.outcome == "pass"}

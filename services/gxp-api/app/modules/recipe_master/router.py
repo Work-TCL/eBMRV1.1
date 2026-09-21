@@ -171,6 +171,15 @@ def _equipment_requirement_dict(e) -> dict:
     }
 
 
+def _qc_requirement_dict(q) -> dict:
+    return {
+        "id": str(q.id),
+        "step_id": str(q.step_id),
+        "qc_test_specification_id": str(q.qc_test_specification_id),
+        "required": q.required,
+    }
+
+
 @router.post("/drafts", response_model=MutationReceipt)
 async def post_create_draft(
     cmd: CreateRecipeDraftCommand,
@@ -402,6 +411,7 @@ async def get_version_detail(
     body["evidence_requirements"] = [_evidence_requirement_dict(e) for e in graph["evidence"]]
     body["material_requirements"] = [_material_requirement_dict(m) for m in graph["material_requirements"]]
     body["equipment_requirements"] = [_equipment_requirement_dict(e) for e in graph["equipment_requirements"]]
+    body["qc_requirements"] = [_qc_requirement_dict(q) for q in graph["qc_requirements"]]
     return body
 
 

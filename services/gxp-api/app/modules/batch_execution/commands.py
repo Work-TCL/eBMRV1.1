@@ -40,7 +40,12 @@ from app.modules.qms import commands as qms_commands
 from app.modules.policy.service import effective_role_names, evaluate_policy
 from app.modules.product_master.models import ProductVersion
 from app.modules.recipe_master import service as recipe_master_service
-from app.modules.recipe_master.models import RecipeEquipmentRequirement, RecipeEvidenceRequirement, RecipeParameter
+from app.modules.recipe_master.models import (
+    RecipeEquipmentRequirement,
+    RecipeEvidenceRequirement,
+    RecipeParameter,
+    RecipeStepQcRequirement,
+)
 from app.modules.rules import service as rules_service
 from app.modules.signature import service as signature_service
 from app.modules.vault import service as vault_service
@@ -825,6 +830,18 @@ async def _recipe_evidence_requirements_for_step(
     return [e for e in graph["evidence"] if e.step_id == recipe_step_id]
 
 
+async def _required_qc_specs_for_step(
+    session: AsyncSession, batch: Batch, step: BatchStep
+) -> list[RecipeStepQcRequirement]:
+    """Client requirement #12. Same lookup shape as `_recipe_parameters_for_step`/
+    `_recipe_evidence_requirements_for_step`, against the recipe's declared
+    `gxp_recipe_step_qc_requirement` rows instead."""
+    graph = await recipe_master_service.get_graph(session, batch.recipe_version_id)
+    code_by_step_id = {s.id: s.stable_step_code for s in graph["steps"]}
+    step_id_by_code = {code: sid for sid, code in code_by_step_id.items()}
+    recipe_step_id = step_id_by_code.get(step.recipe_step_code)
+    return [r for r in graph["qc_requirements"] if r.step_id == recipe_step_id and r.required]
+
 
 # BAT-FR-011, SG-048 #011 partial resolution: a human may tag a result 'device_transcribed' -- they read
 # it off a device/instrument and are keying it in, distinct from their own direct observation ('manual').
@@ -1189,6 +1206,19 @@ async def complete_step(session: AsyncSession, cmd: CompleteStepCommand, actor_u
         )
         if missing_evidence:
             raise ValidationFailedError("Required evidence has not been linked", missing_evidence_types=missing_evidence)
+
+    # Client requirement #12: every in-process QC test the recipe step declares required must have a
+    # passing result recorded against this step before it can be marked complete.
+    qc_requirements = await _required_qc_specs_for_step(session, batch, step)
+    if qc_requirements:
+        required_spec_ids = {r.qc_test_specification_id for r in qc_requirements}
+        passed_spec_ids = await batch_execution_service.get_passed_qc_spec_ids_for_step(session, step.id)
+        missing_qc = sorted(str(s) for s in required_spec_ids - passed_spec_ids)
+        if missing_qc:
+            raise ValidationFailedError(
+                "Required in-process QC test(s) have not reached a passing result",
+                missing_qc_test_specification_ids=missing_qc,
+            )
 
     signature_id = await _require_step_signature(
         session, step=step, action="complete", challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,

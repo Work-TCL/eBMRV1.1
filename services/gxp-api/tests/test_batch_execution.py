@@ -36,7 +36,7 @@ async def _make_admin(db, seeded, username="admin.batch"):
 
 async def _make_released_product_and_recipe(
     client, admin_token, site_id, tag, step_a_role=None, step_a_parameters=None, step_a_evidence=None,
-    step_a_qualification_code=None, step_a_equipment_requirements=None,
+    step_a_qualification_code=None, step_a_equipment_requirements=None, step_a_qc_requirements=None,
 ):
     resp = await client.post(
         "/products/v1/drafts",
@@ -85,6 +85,7 @@ async def _make_released_product_and_recipe(
                     **({"evidence_requirements": step_a_evidence} if step_a_evidence else {}),
                     **({"required_qualification_code": step_a_qualification_code} if step_a_qualification_code else {}),
                     **({"equipment_requirements": step_a_equipment_requirements} if step_a_equipment_requirements else {}),
+                    **({"qc_requirements": step_a_qc_requirements} if step_a_qc_requirements else {}),
                 },
                 {"stable_step_code": "STEP-B", "section_code": "SEC-1", "step_type": "instruction", "sequence_hint": 2},
             ],
@@ -112,7 +113,7 @@ async def _make_released_product_and_recipe(
 
 async def _released_pair(
     db, client, seeded, tag, step_a_role=None, step_a_parameters=None, step_a_evidence=None,
-    step_a_qualification_code=None, step_a_equipment_requirements=None,
+    step_a_qualification_code=None, step_a_equipment_requirements=None, step_a_qc_requirements=None,
 ):
     async with db.begin():
         await _make_admin(db, seeded, f"admin.batch{tag}")
@@ -122,7 +123,7 @@ async def _released_pair(
     product_version_id, recipe_version_id = await _make_released_product_and_recipe(
         client, admin_token, seeded["site_id"], tag, step_a_role=step_a_role, step_a_parameters=step_a_parameters,
         step_a_evidence=step_a_evidence, step_a_qualification_code=step_a_qualification_code,
-        step_a_equipment_requirements=step_a_equipment_requirements,
+        step_a_equipment_requirements=step_a_equipment_requirements, step_a_qc_requirements=step_a_qc_requirements,
     )
     return admin_token, product_version_id, recipe_version_id
 
@@ -1237,6 +1238,133 @@ async def test_complete_step_blocked_without_required_evidence_then_succeeds_aft
             "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
             "expected_version": step_version,
             "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+# ---------------------------------------------------------------------------
+# Client requirement #12 -- a step's declared required in-process QC test(s) must reach a passing result
+# before the step can be marked complete. Same completion-gate shape as the parameter/evidence checks
+# above.
+# ---------------------------------------------------------------------------
+
+
+async def test_complete_step_blocked_without_required_qc_test_then_succeeds_after_passing_result(client, seeded, db):
+    import uuid as uuid_mod
+
+    from app.modules.qc.models import (
+        QcResult,
+        QcSample,
+        QcTestDefinition,
+        QcTestOrder,
+        QcTestRun,
+        QcTestSpecification,
+    )
+
+    async with db.begin():
+        spec = QcTestSpecification(
+            spec_code="SPEC-BATQC1", version_no=1, scope_type="in_process",
+            scope_version_id=uuid_mod.uuid4(), status="released",
+        )
+        db.add(spec)
+        await db.flush()
+        spec_id = spec.id
+        definition = QcTestDefinition(
+            specification_id=spec.id, test_code="IPC-WEIGHT", test_name="In-process weight check",
+            result_data_type="numeric", required=True, release_blocking=True,
+        )
+        db.add(definition)
+        await db.flush()
+        definition_id = definition.id
+
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "qc1",
+        step_a_qc_requirements=[{"qc_test_specification_id": str(spec_id), "required": True}],
+    )
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-QC-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": step_version, "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422, resp.text
+    body = resp.json()
+    assert body["code"] == "VALIDATION_FAILED"
+    assert body["details"]["missing_qc_test_specification_ids"] == [str(spec_id)]
+
+    async with db.begin():
+        sample = QcSample(
+            sample_number=f"SMP-BATQC1-{uuid_mod.uuid4().hex[:6]}", sample_type="in_process",
+            source_type="batch_step", source_id=uuid_mod.UUID(step_id), state="testing_complete",
+        )
+        db.add(sample)
+        await db.flush()
+        order = QcTestOrder(sample_id=sample.id, test_definition_id=definition_id, state="reviewed", blocking=True)
+        db.add(order)
+        await db.flush()
+        run = QcTestRun(test_order_id=order.id)
+        db.add(run)
+        await db.flush()
+        db.add(QcResult(test_order_id=order.id, test_run_id=run.id, result_type="numeric", outcome="pass"))
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": step_version, "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_complete_step_unaffected_when_no_qc_requirement_declared(client, seeded, db):
+    """Regression check: a step with no RecipeStepQcRequirement rows completes exactly as before."""
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "qc2")
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-QC-2"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": step_version, "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
         },
         headers=auth_headers(admin_token),
     )

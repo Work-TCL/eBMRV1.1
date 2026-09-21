@@ -82,6 +82,52 @@ async def test_unauthorized_without_token_rejected(client):
     assert resp.status_code == 401
 
 
+async def test_create_draft_with_qc_requirements_round_trips_through_graph(client, seeded, db):
+    """Client requirement #12: a step's declared required in-process QC test(s) persist as
+    RecipeStepQcRequirement rows and round-trip through GET /recipes/v2/versions/{id}."""
+    import uuid as uuid_mod
+
+    from app.modules.qc.models import QcTestSpecification
+
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe.qcreq")
+        spec = QcTestSpecification(
+            spec_code="SPEC-RCPQC1", version_no=1, scope_type="in_process",
+            scope_version_id=uuid_mod.uuid4(), status="released",
+        )
+        db.add(spec)
+        await db.flush()
+        spec_id = spec.id
+    admin_token = await login(client, "admin.recipe.qcreq")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], "RCPPRD-QCREQ")
+
+    body = _two_step_body(product_version_id, seeded["site_id"], "RCP-QCREQ")
+    body["product_business_id"] = "RCPPRD-QCREQ"
+    body["steps"][0]["qc_requirements"] = [{"qc_test_specification_id": str(spec_id), "required": True}]
+    resp = await client.post("/recipes/v2/drafts", json=body, headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    version_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/recipes/v2/versions/{version_id}", headers=auth_headers(admin_token))).json()
+    assert len(detail["qc_requirements"]) == 1
+    assert detail["qc_requirements"][0]["qc_test_specification_id"] == str(spec_id)
+    assert detail["qc_requirements"][0]["required"] is True
+
+
+async def test_create_draft_rejects_unknown_qc_test_specification_id(client, seeded, db):
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe.qcreq2")
+    admin_token = await login(client, "admin.recipe.qcreq2")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], "RCPPRD-QCREQ2")
+
+    body = _two_step_body(product_version_id, seeded["site_id"], "RCP-QCREQ2")
+    body["product_business_id"] = "RCPPRD-QCREQ2"
+    body["steps"][0]["qc_requirements"] = [{"qc_test_specification_id": str(uuid.uuid4()), "required": True}]
+    resp = await client.post("/recipes/v2/drafts", json=body, headers=auth_headers(admin_token))
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
 async def test_create_draft_requires_recipe_author_permission(client, seeded, db):
     async with db.begin():
         await _make_admin(db, seeded, "admin.recipe1")

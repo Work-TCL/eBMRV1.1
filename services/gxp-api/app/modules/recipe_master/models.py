@@ -198,6 +198,28 @@ class RecipeEvidenceRequirement(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class RecipeStepQcRequirement(Base):
+    """Client requirement #12: a step can declare specific in-process QC tests (by
+    `qc.QcTestSpecification.id`) that must reach a passing result before the step is markable complete.
+    Same join-table shape as `RecipeEvidenceRequirement` above rather than a JSONB list -- a
+    requirement-traceability relationship like this one is easier to query and audit as a real row per
+    (step, spec). `qc_test_specification_id` carries a real FK -- `qc.QcTestSpecification` lives in the
+    same `ebmr` schema and is a stable table, same cross-module-FK precedent as
+    `RecipeMaterialRequirement.material_spec_version_id` below (not the unenforced-reference treatment
+    used for fields with no backing entity at all, e.g. `RecipeStep.qualification_policy_id`)."""
+
+    __tablename__ = "gxp_recipe_step_qc_requirement"
+    __table_args__ = {"schema": "ebmr"}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    step_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_recipe_step.id"), nullable=False)
+    qc_test_specification_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ebmr.qc_test_specification.id"), nullable=False
+    )
+    required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class RecipeMaterialRequirement(Base):
     """SG-045 (equipment/material half) — `min_value`/`max_value`/`uom`/`uom_id` mirror
     `RecipeParameter`'s own already-DDL-ready tolerance shape exactly (same "no rule-execution engine

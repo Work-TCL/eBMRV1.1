@@ -276,7 +276,7 @@ function EditGraphModal({
   const [sections, setSections] = useState<SectionDraft[]>(() => sectionsFromVersion(version));
   const [batchSizeValue, setBatchSizeValue] = useState(version.batch_size_value ?? "");
   const [batchSizeUom, setBatchSizeUom] = useState(version.batch_size_uom ?? "");
-  const { roleOptions, ruleOptions, materialSpecOptions, qualificationCodeOptions, uomOptions, equipmentClassOptions } = useRoleAndRuleOptions();
+  const { roleOptions, ruleOptions, materialSpecOptions, qualificationCodeOptions, uomOptions, equipmentClassOptions, qcSpecOptions } = useRoleAndRuleOptions();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -325,7 +325,7 @@ function EditGraphModal({
           </Field>
         </div>
 
-        <RecipeGraphEditor sections={sections} onChange={setSections} roleOptions={roleOptions} ruleOptions={ruleOptions} materialSpecOptions={materialSpecOptions} qualificationCodeOptions={qualificationCodeOptions} uomOptions={uomOptions} equipmentClassOptions={equipmentClassOptions} />
+        <RecipeGraphEditor sections={sections} onChange={setSections} roleOptions={roleOptions} ruleOptions={ruleOptions} materialSpecOptions={materialSpecOptions} qualificationCodeOptions={qualificationCodeOptions} uomOptions={uomOptions} equipmentClassOptions={equipmentClassOptions} qcSpecOptions={qcSpecOptions} />
 
         <div className="flex justify-between gap-3 mt-2">
           <Button type="button" variant="secondary" onClick={onClose}>

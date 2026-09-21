@@ -19,6 +19,7 @@ from app.modules.recipe_master.models import (
     RecipeSection,
     RecipeStep,
     RecipeStepDependency,
+    RecipeStepQcRequirement,
     RecipeVersion,
 )
 from app.modules.rules import service as rules_service
@@ -129,6 +130,13 @@ async def get_graph(session: AsyncSession, recipe_version_id: uuid.UUID) -> dict
             .scalars()
             .all()
         )
+    qc_requirements = []
+    if step_ids:
+        qc_requirements = (
+            (await session.execute(select(RecipeStepQcRequirement).where(RecipeStepQcRequirement.step_id.in_(step_ids))))
+            .scalars()
+            .all()
+        )
     return {
         "sections": sections,
         "steps": steps,
@@ -137,6 +145,7 @@ async def get_graph(session: AsyncSession, recipe_version_id: uuid.UUID) -> dict
         "evidence": evidence,
         "material_requirements": material_requirements,
         "equipment_requirements": equipment_requirements,
+        "qc_requirements": qc_requirements,
     }
 
 

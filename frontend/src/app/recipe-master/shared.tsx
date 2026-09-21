@@ -123,6 +123,15 @@ export interface RecipeEvidenceRequirement {
 
 // Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 4): matches
 // recipe_master/router.py::get_equipment_classes / _equipment_class_dict.
+// Client requirement #12: matches qc/router.py::_specification_dict (the fields this picker needs).
+export interface QcSpecOption {
+  id: string;
+  spec_code: string;
+  version_no: number;
+  status: string;
+  scope_type: string;
+}
+
 export interface EquipmentClassOption {
   id: string;
   class_code: string;
@@ -156,6 +165,14 @@ export interface RecipeMaterialRequirement {
   genealogy_required: boolean;
 }
 
+// Client requirement #12: matches recipe_master/router.py::_qc_requirement_dict.
+export interface RecipeStepQcRequirement {
+  id: string;
+  step_id: string;
+  qc_test_specification_id: string;
+  required: boolean;
+}
+
 export interface RecipeVersion {
   recipe_version_id: string;
   recipe_family_id: string;
@@ -175,6 +192,7 @@ export interface RecipeVersion {
   evidence_requirements?: RecipeEvidenceRequirement[];
   material_requirements?: RecipeMaterialRequirement[];
   equipment_requirements?: RecipeEquipmentRequirement[];
+  qc_requirements?: RecipeStepQcRequirement[];
 }
 
 // Matches app/modules/recipe_master/router.py::get_families / service.list_recipe_families.
@@ -248,6 +266,11 @@ export interface EquipmentRequirementDraft {
   require_current_qualification: boolean;
   require_current_cleaning: boolean;
 }
+export interface QcRequirementDraft {
+  key: string;
+  qc_test_specification_id: string;
+  required: boolean;
+}
 export interface StepDraft {
   key: string;
   stable_step_code: string;
@@ -262,6 +285,7 @@ export interface StepDraft {
   material_requirements: MaterialRequirementDraft[];
   evidence_requirements: EvidenceRequirementDraft[];
   equipment_requirements: EquipmentRequirementDraft[];
+  qc_requirements: QcRequirementDraft[];
 }
 export interface SectionDraft {
   key: string;
@@ -325,6 +349,9 @@ export function emptyEquipmentRequirement(): EquipmentRequirementDraft {
     require_current_cleaning: false,
   };
 }
+export function emptyQcRequirement(): QcRequirementDraft {
+  return { key: newKey(), qc_test_specification_id: "", required: true };
+}
 export function emptyStep(): StepDraft {
   return {
     key: newKey(),
@@ -340,6 +367,7 @@ export function emptyStep(): StepDraft {
     material_requirements: [],
     evidence_requirements: [],
     equipment_requirements: [],
+    qc_requirements: [],
   };
 }
 export function emptySection(): SectionDraft {
@@ -356,6 +384,7 @@ export function sectionsFromVersion(version: RecipeVersion): SectionDraft[] {
   const materialReqs = version.material_requirements ?? [];
   const evidenceReqs = version.evidence_requirements ?? [];
   const equipmentReqs = version.equipment_requirements ?? [];
+  const qcReqs = version.qc_requirements ?? [];
   const stepById = new Map(steps.map((s) => [s.id, s]));
   return [...sections]
     .sort((a, b) => a.sequence - b.sequence)
@@ -436,6 +465,13 @@ export function sectionsFromVersion(version: RecipeVersion): SectionDraft[] {
               require_current_qualification: e.require_current_qualification,
               require_current_cleaning: e.require_current_cleaning,
             })),
+          qc_requirements: qcReqs
+            .filter((q) => q.step_id === s.id)
+            .map((q) => ({
+              key: newKey(),
+              qc_test_specification_id: q.qc_test_specification_id,
+              required: q.required,
+            })),
         })),
     }));
 }
@@ -515,6 +551,12 @@ export function buildGraphPayload(sections: SectionDraft[]) {
             require_current_qualification: e.require_current_qualification,
             require_current_cleaning: e.require_current_cleaning,
           })),
+        qc_requirements: st.qc_requirements
+          .filter((q) => q.qc_test_specification_id.trim())
+          .map((q) => ({
+            qc_test_specification_id: q.qc_test_specification_id,
+            required: q.required,
+          })),
       });
       st.depends_on.forEach((d) => {
         if (!d.predecessor_step_code) return;
@@ -574,10 +616,17 @@ export function useRoleAndRuleOptions() {
   // Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 4): matches
   // recipe_master/router.py::get_equipment_classes / _equipment_class_dict.
   const { data: equipmentClassOptions } = useApiResource<EquipmentClassOption[]>("/recipes/v2/equipment-classes");
+  // Client requirement #12: released in-process QC test specifications, for the step editor's
+  // "required in-process QC test" picker.
+  const { data: qcSpecs } = useApiResource<{ items: QcSpecOption[] }>("/qc/v1/specifications?page_size=200");
+  const qcSpecOptions = useMemo(
+    () => (qcSpecs?.items ?? []).filter((s) => s.scope_type === "in_process" && s.status === "released"),
+    [qcSpecs]
+  );
   return {
     roleOptions, ruleOptions, materialSpecOptions: materialSpecOptions ?? [],
     qualificationCodeOptions: qualificationCodeOptions ?? [], uomOptions,
-    equipmentClassOptions: equipmentClassOptions ?? [],
+    equipmentClassOptions: equipmentClassOptions ?? [], qcSpecOptions,
   };
 }
 
@@ -682,6 +731,7 @@ export function RecipeGraphEditor({
   qualificationCodeOptions,
   uomOptions,
   equipmentClassOptions,
+  qcSpecOptions,
 }: {
   sections: SectionDraft[];
   onChange: (next: SectionDraft[]) => void;
@@ -691,6 +741,7 @@ export function RecipeGraphEditor({
   qualificationCodeOptions: string[];
   uomOptions: string[];
   equipmentClassOptions: EquipmentClassOption[];
+  qcSpecOptions: QcSpecOption[];
 }) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
@@ -783,6 +834,22 @@ export function RecipeGraphEditor({
           : {
               ...s,
               steps: s.steps.map((st) => (st.key !== stepKey ? st : { ...st, equipment_requirements: fn(st.equipment_requirements) })),
+            }
+      )
+    );
+  }
+  function updateStepQcReqs(
+    sectionKey: string,
+    stepKey: string,
+    fn: (reqs: QcRequirementDraft[]) => QcRequirementDraft[]
+  ) {
+    onChange(
+      sections.map((s) =>
+        s.key !== sectionKey
+          ? s
+          : {
+              ...s,
+              steps: s.steps.map((st) => (st.key !== stepKey ? st : { ...st, qc_requirements: fn(st.qc_requirements) })),
             }
       )
     );
@@ -918,6 +985,7 @@ export function RecipeGraphEditor({
                     qualificationCodeOptions={qualificationCodeOptions}
                     uomOptions={uomOptions}
                     equipmentClassOptions={equipmentClassOptions}
+                    qcSpecOptions={qcSpecOptions}
                     onChange={(patch) => updateStep(section.key, step.key, patch)}
                     onRemove={() => removeStep(section.key, step.key)}
                     onMove={(dir) => moveStep(section.key, step.key, dir)}
@@ -970,6 +1038,17 @@ export function RecipeGraphEditor({
                         reqs.map((r) => (r.key === reqKey ? { ...r, ...patch } : r))
                       )
                     }
+                    onAddQcRequirement={() =>
+                      updateStepQcReqs(section.key, step.key, (reqs) => [...reqs, emptyQcRequirement()])
+                    }
+                    onRemoveQcRequirement={(reqKey) =>
+                      updateStepQcReqs(section.key, step.key, (reqs) => reqs.filter((r) => r.key !== reqKey))
+                    }
+                    onUpdateQcRequirement={(reqKey, patch) =>
+                      updateStepQcReqs(section.key, step.key, (reqs) =>
+                        reqs.map((r) => (r.key === reqKey ? { ...r, ...patch } : r))
+                      )
+                    }
                   />
                 ))}
                 <Button type="button" variant="secondary" size="sm" onClick={() => addStep(section.key)}>
@@ -1000,6 +1079,7 @@ export function StepBlock({
   qualificationCodeOptions,
   uomOptions,
   equipmentClassOptions,
+  qcSpecOptions,
   onChange,
   onRemove,
   onMove,
@@ -1018,6 +1098,9 @@ export function StepBlock({
   onAddEquipmentRequirement,
   onRemoveEquipmentRequirement,
   onUpdateEquipmentRequirement,
+  onAddQcRequirement,
+  onRemoveQcRequirement,
+  onUpdateQcRequirement,
 }: {
   step: StepDraft;
   stepIndex: number;
@@ -1029,6 +1112,7 @@ export function StepBlock({
   qualificationCodeOptions: string[];
   uomOptions: string[];
   equipmentClassOptions: EquipmentClassOption[];
+  qcSpecOptions: QcSpecOption[];
   onChange: (patch: Partial<StepDraft>) => void;
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
@@ -1047,6 +1131,9 @@ export function StepBlock({
   onAddEquipmentRequirement: () => void;
   onRemoveEquipmentRequirement: (reqKey: string) => void;
   onUpdateEquipmentRequirement: (reqKey: string, patch: Partial<EquipmentRequirementDraft>) => void;
+  onAddQcRequirement: () => void;
+  onRemoveQcRequirement: (reqKey: string) => void;
+  onUpdateQcRequirement: (reqKey: string, patch: Partial<QcRequirementDraft>) => void;
 }) {
   const predecessorOptions = allCodes.filter((c) => c && c !== step.stable_step_code.trim());
 
@@ -1452,6 +1539,53 @@ export function StepBlock({
         ))}
         <Button type="button" size="sm" variant="ghost" onClick={onAddEquipmentRequirement}>
           <Icon name="plus" /> Add equipment requirement
+        </Button>
+      </div>
+
+      <div className="mb-2">
+        <p className="hint mb-1">Required in-process QC test(s) before this step can be completed</p>
+        {step.qc_requirements.length === 0 && <p className="hint mb-1">No in-process QC test required.</p>}
+        {step.qc_requirements.map((req) => (
+          <div key={req.key} className="sig-block mb-2" style={{ background: "var(--surface-sunken, #f6f6f6)" }}>
+            <div className="flex flex-wrap items-center gap-3">
+              <Select
+                value={req.qc_test_specification_id}
+                onChange={(e) => onUpdateQcRequirement(req.key, { qc_test_specification_id: e.target.value })}
+                style={{ minWidth: 280 }}
+                required
+              >
+                <option value="">Select a released in-process QC specification…</option>
+                {qcSpecOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.spec_code} v{s.version_no}
+                  </option>
+                ))}
+                {req.qc_test_specification_id && !qcSpecOptions.some((s) => s.id === req.qc_test_specification_id) && (
+                  <option value={req.qc_test_specification_id}>{req.qc_test_specification_id} (not in the released list)</option>
+                )}
+              </Select>
+              <label className="flex items-center gap-2 fs-2">
+                <input
+                  type="checkbox"
+                  checked={req.required}
+                  onChange={(e) => onUpdateQcRequirement(req.key, { required: e.target.checked })}
+                />
+                Required
+              </label>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => onRemoveQcRequirement(req.key)}
+                style={{ marginLeft: "auto" }}
+              >
+                <Icon name="x" /> Remove
+              </Button>
+            </div>
+          </div>
+        ))}
+        <Button type="button" size="sm" variant="ghost" onClick={onAddQcRequirement}>
+          <Icon name="plus" /> Add QC requirement
         </Button>
       </div>
 
