@@ -296,6 +296,137 @@ async def test_breakdown_maintenance_holds_then_verification_returns_to_service(
     assert detail["state"] == "QUALIFIED_AVAILABLE"
 
 
+async def test_breakdown_maintenance_type_holds_equipment(client, seeded):
+    """Client requirement #9: "breakdown" is a distinct MAINTENANCE_TYPES value (alongside planned/
+    corrective) that triggers the same hold/OUT_OF_SERVICE side effect corrective already does."""
+    admin_token = await login(client, "equipment.admin")
+    cal_token = await login(client, "calibration.tech")
+    maint_token = await login(client, "maintenance.tech")
+    eng_token = await login(client, "engineering.manager")
+    site_id = seeded["site_id"]
+
+    asset_id = await _create_asset(client, admin_token, site_id)
+    await _qualify(client, admin_token, asset_id, expected_version=1, qualified=True)
+    await _calibrate(client, cal_token, asset_id, expected_version=2, result="pass")
+    await _return_to_service(client, eng_token, asset_id, expected_version=3)
+
+    resp = await client.post(
+        f"/equipment/v1/{asset_id}/maintenance",
+        json={
+            "idempotency_key": idem(), "asset_id": asset_id, "expected_version": 4,
+            "type": "breakdown", "fault_description": "Sudden pump failure",
+        },
+        headers=auth_headers(maint_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    assert detail["state"] == "OUT_OF_SERVICE"
+    assert detail["hold_flag"] is True
+
+    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    work_order = history["maintenance_work_orders"][0]
+    assert work_order["type"] == "breakdown"
+
+    resp = await client.post(
+        f"/equipment/v1/{asset_id}/maintenance",
+        json={
+            "idempotency_key": idem(), "asset_id": asset_id, "expected_version": 5,
+            "work_order_id": work_order["id"], "work_performed": "Replaced pump seal", "verified": True,
+            "actual_downtime_hours": "6.50",
+        },
+        headers=auth_headers(maint_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    assert history["maintenance_work_orders"][0]["actual_downtime_hours"] == "6.50"
+
+
+async def test_record_calibration_internal_default(client, seeded):
+    admin_token = await login(client, "equipment.admin")
+    cal_token = await login(client, "calibration.tech")
+    site_id = seeded["site_id"]
+    asset_id = await _create_asset(client, admin_token, site_id)
+    await _qualify(client, admin_token, asset_id, expected_version=1, qualified=True)
+
+    await _calibrate(client, cal_token, asset_id, expected_version=2, result="pass")
+
+    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    assert history["calibrations"][0]["calibration_type"] == "internal"
+    assert history["calibrations"][0]["provider_name"] is None
+
+
+async def test_record_calibration_external_requires_provider_name(client, seeded):
+    admin_token = await login(client, "equipment.admin")
+    cal_token = await login(client, "calibration.tech")
+    site_id = seeded["site_id"]
+    asset_id = await _create_asset(client, admin_token, site_id)
+    await _qualify(client, admin_token, asset_id, expected_version=1, qualified=True)
+
+    resp = await client.post(
+        f"/equipment/v1/{asset_id}/calibrations",
+        json={
+            "idempotency_key": idem(), "asset_id": asset_id, "expected_version": 2,
+            "due_date": "2027-01-01", "performed_date": "2026-08-25", "result": "pass",
+            "calibration_type": "external",
+        },
+        headers=auth_headers(cal_token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_record_calibration_external_with_provider_persists_fields(client, seeded):
+    admin_token = await login(client, "equipment.admin")
+    cal_token = await login(client, "calibration.tech")
+    site_id = seeded["site_id"]
+    asset_id = await _create_asset(client, admin_token, site_id)
+    await _qualify(client, admin_token, asset_id, expected_version=1, qualified=True)
+
+    resp = await client.post(
+        f"/equipment/v1/{asset_id}/calibrations",
+        json={
+            "idempotency_key": idem(), "asset_id": asset_id, "expected_version": 2,
+            "due_date": "2027-01-01", "performed_date": "2026-08-25", "result": "pass",
+            "calibration_type": "external", "provider_name": "Acme Calibration Services",
+            "certificate_reference": "CERT-2026-001",
+        },
+        headers=auth_headers(cal_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    calibration = history["calibrations"][0]
+    assert calibration["calibration_type"] == "external"
+    assert calibration["provider_name"] == "Acme Calibration Services"
+    assert calibration["certificate_reference"] == "CERT-2026-001"
+
+
+async def test_record_calibration_with_frequency_computes_next_due_date(client, seeded):
+    """Client requirement #8: when frequency_days is supplied, the asset's next_calibration_due_date is
+    computed from performed_date + frequency_days rather than trusting the caller's own due_date."""
+    admin_token = await login(client, "equipment.admin")
+    cal_token = await login(client, "calibration.tech")
+    site_id = seeded["site_id"]
+    asset_id = await _create_asset(client, admin_token, site_id)
+    await _qualify(client, admin_token, asset_id, expected_version=1, qualified=True)
+
+    resp = await client.post(
+        f"/equipment/v1/{asset_id}/calibrations",
+        json={
+            "idempotency_key": idem(), "asset_id": asset_id, "expected_version": 2,
+            "due_date": "2027-01-01", "performed_date": "2026-08-25", "result": "pass",
+            "frequency_days": 90,
+        },
+        headers=auth_headers(cal_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    # 2026-08-25 + 90 days = 2026-11-23, not the caller's own (much later) due_date.
+    assert detail["next_calibration_due_date"] == "2026-11-23"
+
+
 async def test_calibration_history_captures_standard_and_evidence_fields(client, seeded):
     """EQP-FR-008/EQP-FR-006/EQP-FR-029: calibration standard reference/status/expiry and as-found/
     adjustments/as-left evidence round-trip through GET /equipment/v1/{id}/history."""

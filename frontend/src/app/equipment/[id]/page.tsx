@@ -9,6 +9,8 @@ import {
   canMaintainEquipment,
   canReturnEquipmentToService,
   canCreateEquipment,
+  canOperateEvidence,
+  downloadEvidence,
   formatDate,
   formatDateTime,
   newIdempotencyKey,
@@ -49,6 +51,9 @@ interface Calibration {
   standard_reference: string | null;
   standard_calibration_status: string | null;
   standard_expiry_date: string | null;
+  calibration_type: string;
+  provider_name: string | null;
+  certificate_reference: string | null;
   as_found: Record<string, unknown> | null;
   adjustments: Record<string, unknown> | null;
   as_left: Record<string, unknown> | null;
@@ -69,6 +74,7 @@ interface WorkOrder {
   frequency_days: number | null;
   next_due_date: string | null;
   expected_downtime_hours: string | null;
+  actual_downtime_hours: string | null;
   post_maintenance_verification_required: boolean;
   verified_at: string | null;
   technician_user_id: string;
@@ -234,6 +240,11 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
             label: "Eligibility",
             content: <EligibilityTab eligibility={eligibility.data} />,
           },
+          {
+            id: "documents",
+            label: "Documents",
+            content: <DocumentsTab assetId={a.id} me={me} />,
+          },
         ]}
       />
 
@@ -343,6 +354,9 @@ function MaintenanceTab({
             <Fact label="Expected downtime">
               {w.expected_downtime_hours ? `${w.expected_downtime_hours} h` : "—"}
             </Fact>
+            <Fact label="Actual downtime">
+              {w.actual_downtime_hours ? `${w.actual_downtime_hours} h` : "—"}
+            </Fact>
           </FactGrid>
           {w.fault_description && (
             <p className="fs-2 mt-3">
@@ -398,6 +412,7 @@ function CompleteMaintenanceModal({
   onDone: () => void;
 }) {
   const [workPerformed, setWorkPerformed] = useState(workOrder.work_performed ?? "");
+  const [actualDowntimeHours, setActualDowntimeHours] = useState(workOrder.actual_downtime_hours ?? "");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -413,6 +428,7 @@ function CompleteMaintenanceModal({
         expected_version: asset.version,
         work_order_id: workOrder.id,
         work_performed: workPerformed || null,
+        actual_downtime_hours: actualDowntimeHours || null,
         verified: true,
         reason: reason || null,
       });
@@ -441,6 +457,18 @@ function CompleteMaintenanceModal({
             rows={3}
             value={workPerformed}
             onChange={(e) => setWorkPerformed(e.target.value)}
+          />
+        </Field>
+        <Field
+          label="Actual downtime (hours)"
+          hint={workOrder.expected_downtime_hours ? `Expected: ${workOrder.expected_downtime_hours} h` : "Optional."}
+        >
+          <Input
+            type="number"
+            min={0}
+            step="0.01"
+            value={actualDowntimeHours}
+            onChange={(e) => setActualDowntimeHours(e.target.value)}
           />
         </Field>
         <Field label="Reason" hint="Optional. Recorded in the audit trail.">
@@ -526,6 +554,208 @@ function EligibilityTab({ eligibility }: { eligibility: Eligibility | null }) {
   );
 }
 
+const DOCUMENT_TYPES = [
+  { value: "spec_sheet", label: "Spec sheet" },
+  { value: "manual", label: "Operating/maintenance manual" },
+  { value: "sop_wi", label: "SOP / WI" },
+  { value: "iq_oq", label: "IQ/OQ" },
+  { value: "calibration_cert", label: "Calibration certificate" },
+  { value: "vendor_doc", label: "Vendor document" },
+  { value: "drawing", label: "Drawing" },
+  { value: "other", label: "Other" },
+];
+
+interface EquipmentDocument {
+  id: string;
+  filename: string;
+  mime_type: string;
+  state: string;
+  created_at: string;
+  provenance: { document_type?: string } | null;
+}
+
+/** Client requirement #6 -- equipment documentation via the existing generic evidence module
+ * (owner_type is a free string, so "equipment_asset" needs no evidence-module change). document_type is
+ * a soft, UI-only classification stored in `provenance` -- same "captured, unenforced" precedent as this
+ * module's other classification-only fields (e.g. `cleanliness_status`). */
+function DocumentsTab({ assetId, me }: { assetId: string; me: Me | null }) {
+  const { data, reload } = useApiResource<{ evidence_objects: EquipmentDocument[] }>(
+    `/evidence/v1/objects?owner_type=equipment_asset&owner_id=${assetId}`
+  );
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const documents = data?.evidence_objects ?? [];
+
+  return (
+    <Card>
+      <CardHeader
+        title="Documents"
+        meta={
+          canOperateEvidence(me) && (
+            <Button size="sm" variant="secondary" onClick={() => setUploadOpen(true)}>
+              <Icon name="plus" /> Upload document
+            </Button>
+          )
+        }
+      />
+      {documents.length === 0 ? (
+        <EmptyState icon="file-text">No controlled documents uploaded for this equipment yet.</EmptyState>
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Filename</th>
+              <th>State</th>
+              <th>Uploaded</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {documents.map((d) => (
+              <tr key={d.id}>
+                <td className="fs-2">
+                  {DOCUMENT_TYPES.find((t) => t.value === d.provenance?.document_type)?.label ??
+                    d.provenance?.document_type ??
+                    "—"}
+                </td>
+                <td>{d.filename}</td>
+                <td className="fs-2">{d.state}</td>
+                <td className="fs-2 text-muted">{formatDateTime(d.created_at)}</td>
+                <td style={{ textAlign: "right" }}>
+                  {d.state === "FINALIZED" && (
+                    <Button size="sm" variant="secondary" onClick={() => downloadEvidence(d.id)}>
+                      <Icon name="download" /> Download
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+
+      {uploadOpen && (
+        <UploadDocumentModal
+          assetId={assetId}
+          onClose={() => setUploadOpen(false)}
+          onDone={() => {
+            setUploadOpen(false);
+            reload();
+          }}
+        />
+      )}
+    </Card>
+  );
+}
+
+function UploadDocumentModal({
+  assetId,
+  onClose,
+  onDone,
+}: {
+  assetId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [documentType, setDocumentType] = useState(DOCUMENT_TYPES[0].value);
+  const [reason, setReason] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileBase64, setFileBase64] = useState("");
+  const [mimeType, setMimeType] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleFile(file: File | undefined) {
+    if (!file) {
+      setFileName(null);
+      setFileBase64("");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const base64 = result.includes(",") ? result.slice(result.indexOf(",") + 1) : result;
+      setFileName(file.name);
+      setMimeType(file.type || "application/octet-stream");
+      setFileBase64(base64);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!fileName || !fileBase64) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const staged = await api.post<MutationReceipt>("/evidence/v1/uploads", {
+        idempotency_key: newIdempotencyKey(),
+        owner_type: "equipment_asset",
+        owner_id: assetId,
+        filename: fileName,
+        mime_type: mimeType,
+        provenance: { document_type: documentType },
+        reason: reason || `Equipment document upload (${documentType})`,
+      });
+      await api.post<MutationReceipt>(`/evidence/v1/${staged.aggregate_id}:finalize`, {
+        idempotency_key: newIdempotencyKey(),
+        evidence_id: staged.aggregate_id,
+        expected_version: staged.resulting_version,
+        content_base64: fileBase64,
+        reason: reason || `Equipment document upload (${documentType})`,
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed to upload document");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Upload equipment document">
+      <form onSubmit={onSubmit}>
+        <Field label="Document type" required>
+          <Select value={documentType} onChange={(e) => setDocumentType(e.target.value)}>
+            {DOCUMENT_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="File" required>
+          <input type="file" className="input" onChange={(e) => handleFile(e.target.files?.[0])} />
+        </Field>
+        <Field label="Reason" hint="Optional. Recorded in the audit trail.">
+          <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !fileName}>
+            {busy ? "Uploading…" : "Upload"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Client requirement #8 -- mirrors the backend's own computation (`performed_date + frequency_days`)
+ * so the operator sees, before submitting, exactly what the asset's next_calibration_due_date will
+ * become when a frequency is set (it overrides the "Next due date" field above once submitted). */
+function computeNextDue(performedDateStr: string, frequencyDaysStr: string): string {
+  const performed = new Date(`${performedDateStr}T00:00:00Z`);
+  if (Number.isNaN(performed.getTime())) return "—";
+  const days = Number(frequencyDaysStr);
+  if (!Number.isFinite(days)) return "—";
+  const next = new Date(performed.getTime() + days * 86400000);
+  return next.toISOString().slice(0, 10);
+}
+
 const ACTION_TITLE: Record<PendingAction, string> = {
   qualification: "Record qualification",
   calibration: "Record calibration",
@@ -566,6 +796,9 @@ function ActionModal({
   const [standardReference, setStandardReference] = useState("");
   const [frequencyDays, setFrequencyDays] = useState("365");
   const [reviewerId, setReviewerId] = useState("");
+  const [calibrationType, setCalibrationType] = useState("internal");
+  const [providerName, setProviderName] = useState("");
+  const [certificateReference, setCertificateReference] = useState("");
 
   // Maintenance
   const [maintenanceType, setMaintenanceType] = useState("planned");
@@ -639,6 +872,9 @@ function ActionModal({
           standard_reference: standardReference || null,
           frequency_days: frequencyDays ? Number(frequencyDays) : null,
           reviewer_user_id: reviewerId || null,
+          calibration_type: calibrationType,
+          provider_name: calibrationType === "external" ? providerName || null : null,
+          certificate_reference: calibrationType === "external" ? certificateReference || null : null,
           reason: reason || null,
         });
       } else if (action === "maintenance") {
@@ -665,7 +901,10 @@ function ActionModal({
     }
   }
 
-  const canSubmit = !busy && (action !== "calibration" || (!!dueDate && !!performedDate));
+  const canSubmit =
+    !busy &&
+    (action !== "calibration" ||
+      (!!dueDate && !!performedDate && (calibrationType !== "external" || !!providerName.trim())));
 
   return (
     <Modal
@@ -728,7 +967,14 @@ function ActionModal({
               <Field label="Standard reference" hint="Traceable standard used for this calibration.">
                 <Input value={standardReference} onChange={(e) => setStandardReference(e.target.value)} />
               </Field>
-              <Field label="Frequency (days)">
+              <Field
+                label="Frequency (days)"
+                hint={
+                  frequencyDays && performedDate
+                    ? `Next due (calculated): ${computeNextDue(performedDate, frequencyDays)}`
+                    : "When set, the asset's next due date is calculated from this instead of the field above."
+                }
+              >
                 <Input
                   type="number"
                   min={1}
@@ -736,6 +982,24 @@ function ActionModal({
                   onChange={(e) => setFrequencyDays(e.target.value)}
                 />
               </Field>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <Field label="Calibration type" required>
+                <Select value={calibrationType} onChange={(e) => setCalibrationType(e.target.value)}>
+                  <option value="internal">internal</option>
+                  <option value="external">external</option>
+                </Select>
+              </Field>
+              {calibrationType === "external" && (
+                <>
+                  <Field label="Provider name" required>
+                    <Input value={providerName} onChange={(e) => setProviderName(e.target.value)} required />
+                  </Field>
+                  <Field label="Certificate reference">
+                    <Input value={certificateReference} onChange={(e) => setCertificateReference(e.target.value)} />
+                  </Field>
+                </>
+              )}
             </div>
             <EntityPickerField
               label="Reviewer"
@@ -761,6 +1025,7 @@ function ActionModal({
                 <Select value={maintenanceType} onChange={(e) => setMaintenanceType(e.target.value)}>
                   <option value="planned">planned</option>
                   <option value="corrective">corrective</option>
+                  <option value="breakdown">breakdown</option>
                 </Select>
               </Field>
               <Field label="Next due date">
