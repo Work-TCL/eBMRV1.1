@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { CodeField } from "@/components/ui/CodeField";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 
@@ -165,9 +166,8 @@ export default function MaterialsPage() {
           <Field label="Name" required>
             <Input value={name} onChange={(e) => setName(e.target.value)} required />
           </Field>
-          <Field label="Unit of measure" required error={error}>
-            <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
-          </Field>
+          <UomSelect value={uom} onChange={setUom} required />
+          {error && <p className="error-text mb-2">{error}</p>}
           <div className="flex justify-between gap-3 mt-4">
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
               Cancel

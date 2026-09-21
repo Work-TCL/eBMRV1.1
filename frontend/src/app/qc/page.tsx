@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, ApiError, hasPermission, newIdempotencyKey, pagedFetcher } from "@/lib/api";
-import { useApiResource, useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -14,6 +14,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
@@ -72,14 +73,30 @@ const SAMPLE_TYPES = ["release", "stability", "in_process", "environmental", "ra
 const SOURCE_TYPES = ["batch", "material_lot", "environment", "stability_study", "equipment"];
 const SCOPE_TYPES = ["product", "in_process", "device"];
 
-const TEST_DEFINITION_SUBFIELDS: RepeatSubField[] = [
-  { name: "test_code", label: "Test code", required: true, placeholder: "e.g. FILL-WEIGHT" },
-  { name: "test_name", label: "Test name", required: true, placeholder: "e.g. Fill weight" },
-  { name: "result_data_type", label: "Result data type", required: true, placeholder: "numeric / text / pass_fail / json" },
-  { name: "uom", label: "Unit of measure" },
-  { name: "required", label: "Required", type: "bool", default: "true" },
-  { name: "release_blocking", label: "Release blocking", type: "bool", default: "true" },
-];
+function testDefinitionSubfields(
+  uomOptions: EntityOption[],
+  uomOptionsStatus: EntityOptionsStatus
+): RepeatSubField[] {
+  return [
+    { name: "test_code", label: "Test code", required: true, placeholder: "e.g. FILL-WEIGHT" },
+    { name: "test_name", label: "Test name", required: true, placeholder: "e.g. Fill weight" },
+    { name: "result_data_type", label: "Result data type", required: true, placeholder: "numeric / text / pass_fail / json" },
+    // Client requirements #2/#3: the released rules.gxp_uom list, not free text.
+    { name: "uom", label: "Unit of measure", type: "customSelect", options: uomOptions, optionsStatus: uomOptionsStatus, optionsNoun: "unit" },
+    { name: "required", label: "Required", type: "bool", default: "true" },
+    { name: "release_blocking", label: "Release blocking", type: "bool", default: "true" },
+  ];
+}
+
+/** Client requirements #2/#3 -- released UOM codes for the test-definition editor's "customSelect"
+ * unit-of-measure field. `/rules/v1/uom` returns a flat array, not a paginated envelope, so this fetches
+ * directly rather than through `useListEntityOptions`/`listAll` (both assume pagination). */
+function useUomOptions(): { options: EntityOption[]; status: EntityOptionsStatus } {
+  const { data, error } = useApiResource<{ code: string }[]>("/rules/v1/uom");
+  if (error) return { options: [], status: "error" };
+  if (data === null) return { options: [], status: "loading" };
+  return { options: data.map((u) => ({ value: u.code, label: u.code })), status: data.length ? "ready" : "empty" };
+}
 
 type OrderAction = "start" | "complete" | "review";
 
@@ -619,9 +636,7 @@ function CreateSampleModal({ onClose, onDone }: { onClose: () => void; onDone: (
           <Field label="Sample quantity">
             <Input type="number" step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
           </Field>
-          <Field label="UOM">
-            <Input value={uom} onChange={(e) => setUom(e.target.value)} />
-          </Field>
+          <UomSelect value={uom} onChange={setUom} />
         </div>
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-2">
@@ -913,9 +928,7 @@ function RecordResultModal({
               <option value="pass_fail">pass_fail</option>
             </Select>
           </Field>
-          <Field label="UOM">
-            <Input value={uom} onChange={(e) => setUom(e.target.value)} placeholder="e.g. mL" />
-          </Field>
+          <UomSelect value={uom} onChange={setUom} />
         </div>
         {resultType === "numeric" ? (
           <Field label="Value" required>
@@ -1070,6 +1083,8 @@ function NewSpecificationModal({ onClose, onDone }: { onClose: () => void; onDon
   const [scopeType, setScopeType] = useState("product");
   const [scopeVersionId, setScopeVersionId] = useState("");
   const [definitions, setDefinitions] = useState<RepeatRow[]>([]);
+  const { options: uomOptions, status: uomOptionsStatus } = useUomOptions();
+  const subFields = testDefinitionSubfields(uomOptions, uomOptionsStatus);
 
   return (
     <Modal open onClose={onClose} title="New test specification" large>
@@ -1082,7 +1097,7 @@ function NewSpecificationModal({ onClose, onDone }: { onClose: () => void; onDon
               spec_code: specCode,
               scope_type: scopeType,
               scope_version_id: scopeVersionId,
-              test_definitions: buildRepeatArray(TEST_DEFINITION_SUBFIELDS, definitions),
+              test_definitions: buildRepeatArray(subFields, definitions),
             })
           );
         }}
@@ -1132,7 +1147,7 @@ function NewSpecificationModal({ onClose, onDone }: { onClose: () => void; onDon
           label="Test definitions"
           itemLabel="Test definition"
           hint="Every test this specification defines - at least one is required for a test order to ever be created against it."
-          subFields={TEST_DEFINITION_SUBFIELDS}
+          subFields={subFields}
           value={definitions}
           onChange={setDefinitions}
         />

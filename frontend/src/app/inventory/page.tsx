@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { StatePill } from "@/components/ui/StatePill";
@@ -873,9 +874,7 @@ function ActionModal({
               <Field label="Quantity" required>
                 <Input type="number" step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
               </Field>
-              <Field label="UOM" required>
-                <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
-              </Field>
+              <UomSelect value={uom} onChange={setUom} required />
             </div>
           </>
         )}

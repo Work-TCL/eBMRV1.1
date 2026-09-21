@@ -19,6 +19,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { CodeField } from "@/components/ui/CodeField";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -810,9 +811,7 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
             <Field label="Strength value">
               <Input type="number" step="any" value={strengthValue} onChange={(e) => setStrengthValue(e.target.value)} />
             </Field>
-            <Field label="Strength UOM">
-              <Input value={strengthUom} onChange={(e) => setStrengthUom(e.target.value)} placeholder="mg" />
-            </Field>
+            <UomSelect label="Strength UOM" value={strengthUom} onChange={setStrengthUom} />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4">
@@ -1006,9 +1005,7 @@ function EditDraftModal({
             <Field label="Strength value">
               <Input type="number" step="any" value={strengthValue} onChange={(e) => setStrengthValue(e.target.value)} />
             </Field>
-            <Field label="Strength UOM">
-              <Input value={strengthUom} onChange={(e) => setStrengthUom(e.target.value)} placeholder="mg" />
-            </Field>
+            <UomSelect label="Strength UOM" value={strengthUom} onChange={setStrengthUom} />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4">

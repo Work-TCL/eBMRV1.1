@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid } from "@/components/ui/FactGrid";
@@ -393,9 +394,7 @@ function CreateReceiptModal({
           <Field label="Received quantity (gross)" required hint="Kept as exact text.">
             <Input value={grossQuantity} onChange={(e) => setGrossQuantity(e.target.value)} required />
           </Field>
-          <Field label="Unit of measure" required>
-            <Input value={uom} onChange={(e) => setUom(e.target.value)} placeholder="e.g. ML, L, KG" required />
-          </Field>
+          <UomSelect value={uom} onChange={setUom} required />
  <Field label="Received quantity (net)" hint="Optional if different from gross.">
             <Input value={netQuantity} onChange={(e) => setNetQuantity(e.target.value)} />
           </Field>

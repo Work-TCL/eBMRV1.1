@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { UomSelect } from "@/components/ui/UomSelect";
 import {
   RepeatableRows,
   KeyValueRows,
@@ -59,6 +60,10 @@ export interface FormField {
     // Document 72 declares none, so it must stay owner-scoped) and picks from the resulting list instead
     // of pasting a raw evidence_id UUID. Manual-ID fallback available, same as every other picker type.
     | "evidenceSelect"
+    // Client requirements #2/#3: a real enforced dropdown over the released rules.gxp_uom list instead
+    // of a free-text quantity-unit field, with the same inline "+ Add new UOM" affordance every other
+    // UomSelect usage in the app offers.
+    | "uomSelect"
     | "repeat"
     | "kv"
     | "stringList";
@@ -333,6 +338,15 @@ export function FormFieldsGrid({
             onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
             batchOptions={entities.batches}
             batchOptionsStatus={entities.batchesStatus}
+          />
+        ) : f.type === "uomSelect" ? (
+          <UomSelect
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
           />
         ) : f.type === "fileBase64" ? (
           <FileBase64Field

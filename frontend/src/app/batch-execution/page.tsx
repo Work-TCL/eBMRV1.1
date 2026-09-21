@@ -13,6 +13,7 @@ import { Button, LinkButton } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
@@ -694,9 +695,7 @@ function CreateBatchModal({
           <Field label="Target quantity" required>
             <Input type="number" step="any" value={targetQty} onChange={(e) => setTargetQty(e.target.value)} required />
           </Field>
-          <Field label="UOM" required>
-            <Input value={targetUom} onChange={(e) => setTargetUom(e.target.value)} required />
-          </Field>
+          <UomSelect label="UOM" value={targetUom} onChange={setTargetUom} required />
           <Field label="Production order ref">
             <Input value={orderRef} onChange={(e) => setOrderRef(e.target.value)} />
           </Field>

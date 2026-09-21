@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { MaterialLotStatePill } from "@/components/ui/StatePill";
@@ -337,16 +338,15 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
           <Field label="Received quantity" required>
             <Input value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
           </Field>
-          <Field label="Unit of measure" required hint="Defaults to the material's standard unit - change it if this lot was received in a different unit, e.g. L instead of mL.">
-            <Input
-              value={uom}
-              onChange={(e) => {
-                setUomTouched(true);
-                setUom(e.target.value);
-              }}
-              required
-            />
-          </Field>
+          <UomSelect
+            value={uom}
+            onChange={(v) => {
+              setUomTouched(true);
+              setUom(v);
+            }}
+            required
+            hint="Defaults to the material's standard unit - change it if this lot was received in a different unit, e.g. L instead of mL."
+          />
         </div>
         <Field label="Expiry date" hint="Optional.">
           <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
@@ -658,9 +658,7 @@ function CollectSampleModal({
           <Field label="Sample quantity" required>
             <Input value={sampleQuantity} onChange={(e) => setSampleQuantity(e.target.value)} required />
           </Field>
-          <Field label="Sample UOM" required>
-            <Input value={sampleUom} onChange={(e) => setSampleUom(e.target.value)} required />
-          </Field>
+          <UomSelect label="Sample UOM" value={sampleUom} onChange={setSampleUom} required />
         </div>
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-3">

@@ -535,6 +535,7 @@ export const canReleaseMaterialLotV2 = (me: Me | null) => hasPermission(me, "mat
 export const canDispositionMaterialLot = (me: Me | null) => hasPermission(me, "material_lot.disposition");
 
 export const canAuthorRules = (me: Me | null) => hasPermission(me, "rules.author");
+export const canReleaseRules = (me: Me | null) => hasPermission(me, "rules.release");
 
 // supplier.create / supplier_qualification.create (Document 18) share one grant.
 export const canCreateSupplier = (me: Me | null) => hasPermission(me, "supplier.create");

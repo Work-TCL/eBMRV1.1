@@ -1193,19 +1193,18 @@ export function StepBlock({
               />
             </div>
             <div className="grid grid-cols-4 gap-3 mb-2">
-              <div>
-                <Input
-                  placeholder="UOM (optional)"
-                  list={`dl-uom-param-${param.key}`}
-                  value={param.uom}
-                  onChange={(e) => onUpdateParameter(param.key, { uom: e.target.value })}
-                />
-                <datalist id={`dl-uom-param-${param.key}`}>
-                  {uomOptions.map((code) => (
-                    <option key={code} value={code} />
-                  ))}
-                </datalist>
-              </div>
+              <Select
+                value={param.uom ?? ""}
+                onChange={(e) => onUpdateParameter(param.key, { uom: e.target.value })}
+              >
+                <option value="">UOM (optional)</option>
+                {uomOptions.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+                {param.uom && !uomOptions.includes(param.uom) && <option value={param.uom}>{param.uom}</option>}
+              </Select>
               <Input
                 placeholder="Target"
                 value={param.target_value}
@@ -1307,19 +1306,18 @@ export function StepBlock({
                 value={req.max_value}
                 onChange={(e) => onUpdateMaterialRequirement(req.key, { max_value: e.target.value })}
               />
-              <div>
-                <Input
-                  placeholder="UOM"
-                  list={`dl-uom-mat-${req.key}`}
-                  value={req.uom}
-                  onChange={(e) => onUpdateMaterialRequirement(req.key, { uom: e.target.value })}
-                />
-                <datalist id={`dl-uom-mat-${req.key}`}>
-                  {uomOptions.map((code) => (
-                    <option key={code} value={code} />
-                  ))}
-                </datalist>
-              </div>
+              <Select
+                value={req.uom ?? ""}
+                onChange={(e) => onUpdateMaterialRequirement(req.key, { uom: e.target.value })}
+              >
+                <option value="">UOM</option>
+                {uomOptions.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+                {req.uom && !uomOptions.includes(req.uom) && <option value={req.uom}>{req.uom}</option>}
+              </Select>
             </div>
             <div className="flex flex-wrap items-center gap-3 mb-2">
               <label className="flex items-center gap-2 fs-2">

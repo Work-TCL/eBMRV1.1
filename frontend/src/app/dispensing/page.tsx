@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
@@ -155,7 +156,7 @@ export default function DispensingPage() {
               { name: "dispensed_container_id", label: "Dispensed container ID", required: true },
               { name: "material_lot_id", label: "Material lot ID", hint: "Optional, if not derivable from the container." },
               { name: "quantity", label: "Quantity", required: true },
-              { name: "uom", label: "Unit of measure", required: true },
+              { name: "uom", label: "Unit of measure", type: "uomSelect", required: true },
               { name: "source_type", label: "Source type", default: "manual", placeholder: "e.g. manual, machine" },
               { name: "source_id", label: "Source ID", hint: "Optional - e.g. a machine evidence reference." },
             ],
@@ -168,7 +169,7 @@ export default function DispensingPage() {
               { name: "dispensed_container_id", label: "Dispensed container ID", required: true },
               { name: "material_lot_id", label: "Material lot ID", hint: "Optional, if not derivable from the container." },
               { name: "quantity", label: "Quantity", required: true },
-              { name: "uom", label: "Unit of measure", required: true },
+              { name: "uom", label: "Unit of measure", type: "uomSelect", required: true },
               { name: "container_condition", label: "Container condition", required: true },
               { name: "condition_acceptable", label: "Condition acceptable", type: "bool", required: true },
               { name: "storage_exposure_evidence", label: "Storage exposure evidence", type: "kv" },
@@ -184,7 +185,7 @@ export default function DispensingPage() {
               { name: "dispensed_container_id", label: "Dispensed container ID", required: true },
               { name: "loss_type", label: "Loss type", required: true, placeholder: "e.g. SAMPLE, REJECT, SPILL, APPROVED_LOSS" },
               { name: "quantity", label: "Quantity", required: true },
-              { name: "uom", label: "Unit of measure", required: true },
+              { name: "uom", label: "Unit of measure", type: "uomSelect", required: true },
               { name: "reason", label: "Reason", type: "textarea", required: true },
               { name: "location_id", label: "Location ID", hint: "Optional." },
               { name: "evidence", label: "Evidence", type: "kv" },
@@ -199,7 +200,7 @@ export default function DispensingPage() {
               { name: "container_id", label: "Container ID", hint: "One of the three scope fields." },
               { name: "dispensed_container_id", label: "Dispensed container ID", hint: "One of the three scope fields." },
               { name: "quantity", label: "Quantity", required: true },
-              { name: "uom", label: "Unit of measure", required: true },
+              { name: "uom", label: "Unit of measure", type: "uomSelect", required: true },
               { name: "reason", label: "Reason", type: "textarea", required: true },
               { name: "method", label: "Method", hint: "Optional - e.g. incineration, chemical treatment." },
               { name: "vendor_name", label: "Vendor name", hint: "Optional - for third-party destruction." },
@@ -340,9 +341,7 @@ function CreateOrderModal({
           <Field label="Target quantity" required>
             <Input type="number" step="any" value={targetQty} onChange={(e) => setTargetQty(e.target.value)} required />
           </Field>
-          <Field label="UOM" required>
-            <Input value={targetUom} onChange={(e) => setTargetUom(e.target.value)} required />
-          </Field>
+          <UomSelect label="UOM" value={targetUom} onChange={setTargetUom} required />
           <Field label="Tolerance −" required>
             <Input type="number" step="any" value={toleranceLow} onChange={(e) => setToleranceLow(e.target.value)} required />
           </Field>

@@ -18,6 +18,7 @@ import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Icon } from "@/components/ui/Icon";
 import { StatePill } from "@/components/ui/StatePill";
 import { summarizeJson } from "@/components/ui/JsonPanel";
@@ -383,9 +384,7 @@ function EvaluateYieldCard({
         <Field label="Phase code" hint="Optional - omit for a whole-batch yield.">
           <Input value={phaseCode} onChange={(e) => setPhaseCode(e.target.value)} />
         </Field>
-        <Field label="UOM" required>
-          <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
-        </Field>
+        <UomSelect value={uom} onChange={setUom} required />
         <Field label="Theoretical quantity" required>
           <Input value={theoretical} onChange={(e) => setTheoretical(e.target.value)} required />
         </Field>
@@ -533,9 +532,7 @@ function EvaluatePotencyCard({
           status={entities.rulesStatus}
           kind="rule"
         />
-        <Field label="UOM" hint="Optional.">
-          <Input value={uom} onChange={(e) => setUom(e.target.value)} />
-        </Field>
+        <UomSelect value={uom} onChange={setUom} hint="Optional." />
       </form>
       <div className="mt-3">
         <KeyValueRows
@@ -631,9 +628,7 @@ function ReconciliationCard({
           status={entities.batchesStatus}
           kind="batch"
         />
-        <Field label="UOM" required>
-          <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
-        </Field>
+        <UomSelect value={uom} onChange={setUom} required />
         <EntityPickerField
           label="Linked deviation ID"
           hint="An existing QMS deviation - only relevant alongside an approved_loss quantity."
@@ -882,9 +877,7 @@ function EvaluateComponentReconciliationCard({
         <Field label="Device unit ID" hint="Optional - only for a serialized case; must belong to this batch.">
           <Input value={deviceUnitId} onChange={(e) => setDeviceUnitId(e.target.value)} />
         </Field>
-        <Field label="UOM" required>
-          <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
-        </Field>
+        <UomSelect value={uom} onChange={setUom} required />
         <ToleranceRuleFields
           type={toleranceType}
           setType={setToleranceType}

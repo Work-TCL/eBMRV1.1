@@ -11,6 +11,7 @@ import { Field } from "@/components/ui/Field";
 import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { CodeField } from "@/components/ui/CodeField";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Button, LinkButton } from "@/components/ui/Button";
 import {
   type ProductBusinessIdOption,
@@ -182,14 +183,7 @@ export default function NewRecipeDraftPage() {
             <Field label="Batch size (optional)">
               <Input value={batchSizeValue} onChange={(e) => setBatchSizeValue(e.target.value)} />
             </Field>
-            <Field label="Batch size UOM (optional)">
-              <Input list="dl-uom-batch-size" value={batchSizeUom} onChange={(e) => setBatchSizeUom(e.target.value)} />
-              <datalist id="dl-uom-batch-size">
-                {uomOptions.map((code) => (
-                  <option key={code} value={code} />
-                ))}
-              </datalist>
-            </Field>
+            <UomSelect label="Batch size UOM (optional)" value={batchSizeUom} onChange={setBatchSizeUom} />
           </div>
           {pvError && <p className="error-text mt-2">{pvError}</p>}
           {error && <p className="error-text mt-2">{error}</p>}
