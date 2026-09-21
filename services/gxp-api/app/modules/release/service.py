@@ -27,6 +27,11 @@ from app.mutation.errors import NotFoundError
 # unrelated commands); this 3-tuple is the entire piece actually needed.
 _YIELD_UNRESOLVED_STATES = ("FAILED", "OUT_OF_LIMIT", "OUT_OF_TOLERANCE")
 
+# Client requirement #10: `qc.models.TEST_ORDER_STATES` states a blocking order has reached a terminal
+# or under-review-for-a-confirmed-result state at -- anything else means the order is still outstanding
+# work, not yet a signal `_qc_signals()`'s outcome check below can even see.
+TERMINAL_ORDER_STATES = ("reviewed", "oos_pending", "oot_pending", "invalid_under_investigation")
+
 
 async def get_scope(session: AsyncSession, scope_id: uuid.UUID) -> ReleaseScope:
     scope = await session.get(ReleaseScope, scope_id)
@@ -104,7 +109,11 @@ async def _qc_signals(session: AsyncSession, batch_id: uuid.UUID) -> tuple[list[
     editing the failing one -- a resolved OOS whose retest passed stops blocking; a confirmed true failure
     with no correcting result keeps blocking, correctly, forever. `oos`/`invalid` outcomes block;
     `oot` (out-of-trend) is a QA watch signal, not a confirmed failure -- non-blocking warning only
-    (2026-09-19, project-owner-directed)."""
+    (2026-09-19, project-owner-directed). Client requirement #10: a blocking order that hasn't even
+    reached a terminal/reviewed state yet (still `created`/`assigned`/`in_progress`/`analyst_complete`/
+    `review_pending`) is invisible to the outcome check below since it has no result yet -- blocked here
+    too, since an ordered-but-never-finished required test is exactly what REL-FR-003's "QC testing
+    complete" eligibility category means."""
     order_ids = (
         await session.execute(
             select(QcTestOrder.id)
@@ -114,6 +123,21 @@ async def _qc_signals(session: AsyncSession, batch_id: uuid.UUID) -> tuple[list[
     ).scalars().all()
     if not order_ids:
         return [], []
+
+    blockers: list[dict] = []
+    warnings: list[dict] = []
+    incomplete_orders = (
+        await session.execute(
+            select(QcTestOrder).where(QcTestOrder.id.in_(order_ids), QcTestOrder.state.notin_(TERMINAL_ORDER_STATES))
+        )
+    ).scalars().all()
+    for order in incomplete_orders:
+        blockers.append(
+            _blocker(
+                "QC_TESTING_INCOMPLETE", "CRITICAL", "qc_test_order", str(order.id),
+                "release.blocker.qc_testing_incomplete", "COMPLETE_QC_TESTING",
+            )
+        )
 
     results = (
         await session.execute(
@@ -126,8 +150,6 @@ async def _qc_signals(session: AsyncSession, batch_id: uuid.UUID) -> tuple[list[
     for result in results:
         latest_by_order.setdefault(result.test_order_id, result)
 
-    blockers: list[dict] = []
-    warnings: list[dict] = []
     for result in latest_by_order.values():
         if result.outcome in ("oos", "invalid"):
             blockers.append(

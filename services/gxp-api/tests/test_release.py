@@ -406,6 +406,61 @@ async def test_evaluate_blocked_by_qc_material_em_signals(client, seeded, db):
     assert "EM_ACTION_EXCURSION" in codes
 
 
+async def test_evaluate_blocked_by_incomplete_qc_testing(client, seeded, db):
+    """Client requirement #10: a release-blocking test order that has never even reached a terminal/
+    reviewed state (no result recorded at all here) blocks release with QC_TESTING_INCOMPLETE -- distinct
+    from QC_RESULT_FAILED, which only fires for a *recorded* failing outcome."""
+    import uuid as uuid_mod
+
+    from app.modules.qc.models import QcSample, QcTestDefinition, QcTestOrder, QcTestSpecification
+
+    admin_token, batch_id = await _setup(db, client, seeded, "10")
+
+    async with db.begin():
+        spec = QcTestSpecification(spec_code="SPEC-REL10", version_no=1, scope_type="product", scope_version_id=uuid_mod.uuid4(), status="released")
+        db.add(spec)
+        await db.flush()
+        definition = QcTestDefinition(specification_id=spec.id, test_code="ASSAY", test_name="Assay", result_data_type="numeric", required=True, release_blocking=True)
+        db.add(definition)
+        await db.flush()
+        sample = QcSample(sample_number=f"SMP-REL10-{uuid_mod.uuid4().hex[:6]}", sample_type="in_process", source_type="batch", source_id=uuid_mod.UUID(batch_id), state="testing_complete")
+        db.add(sample)
+        await db.flush()
+        order = QcTestOrder(sample_id=sample.id, test_definition_id=definition.id, state="analyst_complete", blocking=True)
+        db.add(order)
+        await db.flush()
+        order_id = order.id
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    scope_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert detail["evaluation"]["eligible"] is False
+    blockers_by_code = {b["code"]: b for b in detail["evaluation"]["blockers"]}
+    assert blockers_by_code["QC_TESTING_INCOMPLETE"]["source_id"] == str(order_id)
+    assert "QC_RESULT_FAILED" not in blockers_by_code
+
+    # Once the order reaches a terminal state, the blocker clears.
+    async with db.begin():
+        reviewed = await db.get(QcTestOrder, order_id)
+        reviewed.state = "reviewed"
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    codes = {b["code"] for b in detail["evaluation"]["blockers"]}
+    assert "QC_TESTING_INCOMPLETE" not in codes
+
+
 async def test_evaluate_warnings_are_non_blocking(client, seeded, db):
     """QC 'oot', EM 'alert' and an incomplete packaging run are all real signals (2026-09-19) but
     deliberately warning-only -- project-owner-directed: OOT/alert are watch-level, not confirmed

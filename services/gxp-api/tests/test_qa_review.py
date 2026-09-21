@@ -348,6 +348,45 @@ async def test_yield_reconciliation_blocker_wired_into_completeness(client, seed
     assert any(str(calc_id) in b for b in exceptions["blockers"])
 
 
+async def test_package_blocked_by_incomplete_qc_testing(client, seeded, db):
+    """Client requirement #10: same QC_TESTING_INCOMPLETE reasoning as release/service.py's own test --
+    a release-blocking test order stuck short of a terminal state blocks package completeness."""
+    import uuid as uuid_mod
+
+    from app.modules.qc.models import QcSample, QcTestDefinition, QcTestOrder, QcTestSpecification
+
+    admin_token, batch_id = await _setup(db, client, seeded, "9")
+
+    async with db.begin():
+        spec = QcTestSpecification(spec_code="SPEC-QAR9", version_no=1, scope_type="product", scope_version_id=uuid_mod.uuid4(), status="released")
+        db.add(spec)
+        await db.flush()
+        definition = QcTestDefinition(specification_id=spec.id, test_code="ASSAY", test_name="Assay", result_data_type="numeric", required=True, release_blocking=True)
+        db.add(definition)
+        await db.flush()
+        sample = QcSample(sample_number=f"SMP-QAR9-{uuid_mod.uuid4().hex[:6]}", sample_type="in_process", source_type="batch", source_id=uuid_mod.UUID(batch_id), state="testing_complete")
+        db.add(sample)
+        await db.flush()
+        order = QcTestOrder(sample_id=sample.id, test_definition_id=definition.id, state="review_pending", blocking=True)
+        db.add(order)
+        await db.flush()
+        order_id = order.id
+
+    resp = await client.post(
+        f"/qa-review/v1/batches/{batch_id}/packages",
+        json={"idempotency_key": idem(), "batch_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    package_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/qa-review/v1/packages/{package_id}", headers=auth_headers(admin_token))).json()
+    assert detail["completeness_status"] == "blocked"
+
+    exceptions = (await client.get(f"/qa-review/v1/packages/{package_id}/exceptions", headers=auth_headers(admin_token))).json()
+    assert any(str(order_id) in b for b in exceptions["blockers"])
+
+
 async def test_complete_package_and_reopen_on_batch_change(client, seeded, db):
     admin_token, batch_id = await _setup(db, client, seeded, "5")
     resp = await client.post(

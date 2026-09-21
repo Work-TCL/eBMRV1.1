@@ -23,6 +23,11 @@ from app.mutation.errors import NotFoundError
 # private `_UNRESOLVED_STATES`, duplicated to avoid pulling in that module's full commands.py).
 _YIELD_UNRESOLVED_STATES = ("FAILED", "OUT_OF_LIMIT", "OUT_OF_TOLERANCE")
 
+# Client requirement #10: same set as `release.service.TERMINAL_ORDER_STATES` -- duplicated rather than
+# imported since `release.service` itself imports this module (`qa_review_service`), and importing back
+# would be circular.
+_TERMINAL_ORDER_STATES = ("reviewed", "oos_pending", "oot_pending", "invalid_under_investigation")
+
 
 async def get_package(session: AsyncSession, package_id: uuid.UUID) -> QaReviewPackage:
     package = await session.get(QaReviewPackage, package_id)
@@ -88,7 +93,10 @@ async def _qc_signals(session: AsyncSession, batch_id: uuid.UUID) -> tuple[list[
     """Same QC attribution/severity reasoning as `release/service.py::_qc_signals` (2026-09-19,
     project-owner-directed) -- `QcSample.source_type="batch"`, `QcTestOrder.blocking` orders only, most
     recent `qc_result` per order (append-only, AG-08, so a corrected/retested row naturally supersedes by
-    being later). `oos`/`invalid` block; `oot` is a non-blocking warning."""
+    being later). `oos`/`invalid` block; `oot` is a non-blocking warning. Client requirement #10: a
+    blocking order that hasn't reached a terminal state yet (see `release.service.TERMINAL_ORDER_STATES`)
+    blocks too -- an ordered-but-never-finished required test is incomplete QC testing, not merely absent
+    QC signal."""
     order_ids = (
         await session.execute(
             select(QcTestOrder.id)
@@ -99,6 +107,14 @@ async def _qc_signals(session: AsyncSession, batch_id: uuid.UUID) -> tuple[list[
     blockers: list[str] = []
     warnings: list[str] = []
     if order_ids:
+        incomplete_orders = (
+            await session.execute(
+                select(QcTestOrder).where(QcTestOrder.id.in_(order_ids), QcTestOrder.state.notin_(_TERMINAL_ORDER_STATES))
+            )
+        ).scalars().all()
+        for order in incomplete_orders:
+            blockers.append(f"QC test order {order.id} has not reached a reviewed/terminal state")
+
         results = (
             await session.execute(
                 select(QcResult)
