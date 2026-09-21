@@ -67,6 +67,18 @@ async def _resolve_uom_id(session: AsyncSession, uom: str | None) -> uuid.UUID |
     return row.uom_id
 
 
+async def _resolve_uom_id_strict(session: AsyncSession, uom: str | None) -> uuid.UUID | None:
+    """Client requirements #2/#3: the recipe-authoring UI's UomSelect only ever submits a code drawn
+    from the released UOM list, so an unresolvable non-empty code here means a caller sent something
+    outside it -- reject instead of silently leaving uom_id NULL."""
+    if not uom:
+        return None
+    uom_id = await _resolve_uom_id(session, uom)
+    if uom_id is None:
+        raise ValidationFailedError("Unrecognized or unreleased UOM code", uom=uom)
+    return uom_id
+
+
 def _receipt_from_existing(existing) -> MutationReceipt:
     return MutationReceipt(
         command_id=existing.id,
@@ -296,7 +308,7 @@ async def _replace_graph(
                     parameter_code=p.parameter_code,
                     data_type=p.data_type,
                     uom=p.uom,
-                    uom_id=await _resolve_uom_id(session, p.uom),
+                    uom_id=await _resolve_uom_id_strict(session, p.uom),
                     source_type=p.source_type,
                     target_value=p.target_value,
                     min_value=p.min_value,
@@ -339,7 +351,7 @@ async def _replace_graph(
                     min_value=m.min_value,
                     max_value=m.max_value,
                     uom=m.uom,
-                    uom_id=await _resolve_uom_id(session, m.uom),
+                    uom_id=await _resolve_uom_id_strict(session, m.uom),
                     alternative_material_spec_version_id=m.alternative_material_spec_version_id,
                     substitution_allowed=m.substitution_allowed,
                     consume_mode=m.consume_mode,
@@ -500,7 +512,7 @@ async def create_draft(session: AsyncSession, cmd: CreateRecipeDraftCommand, act
         site_id=cmd.site_id,
         batch_size_value=cmd.batch_size_value,
         batch_size_uom=cmd.batch_size_uom,
-        batch_size_uom_id=await _resolve_uom_id(session, cmd.batch_size_uom),
+        batch_size_uom_id=await _resolve_uom_id_strict(session, cmd.batch_size_uom),
         lifecycle_state="draft",
     )
     session.add(version)

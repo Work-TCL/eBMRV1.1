@@ -98,6 +98,20 @@ async def _resolve_uom_id(session: AsyncSession, uom: str | None) -> uuid.UUID |
     return row.uom_id
 
 
+async def _resolve_uom_id_strict(session: AsyncSession, uom: str | None) -> uuid.UUID | None:
+    """Client requirements #2/#3: the UI's UomSelect only ever submits a code drawn from the released
+    UOM list, so an unresolvable non-empty code here means a caller (this UI or a direct API call) sent
+    something outside it -- reject instead of silently leaving uom_id NULL. Scoped to the specific
+    user-facing commands whose UI now sources this value from UomSelect; every other, purely internal or
+    derived `_resolve_uom_id` call site in this module is untouched."""
+    if not uom:
+        return None
+    uom_id = await _resolve_uom_id(session, uom)
+    if uom_id is None:
+        raise ValidationFailedError("Unrecognized or unreleased UOM code", uom=uom)
+    return uom_id
+
+
 def _receipt_from_existing(existing) -> MutationReceipt:
     return MutationReceipt(
         command_id=existing.id,
@@ -139,7 +153,8 @@ async def create_material(
         code = await codegen_service.next_code(session, entity_type="MATERIAL", prefix="MAT", site_id=cmd.site_id)
 
     material = Material(
-        site_id=cmd.site_id, code=code, name=cmd.name, uom=cmd.uom, uom_id=await _resolve_uom_id(session, cmd.uom),
+        site_id=cmd.site_id, code=code, name=cmd.name, uom=cmd.uom,
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         status="active", version=1,
     )
     session.add(material)
@@ -235,7 +250,7 @@ async def receive_material_lot(
         received_quantity=cmd.received_quantity,
         available_quantity=cmd.received_quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         status="quarantine",
         expiry_date=cmd.expiry_date,
         retest_date=cmd.retest_date,
@@ -809,7 +824,7 @@ async def create_material_receipt(
         received_net_quantity=cmd.received_net_quantity,
         accepted_quantity=cmd.accepted_quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         manufacture_date=cmd.manufacture_date,
         expiry_date=cmd.expiry_date,
         retest_date=cmd.retest_date,
@@ -1964,7 +1979,7 @@ async def create_inventory_reservation(
     balance.available -= cmd.quantity
     balance.version += 1
 
-    cmd_uom_id = await _resolve_uom_id(session, cmd.uom)
+    cmd_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
     txn = InventoryTransaction(
         site_id=cmd.site_id,
         material_lot_id=chosen_lot.id,
@@ -2981,7 +2996,7 @@ async def create_dispensing_order(
         material_spec_version_id=cmd.material_spec_version_id,
         target_qty=cmd.target_qty,
         target_uom=cmd.target_uom,
-        target_uom_id=await _resolve_uom_id(session, cmd.target_uom),
+        target_uom_id=await _resolve_uom_id_strict(session, cmd.target_uom),
         tolerance_low=cmd.tolerance_low,
         tolerance_high=cmd.tolerance_high,
         state="created",
@@ -4060,7 +4075,7 @@ async def record_consumption(
     await evaluate_policy(session, actor_user_id, action="material_consumption.create", site_id=site_id)
 
     material_lot_id = await _resolve_consumption_lot(session, container, cmd.material_lot_id)
-    cmd_uom_id = await _resolve_uom_id(session, cmd.uom)
+    cmd_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
 
     txn = InventoryTransaction(
         site_id=site_id,
@@ -4204,7 +4219,7 @@ async def record_return(
     # caller-supplied `condition_acceptable` flag is a captured classification, not an inferred quality
     # judgment — same treatment as every other captured-not-derived boolean/enum in this module.
     resulting_status = "released" if cmd.condition_acceptable else "quarantine"
-    cmd_uom_id = await _resolve_uom_id(session, cmd.uom)
+    cmd_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
 
     txn = InventoryTransaction(
         site_id=site_id,
@@ -4365,7 +4380,7 @@ async def record_material_loss(
         transaction_type=cmd.loss_type,
         quantity=cmd.quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         from_location_id=cmd.location_id,
         reference_type="dispensed_container",
         reference_id=container.id,
@@ -4851,7 +4866,7 @@ async def create_destruction_request(
         dispensed_container_id=cmd.dispensed_container_id,
         quantity=cmd.quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         reason=cmd.reason,
         method=cmd.method,
         vendor_name=cmd.vendor_name,

@@ -252,11 +252,12 @@ async def test_issue_creates_snapshot_and_instantiates_steps(client, seeded, db)
     )
     batch_id = resp.json()["aggregate_id"]
 
-    # SG-146 (remainder, module 4 of 8): "kg" has no released rules.gxp_uom row in this environment --
-    # the dual-write is a no-op (expand-phase contract, nothing breaks).
+    # Client requirements #2/#3 (2026-09-21): "kg" is now a baseline released rules.gxp_uom row (see
+    # conftest.py's `seeded` fixture) and create_batch hardens uom resolution via
+    # `_resolve_uom_id_strict` -- the dual-write resolves.
     batch_row = await db.get(Batch, uuid.UUID(batch_id))
     assert batch_row.target_uom == "kg"
-    assert batch_row.target_uom_id is None
+    assert batch_row.target_uom_id is not None
 
     resp = await client.post(
         f"/batches/v1/{batch_id}/issue",

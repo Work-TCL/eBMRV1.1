@@ -8,6 +8,7 @@ Run with: .venv/bin/python -m scripts.seed
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from sqlalchemy import select
 
@@ -33,7 +34,7 @@ from app.modules.equipment.sterilization_models import ProcessCycleProfileVersio
 from app.modules.erp.models import ErpInstance
 from app.modules.iam.models import Organization, Permission, Role, RolePermission, Site, SodRule, User, UserSiteRole
 from app.modules.material.models import WarehouseLocation
-from app.modules.rules.models import RuleDefinition
+from app.modules.rules.models import RuleDefinition, UnitOfMeasure
 from app.modules.signature.models import SignaturePolicy
 from app.modules.sre.models import CapacityForecast, SloDefinition
 from app.modules.sre.registry import DOCUMENT_109_CAPACITY_SEED, DOCUMENT_109_SLO_SEED
@@ -1653,6 +1654,24 @@ SIGNATURE_POLICY_CHAIN_FLOOR = [
     ("correction_removal_regulatory_record", "sign", "Approved", 2, [None, None], True),
 ]
 
+# Client requirements #2/#3: a baseline set of released units of measure so the newly-enforced
+# UomSelect (and the hardened `_resolve_uom_id_strict` checks it feeds) has something real to select and
+# resolve on a freshly-seeded deployment -- without this, no material/product/recipe/batch/QC record
+# could ever be created, since `rules.gxp_uom` starts empty. `rules.models.UnitOfMeasure`'s own docstring
+# names exactly this path ("rows are written directly by a controlled migration/seed... until that
+# command surface is built"). (code, dimension, base_unit, factor, offset, precision_dp)
+UOM_FLOOR = [
+    ("kg", "MASS", "kg", Decimal("1"), Decimal("0"), 4),
+    ("g", "MASS", "kg", Decimal("0.001"), Decimal("0"), 4),
+    ("mg", "MASS", "kg", Decimal("0.000001"), Decimal("0"), 6),
+    ("L", "VOLUME", "L", Decimal("1"), Decimal("0"), 4),
+    ("mL", "VOLUME", "L", Decimal("0.001"), Decimal("0"), 4),
+    ("mm", "LENGTH", "mm", Decimal("1"), Decimal("0"), 2),
+    ("each", "COUNT", "each", Decimal("1"), Decimal("0"), 0),
+    ("EA", "COUNT", "each", Decimal("1"), Decimal("0"), 0),
+    ("unit", "COUNT", "each", Decimal("1"), Decimal("0"), 0),
+]
+
 # Document 20 (SPEC-MAT-002B) INV-FR-001/002: warehouse_location has no CRUD operation anywhere in
 # Document 20's own 8-op API list (SG-081) -- seed-only master data, same treatment as Organization/Site.
 # (warehouse_code, location_code, zone_type)
@@ -1740,6 +1759,18 @@ async def seed() -> None:
             site = Site(organization_id=org.id, code="SITE1", name="Demo Site 1")
             session.add(site)
             await session.flush()
+
+            for code, dimension, base_unit, factor, offset, precision_dp in UOM_FLOOR:
+                existing_uom = (
+                    await session.execute(select(UnitOfMeasure).where(UnitOfMeasure.code == code))
+                ).scalar_one_or_none()
+                if existing_uom is None:
+                    session.add(
+                        UnitOfMeasure(
+                            code=code, dimension=dimension, base_unit=base_unit, factor=factor,
+                            offset=offset, precision_dp=precision_dp, status="released", version=1,
+                        )
+                    )
 
             for warehouse_code, location_code, zone_type in WAREHOUSE_LOCATION_FLOOR:
                 existing_location = (

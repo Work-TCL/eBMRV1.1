@@ -54,7 +54,11 @@ async def test_product_draft_dual_writes_strength_uom_id_when_released(client, s
     assert version.strength_uom_id is not None
 
 
-async def test_product_draft_leaves_strength_uom_id_null_when_unresolved(client, seeded, db):
+async def test_product_draft_rejects_unresolvable_strength_uom(client, seeded, db):
+    """Client requirements #2/#3 (2026-09-21): create_draft now hardens strength_uom resolution via
+    `_resolve_uom_id_strict` since the UI only ever submits a code drawn from the released list --
+    superseding the old best-effort "leaves strength_uom_id null" behavior for this specific, now
+    UI-enforced call site."""
     async with db.begin():
         await _make_admin(db, seeded, "admin.pm2")
     token = await login(client, "admin.pm2")
@@ -64,14 +68,12 @@ async def test_product_draft_leaves_strength_uom_id_null_when_unresolved(client,
         json={
             "idempotency_key": idem(), "product_business_id": "PM-UOM-2", "product_code": "PM-UOM-2",
             "name": "UOM Test Product 2", "version_no": 1, "site_id": str(seeded["site_id"]),
-            "manufacturing_profile_code": "pharma", "strength_value": "5", "strength_uom": "mg",
+            "manufacturing_profile_code": "pharma", "strength_value": "5", "strength_uom": "not-a-real-unit",
         },
         headers=auth_headers(token),
     )
-    assert resp.status_code == 200, resp.text
-    version = await db.get(ProductVersion, uuid.UUID(resp.json()["aggregate_id"]))
-    assert version.strength_uom == "mg"
-    assert version.strength_uom_id is None
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
 
 
 async def test_backfill_product_versions_is_idempotent_and_never_guesses(db, seeded):

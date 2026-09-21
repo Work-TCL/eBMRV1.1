@@ -215,10 +215,11 @@ async def test_full_material_genealogy_flow(client, seeded, db):
 
     rows = (await db.execute(select(MaterialIssue).where(MaterialIssue.batch_id == batch_id))).scalars().all()
     assert len(rows) == 1
-    # SG-146 (remainder): "kg" has no released rules.gxp_uom row in this environment -- the dual-write
-    # is a no-op, and the issue's uom_id is copied from the lot's own (also unresolved) value.
+    # Client requirements #2/#3 (2026-09-21): "kg" is now a baseline released rules.gxp_uom row (see
+    # conftest.py's `seeded` fixture) -- the dual-write resolves, and the issue's uom_id is copied from
+    # the lot's own (also now-resolved) value.
     assert rows[0].uom == "kg"
-    assert rows[0].uom_id is None
+    assert rows[0].uom_id is not None
 
     # 2026-09-19, project-owner-directed: Document 13 §8's "MaterialConsumed" event, wired directly from
     # this same command -- previously no module ever populated genealogy at all (schema-only, SG-052).

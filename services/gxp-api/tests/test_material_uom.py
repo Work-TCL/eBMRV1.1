@@ -29,13 +29,25 @@ async def test_create_material_dual_writes_uom_id_when_a_released_uom_resolves(c
     assert material.uom_id is not None
 
 
-async def test_create_material_leaves_uom_id_null_when_unresolved(client, seeded, db):
-    op_token = await login(client, "operator1")
+async def test_create_material_rejects_unresolvable_uom(client, seeded, db):
+    """Client requirements #2/#3 (2026-09-21): create_material now hardens uom resolution via
+    `_resolve_uom_id_strict` since the UI only ever submits a code drawn from the released list --
+    superseding the old best-effort "leaves uom_id null" behavior for this specific, now UI-enforced
+    call site (other, purely internal `_resolve_uom_id` call sites in this module are unaffected)."""
+    # material.create is Process Engineer/Admin-only (RBAC gap closure, 2026-09-18) -- author as
+    # process.engineer, same as the _create_material helper this file's other tests use.
+    pe_token = await login(client, "process.engineer")
 
-    material_id = await _create_material(client, seeded["site_id"], code="RM-UOM-2", uom="kg")
-    material = await db.get(Material, uuid.UUID(material_id))
-    assert material.uom == "kg"
-    assert material.uom_id is None
+    resp = await client.post(
+        "/materials",
+        json={
+            "idempotency_key": idem(), "site_id": str(seeded["site_id"]), "code": "RM-UOM-2",
+            "name": "Unresolvable UOM Material", "uom": "not-a-real-unit",
+        },
+        headers=auth_headers(pe_token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
 
 
 async def test_receive_lot_dual_writes_uom_id_when_a_released_uom_resolves(client, seeded, db):

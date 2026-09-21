@@ -82,6 +82,18 @@ async def _resolve_uom_id(session: AsyncSession, uom: str | None) -> uuid.UUID |
     return row.uom_id
 
 
+async def _resolve_uom_id_strict(session: AsyncSession, uom: str | None) -> uuid.UUID | None:
+    """Client requirements #2/#3: the batch-creation UI's UomSelect only ever submits a code drawn from
+    the released UOM list, so an unresolvable non-empty code here means a caller sent something outside
+    it -- reject instead of silently leaving target_uom_id NULL."""
+    if not uom:
+        return None
+    uom_id = await _resolve_uom_id(session, uom)
+    if uom_id is None:
+        raise ValidationFailedError("Unrecognized or unreleased UOM code", uom=uom)
+    return uom_id
+
+
 def _receipt_from_existing(existing) -> MutationReceipt:
     return MutationReceipt(
         command_id=existing.id,
@@ -179,7 +191,7 @@ async def create_batch(session: AsyncSession, cmd: CreateBatchCommand, actor_use
         recipe_vault_object_id=recipe_version.released_vault_object_id,
         target_qty=cmd.target_qty,
         target_uom=cmd.target_uom,
-        target_uom_id=await _resolve_uom_id(session, cmd.target_uom),
+        target_uom_id=await _resolve_uom_id_strict(session, cmd.target_uom),
         production_order_ref=cmd.production_order_ref,
         state="planned",
     )

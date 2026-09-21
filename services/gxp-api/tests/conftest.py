@@ -1,6 +1,7 @@
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 # Point the app at the dedicated test database *before* anything imports app.core.config
 # (Settings is instantiated once at import time).
@@ -48,7 +49,7 @@ from app.modules.iam.models import (
     UserSiteRole,
 )
 from app.modules.material.models import WarehouseLocation
-from app.modules.rules.models import RuleDefinition
+from app.modules.rules.models import RuleDefinition, UnitOfMeasure
 from app.modules.signature.models import SignaturePolicy
 from app.modules.sre.models import CapacityForecast, SloDefinition
 from app.modules.sre.registry import DOCUMENT_109_CAPACITY_SEED, DOCUMENT_109_SLO_SEED
@@ -357,6 +358,28 @@ async def seeded(db: AsyncSession) -> dict:
         site = Site(organization_id=org.id, code="T1", name="Test Site")
         db.add(site)
         await db.flush()
+
+        # Client requirements #2/#3: same baseline released UOMs as scripts/seed.py's UOM_FLOOR, so tests
+        # creating a material/product/recipe/batch/QC record with a plain literal like "kg" hit the newly
+        # hardened `_resolve_uom_id_strict` checks the same way a real deployment (seeded via seed.py)
+        # would, rather than every such test needing to insert its own UnitOfMeasure row.
+        for code, dimension, base_unit, factor, offset, precision_dp in (
+            ("kg", "MASS", "kg", Decimal("1"), Decimal("0"), 4),
+            ("g", "MASS", "kg", Decimal("0.001"), Decimal("0"), 4),
+            ("mg", "MASS", "kg", Decimal("0.000001"), Decimal("0"), 6),
+            ("L", "VOLUME", "L", Decimal("1"), Decimal("0"), 4),
+            ("mL", "VOLUME", "L", Decimal("0.001"), Decimal("0"), 4),
+            ("mm", "LENGTH", "mm", Decimal("1"), Decimal("0"), 2),
+            ("each", "COUNT", "each", Decimal("1"), Decimal("0"), 0),
+            ("EA", "COUNT", "each", Decimal("1"), Decimal("0"), 0),
+            ("unit", "COUNT", "each", Decimal("1"), Decimal("0"), 0),
+        ):
+            db.add(
+                UnitOfMeasure(
+                    code=code, dimension=dimension, base_unit=base_unit, factor=factor, offset=offset,
+                    precision_dp=precision_dp, status="released", version=1,
+                )
+            )
 
         # Document 20 (SPEC-MAT-002B) INV-FR-001/002: warehouse_location has no CRUD API (SG-081) --
         # seed-only, same rows scripts/seed.py's WAREHOUSE_LOCATION_FLOOR upserts.

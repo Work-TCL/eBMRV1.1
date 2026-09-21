@@ -116,6 +116,18 @@ async def _resolve_uom_id(session: AsyncSession, uom: str | None) -> uuid.UUID |
     return row.uom_id
 
 
+async def _resolve_uom_id_strict(session: AsyncSession, uom: str | None) -> uuid.UUID | None:
+    """Client requirements #2/#3: the product-draft UI's UomSelect only ever submits a code drawn from
+    the released UOM list, so an unresolvable non-empty code here means a caller sent something outside
+    it -- reject instead of silently leaving strength_uom_id NULL."""
+    if not uom:
+        return None
+    uom_id = await _resolve_uom_id(session, uom)
+    if uom_id is None:
+        raise ValidationFailedError("Unrecognized or unreleased UOM code", uom=uom)
+    return uom_id
+
+
 def _receipt_from_existing(existing) -> MutationReceipt:
     return MutationReceipt(
         command_id=existing.id,
@@ -355,7 +367,7 @@ async def create_draft(session: AsyncSession, cmd: CreateProductDraftCommand, ac
         udi_applicable=cmd.udi_applicable,
         strength_value=cmd.strength_value,
         strength_uom=cmd.strength_uom,
-        strength_uom_id=await _resolve_uom_id(session, cmd.strength_uom),
+        strength_uom_id=await _resolve_uom_id_strict(session, cmd.strength_uom),
         device_model_code=cmd.device_model_code,
         lifecycle_state="draft",
     )

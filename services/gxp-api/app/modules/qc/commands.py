@@ -92,6 +92,18 @@ async def _resolve_uom_id(session: AsyncSession, uom: str | None) -> uuid.UUID |
     return row.uom_id
 
 
+async def _resolve_uom_id_strict(session: AsyncSession, uom: str | None) -> uuid.UUID | None:
+    """Client requirements #2/#3: the QC UI's UomSelect only ever submits a code drawn from the released
+    UOM list, so an unresolvable non-empty code here means a caller sent something outside it -- reject
+    instead of silently leaving uom_id NULL."""
+    if not uom:
+        return None
+    uom_id = await _resolve_uom_id(session, uom)
+    if uom_id is None:
+        raise ValidationFailedError("Unrecognized or unreleased UOM code", uom=uom)
+    return uom_id
+
+
 def _record_hash(obj, *fields: str, version_field: str = "version") -> str:
     return sha256_hex({f: str(getattr(obj, f)) for f in ("id", version_field, *fields)})
 
@@ -188,7 +200,7 @@ async def create_test_specification_draft(
                 method_version_id=td.method_version_id,
                 result_data_type=td.result_data_type,
                 uom=td.uom,
-                uom_id=await _resolve_uom_id(session, td.uom),
+                uom_id=await _resolve_uom_id_strict(session, td.uom),
                 acceptance_rule_business_id=td.acceptance_rule_business_id,
                 trend_rule_business_id=td.trend_rule_business_id,
                 required=td.required,
@@ -553,7 +565,7 @@ async def create_sample(session: AsyncSession, cmd: CreateSampleCommand, actor_u
         lot_batch_serial_ref=cmd.lot_batch_serial_ref,
         sample_quantity=cmd.sample_quantity,
         sample_uom=cmd.sample_uom,
-        sample_uom_id=await _resolve_uom_id(session, cmd.sample_uom),
+        sample_uom_id=await _resolve_uom_id_strict(session, cmd.sample_uom),
         sampled_at=cmd.sampled_at,
         sampler_subject_id=actor_user_id,
         state="collected" if cmd.sampled_at else "planned",
@@ -970,7 +982,7 @@ async def record_result(session: AsyncSession, cmd: RecordResultCommand, actor_u
         value_text=cmd.value_text,
         value_json=cmd.value_json,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         acceptance_rule_id=acceptance_rule_id,
         outcome=outcome,
         recorded_by_user_id=actor_user_id,

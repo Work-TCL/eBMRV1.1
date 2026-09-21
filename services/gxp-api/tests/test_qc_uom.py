@@ -49,7 +49,11 @@ async def test_create_sample_dual_writes_sample_uom_id_when_a_released_uom_resol
     assert sample.sample_uom_id is not None
 
 
-async def test_create_sample_leaves_sample_uom_id_null_when_unresolved(client, seeded, db):
+async def test_create_sample_rejects_unresolvable_uom(client, seeded, db):
+    """Client requirements #2/#3 (2026-09-21): sample creation now hardens sample_uom resolution via
+    `_resolve_uom_id_strict` since the UI only ever submits a code drawn from the released list --
+    superseding the old best-effort "leaves sample_uom_id null" behavior for this specific, now
+    UI-enforced call site."""
     async with db.begin():
         await _make_admin(db, seeded, "admin.qcuom2")
     token = await login(client, "admin.qcuom2")
@@ -62,10 +66,8 @@ async def test_create_sample_leaves_sample_uom_id_null_when_unresolved(client, s
         },
         headers=auth_headers(token),
     )
-    assert resp.status_code == 200, resp.text
-    sample = await db.get(QcSample, uuid.UUID(resp.json()["aggregate_id"]))
-    assert sample.sample_uom == "not-a-real-unit"
-    assert sample.sample_uom_id is None
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
 
 
 async def test_backfill_qc_samples_is_idempotent_and_never_guesses(db, seeded):
