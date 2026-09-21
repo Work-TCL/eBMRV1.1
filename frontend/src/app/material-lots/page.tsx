@@ -15,6 +15,8 @@ import {
   type MaterialLot,
   type MutationReceipt,
   type Paged,
+  type WarehouseLocation,
+  STORAGE_CONDITIONS,
 } from "@/lib/api";
 import { useEntityOptions, useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
@@ -92,6 +94,7 @@ export default function MaterialLotsPage() {
     { key: "received_at", header: "Received", sortable: true, render: (l) => formatDateTime(l.received_at) },
     { key: "released_at", header: "Released", sortable: true, render: (l) => formatDateTime(l.released_at) },
     { key: "expiry_date", header: "Expiry", sortable: true, render: (l) => l.expiry_date ?? "—" },
+    { key: "storage_condition", header: "Storage", sortable: false, render: (l) => l.storage_condition ?? "—" },
     { key: "status", header: "Status", sortable: true, render: (l) => <MaterialLotStatePill status={l.status} /> },
     {
       key: "actions",
@@ -268,6 +271,9 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
   const [uom, setUom] = useState("");
   const [uomTouched, setUomTouched] = useState(false);
   const [expiryDate, setExpiryDate] = useState("");
+  const [storageLocationId, setStorageLocationId] = useState("");
+  const [storageCondition, setStorageCondition] = useState("");
+  const [locations, setLocations] = useState<WarehouseLocation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -277,18 +283,27 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
       if (ms.length) {
         setMaterialId(ms[0].id);
         setUom(ms[0].uom);
+        setStorageCondition(ms[0].default_storage_condition ?? "");
       }
     });
   }, []);
+
+  useEffect(() => {
+    const material = materials.find((m) => m.id === materialId);
+    if (!material) return;
+    listAll<WarehouseLocation>("/inventory/v1/warehouse-locations", { site_id: material.site_id })
+      .then(setLocations)
+      .catch(() => setLocations([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [materialId]);
 
   // Switching material re-seeds the unit with that material's standard unit — but only while the
   // operator hasn't overridden it, so picking "Liter" for this receipt survives a later material change.
   function selectMaterial(id: string) {
     setMaterialId(id);
-    if (!uomTouched) {
-      const material = materials.find((m) => m.id === id);
-      if (material) setUom(material.uom);
-    }
+    const material = materials.find((m) => m.id === id);
+    if (!uomTouched && material) setUom(material.uom);
+    if (material) setStorageCondition(material.default_storage_condition ?? "");
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -307,6 +322,8 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
         received_quantity: quantity,
         uom: uom.trim() || material.uom,
         expiry_date: expiryDate || null,
+        storage_location_id: storageLocationId || null,
+        storage_condition: storageCondition || null,
       });
       onDone();
     } catch (err) {
@@ -348,9 +365,31 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
             hint="Defaults to the material's standard unit - change it if this lot was received in a different unit, e.g. L instead of mL."
           />
         </div>
-        <Field label="Expiry date" hint="Optional.">
-          <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
-        </Field>
+        <div className="grid grid-cols-3 gap-4">
+          <Field label="Expiry date" hint="Optional.">
+            <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+          </Field>
+          <Field label="Storage condition" hint="Defaults to the material's own default.">
+            <Select value={storageCondition} onChange={(e) => setStorageCondition(e.target.value)}>
+              <option value="">—</option>
+              {STORAGE_CONDITIONS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Storage location" hint="Optional.">
+            <Select value={storageLocationId} onChange={(e) => setStorageLocationId(e.target.value)}>
+              <option value="">—</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.location_code} ({loc.zone_type})
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
         {error && <p className="error-text mb-3">{error}</p>}
         <p className="hint mb-3">Received lots enter Quarantine automatically and cannot be issued until QC dispositions them.</p>
         <div className="flex justify-between gap-3 mt-2">

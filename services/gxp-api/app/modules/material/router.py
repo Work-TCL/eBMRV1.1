@@ -217,6 +217,8 @@ async def list_materials(
                 "name": m.name,
                 "uom": m.uom,
                 "status": m.status,
+                "is_in_house": m.is_in_house,
+                "default_storage_condition": m.default_storage_condition,
                 "version": m.version,
             }
             for (m,) in rows
@@ -295,6 +297,8 @@ def _lot_dict(lot: MaterialLot, material_code: str, material_name: str) -> dict:
         "release_signature_id": str(lot.release_signature_id) if lot.release_signature_id else None,
         "expiry_date": lot.expiry_date.isoformat() if lot.expiry_date else None,
         "retest_date": lot.retest_date.isoformat() if lot.retest_date else None,
+        "storage_location_id": str(lot.storage_location_id) if lot.storage_location_id else None,
+        "storage_condition": lot.storage_condition,
         "material_spec_version_id": str(lot.material_spec_version_id) if lot.material_spec_version_id else None,
         "receipt_id": str(lot.receipt_id) if lot.receipt_id else None,
         "manufacture_date": lot.manufacture_date.isoformat() if lot.manufacture_date else None,

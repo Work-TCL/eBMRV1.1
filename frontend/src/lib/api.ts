@@ -382,8 +382,15 @@ export interface Material {
   name: string;
   uom: string;
   status: string;
+  is_in_house: boolean;
+  default_storage_condition: string | null;
   version: number;
 }
+
+// Client requirement #4's controlled list -- mirrors app.modules.material.models.STORAGE_CONDITIONS.
+export const STORAGE_CONDITIONS = [
+  "ambient", "cold_storage", "freezer", "refrigerator", "controlled_temperature", "warehouse",
+] as const;
 
 export interface MaterialLot {
   id: string;
@@ -402,6 +409,8 @@ export interface MaterialLot {
   released_at: string | null;
   expiry_date: string | null;
   retest_date: string | null;
+  storage_location_id: string | null;
+  storage_condition: string | null;
   version: number;
 }
 

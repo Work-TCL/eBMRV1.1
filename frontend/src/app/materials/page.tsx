@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, newIdempotencyKey, pagedFetcher, type Material, type MutationReceipt } from "@/lib/api";
+import { api, ApiError, newIdempotencyKey, pagedFetcher, STORAGE_CONDITIONS, type Material, type MutationReceipt } from "@/lib/api";
 import { useSites } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -23,6 +23,8 @@ export default function MaterialsPage() {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [uom, setUom] = useState("kg");
+  const [isInHouse, setIsInHouse] = useState(false);
+  const [defaultStorageCondition, setDefaultStorageCondition] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
@@ -31,6 +33,8 @@ export default function MaterialsPage() {
   const [editing, setEditing] = useState<Material | null>(null);
   const [editName, setEditName] = useState("");
   const [editStatus, setEditStatus] = useState("active");
+  const [editIsInHouse, setEditIsInHouse] = useState(false);
+  const [editDefaultStorageCondition, setEditDefaultStorageCondition] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [editBusy, setEditBusy] = useState(false);
 
@@ -50,9 +54,13 @@ export default function MaterialsPage() {
         code: code || undefined,
         name,
         uom,
+        is_in_house: isInHouse,
+        default_storage_condition: defaultStorageCondition || null,
       });
       setCode("");
       setName("");
+      setIsInHouse(false);
+      setDefaultStorageCondition("");
       setOpen(false);
       setReloadToken((n) => n + 1);
     } catch (err) {
@@ -66,6 +74,8 @@ export default function MaterialsPage() {
     setEditing(m);
     setEditName(m.name);
     setEditStatus(m.status);
+    setEditIsInHouse(m.is_in_house);
+    setEditDefaultStorageCondition(m.default_storage_condition ?? "");
     setEditError(null);
   }
 
@@ -80,6 +90,8 @@ export default function MaterialsPage() {
         material_id: editing.id,
         name: editName,
         status: editStatus,
+        is_in_house: editIsInHouse,
+        default_storage_condition: editDefaultStorageCondition || null,
       });
       setEditing(null);
       setReloadToken((n) => n + 1);
@@ -118,6 +130,17 @@ export default function MaterialsPage() {
     { key: "name", header: "Name", sortable: true },
     { key: "uom", header: "UOM", sortable: false },
     { key: "status", header: "Status", sortable: true },
+    {
+      key: "storage",
+      header: "Storage",
+      sortable: false,
+      render: (m) => (
+        <span className="fs-2 text-muted">
+          {m.is_in_house ? "In-house" : "Purchased"}
+          {m.default_storage_condition ? ` · ${m.default_storage_condition}` : ""}
+        </span>
+      ),
+    },
     {
       key: "actions",
       header: "",
@@ -167,6 +190,22 @@ export default function MaterialsPage() {
             <Input value={name} onChange={(e) => setName(e.target.value)} required />
           </Field>
           <UomSelect value={uom} onChange={setUom} required />
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Default storage condition" hint="Optional.">
+              <Select value={defaultStorageCondition} onChange={(e) => setDefaultStorageCondition(e.target.value)}>
+                <option value="">—</option>
+                {STORAGE_CONDITIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <label className="flex items-center gap-2 fs-2" style={{ marginTop: "var(--space-5)" }}>
+              <input type="checkbox" checked={isInHouse} onChange={(e) => setIsInHouse(e.target.checked)} />
+              Manufactured/maintained in-house
+            </label>
+          </div>
           {error && <p className="error-text mb-2">{error}</p>}
           <div className="flex justify-between gap-3 mt-4">
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
@@ -193,6 +232,22 @@ export default function MaterialsPage() {
               <option value="inactive">inactive</option>
             </Select>
           </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Default storage condition" hint="Optional.">
+              <Select value={editDefaultStorageCondition} onChange={(e) => setEditDefaultStorageCondition(e.target.value)}>
+                <option value="">—</option>
+                {STORAGE_CONDITIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <label className="flex items-center gap-2 fs-2" style={{ marginTop: "var(--space-5)" }}>
+              <input type="checkbox" checked={editIsInHouse} onChange={(e) => setEditIsInHouse(e.target.checked)} />
+              Manufactured/maintained in-house
+            </label>
+          </div>
           <div className="flex justify-between gap-3 mt-4">
             <Button type="button" variant="secondary" onClick={() => setEditing(null)}>
               Cancel

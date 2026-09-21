@@ -13,6 +13,7 @@ from app.modules.genealogy import service as genealogy_service
 from app.modules.iam.models import Qualification, User
 from app.modules.material.models import (
     PRE_DISPOSITION_LOT_STATES,
+    STORAGE_CONDITIONS,
     DestructionRecord,
     DispensedContainer,
     DispensingOrder,
@@ -132,6 +133,8 @@ class CreateMaterialCommand(CommandEnvelope):
     code: str | None = None
     name: str
     uom: str
+    is_in_house: bool = False
+    default_storage_condition: str | None = None
 
 
 async def create_material(
@@ -152,9 +155,16 @@ async def create_material(
     else:
         code = await codegen_service.next_code(session, entity_type="MATERIAL", prefix="MAT", site_id=cmd.site_id)
 
+    if cmd.default_storage_condition is not None and cmd.default_storage_condition not in STORAGE_CONDITIONS:
+        raise ValidationFailedError(
+            "default_storage_condition must be one of the controlled list",
+            default_storage_condition=cmd.default_storage_condition, allowed=list(STORAGE_CONDITIONS),
+        )
+
     material = Material(
         site_id=cmd.site_id, code=code, name=cmd.name, uom=cmd.uom,
         uom_id=await _resolve_uom_id_strict(session, cmd.uom),
+        is_in_house=cmd.is_in_house, default_storage_condition=cmd.default_storage_condition,
         status="active", version=1,
     )
     session.add(material)
@@ -219,6 +229,8 @@ class ReceiveMaterialLotCommand(CommandEnvelope):
     uom: str
     expiry_date: date | None = None
     retest_date: date | None = None
+    storage_location_id: uuid.UUID | None = None
+    storage_condition: str | None = None
 
 
 async def receive_material_lot(
@@ -240,6 +252,14 @@ async def receive_material_lot(
             "A material lot with this internal lot number already exists", internal_lot=cmd.internal_lot
         )
 
+    if cmd.storage_condition is not None and cmd.storage_condition not in STORAGE_CONDITIONS:
+        raise ValidationFailedError(
+            "storage_condition must be one of the controlled list",
+            storage_condition=cmd.storage_condition, allowed=list(STORAGE_CONDITIONS),
+        )
+    if cmd.storage_location_id is not None and await session.get(WarehouseLocation, cmd.storage_location_id) is None:
+        raise NotFoundError("Warehouse location not found", storage_location_id=str(cmd.storage_location_id))
+
     lot = MaterialLot(
         material_id=cmd.material_id,
         site_id=cmd.site_id,
@@ -254,6 +274,8 @@ async def receive_material_lot(
         status="quarantine",
         expiry_date=cmd.expiry_date,
         retest_date=cmd.retest_date,
+        storage_location_id=cmd.storage_location_id,
+        storage_condition=cmd.storage_condition,
         received_by_user_id=actor_user_id,
         version=1,
     )
@@ -615,6 +637,8 @@ class UpdateMaterialCommand(CommandEnvelope):
     material_id: uuid.UUID
     name: str
     status: str
+    is_in_house: bool | None = None
+    default_storage_condition: str | None = None
 
 
 async def update_material(
@@ -629,9 +653,22 @@ async def update_material(
     if material is None:
         raise NotFoundError("Material not found")
 
-    old_value = {"name": material.name, "status": material.status}
+    if cmd.default_storage_condition is not None and cmd.default_storage_condition not in STORAGE_CONDITIONS:
+        raise ValidationFailedError(
+            "default_storage_condition must be one of the controlled list",
+            default_storage_condition=cmd.default_storage_condition, allowed=list(STORAGE_CONDITIONS),
+        )
+
+    old_value = {
+        "name": material.name, "status": material.status, "is_in_house": material.is_in_house,
+        "default_storage_condition": material.default_storage_condition,
+    }
     material.name = cmd.name
     material.status = cmd.status
+    if cmd.is_in_house is not None:
+        material.is_in_house = cmd.is_in_house
+    if cmd.default_storage_condition is not None:
+        material.default_storage_condition = cmd.default_storage_condition
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
@@ -644,7 +681,10 @@ async def update_material(
         actor_id=actor_user_id,
         correlation_id=correlation_id,
         old_value=old_value,
-        new_value={"name": material.name, "status": material.status},
+        new_value={
+            "name": material.name, "status": material.status, "is_in_house": material.is_in_house,
+            "default_storage_condition": material.default_storage_condition,
+        },
     )
     await write_outbox_event(
         session,
@@ -900,6 +940,8 @@ class ExamineReceiptCommand(CommandEnvelope):
     internal_lot: str
     container_count: int = 1
     discrepancy_reason: str | None = None
+    storage_location_id: uuid.UUID | None = None
+    storage_condition: str | None = None
 
 
 async def examine_receipt(
@@ -978,6 +1020,13 @@ async def examine_receipt(
             raise ValidationFailedError(
                 "A material lot with this internal lot number already exists", internal_lot=cmd.internal_lot
             )
+        if cmd.storage_condition is not None and cmd.storage_condition not in STORAGE_CONDITIONS:
+            raise ValidationFailedError(
+                "storage_condition must be one of the controlled list",
+                storage_condition=cmd.storage_condition, allowed=list(STORAGE_CONDITIONS),
+            )
+        if cmd.storage_location_id is not None and await session.get(WarehouseLocation, cmd.storage_location_id) is None:
+            raise NotFoundError("Warehouse location not found", storage_location_id=str(cmd.storage_location_id))
 
         receipt_row.state = "examined"
         accepted_qty = receipt_row.accepted_quantity or receipt_row.received_gross_quantity
@@ -995,6 +1044,8 @@ async def examine_receipt(
             status="quarantine",
             expiry_date=receipt_row.expiry_date,
             retest_date=receipt_row.retest_date,
+            storage_location_id=cmd.storage_location_id,
+            storage_condition=cmd.storage_condition,
             received_by_user_id=receipt_row.receiver_subject_id,
             version=1,
             receipt_id=receipt_row.id,
