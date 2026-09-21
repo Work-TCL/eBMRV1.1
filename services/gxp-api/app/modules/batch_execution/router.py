@@ -14,6 +14,7 @@ from app.modules.batch_execution.commands import (
     BatchTransitionCommand,
     CompleteStepCommand,
     CreateBatchCommand,
+    GenerateBatchRecordPdfCommand,
     HandoverStepCommand,
     HoldStepCommand,
     IssueBatchCommand,
@@ -31,6 +32,7 @@ from app.modules.batch_execution.commands import (
     approve_step_result_correction,
     complete_step,
     create_batch,
+    generate_batch_record_pdf,
     handover_step,
     hold_batch,
     hold_step,
@@ -45,6 +47,7 @@ from app.modules.batch_execution.commands import (
     start_step,
 )
 from app.modules.batch_execution.models import Batch, BatchStep, StepResult
+from app.modules.batch_execution.record_service import build_batch_record
 from app.modules.iam.models import User
 from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import evaluate_policy
@@ -778,3 +781,29 @@ async def get_execution_view(
             for step_id, corrections in view["corrections_by_step_id"].items()
         },
     }
+
+
+@router.get("/{batch_id}/record")
+async def get_batch_record(
+    batch_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Client requirement #11 -- the structured Batch Record view: steps/results, material consumption,
+    equipment used, deviations, QC results, and signature/status history."""
+    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
+    return await build_batch_record(session, batch_id)
+
+
+@router.post("/{batch_id}/record:generate-pdf", response_model=MutationReceipt)
+async def post_generate_batch_record_pdf(
+    batch_id: uuid.UUID,
+    cmd: GenerateBatchRecordPdfCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.batch_id != batch_id:
+        raise ValidationFailedError("batch_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
+        return await generate_batch_record_pdf(session, cmd, actor.user_id)

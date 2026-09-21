@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, clientPagedFetcher, formatDateTime, hasPermission, newIdempotencyKey, type Me } from "@/lib/api";
+import { api, ApiError, clientPagedFetcher, downloadEvidence, formatDateTime, hasPermission, newIdempotencyKey, type Me } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -739,6 +739,7 @@ function ExecutionModal({
   const [linkingEvidenceStep, setLinkingEvidenceStep] = useState<BatchStep | null>(null);
   const [handingOverStep, setHandingOverStep] = useState<BatchStep | null>(null);
   const [completingProduction, setCompletingProduction] = useState(false);
+  const [showingRecord, setShowingRecord] = useState(false);
 
   const v = view.data;
   if (!v) {
@@ -911,6 +912,9 @@ function ExecutionModal({
           Close
         </Button>
         <div className="flex gap-2 flex-wrap">
+          <Button size="sm" variant="secondary" onClick={() => setShowingRecord(true)}>
+            <Icon name="file-text" /> Batch record
+          </Button>
           {(Object.keys(ACTION_LABEL) as Action[]).filter(offered).map((a) => (
             <Button
               key={a}
@@ -929,6 +933,7 @@ function ExecutionModal({
         </div>
       </div>
 
+      {showingRecord && <BatchRecordModal batchId={b.batch_id} batchNumber={b.batch_number} onClose={() => setShowingRecord(false)} />}
       {action && (
         <BatchActionModal
           batch={b}
@@ -1060,6 +1065,229 @@ function ExecutionModal({
           }}
         />
       )}
+    </Modal>
+  );
+}
+
+interface BatchRecordView {
+  batch: { id: string; batch_number: string; state: string; target_qty: string; target_uom: string };
+  steps: {
+    id: string;
+    recipe_step_code: string;
+    state: string;
+    started_at: string | null;
+    completed_at: string | null;
+    results: { parameter_code: string; value: string; uom: string | null; quality_status: string | null }[];
+  }[];
+  materials_consumed: { internal_lot: string; quantity: string; uom: string; issued_at: string }[];
+  equipment_used: { equipment_asset_id: string; log_type: string; occurred_at: string }[];
+  deviations: { deviation_number: string; deviation_type: string; source_type: string; state: string }[];
+  qc_results: { sample_number: string; spec_code: string; scope_type: string; test_code: string; order_state: string; outcome: string | null }[];
+  status_history: { occurred_at: string; action: string; actor_username: string | null; actor_id: string; signature_id: string | null }[];
+}
+
+/** Client requirement #11 -- the aggregated Batch Record view (steps/results, material consumption,
+ * equipment used, deviations, QC results, signature/status history) plus a "Generate PDF" action that
+ * stores the rendered PDF as evidence owned by the batch. */
+function BatchRecordModal({ batchId, batchNumber, onClose }: { batchId: string; batchNumber: string; onClose: () => void }) {
+  const { data: record, error } = useApiResource<BatchRecordView>(`/batches/v1/${batchId}/record`);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [evidenceId, setEvidenceId] = useState<string | null>(null);
+
+  async function onGeneratePdf() {
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const receipt = await api.post<{ aggregate_id: string }>(`/batches/v1/${batchId}/record:generate-pdf`, {
+        idempotency_key: newIdempotencyKey(),
+        batch_id: batchId,
+      });
+      setEvidenceId(receipt.aggregate_id);
+    } catch (err) {
+      setGenError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed to generate batch record PDF");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Batch record — ${batchNumber}`} large>
+      {error && <p className="error-text mb-2">{error}</p>}
+      {!record && !error && <p>Loading…</p>}
+      {record && (
+        <>
+          <p className="fact-k mb-2">Steps</p>
+          <Table>
+            <thead>
+              <tr>
+                <th>Step</th>
+                <th>State</th>
+                <th>Results</th>
+              </tr>
+            </thead>
+            <tbody>
+              {record.steps.map((s) => (
+                <tr key={s.id}>
+                  <td className="font-semibold tabular">{s.recipe_step_code}</td>
+                  <td>
+                    <WorkflowStatePill state={s.state} />
+                  </td>
+                  <td className="fs-2">
+                    {s.results.length === 0
+                      ? "—"
+                      : s.results.map((r) => `${r.parameter_code}=${r.value}${r.uom ? ` ${r.uom}` : ""}`).join(", ")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+
+          <p className="fact-k mb-2 mt-4">Materials consumed</p>
+          {record.materials_consumed.length === 0 ? (
+            <p className="hint mb-2">No material issuances recorded.</p>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <th>Internal lot</th>
+                  <th>Quantity</th>
+                  <th>Issued at</th>
+                </tr>
+              </thead>
+              <tbody>
+                {record.materials_consumed.map((m, i) => (
+                  <tr key={i}>
+                    <td className="tabular fs-2">{m.internal_lot}</td>
+                    <td className="tabular fs-2">
+                      {m.quantity} {m.uom}
+                    </td>
+                    <td className="fs-2">{formatDateTime(m.issued_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+
+          <p className="fact-k mb-2 mt-4">Equipment used</p>
+          {record.equipment_used.length === 0 ? (
+            <p className="hint mb-2">No equipment use logged.</p>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <th>Equipment asset</th>
+                  <th>Log type</th>
+                  <th>Occurred at</th>
+                </tr>
+              </thead>
+              <tbody>
+                {record.equipment_used.map((u, i) => (
+                  <tr key={i}>
+                    <td className="tabular fs-2">{u.equipment_asset_id}</td>
+                    <td className="fs-2">{u.log_type}</td>
+                    <td className="fs-2">{formatDateTime(u.occurred_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+
+          <p className="fact-k mb-2 mt-4">Deviations</p>
+          {record.deviations.length === 0 ? (
+            <p className="hint mb-2">No deviations attributed to this batch.</p>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <th>Deviation</th>
+                  <th>Type</th>
+                  <th>State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {record.deviations.map((d, i) => (
+                  <tr key={i}>
+                    <td className="tabular fs-2">{d.deviation_number}</td>
+                    <td className="fs-2">{d.deviation_type}</td>
+                    <td className="fs-2">{d.state}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+
+          <p className="fact-k mb-2 mt-4">QC results</p>
+          {record.qc_results.length === 0 ? (
+            <p className="hint mb-2">No QC results attributed to this batch.</p>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <th>Sample</th>
+                  <th>Spec</th>
+                  <th>Scope</th>
+                  <th>Test</th>
+                  <th>Outcome</th>
+                </tr>
+              </thead>
+              <tbody>
+                {record.qc_results.map((q, i) => (
+                  <tr key={i}>
+                    <td className="tabular fs-2">{q.sample_number}</td>
+                    <td className="fs-2">{q.spec_code}</td>
+                    <td className="fs-2">{q.scope_type}</td>
+                    <td className="fs-2">{q.test_code}</td>
+                    <td className="fs-2">{q.outcome ?? "pending"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+
+          <p className="fact-k mb-2 mt-4">Status history</p>
+          <Table>
+            <thead>
+              <tr>
+                <th>Occurred at</th>
+                <th>Action</th>
+                <th>Actor</th>
+                <th>Signed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {record.status_history.map((e, i) => (
+                <tr key={i}>
+                  <td className="fs-2">{formatDateTime(e.occurred_at)}</td>
+                  <td className="fs-2">{e.action}</td>
+                  <td className="fs-2">{e.actor_username ?? e.actor_id}</td>
+                  <td className="fs-2">{e.signature_id ? "Yes" : "No"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </>
+      )}
+
+      {genError && <p className="error-text mt-3">{genError}</p>}
+      {evidenceId && (
+        <div className="mt-3">
+          <Banner tone="ok" title="Batch record PDF generated">
+            <Button size="sm" variant="secondary" onClick={() => downloadEvidence(evidenceId)}>
+              <Icon name="download" /> Download PDF
+            </Button>
+          </Banner>
+        </div>
+      )}
+
+      <div className="flex justify-between gap-3 mt-4">
+        <Button variant="secondary" onClick={onClose}>
+          Close
+        </Button>
+        <Button variant="primary" onClick={onGeneratePdf} disabled={generating || !record}>
+          <Icon name="file-text" /> {generating ? "Generating…" : "Generate PDF"}
+        </Button>
+      </div>
     </Modal>
   );
 }
