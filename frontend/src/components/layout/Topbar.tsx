@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
 import { Breadcrumb, type Crumb } from "@/components/ui/Breadcrumb";
+import { RemindersBell } from "./RemindersBell";
 
 const SECTION_LABEL: Record<string, string> = {
   products: "Products",
@@ -32,6 +33,7 @@ export function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         <Icon name="menu" />
       </button>
       <Breadcrumb items={crumbsFor(pathname)} />
+      <RemindersBell />
     </header>
   );
 }

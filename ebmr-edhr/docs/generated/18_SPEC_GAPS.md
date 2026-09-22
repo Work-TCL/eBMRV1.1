@@ -14546,3 +14546,101 @@ is untouched. Verified: `tests/test_qms_capa.py` (22 tests, unaffected by this c
 a CAPA through `record_effectiveness()`'s "record" branch with a signature-required policy, since no
 existing test needed effectiveness gated behind a live signature ceremony yet) plus a live-DB
 `sync_permissions.py`/`scripts/seed.py` policy row confirmed present.
+
+## SG-211: `uom`/`release` had no Document 106 signature policy row anywhere, so a drafted UOM could never actually be released or appear in any UomSelect dropdown
+
+Found live, 2026-09-21, working the client's UOM-centralization requirement (req #2/#3): the new
+`UomSelect` component's inline "+ Add new UOM" lets an author draft a unit, then (if the caller also
+holds `rules.release`) immediately offers the release signature ceremony via the existing
+`POST /rules/v1/uom/{id}/signature-challenges` / `POST /rules/v1/uom/{id}/release` endpoints. Both
+endpoints, and `uom_commands.py::release_uom()`/`_resolve_release_signature()`, were already fully wired
+to resolve a Document 106 `(record_type="uom", action="release")` policy — but no such row existed in
+`SIGNATURE_POLICY_FLOOR`, any deployed database, or the test fixture. `resolve_signature_requirement()`
+therefore raised `SIGNATURE_POLICY_UNRESOLVED` for every caller, including Admin, exactly as its own
+docstring already predicted ("no Document 106 policy row exists for it, so a draft UOM could never
+actually be released even once a policy row exists" — `rules/router.py` line 243). Because
+`GET /rules/v1/uom` (every UomSelect's data source) lists released units only, the practical symptom was
+the one reported directly: "when i create a new Unit of measure then it not show in the dropdown."
+
+Found alongside it, same investigation: `uom_commands.py::_resolve_release_signature()` — the shared
+helper behind both `release_uom()` and `release_uom_conversion()` — resolved the policy and consumed a
+signature challenge/reauth, but never called `signature_service.enforce_signer_policy()` at all, unlike
+`release_rule()` (its own documented sibling, `rules/commands.py::release_rule()`), which does. Once a
+policy row named a `required_role_id`/`requires_independent_signer`, this helper would silently ignore
+both — any caller holding the `rules.release` permission (not just a QA Releaser) could have released a
+UOM/conversion with a valid signature, regardless of role. This is a straightforward completeness defect
+against the module's own stated intent ("Release reuses the `rules.author`/`rules.release` policy
+actions... the same discipline `release_rule()` already applies" — `uom_commands.py`'s module docstring),
+not a new regulated decision, so it was fixed directly rather than logged as its own gap.
+
+```yaml
+spec_gap_id: SG-211
+title: "uom/release had no Document 106 signature policy row anywhere, so a drafted UOM could never actually be released or appear in any UomSelect dropdown"
+class: R  # regulated decision -- who must sign a UOM release, and whether an independent signer is required
+description: >
+  resolve_signature_requirement(record_type="uom", action="release") had zero matching rows in
+  SIGNATURE_POLICY_FLOOR (scripts/seed.py), any deployed database, or tests/conftest.py's seeded
+  fixture, so POST /rules/v1/uom/{id}/release failed closed with SIGNATURE_POLICY_UNRESOLVED for every
+  actor. A drafted UOM therefore could never reach GET /rules/v1/uom (released-only), so it could never
+  appear in any UomSelect dropdown anywhere in the app -- the literal symptom of the client-facing bug
+  report this gap was found investigating.
+source_documents:
+  - Document 106 (SPEC-GXP signature policy baseline, section 9 -- has no dedicated UOM row)
+  - Document 110 (SPEC-GXP-008, UOM/conversion authoring surface, SG-146)
+source_requirement_ids:
+  - SIG-FR-004
+  - CALC-FR-006
+affected_modules:
+  - SPEC-GXP-008
+affected_functions:
+  - services/gxp-api/app/modules/rules/uom_commands.py release_uom(), _resolve_release_signature()
+  - services/gxp-api/app/modules/rules/router.py post_release_uom(), post_uom_release_signature_challenge()
+why_material: >
+  Whether releasing a unit of measure requires an electronic signature, and if so with what
+  meaning/role/independence, is a Part 11 signature-policy decision (AG-07, SIG-FR-004) that Document 106
+  never enumerated for this record type -- guessing it either invents a control the baseline never asked
+  for, or leaves a released-master-data change unsigned when Document 110's own UOM authoring section
+  models it as another kind of released master data alongside rules and recipe/product versions, all of
+  which Document 106 does sign.
+risk_if_guessed: >
+  A guessed signature requirement could diverge from the client's actual Quality organization's intent for
+  this decision class, requiring rework once a real Document 106 addendum is authored; leaving it entirely
+  unresolved instead leaves the client's own req #2/#3 UOM-centralization request practically unusable for
+  any unit not already present at initial seed time.
+options:
+  - (A) Leave uom/release fully unresolved (fail-closed status quo) -- the "+Add new UOM" feature stays
+    usable only for drafting, never releasing; every new unit needs a controlled migration/seed instead.
+  - (B) Mirror Document 106 row 6 (rule/release) exactly -- "Released" / QA Releaser / independent signer
+    required / reason required -- since UOM authoring already shares that same rule's RBAC actions
+    (rules.author/rules.release) and the identical "no production-performer identity on the record" caveat
+    -- recommended and chosen (see resolution), same provisional-mirroring precedent as SG-209.
+  - (C) Self-signed, no independence requirement (mirrors the product_version/release SG-035 precedent
+    instead) -- rejected: unlike product_master, UOM release already shares rule's exact RBAC action pair,
+    so mirroring rule's row (not product's) is the closer analogy.
+blocking: false
+owner: Head of Quality + Rules module owner
+resolution_document: "scripts/seed.py SIGNATURE_POLICY_FLOOR, app/modules/rules/uom_commands.py, tests/test_rules.py"
+status: RESOLVED_PROVISIONAL
+```
+
+**SG-211 RESOLVED_PROVISIONAL 2026-09-21**, taking option (B) above (mirroring Document 106 row 6 exactly,
+the closest analogy since UOM authoring already shares `rule`'s RBAC action pair) rather than pausing the
+bug fix on a live confirmation — same "provisional value matching an existing pattern, gap logged for real
+sign-off" precedent already used for SG-209. New `SIGNATURE_POLICY_FLOOR` row
+`("uom", "release", "Released", "QA Releaser", True, True, True)` (`scripts/seed.py`), applied to both
+`ebmr_new_gxp_test` and the live `ebmr_new_gxp` database via `scripts/sync_signature_policies.py`.
+Alongside it, `uom_commands.py::_resolve_release_signature()` gained the missing
+`signature_service.enforce_signer_policy(...)` call `release_rule()` already had (a plain completeness fix,
+not a new regulated decision — see the finding above) — this activates only once a policy row exists, so
+it is inert for `uom_conversion`'s still-fully-open `(record_type, action)` pair. Also fixed alongside this
+gap: `frontend/src/components/ui/UomSelect.tsx`'s `AddUomModal` called `onCreated(...)` but not `onClose()`
+in the `SignatureCeremony`'s `onDone` handler, so even a successful release left the modal visibly open
+with no success indication — now closes like its sibling `onClose` handler does. Verified:
+`tests/test_rules.py` new `test_release_uom_requires_an_independent_qa_releaser_signature` (mirrors
+`test_release_requires_an_independent_qa_releaser_signature` exactly: ROLE_MISSING for a non-QA-Releaser,
+MISSING_SIGNATURE without a challenge, 200 + a real `signature_id` with both, then confirms the code
+appears in `GET /rules/v1/uom`) — 19/19 passed in `test_rules.py`; regression sweep across
+`test_uom.py`/`test_ddcp_flow.py`/`test_release_gate.py`/`test_coated_device_flow.py`/
+`test_injector_flow.py`/`test_inhalation_flow.py`/`test_qc.py`/`test_machine_integration_flow.py` — 95
+passed, 2 failed, both the same pre-existing `test_release_gate.py` `_create_material()` signature defect
+already on record before this change (confirmed unrelated).

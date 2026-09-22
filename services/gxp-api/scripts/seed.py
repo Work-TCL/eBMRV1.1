@@ -1363,6 +1363,18 @@ SIGNATURE_POLICY_FLOOR = [
     # deferred (SG-035).
     ("vault_object", "release", "Released", "QA Releaser", True, True, True),  # Doc 106 section 9 row 2
     ("rule", "release", "Released", "QA Releaser", True, True, True),          # Doc 106 section 9 row 6
+    # uom/release -- SG-211, 2026-09-21, project-owner-directed follow-up to the client's UOM
+    # centralization request (req #2/#3): rules/router.py::post_uom_release_signature_challenge() and
+    # uom_commands.py::release_uom() were already fully wired to consume a Document 106 policy for
+    # record_type="uom" (`resolve_signature_requirement(..., record_type="uom", action="release")`), but
+    # no such row had ever existed in SIGNATURE_POLICY_FLOOR or any deployed database, so every release
+    # attempt failed closed with SIGNATURE_POLICY_UNRESOLVED regardless of caller/role -- meaning a
+    # newly-drafted UOM could never reach `GET /rules/v1/uom` (released-only) and so could never appear in
+    # any UomSelect dropdown. Document 106 has no dedicated UOM row; this mirrors row 6 (rule/release)
+    # exactly, since UOM authoring/release already shares that same rule's RBAC actions
+    # (rules.author/rules.release) and the same "no production-performer identity on the record" caveat
+    # applies identically. Provisional pending real Document 106 addendum sign-off -- see SG-211.
+    ("uom", "release", "Released", "QA Releaser", True, True, True),
     # recipe_version/release -- SG-035 further-partial 2026-09-08, project-owner-directed (asked directly:
     # QA-Releaser-independent-of-author vs. self-signed vs. RBAC-only vs. leave-unresolved -- chose the
     # first). Recipe Master has an author/release role split (Process Engineer authors, `recipe.release`

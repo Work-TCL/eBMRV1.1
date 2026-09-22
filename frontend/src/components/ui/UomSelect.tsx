@@ -139,7 +139,10 @@ function AddUomModal({
           onCreated(code.trim());
           onClose();
         }}
-        onDone={() => onCreated(code.trim())}
+        onDone={() => {
+          onCreated(code.trim());
+          onClose();
+        }}
         challengePath={`/rules/v1/uom/${createdUomId}/signature-challenges`}
         action="release"
         title="Release new unit of measure"

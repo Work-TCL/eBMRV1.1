@@ -27,6 +27,7 @@ from app.modules.rules.uom_commands import (
     ReleaseUomConversionCommand,
     create_uom_conversion_draft,
     create_uom_draft,
+    list_all_uom_versions,
     list_uom_versions,
     release_uom,
     release_uom_conversion,
@@ -159,6 +160,19 @@ async def get_released_rules(
     return await rules_service.list_released_rules(session)
 
 
+@router.get("/all")
+async def get_all_rules(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Every rule version regardless of status -- the Rules page's own always-visible table, replacing
+    the "type the exact rule_id to look it up" step (a drafted rule was otherwise undiscoverable unless
+    you already knew its exact id). Registered ahead of `GET /{rule_id}/versions` for the same reason the
+    bare `GET ""` above is."""
+    await evaluate_policy(session, actor.user_id, action="rules.evaluate", site_id=None)
+    return [_rule_dict(r) for r in await rules_service.list_all_rules(session)]
+
+
 @router.get("/{rule_id}/versions")
 async def get_versions(
     rule_id: str,
@@ -271,6 +285,19 @@ async def get_released_uoms(
     Master batch size) -- same shape/precedent as `GET /rules/v1` above for `condition_rule_id`."""
     await evaluate_policy(session, actor.user_id, action="rules.evaluate", site_id=None)
     return await rules_service.list_released_uoms(session)
+
+
+@router.get("/uom/all")
+async def get_all_uoms(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Every UOM version regardless of status -- same rationale as `GET /rules/v1/all` above: a drafted
+    UOM (SG-211) is invisible to `GET /uom` (released-only picker data) until released, so the "Units of
+    measure" section needs its own always-visible view to find/release it without already knowing its
+    exact code."""
+    await evaluate_policy(session, actor.user_id, action="rules.evaluate", site_id=None)
+    return [_uom_dict(u) for u in await list_all_uom_versions(session)]
 
 
 @router.get("/uom/{code}/versions")

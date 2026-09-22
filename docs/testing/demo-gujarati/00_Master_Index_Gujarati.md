@@ -28,6 +28,7 @@
 | ૧૨ | [Batch Review અને Release](12_Batch_Review_Release_Gujarati.md) | QA Review, Release |
 | ૧૩ | [Sterilization, Aseptic, EM, Cleaning](13_Sterilization_Aseptic_Gujarati.md) | Sterile processing |
 | ૧૪ | [Platform, Audit, Evidence, Vault](14_Platform_Audit_Evidence_Vault_Gujarati.md) | Dashboard, Audit trail, Evidence, Documents, Training |
+| ૧૫ | [નવા Client Requirements (2026-09-21)](15_New_Client_Requirements_Testing_Gujarati.md) 🆕 | Auto-code, UOM enforcement, Material storage, Equipment docs/calibration/maintenance, QC gating, Batch Record PDF |
 
 ⭐ = user ની મુખ્ય required functionality (Product Master, Recipe Master, Batch Manufacture)
 

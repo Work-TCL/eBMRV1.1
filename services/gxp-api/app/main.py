@@ -25,6 +25,7 @@ from app.modules.disaster_recovery.router import router as disaster_recovery_rou
 from app.modules.edge.router import router as edge_router
 from app.modules.equipment.aseptic_router import router as aseptic_router
 from app.modules.equipment.cleaning_router import line_clearance_router
+from app.modules.dashboard.router import router as dashboard_router
 from app.modules.equipment.cleaning_router import router as cleaning_router
 from app.modules.equipment.em_router import router as em_router
 from app.modules.equipment.router import router as equipment_router
@@ -356,6 +357,7 @@ app.include_router(qc_router)
 app.include_router(oos_router)
 app.include_router(lims_integration_router)
 app.include_router(equipment_router)
+app.include_router(dashboard_router)
 app.include_router(cleaning_router)
 app.include_router(line_clearance_router)
 app.include_router(em_router)

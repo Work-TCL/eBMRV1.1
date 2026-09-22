@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { api, ApiError, newIdempotencyKey } from "@/lib/api";
-import { useEntityOptions } from "@/lib/hooks";
+import { useApiResource } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
 import { Modal } from "@/components/ui/Modal";
-import { Field, RowButtonSlot } from "@/components/ui/Field";
+import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
@@ -15,7 +15,6 @@ import { Icon } from "@/components/ui/Icon";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
-import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { JsonPanel, summarizeJson } from "@/components/ui/JsonPanel";
 import {
   ExprNodeEditor,
@@ -51,28 +50,10 @@ const exprBoxStyle: React.CSSProperties = {
 };
 
 export default function RulesPage() {
-  const [ruleId, setRuleId] = useState("");
-  const [versions, setVersions] = useState<RuleDefinition[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [draftOpen, setDraftOpen] = useState(false);
   const [selected, setSelected] = useState<RuleDefinition | null>(null);
-  const entities = useEntityOptions();
-
-  async function performLookup() {
-    if (!ruleId.trim()) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.get<RuleDefinition[]>(`/rules/v1/${encodeURIComponent(ruleId.trim())}/versions`);
-      setVersions(result);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Lookup failed");
-      setVersions(null);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const { data, loading, error, reload } = useApiResource<RuleDefinition[]>("/rules/v1/all");
+  const rules = data ?? [];
 
   return (
     <div>
@@ -86,46 +67,25 @@ export default function RulesPage() {
         }
       />
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          performLookup();
-        }}
-        className="flex flex-wrap items-start gap-4 mb-4"
-      >
-        <EntityPickerField
-          label="Rule ID"
-          value={ruleId}
-          onChange={setRuleId}
-          options={entities.rules}
-          status={entities.rulesStatus}
-          kind="rule"
-          placeholder="e.g. ASSAY-ELIGIBILITY"
-        />
-        <RowButtonSlot>
-          <Button type="submit" variant="secondary" disabled={loading || !ruleId.trim()}>
-            <Icon name="search" /> {loading ? "Looking up…" : "Look up versions"}
-          </Button>
-        </RowButtonSlot>
-      </form>
-
-      {error && (
-        <Card>
+      <Card>
+        {error && (
           <p className="error-text" style={{ padding: "var(--space-4, 16px)" }}>
             {error}
           </p>
-        </Card>
-      )}
-
-      {versions && !error && (
-        <Card>
-          <CardHeader title={ruleId} />
-          {versions.length === 0 ? (
-            <EmptyState icon="gauge">No versions exist for this rule ID yet.</EmptyState>
+        )}
+        {!error && loading && (
+          <p className="hint" style={{ padding: "var(--space-4, 16px)" }}>
+            Loading…
+          </p>
+        )}
+        {!error && !loading && (
+          rules.length === 0 ? (
+            <EmptyState icon="gauge">No rules exist yet.</EmptyState>
           ) : (
             <Table>
               <thead>
                 <tr>
+                  <th>Rule ID</th>
                   <th>Version</th>
                   <th>Status</th>
                   <th>Type</th>
@@ -134,9 +94,10 @@ export default function RulesPage() {
                 </tr>
               </thead>
               <tbody>
-                {versions.map((r) => (
+                {rules.map((r) => (
                   <tr key={r.rule_object_id}>
-                    <td className="font-semibold tabular">{r.semantic_version}</td>
+                    <td className="font-semibold">{r.rule_id}</td>
+                    <td className="tabular">{r.semantic_version}</td>
                     <td><WorkflowStatePill state={r.status} /></td>
                     <td>{r.rule_type}</td>
                     <td className="tabular fs-2">
@@ -151,17 +112,16 @@ export default function RulesPage() {
                 ))}
               </tbody>
             </Table>
-          )}
-        </Card>
-      )}
+          )
+        )}
+      </Card>
 
       {draftOpen && (
         <DraftModal
           onClose={() => setDraftOpen(false)}
-          onDone={(newRuleId) => {
+          onDone={() => {
             setDraftOpen(false);
-            setRuleId(newRuleId);
-            performLookup();
+            reload();
           }}
         />
       )}
@@ -172,7 +132,7 @@ export default function RulesPage() {
           onClose={() => setSelected(null)}
           onChanged={() => {
             setSelected(null);
-            performLookup();
+            reload();
           }}
         />
       )}
@@ -202,32 +162,10 @@ interface Uom {
 }
 
 function UomSection() {
-  const [code, setCode] = useState("");
-  const [versions, setVersions] = useState<Uom[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
+  const { data, loading, error, reload } = useApiResource<Uom[]>("/rules/v1/uom/all");
   const [draftOpen, setDraftOpen] = useState(false);
   const [releasingUom, setReleasingUom] = useState<Uom | null>(null);
-
-  async function lookup() {
-    if (!code.trim()) return;
-    setLoading(true);
-    setError(null);
-    try {
-      setVersions(await api.get<Uom[]>(`/rules/v1/uom/${encodeURIComponent(code.trim())}/versions`));
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        setUnavailable(true);
-        setVersions(null);
-      } else {
-        setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Lookup failed");
-        setVersions(null);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
+  const uoms = data ?? [];
 
   return (
     <Card>
@@ -240,37 +178,21 @@ function UomSection() {
         }
       />
       <div style={{ padding: "var(--space-3) var(--space-4)" }}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            lookup();
-          }}
-          className="flex flex-wrap items-end gap-4"
-        >
-          <Field label="UOM code">
-            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. mg, mL, %w/w" style={{ minWidth: 200, maxWidth: 220, width: "100%" }} />
-          </Field>
-          <Button type="submit" variant="secondary" disabled={loading || !code.trim()}>
-            <Icon name="search" /> {loading ? "Looking up…" : "Look up versions"}
-          </Button>
-        </form>
-
-        {error && <p className="error-text mt-3">{error}</p>}
-
-        {unavailable && (
-          <p className="hint mt-3">
-            The unit-of-measure registry endpoints are not enabled in this deployment build.
+        {error && (
+          <p className="error-text">
+            {error === "404: Not Found" ? "The unit-of-measure registry endpoints are not enabled in this deployment build." : error}
           </p>
         )}
-
-        {versions && !error && (
-          <div className="mt-3">
-            {versions.length === 0 ? (
-              <EmptyState icon="scale">No versions exist for this UOM code yet.</EmptyState>
-            ) : (
+        {!error && loading && <p className="hint">Loading…</p>}
+        {!error && !loading && (
+          uoms.length === 0 ? (
+            <EmptyState icon="scale">No units of measure exist yet.</EmptyState>
+          ) : (
+            <>
               <Table>
                 <thead>
                   <tr>
+                    <th>Code</th>
                     <th>Version</th>
                     <th>Status</th>
                     <th>Dimension</th>
@@ -282,9 +204,10 @@ function UomSection() {
                   </tr>
                 </thead>
                 <tbody>
-                  {versions.map((u) => (
+                  {uoms.map((u) => (
                     <tr key={u.uom_id}>
-                      <td className="font-semibold tabular">v{u.version}</td>
+                      <td className="font-semibold">{u.code}</td>
+                      <td className="tabular">v{u.version}</td>
                       <td><WorkflowStatePill state={u.status} /></td>
                       <td>{u.dimension}</td>
                       <td className="tabular">{u.base_unit}</td>
@@ -302,24 +225,22 @@ function UomSection() {
                   ))}
                 </tbody>
               </Table>
-            )}
-            {versions.some((u) => u.status === "draft") && (
-              <p className="hint mt-2">
-                No signature policy is configured yet for releasing a unit of measure - the challenge below
-                is real, but the release itself will correctly fail closed until one is added.
-              </p>
-            )}
-          </div>
+              {uoms.some((u) => u.status === "draft") && (
+                <p className="hint mt-2">
+                  Releasing requires an independent QA Releaser signature (SG-211).
+                </p>
+              )}
+            </>
+          )
         )}
       </div>
 
       {draftOpen && (
         <UomDraftModal
           onClose={() => setDraftOpen(false)}
-          onDone={(newCode) => {
+          onDone={() => {
             setDraftOpen(false);
-            setCode(newCode);
-            setVersions(null);
+            reload();
           }}
         />
       )}
@@ -330,12 +251,12 @@ function UomSection() {
           onClose={() => setReleasingUom(null)}
           onDone={() => {
             setReleasingUom(null);
-            lookup();
+            reload();
           }}
           challengePath={`/rules/v1/uom/${releasingUom.uom_id}/signature-challenges`}
           action="release"
-          title={`Release UOM - ${code}`}
-          summary={`You are about to release ${code} v${releasingUom.version}.`}
+          title={`Release UOM - ${releasingUom.code}`}
+          summary={`You are about to release ${releasingUom.code} v${releasingUom.version}.`}
           submitVariant="success"
           reason="none"
           onSign={(p) =>
@@ -352,7 +273,7 @@ function UomSection() {
   );
 }
 
-function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: (code: string) => void }) {
+function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [code, setCode] = useState("");
   const [dimension, setDimension] = useState("mass");
   const [baseUnit, setBaseUnit] = useState("kg");
@@ -376,7 +297,7 @@ function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: (code
         offset: offset.trim(),
         precision_dp: Number(precisionDp),
       });
-      onDone(code.trim());
+      onDone();
     } catch (err) {
       setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed to create UOM draft");
     } finally {
@@ -409,8 +330,7 @@ function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: (code
         </div>
         {error && <p className="error-text mt-2">{error}</p>}
         <p className="hint mt-2 mb-3">
-          Releasing a UOM needs a signature policy - this deployment hasn&apos;t defined yet - the draft is
-          stored; release will correctly fail closed until one exists.
+          This creates a draft. An independent QA Releaser signature is required to release it (SG-211).
         </p>
         <div className="flex justify-between gap-3 mt-2">
           <Button type="button" variant="secondary" onClick={onClose}>

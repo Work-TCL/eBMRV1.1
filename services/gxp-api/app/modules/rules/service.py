@@ -98,6 +98,18 @@ async def list_versions(session: AsyncSession, rule_id: str) -> list[RuleDefinit
     )
 
 
+async def list_all_rules(session: AsyncSession) -> list[RuleDefinition]:
+    """Every rule version regardless of status (draft/validated/released), for the Rules page's own
+    always-visible table -- unlike `list_released_rules()` (picker data for other modules to reference a
+    *released* rule), this is the authoring surface's own view of everything that exists, replacing a
+    "type the exact rule_id to look it up" step nobody could discover their own drafts through."""
+    return (
+        (await session.execute(select(RuleDefinition).order_by(RuleDefinition.rule_id, RuleDefinition.created_at)))
+        .scalars()
+        .all()
+    )
+
+
 async def get_effective_released_rule(session: AsyncSession, rule_id: str) -> RuleDefinition:
     """RUL-FR-003 — the currently effective released version: status=released, within effective
     window. Fail-closed if none resolves (same discipline as the signature-policy resolver — an
