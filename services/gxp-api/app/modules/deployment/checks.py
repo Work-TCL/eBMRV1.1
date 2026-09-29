@@ -14,12 +14,10 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.config import DEV_SECRET_MARKERS, settings
 from app.modules.security.crypto_models import CertificateMetadata
 from app.mutation.errors import DeploymentPrerequisiteFailedError
 from app.mutation.gateway import write_outbox_event
-
-_DEV_JWT_SECRET_MARKERS = ("dev-secret", "changeme", "change-me")
 
 
 async def validate_deployment_prerequisites(session: AsyncSession, *, raise_on_failure: bool = False) -> dict:
@@ -36,7 +34,7 @@ async def validate_deployment_prerequisites(session: AsyncSession, *, raise_on_f
         checks["database_reachable"] = False
 
     checks["jwt_secret_not_default"] = not any(
-        marker in settings.jwt_secret.lower() for marker in _DEV_JWT_SECRET_MARKERS
+        marker in settings.jwt_secret.lower() for marker in DEV_SECRET_MARKERS
     )
 
     try:

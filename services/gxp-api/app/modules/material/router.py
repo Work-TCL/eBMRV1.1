@@ -312,7 +312,12 @@ async def list_material_lots(
     session: AsyncSession = Depends(get_session),
     params: PageParams = Depends(page_params),
     status: str | None = None,
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
+    # Authenticated, not yet RBAC-scoped -- no material_lot.view permission code exists yet in the
+    # catalogue, and deciding which roles should hold one is a real authorization design question, not
+    # guessed here (same posture ddcp/router.py's read-only endpoints already document explicitly).
+    del actor
     stmt = select(MaterialLot, Material.code, Material.name).join(Material, Material.id == MaterialLot.material_id)
     if params.q:
         needle = f"%{params.q}%"
@@ -336,7 +341,13 @@ async def list_material_lots(
 
 
 @lots_router.get("/{lot_id}")
-async def get_material_lot(lot_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_material_lot(
+    lot_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    # See list_material_lots() above -- same posture: authenticated, not yet RBAC-scoped.
+    del actor
     result = await session.execute(
         select(MaterialLot, Material.code, Material.name)
         .join(Material, Material.id == MaterialLot.material_id)

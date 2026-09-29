@@ -29,6 +29,15 @@ from app.mutation.schemas import MutationReceipt
 router = APIRouter(prefix="/evidence/v1", tags=["evidence"])
 
 
+def _content_disposition(filename: str) -> str:
+    """`filename` is client-supplied metadata (StageEvidenceUploadCommand.filename) with no character
+    validation -- a literal `"` would otherwise break out of the quoted-string attribute and let the
+    rest of the header value spoof a different filename/extension in some browsers. Backslash-escaping
+    `\\` and `"` is the RFC 6266/2616 quoted-string escape, which keeps the value inert instead."""
+    escaped = filename.replace("\\", "\\\\").replace('"', '\\"')
+    return f'attachment; filename="{escaped}"'
+
+
 def _evidence_object_dict(obj: EvidenceObject) -> dict:
     return {
         "id": str(obj.id),
@@ -156,7 +165,7 @@ async def get_download(
         content=data,
         media_type=obj.mime_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{(obj.filename or str(obj.id))}"',
+            "Content-Disposition": _content_disposition(obj.filename or str(obj.id)),
             "X-Evidence-Id": str(obj.id),
             "X-Evidence-Content-Hash": obj.content_hash or "",
             "X-Evidence-Purpose": purpose,

@@ -193,6 +193,14 @@ async def finalize_evidence_upload(
     except Exception as exc:  # noqa: BLE001
         raise ValidationFailedError("content_base64 is not valid base64") from exc
 
+    # The staging-time check only ever validated the client-declared size, not what actually arrives
+    # here -- a caller could under-declare and then finalize with an arbitrarily large payload. Checked
+    # against the real decoded length, same cap `stage_evidence_upload` enforces on the declared value.
+    if len(data) > _DEFAULT_MAX_BYTES:
+        raise ValidationFailedError(
+            "Uploaded content exceeds the configured size cap", max_bytes=_DEFAULT_MAX_BYTES, actual_bytes=len(data)
+        )
+
     digest = sha256_bytes(data)
     old_state = obj.state
     if obj.expected_hash and obj.expected_hash.lower() != digest.lower():
