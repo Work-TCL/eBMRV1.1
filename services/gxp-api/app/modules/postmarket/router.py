@@ -232,7 +232,17 @@ async def post_calculate_surveillance_metric(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="safety_signal.view", site_id=None)
+        # commands.calculate_surveillance_metric() itself treats cmd.scope["site_id"] as optional --
+        # PMS-FR-018/019 population-wide surveillance metrics are a genuine cross-site regulated function
+        # when no site is named. When a specific site IS named, gate on that site's role (closing the
+        # bypass for that case); the fully-unscoped ("any site I hold safety_signal.view at may run a
+        # platform-wide metric") case is left as-is -- whether that should instead require a distinct
+        # org-wide permission is a real open question, not guessed here (SPEC_GAP candidate).
+        scope_site_id = cmd.scope.get("site_id")
+        await evaluate_policy(
+            session, actor.user_id, action="safety_signal.view",
+            site_id=uuid.UUID(scope_site_id) if scope_site_id else None,
+        )
         return await commands.calculate_surveillance_metric(session, cmd, actor.user_id)
 
 
@@ -242,7 +252,14 @@ async def post_evaluate_signal_rules(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="safety_signal.view", site_id=None)
+        # Same posture as post_calculate_surveillance_metric() above: cmd.case_scope["site_id"] is
+        # optional in commands.evaluate_signal_rules() (PMS-FR-020 population-wide recurrence check);
+        # gate on the named site when one is given, leave the fully-unscoped case as a SPEC_GAP candidate.
+        scope_site_id = cmd.case_scope.get("site_id")
+        await evaluate_policy(
+            session, actor.user_id, action="safety_signal.view",
+            site_id=uuid.UUID(scope_site_id) if scope_site_id else None,
+        )
         return await commands.evaluate_signal_rules(session, cmd)
 
 

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.batch_execution.models import Batch
 from app.modules.ddcp import commands as ddcp_commands
 from app.modules.ddcp import injector_commands
 from app.modules.ddcp.models import INJECTOR_SUBTYPES, DdcpProcessOperation, DdcpProfileVersion
@@ -94,7 +95,10 @@ async def post_start_assembly_operation(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_fill.start", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_fill.start", site_id=batch.site_id)
         return await injector_commands.start_injector_assembly_operation(session, cmd, actor.user_id)
 
 
@@ -134,7 +138,10 @@ async def post_bind_drug_container(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_constituent.handoff", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_constituent.handoff", site_id=batch.site_id)
         return await injector_commands.bind_drug_container_to_injector_unit(session, cmd, actor.user_id)
 
 
@@ -144,7 +151,10 @@ async def post_execute_functional_test(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=batch.site_id)
         return await injector_commands.execute_injector_functional_test(session, cmd, actor.user_id)
 
 
@@ -154,7 +164,10 @@ async def post_evaluate_dose_delivery_result(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=batch.site_id)
         return await injector_commands.evaluate_dose_delivery_result(session, cmd, actor.user_id)
 
 
@@ -164,7 +177,10 @@ async def post_record_unit_disposition(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.verify", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.verify", site_id=batch.site_id)
         return await injector_commands.record_unit_disposition(session, cmd, actor.user_id)
 
 
@@ -173,7 +189,10 @@ async def post_evaluate_release_readiness(
     batch_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_release.evaluate", site_id=None)
+        batch = await session.get(Batch, batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_release.evaluate", site_id=batch.site_id)
         return await injector_commands.evaluate_injector_release_readiness(session, batch_id, actor.user_id)
 
 
@@ -185,7 +204,10 @@ async def post_create_evidence_package(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_release.export", site_id=None)
+        batch = await session.get(Batch, batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_release.export", site_id=batch.site_id)
         return await injector_commands.create_injector_batch_evidence_package(session, cmd, actor.user_id)
 
 
@@ -205,5 +227,13 @@ async def post_record_reusable_device_pairing(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_constituent.handoff", site_id=None)
+        # record_reusable_device_pairing() itself requires batch_id this pass (no batch-independent
+        # pairing-authoring flow exists yet, SG-150) -- checked here too so the RBAC/site gate always has
+        # a real site to check against rather than falling back to "any site".
+        if cmd.batch_id is None:
+            raise ValidationFailedError("batch_id is required this pass -- a batch-independent pairing-authoring flow is not yet implemented (see SG-150)")
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_constituent.handoff", site_id=batch.site_id)
         return await injector_commands.record_reusable_device_pairing(session, cmd, actor.user_id)

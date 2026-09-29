@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.batch_execution.models import Batch
 from app.modules.ddcp import commands as ddcp_commands
 from app.modules.ddcp.models import (
     INJECTABLE_SUBTYPES,
@@ -20,6 +21,7 @@ from app.modules.ddcp.models import (
     FillOperation,
 )
 from app.modules.policy.service import evaluate_policy
+from app.modules.recipe_master.models import RecipeVersion
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
@@ -154,7 +156,10 @@ async def post_record_handoff(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_constituent.handoff", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_constituent.handoff", site_id=batch.site_id)
         return await ddcp_commands.record_constituent_handoff(session, cmd, actor.user_id)
 
 
@@ -196,7 +201,10 @@ async def post_start_filling_stage(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_fill.start", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_fill.start", site_id=batch.site_id)
         return await ddcp_commands.start_filling_stage(session, cmd, actor.user_id)
 
 
@@ -221,7 +229,10 @@ async def post_record_count(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_fill.record_count", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_fill.record_count", site_id=batch.site_id)
         return await ddcp_commands.record_syringe_unit_or_count(session, cmd, actor.user_id)
 
 
@@ -264,7 +275,10 @@ async def post_record_device_assembly(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.assemble", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.assemble", site_id=batch.site_id)
         return await ddcp_commands.record_device_assembly_step(session, cmd, actor.user_id)
 
 
@@ -292,7 +306,10 @@ async def post_record_functional_test(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=batch.site_id)
         return await ddcp_commands.record_pfs_functional_test(session, cmd, actor.user_id)
 
 
@@ -304,7 +321,10 @@ async def post_evaluate_release_readiness(
     batch_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_release.evaluate", site_id=None)
+        batch = await session.get(Batch, batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_release.evaluate", site_id=batch.site_id)
         return await ddcp_commands.evaluate_pfs_release_readiness(session, batch_id, actor.user_id)
 
 
@@ -316,7 +336,10 @@ async def post_create_evidence_package(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_release.export", site_id=None)
+        batch = await session.get(Batch, batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_release.export", site_id=batch.site_id)
         return await ddcp_commands.create_pfs_batch_evidence_package(session, cmd, actor.user_id)
 
 
@@ -355,7 +378,10 @@ async def post_record_stability_retain_reference(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_fill.record_count", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_fill.record_count", site_id=batch.site_id)
         return await ddcp_commands.record_stability_retain_reference(session, cmd, actor.user_id)
 
 
@@ -388,7 +414,10 @@ async def post_create_step_mapping(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_profile.author", site_id=None)
+        recipe_version = await session.get(RecipeVersion, cmd.recipe_version_id)
+        if recipe_version is None:
+            raise NotFoundError("Recipe version not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_profile.author", site_id=recipe_version.site_id)
         return await ddcp_commands.create_step_mapping(session, cmd, actor.user_id)
 
 

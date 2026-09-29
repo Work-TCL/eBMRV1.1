@@ -54,7 +54,10 @@ async def post_assess_impact(
     if cmd.change_id != change_id:
         raise ValidationFailedError("change_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="change.impact", site_id=None)
+        change = await session.get(ChangeControl, change_id)
+        if change is None:
+            raise NotFoundError("Change control not found")
+        await evaluate_policy(session, actor.user_id, action="change.impact", site_id=change.site_id)
         return await assess_impact(session, cmd, actor.user_id)
 
 
@@ -66,7 +69,10 @@ async def post_approve_change(
     if cmd.change_id != change_id:
         raise ValidationFailedError("change_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="change.approve", site_id=None)
+        change = await session.get(ChangeControl, change_id)
+        if change is None:
+            raise NotFoundError("Change control not found")
+        await evaluate_policy(session, actor.user_id, action="change.approve", site_id=change.site_id)
         return await approve_change(session, cmd, actor.user_id)
 
 
@@ -78,7 +84,10 @@ async def post_add_task(
     if cmd.change_id != change_id:
         raise ValidationFailedError("change_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="change.task.add", site_id=None)
+        change = await session.get(ChangeControl, change_id)
+        if change is None:
+            raise NotFoundError("Change control not found")
+        await evaluate_policy(session, actor.user_id, action="change.task.add", site_id=change.site_id)
         return await add_change_task(session, cmd, actor.user_id)
 
 
@@ -90,7 +99,10 @@ async def post_implement_change(
     if cmd.change_id != change_id:
         raise ValidationFailedError("change_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="change.implement", site_id=None)
+        change = await session.get(ChangeControl, change_id)
+        if change is None:
+            raise NotFoundError("Change control not found")
+        await evaluate_policy(session, actor.user_id, action="change.implement", site_id=change.site_id)
         return await implement_change(session, cmd, actor.user_id)
 
 
@@ -102,7 +114,10 @@ async def post_verify_change(
     if cmd.change_id != change_id:
         raise ValidationFailedError("change_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="change.verify", site_id=None)
+        change = await session.get(ChangeControl, change_id)
+        if change is None:
+            raise NotFoundError("Change control not found")
+        await evaluate_policy(session, actor.user_id, action="change.verify", site_id=change.site_id)
         return await verify_change(session, cmd, actor.user_id)
 
 
@@ -114,7 +129,10 @@ async def post_make_effective(
     if cmd.change_id != change_id:
         raise ValidationFailedError("change_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="change.make_effective", site_id=None)
+        change = await session.get(ChangeControl, change_id)
+        if change is None:
+            raise NotFoundError("Change control not found")
+        await evaluate_policy(session, actor.user_id, action="change.make_effective", site_id=change.site_id)
         return await make_effective_change(session, cmd, actor.user_id)
 
 
@@ -141,7 +159,10 @@ async def post_close_change(
     if cmd.change_id != change_id:
         raise ValidationFailedError("change_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="change.close", site_id=None)
+        change = await session.get(ChangeControl, change_id)
+        if change is None:
+            raise NotFoundError("Change control not found")
+        await evaluate_policy(session, actor.user_id, action="change.close", site_id=change.site_id)
         return await close_change(session, cmd, actor.user_id)
 
 

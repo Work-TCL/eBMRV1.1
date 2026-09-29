@@ -52,7 +52,10 @@ async def post_start_internal_audit(
     if cmd.audit_id != audit_id:
         raise ValidationFailedError("audit_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="internal_audit.start", site_id=None)
+        audit = await session.get(InternalAudit, audit_id)
+        if audit is None:
+            raise NotFoundError("Internal audit not found")
+        await evaluate_policy(session, actor.user_id, action="internal_audit.start", site_id=audit.site_id)
         return await start_internal_audit(session, cmd, actor.user_id)
 
 
@@ -64,7 +67,10 @@ async def post_add_finding(
     if cmd.audit_id != audit_id:
         raise ValidationFailedError("audit_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="internal_audit.finding.add", site_id=None)
+        audit = await session.get(InternalAudit, audit_id)
+        if audit is None:
+            raise NotFoundError("Internal audit not found")
+        await evaluate_policy(session, actor.user_id, action="internal_audit.finding.add", site_id=audit.site_id)
         return await add_finding(session, cmd, actor.user_id)
 
 
@@ -76,7 +82,10 @@ async def post_respond_to_finding(
     if cmd.finding_id != finding_id:
         raise ValidationFailedError("finding_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="internal_audit.finding.response", site_id=None)
+        finding = await session.get(AuditFinding, finding_id)
+        if finding is None:
+            raise NotFoundError("Audit finding not found")
+        await evaluate_policy(session, actor.user_id, action="internal_audit.finding.response", site_id=finding.site_id)
         return await respond_to_finding(session, cmd, actor.user_id)
 
 
@@ -103,7 +112,10 @@ async def post_verify_finding(
     if cmd.finding_id != finding_id:
         raise ValidationFailedError("finding_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="internal_audit.finding.verify", site_id=None)
+        finding = await session.get(AuditFinding, finding_id)
+        if finding is None:
+            raise NotFoundError("Audit finding not found")
+        await evaluate_policy(session, actor.user_id, action="internal_audit.finding.verify", site_id=finding.site_id)
         return await verify_finding(session, cmd, actor.user_id)
 
 
@@ -130,7 +142,10 @@ async def post_close_internal_audit(
     if cmd.audit_id != audit_id:
         raise ValidationFailedError("audit_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="internal_audit.close", site_id=None)
+        audit = await session.get(InternalAudit, audit_id)
+        if audit is None:
+            raise NotFoundError("Internal audit not found")
+        await evaluate_policy(session, actor.user_id, action="internal_audit.close", site_id=audit.site_id)
         return await close_internal_audit(session, cmd, actor.user_id)
 
 

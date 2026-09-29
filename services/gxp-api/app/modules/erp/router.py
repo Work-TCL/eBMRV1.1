@@ -16,8 +16,10 @@ from app.modules.erp import commands as erp_commands
 from app.modules.erp.models import (
     ErpExternalMapping,
     ErpInstance,
+    ErpMappingConflict,
     IntegrationBulkJob,
     IntegrationCommand,
+    IntegrationReconciliationDifference,
     IntegrationReconciliationRun,
 )
 from app.modules.policy.service import evaluate_policy
@@ -157,7 +159,15 @@ async def post_resolve_conflict(
     if cmd.conflict_id != conflict_id:
         raise ValidationFailedError("conflict_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="erp_mapping.resolve_conflict", site_id=None)
+        conflict = await session.get(ErpMappingConflict, conflict_id)
+        if conflict is None:
+            raise NotFoundError("Mapping conflict not found")
+        mapping = await session.get(ErpExternalMapping, conflict.mapping_id)
+        instance = await session.get(ErpInstance, mapping.erp_instance_id) if mapping else None
+        await evaluate_policy(
+            session, actor.user_id, action="erp_mapping.resolve_conflict",
+            site_id=instance.site_id if instance else None,
+        )
         return await erp_commands.resolve_master_conflict(session, cmd, actor.user_id)
 
 
@@ -430,7 +440,15 @@ async def post_resolve_difference(
     if cmd.difference_id != difference_id:
         raise ValidationFailedError("difference_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="integration_reconciliation.manage", site_id=None)
+        difference = await session.get(IntegrationReconciliationDifference, difference_id)
+        if difference is None:
+            raise NotFoundError("Reconciliation difference not found")
+        run = await session.get(IntegrationReconciliationRun, difference.run_id)
+        instance = await session.get(ErpInstance, run.erp_instance_id) if run else None
+        await evaluate_policy(
+            session, actor.user_id, action="integration_reconciliation.manage",
+            site_id=instance.site_id if instance else None,
+        )
         return await erp_commands.resolve_reconciliation_difference(session, cmd, actor.user_id)
 
 

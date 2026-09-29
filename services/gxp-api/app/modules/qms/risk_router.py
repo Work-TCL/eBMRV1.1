@@ -49,7 +49,10 @@ async def post_add_assessment(
     if cmd.risk_id != risk_id:
         raise ValidationFailedError("risk_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="risk.assessment.add", site_id=None)
+        risk = await session.get(RiskRecord, risk_id)
+        if risk is None:
+            raise NotFoundError("Risk record not found")
+        await evaluate_policy(session, actor.user_id, action="risk.assessment.add", site_id=risk.site_id)
         return await add_assessment(session, cmd, actor.user_id)
 
 
@@ -61,7 +64,10 @@ async def post_add_controls(
     if cmd.risk_id != risk_id:
         raise ValidationFailedError("risk_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="risk.controls.add", site_id=None)
+        risk = await session.get(RiskRecord, risk_id)
+        if risk is None:
+            raise NotFoundError("Risk record not found")
+        await evaluate_policy(session, actor.user_id, action="risk.controls.add", site_id=risk.site_id)
         return await add_controls(session, cmd, actor.user_id)
 
 
@@ -73,7 +79,10 @@ async def post_accept_risk(
     if cmd.risk_id != risk_id:
         raise ValidationFailedError("risk_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="risk.accept", site_id=None)
+        risk = await session.get(RiskRecord, risk_id)
+        if risk is None:
+            raise NotFoundError("Risk record not found")
+        await evaluate_policy(session, actor.user_id, action="risk.accept", site_id=risk.site_id)
         return await accept_risk(session, cmd, actor.user_id)
 
 
@@ -85,7 +94,10 @@ async def post_review_risk(
     if cmd.risk_id != risk_id:
         raise ValidationFailedError("risk_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="risk.review", site_id=None)
+        risk = await session.get(RiskRecord, risk_id)
+        if risk is None:
+            raise NotFoundError("Risk record not found")
+        await evaluate_policy(session, actor.user_id, action="risk.review", site_id=risk.site_id)
         return await review_risk(session, cmd, actor.user_id)
 
 

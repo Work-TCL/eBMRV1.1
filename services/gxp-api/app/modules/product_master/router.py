@@ -119,7 +119,8 @@ async def put_update_draft(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.author", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.author", site_id=version.site_id)
         return await update_draft(session, cmd, actor.user_id)
 
 
@@ -133,7 +134,8 @@ async def post_submit_draft(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.author", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.author", site_id=version.site_id)
         return await submit_draft(session, cmd, actor.user_id)
 
 
@@ -193,7 +195,8 @@ async def post_release_draft(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.release", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.release", site_id=version.site_id)
         return await release_product_version(session, cmd, actor.user_id)
 
 
@@ -207,7 +210,8 @@ async def post_suspend(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=version.site_id)
         return await suspend_product_version(session, cmd, actor.user_id)
 
 
@@ -221,7 +225,8 @@ async def post_reinstate(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=version.site_id)
         return await reinstate_product_version(session, cmd, actor.user_id)
 
 
@@ -237,7 +242,8 @@ async def post_obsolete(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=version.site_id)
         return await obsolete_product_version(session, cmd, actor.user_id)
 
 
@@ -253,7 +259,8 @@ async def post_supersede(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=version.site_id)
         return await supersede_product_version(session, cmd, actor.user_id)
 
 
@@ -291,7 +298,7 @@ async def get_sterile_profiles(
     """Real picker data for the Sterile process profile ID field on the draft/edit forms -- registered
     ahead of the single-segment `/{product_version_id}` GET below so "sterile-profiles" is never parsed
     as a product_version_id."""
-    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
+    await evaluate_policy(session, actor.user_id, action="product.view", site_id=site_id)
     profiles = await product_master_service.list_sterile_profiles(session, site_id)
     return [
         {
@@ -355,8 +362,8 @@ async def get_version_detail(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
     version = await product_master_service.get_version(session, product_version_id)
+    await evaluate_policy(session, actor.user_id, action="product.view", site_id=version.site_id)
     constituents = await product_master_service.get_constituents(session, product_version_id)
     body = _version_dict(version)
     body["constituents"] = [_constituent_dict(c) for c in constituents]
@@ -373,7 +380,8 @@ async def post_validate_completeness(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.author", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.author", site_id=version.site_id)
         return await validate_completeness_command(session, cmd, actor.user_id)
 
 
@@ -383,7 +391,8 @@ async def get_compatibility(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
-    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
+    version = await product_master_service.get_version(session, product_version_id)
+    await evaluate_policy(session, actor.user_id, action="product.view", site_id=version.site_id)
     rows = (
         (
             await session.execute(
@@ -408,8 +417,8 @@ async def get_issue_eligibility(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
     version = await product_master_service.get_version(session, product_version_id)
+    await evaluate_policy(session, actor.user_id, action="product.view", site_id=version.site_id)
     constituents = await product_master_service.get_constituents(session, product_version_id)
     findings = product_master_service.validate_completeness(version, constituents)
     return product_master_service.check_issue_eligibility(version, findings)

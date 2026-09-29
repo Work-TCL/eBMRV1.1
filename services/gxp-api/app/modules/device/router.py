@@ -70,7 +70,8 @@ async def post_hold_unit(
     if cmd.unit_id != unit_id:
         raise ValidationFailedError("unit_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="device.execute", site_id=None)
+        unit = await device_service.get_unit(session, unit_id)
+        await evaluate_policy(session, actor.user_id, action="device.execute", site_id=unit.site_id)
         return await hold_device_unit(session, cmd, actor.user_id)
 
 
@@ -81,7 +82,7 @@ async def get_unit_by_serial(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="device.view", site_id=None)
+    await evaluate_policy(session, actor.user_id, action="device.view", site_id=site_id)
     unit = await device_service.get_by_serial(session, site_id, serial)
     return _unit_dict(unit)
 
@@ -94,8 +95,8 @@ async def get_unit_history(
 ) -> dict:
     """DHR-FR-026 (partial): the current structured device_unit record only -- component/assembly/test/
     inspection/label/genealogy history is not built this pass (SG-049/SG-050)."""
-    await evaluate_policy(session, actor.user_id, action="device.view", site_id=None)
     unit = await device_service.get_unit(session, unit_id)
+    await evaluate_policy(session, actor.user_id, action="device.view", site_id=unit.site_id)
     return _unit_dict(unit)
 
 
@@ -105,5 +106,6 @@ async def get_release_readiness(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="device.view", site_id=None)
+    lot = await device_service.get_unit(session, lot_id)
+    await evaluate_policy(session, actor.user_id, action="device.view", site_id=lot.site_id)
     return await device_service.release_readiness(session, lot_id)

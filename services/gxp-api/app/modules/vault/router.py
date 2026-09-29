@@ -124,8 +124,8 @@ async def get_object(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=None)
     obj = await vault_service.get_object(session, object_id)
+    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=obj.site_id)
     body = _object_dict(obj)
     evidence = await vault_service.list_evidence_for_object(session, object_id)
     body["evidence"] = [_evidence_dict(e) for e in evidence]
@@ -138,8 +138,9 @@ async def get_correction(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=None)
     correction = await vault_service.get_correction(session, correction_id)
+    record_object = await vault_service.get_object(session, correction.record_object_id)
+    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=record_object.site_id)
     return _correction_dict(correction)
 
 
@@ -149,7 +150,8 @@ async def get_object_integrity(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=None)
+    obj = await vault_service.get_object(session, object_id)
+    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=obj.site_id)
     return await vault_service.verify_integrity(session, object_id)
 
 
@@ -177,7 +179,8 @@ async def post_request_correction(
     if cmd.record_object_id != object_id:
         raise ValidationFailedError("object_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="vault.correct", site_id=None)
+        obj = await vault_service.get_object(session, object_id)
+        await evaluate_policy(session, actor.user_id, action="vault.correct", site_id=obj.site_id)
         return await request_correction(session, cmd, actor.user_id)
 
 
@@ -191,7 +194,9 @@ async def post_complete_correction(
     if cmd.correction_id != correction_id:
         raise ValidationFailedError("correction_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="vault.correct", site_id=None)
+        correction = await vault_service.get_correction(session, correction_id)
+        record_object = await vault_service.get_object(session, correction.record_object_id)
+        await evaluate_policy(session, actor.user_id, action="vault.correct", site_id=record_object.site_id)
         return await complete_correction(session, cmd, actor.user_id)
 
 

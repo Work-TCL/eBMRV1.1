@@ -2,13 +2,15 @@ import uuid
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.batch_execution.models import BatchStep
 from app.modules.policy.service import evaluate_policy
+from app.modules.qms.read_support import filtered, iso, sid
 from app.modules.qc.commands import (
     ApproveDispositionCommand,
     ApproveResultCorrectionCommand,
@@ -31,10 +33,12 @@ from app.modules.qc.commands import (
     RecordResultCommand,
     ReleaseQcMethodVersionCommand,
     ReleaseTestSpecificationCommand,
+    ReopenOotCommand,
     RequestResultCorrectionCommand,
     ReviewTestOrderCommand,
     StartExtendedInvestigationCommand,
     StartTestOrderCommand,
+    _check_qc_analyst_qualification,
     _record_hash,
     approve_disposition,
     approve_result_correction,
@@ -57,6 +61,7 @@ from app.modules.qc.commands import (
     record_result,
     release_qc_method_version,
     release_test_specification,
+    reopen_oot,
     request_result_correction,
     review_test_order,
     start_extended_investigation,
@@ -106,7 +111,9 @@ def _specification_dict(spec: QcTestSpecification, definitions: list[QcTestDefin
 
 @router.get("/specifications")
 async def list_specifications(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params),
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     """Real picker data for every place that needs a test specification/definition -- /qc's own "Add
     test order" (previously free-text 'Test definition ID' entry) and the browsable list a spec/release
@@ -134,6 +141,24 @@ async def list_specifications(
         return {**envelope, "items": [_specification_dict(s, defs_by_spec.get(str(s.id), [])) for s in specs]}
 
 
+@router.get("/specifications/{spec_id}")
+async def get_specification(
+    spec_id: str,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Detail read backing the /qc/specifications/{id} page — no single-record GET existed before this
+    (only the list above), so a detail page had to resolve the id against the already-loaded list page's
+    picker data instead. Reuses _specification_dict, the same shaping the list endpoint already uses."""
+    spec = await session.get(QcTestSpecification, spec_id)
+    if spec is None:
+        raise NotFoundError("Test specification not found")
+    definitions = (
+        await session.execute(select(QcTestDefinition).where(QcTestDefinition.specification_id == spec.id))
+    ).scalars().all()
+    return _specification_dict(spec, list(definitions))
+
+
 SAMPLE_SORTABLE = {
     "sample_number": QcSample.sample_number,
     "created_at": QcSample.created_at,
@@ -142,7 +167,9 @@ SAMPLE_SORTABLE = {
 
 @router.get("/samples")
 async def list_samples(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params),
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     """Browsable list for /qc's own "Samples" section -- previously no way to see what samples existed
     at all, only open one already-known by id. Same SG-081 read-side precedent as everywhere else this
@@ -231,6 +258,31 @@ def _qc_method_dict(m: QcMethodVersion) -> dict:
     }
 
 
+METHOD_SORTABLE = {
+    "method_code": QcMethodVersion.method_code,
+    "created_at": QcMethodVersion.created_at,
+}
+
+
+@router.get("/methods")
+async def list_qc_methods(
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Browsable list of every method VERSION row (not deduplicated by method_code -- each version is
+    its own regulated record) backing /qc's "QC method master" section. Previously this had no list-all
+    endpoint at all -- only "versions by method_code" and "single by id" -- so the UI was a deliberate
+    code-lookup console rather than a browsable table (see that page's own comment). Same qc_method.view
+    policy gate as the other two method reads."""
+    await evaluate_policy(session, actor.user_id, action="qc_method.view", site_id=None)
+    stmt = select(QcMethodVersion)
+    if params.q:
+        stmt = stmt.where(QcMethodVersion.method_code.ilike(f"%{params.q}%"))
+    rows, envelope = await paginate(session, stmt, params, sortable=METHOD_SORTABLE, default_sort=QcMethodVersion.created_at)
+    return {**envelope, "items": [_qc_method_dict(m) for (m,) in rows]}
+
+
 @router.post("/methods/drafts", response_model=MutationReceipt)
 async def post_create_qc_method_draft(
     cmd: CreateQcMethodDraftCommand,
@@ -263,10 +315,10 @@ async def get_qc_method_version_detail(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="qc_method.view", site_id=None)
     method = await session.get(QcMethodVersion, method_version_id)
     if method is None:
         raise NotFoundError("QC method version not found")
+    await evaluate_policy(session, actor.user_id, action="qc_method.view", site_id=method.site_id)
     return _qc_method_dict(method)
 
 
@@ -307,7 +359,10 @@ async def post_release_qc_method_version(
     if cmd.method_version_id != method_version_id:
         raise ValidationFailedError("method_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qc_method.release", site_id=None)
+        method = await session.get(QcMethodVersion, method_version_id)
+        if method is None:
+            raise NotFoundError("QC method version not found")
+        await evaluate_policy(session, actor.user_id, action="qc_method.release", site_id=method.site_id)
         return await release_qc_method_version(session, cmd, actor.user_id)
 
 
@@ -342,7 +397,11 @@ async def post_receive_sample(
 
 
 @router.get("/samples/{sample_id}/record")
-async def get_sample_record(sample_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_sample_record(
+    sample_id: str,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     sample = await session.get(QcSample, sample_id)
     if sample is None:
         raise NotFoundError("Sample not found")
@@ -384,22 +443,37 @@ async def get_sample_record(sample_id: str, session: AsyncSession = Depends(get_
 
 
 @router.get("/results")
-async def list_results_for_batch(batch_id: str, session: AsyncSession = Depends(get_session)) -> list[dict]:
+async def list_results_for_batch(
+    batch_id: str,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
     """Real picker data for any field that references a `qc_result` row by id -- DDCP's "Link a device
     functional test" `qc_record_reference` (ddcp/commands.py's own comment: "References the owning
     qc.qc_result row, never duplicates it") is the first caller, previously free-text UUID entry with no
     way to discover a real one. Same SG-081 read-side precedent as every other picker added this pass.
 
     `QcSample.source_id` is a polymorphic reference (see that model's own docstring) validated only for
-    a handful of source_types -- 'batch' is one of them, so this filters on exactly that rather than
-    guessing at samples pulled some other way. Newest first."""
+    a handful of source_types -- 'batch' and 'batch_step' both resolve to this batch (a step-level
+    in-process sample's source_id points at its `gxp_batch_step` row, not the batch directly), so both
+    are matched rather than only the direct 'batch' source_type -- the OOS "Open from result" picker was
+    otherwise empty for every batch whose only QC sampling was step-level. Newest first."""
     rows = (
         await session.execute(
             select(QcResult, QcTestDefinition.test_name)
             .join(QcTestOrder, QcTestOrder.id == QcResult.test_order_id)
             .join(QcSample, QcSample.id == QcTestOrder.sample_id)
             .join(QcTestDefinition, QcTestDefinition.id == QcTestOrder.test_definition_id)
-            .where(QcSample.source_type == "batch", QcSample.source_id == batch_id)
+            .outerjoin(
+                BatchStep,
+                and_(QcSample.source_type == "batch_step", QcSample.source_id == BatchStep.id),
+            )
+            .where(
+                or_(
+                    and_(QcSample.source_type == "batch", QcSample.source_id == batch_id),
+                    and_(QcSample.source_type == "batch_step", BatchStep.batch_id == batch_id),
+                )
+            )
             .order_by(QcResult.created_at.desc())
         )
     ).all()
@@ -417,7 +491,11 @@ async def list_results_for_batch(batch_id: str, session: AsyncSession = Depends(
 
 
 @router.get("/release-readiness")
-async def get_release_readiness(sample_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_release_readiness(
+    sample_id: str,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     sample = await session.get(QcSample, sample_id)
     if sample is None:
         raise NotFoundError("Sample not found")
@@ -429,6 +507,43 @@ async def get_release_readiness(sample_id: str, session: AsyncSession = Depends(
         "ready": ready,
         "blocking_test_orders": [{"id": str(o.id), "state": o.state} for o in blocking_orders],
     }
+
+
+# --- SG-066 Task 4 Part 3 (2026-09-23): read-only dashboard/export, no new regulated decision -- same
+# shape as SG-074 Task 3 Part B's oos/oot dashboard/export. -------------------------------------------
+
+
+@router.get("/dashboard")
+async def get_qc_dashboard(session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor)) -> dict:
+    by_state = dict(
+        (await session.execute(select(QcTestOrder.state, func.count()).group_by(QcTestOrder.state))).all()
+    )
+    open_oos = (
+        await session.execute(select(func.count()).select_from(OosRecord).where(OosRecord.state != "closed"))
+    ).scalar_one()
+    open_oot = (
+        await session.execute(select(func.count()).select_from(OotRecord).where(OotRecord.state != "closed"))
+    ).scalar_one()
+    return {"test_orders_by_state": by_state, "open_oos": open_oos, "open_oot": open_oot}
+
+
+@router.get("/export")
+async def get_qc_export(session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor)) -> list[dict]:
+    rows = (
+        await session.execute(
+            select(QcTestOrder, QcSample.sample_number)
+            .join(QcSample, QcSample.id == QcTestOrder.sample_id)
+            .order_by(QcTestOrder.created_at)
+        )
+    ).all()
+    return [
+        {
+            "id": str(order.id), "sample_number": sample_number, "state": order.state, "blocking": order.blocking,
+            "started_at": order.started_at.isoformat() if order.started_at else None,
+            "completed_at": order.completed_at.isoformat() if order.completed_at else None,
+        }
+        for order, sample_number in rows
+    ]
 
 
 @router.post("/test-orders", response_model=MutationReceipt)
@@ -454,6 +569,7 @@ async def post_start_test_order(
     # internally by lims_integration/commands.py's already-authorized flow.
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="qc_test_order.start", site_id=None)
+        await _check_qc_analyst_qualification(session, actor.user_id)
         return await start_test_order(session, cmd, actor.user_id)
 
 
@@ -608,8 +724,147 @@ async def post_open_oos_from_result(
         return await open_oos_from_result(session, cmd, actor.user_id)
 
 
+OOS_SORTABLE = {"oos_number": OosRecord.oos_number, "opened_at": OosRecord.opened_at, "state": OosRecord.state}
+
+
+def _oos_summary_dict(r: OosRecord) -> dict:
+    return {
+        "id": sid(r.id), "oos_number": r.oos_number, "batch_id": sid(r.batch_id),
+        "material_lot_id": sid(r.material_lot_id), "state": r.state, "severity": r.severity,
+        "final_classification": r.final_classification, "opened_at": iso(r.opened_at), "closed_at": iso(r.closed_at),
+    }
+
+
+# List page for a new browsable /quality/oos DataTable (no such read existed before -- only dashboard/
+# export/detail-by-id) -- same filtered()/paginate() envelope every other list endpoint in this codebase
+# uses, and the same "no evaluate_policy call" precedent as the dashboard/export/detail reads right below.
+@oos_router.get("/oos/v1")
+async def list_oos_records(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+    params: PageParams = Depends(page_params),
+    site_id: uuid.UUID | None = None,
+    state: str | None = None,
+) -> dict:
+    stmt = filtered(OosRecord, params, search_column=OosRecord.oos_number, site_id=site_id, state=state)
+    rows, envelope = await paginate(session, stmt, params, sortable=OOS_SORTABLE, default_sort=OosRecord.opened_at)
+    return {**envelope, "items": [_oos_summary_dict(r) for (r,) in rows]}
+
+
+# --- SG-074 Task 3 Part B: read-only dashboard/export, no new regulated decision (same shape as any other
+# module's list endpoint; unauthenticated-permission-check precedent already set by get_oos_record below,
+# which has no evaluate_policy call of its own either). Registered BEFORE the /oos/v1/{oos_id} path-param
+# route -- Starlette matches in registration order, so "dashboard"/"export" would otherwise be swallowed
+# by {oos_id} (same class of ordering bug app/main.py's batch_execution_router/batch_router comment
+# documents). ------------------------------------------------------------------------------------------
+
+
+@oos_router.get("/oos/v1/dashboard")
+async def get_oos_dashboard(session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor)) -> dict:
+    by_state = dict(
+        (await session.execute(select(OosRecord.state, func.count()).group_by(OosRecord.state))).all()
+    )
+    by_severity = dict(
+        (await session.execute(select(OosRecord.severity, func.count()).group_by(OosRecord.severity))).all()
+    )
+    return {"total": sum(by_state.values()), "by_state": by_state, "by_severity": by_severity}
+
+
+@oos_router.get("/oos/v1/export")
+async def get_oos_export(session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor)) -> list[dict]:
+    records = (await session.execute(select(OosRecord).order_by(OosRecord.opened_at))).scalars().all()
+    return [
+        {
+            "id": str(r.id), "oos_number": r.oos_number, "batch_id": str(r.batch_id) if r.batch_id else None,
+            "material_lot_id": str(r.material_lot_id) if r.material_lot_id else None, "state": r.state,
+            "severity": r.severity, "final_classification": r.final_classification,
+            "opened_at": r.opened_at.isoformat() if r.opened_at else None,
+            "closed_at": r.closed_at.isoformat() if r.closed_at else None,
+        }
+        for r in records
+    ]
+
+
+@oos_router.get("/oot/v1/dashboard")
+async def get_oot_dashboard(session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor)) -> dict:
+    by_state = dict(
+        (await session.execute(select(OotRecord.state, func.count()).group_by(OotRecord.state))).all()
+    )
+    return {"total": sum(by_state.values()), "by_state": by_state}
+
+
+@oos_router.get("/oot/v1/export")
+async def get_oot_export(session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor)) -> list[dict]:
+    records = (await session.execute(select(OotRecord).order_by(OotRecord.opened_at))).scalars().all()
+    return [
+        {
+            "id": str(r.id), "source_result_id": str(r.source_result_id), "state": r.state,
+            "investigation_owner_user_id": str(r.investigation_owner_user_id) if r.investigation_owner_user_id else None,
+            "opened_at": r.opened_at.isoformat() if r.opened_at else None,
+            "closed_at": r.closed_at.isoformat() if r.closed_at else None,
+        }
+        for r in records
+    ]
+
+
+OOT_SORTABLE = {"opened_at": OotRecord.opened_at, "state": OotRecord.state}
+
+
+def _oot_summary_dict(r: OotRecord) -> dict:
+    return {
+        "id": sid(r.id), "source_result_id": sid(r.source_result_id), "state": r.state,
+        "investigation_owner_user_id": sid(r.investigation_owner_user_id),
+        "opened_at": iso(r.opened_at), "closed_at": iso(r.closed_at),
+    }
+
+
+# List page for a new browsable /quality/oot DataTable. OotRecord has no site_id column (Document 25 §7
+# is prose-only for this entity, see the model's own docstring) so this can't use filtered()'s site scope
+# the way OOS/CAPA do -- state filter and paging only, no free-text search column exists to offer either.
+@oos_router.get("/oot/v1")
+async def list_oot_records(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+    params: PageParams = Depends(page_params),
+    state: str | None = None,
+) -> dict:
+    stmt = select(OotRecord)
+    if state:
+        stmt = stmt.where(OotRecord.state == state)
+    rows, envelope = await paginate(session, stmt, params, sortable=OOT_SORTABLE, default_sort=OotRecord.opened_at)
+    return {**envelope, "items": [_oot_summary_dict(r) for (r,) in rows]}
+
+
+# No GET /oot/v1/{oot_id} existed before this (only evaluate/signature-challenges/close/reopen) -- the
+# frontend detail page below needs one to read a single record back after navigating from the list.
+@oos_router.get("/oot/v1/{oot_id}")
+async def get_oot_record(
+    oot_id: str,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    oot = await session.get(OotRecord, oot_id)
+    if oot is None:
+        raise NotFoundError("OOT record not found")
+    return {
+        "id": sid(oot.id), "source_result_id": sid(oot.source_result_id),
+        "trend_rule_id": sid(oot.trend_rule_id), "trend_rule_version": oot.trend_rule_version,
+        "baseline_ref": oot.baseline_ref, "trigger_details": oot.trigger_details,
+        "state": oot.state, "investigation_notes": oot.investigation_notes,
+        "impact_assessment": oot.impact_assessment,
+        "investigation_owner_user_id": sid(oot.investigation_owner_user_id),
+        "hold_status": oot.hold_status, "version": oot.version,
+        "opened_at": iso(oot.opened_at), "closed_at": iso(oot.closed_at),
+        "reopen_history": oot.reopen_history,
+    }
+
+
 @oos_router.get("/oos/v1/{oos_id}")
-async def get_oos_record(oos_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_oos_record(
+    oos_id: str,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     oos = await session.get(OosRecord, oos_id)
     if oos is None:
         raise NotFoundError("OOS record not found")
@@ -845,3 +1100,18 @@ async def post_close_oot(
         raise ValidationFailedError("oot_id in path and body must match")
     async with session.begin():
         return await close_oot(session, cmd, actor.user_id)
+
+
+@oos_router.post("/oot/v1/{oot_id}/reopen", response_model=MutationReceipt)
+async def post_reopen_oot(
+    oot_id: str,
+    cmd: ReopenOotCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if str(cmd.oot_record_id) != oot_id:
+        raise ValidationFailedError("oot_id in path and body must match")
+    async with session.begin():
+        return await reopen_oot(session, cmd, actor.user_id)
+
+

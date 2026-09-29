@@ -47,7 +47,7 @@ from app.modules.batch_execution.commands import (
     start_step,
 )
 from app.modules.batch_execution.models import Batch, BatchStep, StepResult
-from app.modules.batch_execution.record_service import build_batch_record
+from app.modules.batch_execution.record_service import build_batch_record, get_batch_workspace
 from app.modules.iam.models import User
 from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import evaluate_policy
@@ -291,7 +291,8 @@ async def post_issue_batch(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.issue", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.issue", site_id=batch.site_id)
         return await issue_batch(session, cmd, actor.user_id)
 
 
@@ -305,7 +306,8 @@ async def post_start_batch(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await start_batch(session, cmd, actor.user_id)
 
 
@@ -319,7 +321,8 @@ async def post_hold_batch(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await hold_batch(session, cmd, actor.user_id)
 
 
@@ -333,7 +336,8 @@ async def post_resume_batch(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await resume_batch(session, cmd, actor.user_id)
 
 
@@ -347,7 +351,8 @@ async def post_abort_batch(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await abort_batch(session, cmd, actor.user_id)
 
 
@@ -362,7 +367,8 @@ async def post_start_step(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await start_step(session, cmd, actor.user_id)
 
 
@@ -393,7 +399,8 @@ async def post_step_signature_challenge(
     if meaning is None:
         raise ValidationFailedError("Unknown action", action=body.action)
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         step = await session.get(BatchStep, step_id)
         if step is None or step.batch_id != batch_id:
             raise NotFoundError("Batch step not found")
@@ -420,7 +427,8 @@ async def post_record_step_results(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await record_step_results(session, cmd, actor.user_id)
 
 
@@ -435,7 +443,8 @@ async def post_link_step_evidence(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await link_step_evidence(session, cmd, actor.user_id)
 
 
@@ -450,7 +459,8 @@ async def post_complete_step(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await complete_step(session, cmd, actor.user_id)
 
 
@@ -465,7 +475,8 @@ async def post_hold_step(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await hold_step(session, cmd, actor.user_id)
 
 
@@ -480,7 +491,8 @@ async def post_resume_step(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await resume_step(session, cmd, actor.user_id)
 
 
@@ -495,7 +507,8 @@ async def post_add_step_comment(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await add_step_comment(session, cmd, actor.user_id)
 
 
@@ -510,7 +523,8 @@ async def post_handover_step(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await handover_step(session, cmd, actor.user_id)
 
 
@@ -583,10 +597,10 @@ async def post_approve_step_result_correction(
 
 
 class BatchSignatureChallengeRequest(BaseModel):
-    action: str  # "production_complete" -- Document 106 row 16 (batch/production-complete)
+    action: str  # "production_complete" (Document 106 row 16) | "record_export" (SG-137, 2026-09-22)
 
 
-_BATCH_CHALLENGE_MEANINGS = {"production_complete": "Performed"}
+_BATCH_CHALLENGE_MEANINGS = {"production_complete": "Performed", "record_export": "Approved"}
 
 
 @router.post("/{batch_id}/signature-challenges")
@@ -602,10 +616,15 @@ async def post_batch_signature_challenge(
     if meaning is None:
         raise ValidationFailedError("Unknown action", action=body.action)
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        # SG-137 (2026-09-22): "record_export" is QA-Releaser-signed, not an execute-batch action, so
+        # this shared challenge endpoint can't gate on batch_execution.execute (Operator/Supervisor hold
+        # it, QA Releaser never did). The real authorization for which role may actually sign a given
+        # `body.action` is enforced later at signature-consumption time (enforce_signer_policy inside
+        # each command) -- this gate only needs to confirm the caller can see the batch at all.
         batch = await session.get(Batch, batch_id)
         if batch is None:
             raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch.site_id)
         challenge = await create_challenge(
             session,
             user_id=actor.user_id,
@@ -628,7 +647,8 @@ async def post_production_complete_batch(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await production_complete_batch(session, cmd, actor.user_id)
 
 
@@ -641,7 +661,7 @@ async def get_batch_list(
 ) -> dict:
     """BAT-FR-035 (partial production dashboard): active batches + hold state at a site. Bottlenecks,
     overdue timers and operator-assignment analytics are not built this pass -- see SG-048."""
-    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
+    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=site_id)
     batches = await batch_execution_service.list_batches(session, site_id, state)
     product_versions = await _product_versions_by_id(session, batches)
     recipe_contexts = await _recipe_context_by_id(session, batches)
@@ -660,8 +680,8 @@ async def get_batch_detail(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
     batch = await batch_execution_service.get_batch(session, batch_id)
+    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch.site_id)
     product_version = await session.get(ProductVersion, batch.product_version_id)
     recipe_contexts = await _recipe_context_by_id(session, [batch])
     return _batch_dict(batch, product_version, recipe_contexts.get(batch.recipe_version_id))
@@ -673,7 +693,8 @@ async def get_execution_view(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
+    batch_for_site = await batch_execution_service.get_batch(session, batch_id)
+    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch_for_site.site_id)
     view = await batch_execution_service.get_execution_view(session, batch_id)
     product_version = await session.get(ProductVersion, view["batch"].product_version_id)
     recipe_contexts = await _recipe_context_by_id(session, [view["batch"]])
@@ -791,8 +812,24 @@ async def get_batch_record(
 ) -> dict:
     """Client requirement #11 -- the structured Batch Record view: steps/results, material consumption,
     equipment used, deviations, QC results, and signature/status history."""
-    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
+    batch_for_site = await batch_execution_service.get_batch(session, batch_id)
+    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch_for_site.site_id)
     return await build_batch_record(session, batch_id)
+
+
+@router.get("/{batch_id}/workspace")
+async def get_workspace(
+    batch_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Batch Workspace -- one read-only contextual dashboard over Materials/Lots, QC, Equipment,
+    Sterile/Aseptic, Deviations/CAPA, and Release status for a single batch. Same view permission as
+    every other batch read (`batch_execution.view`) -- this creates no new authority, it only assembles
+    reads that already exist elsewhere."""
+    batch_for_site = await batch_execution_service.get_batch(session, batch_id)
+    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch_for_site.site_id)
+    return await get_batch_workspace(session, batch_id)
 
 
 @router.post("/{batch_id}/record:generate-pdf", response_model=MutationReceipt)
@@ -805,5 +842,6 @@ async def post_generate_batch_record_pdf(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch.site_id)
         return await generate_batch_record_pdf(session, cmd, actor.user_id)

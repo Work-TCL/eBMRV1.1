@@ -56,8 +56,25 @@ async def post_create_package(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qa_review.create", site_id=None)
+        batch = await qa_review_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="qa_review.create", site_id=batch.site_id)
         return await create_review_package(session, cmd, actor.user_id)
+
+
+@router.get("/batches/{batch_id}/package")
+async def get_package_for_batch(
+    batch_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict | None:
+    """Read-only lookup for a QA review package already created against this batch, if one exists --
+    returns null rather than 404 when none does yet, same convention as release/router.py's own
+    `get_scope_by_target`. Built for the Batch Workspace (client requirement); `qa_review_service.
+    get_package_for_batch` already existed, it was just never wired to a route."""
+    batch = await qa_review_service.get_batch(session, batch_id)
+    await evaluate_policy(session, actor.user_id, action="qa_review.view", site_id=batch.site_id)
+    package = await qa_review_service.get_package_for_batch(session, batch_id)
+    return _package_dict(package) if package is not None else None
 
 
 @router.get("/packages/{package_id}")
@@ -66,8 +83,8 @@ async def get_package_detail(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="qa_review.view", site_id=None)
     package = await qa_review_service.get_package(session, package_id)
+    await evaluate_policy(session, actor.user_id, action="qa_review.view", site_id=package.site_id)
     batch = await qa_review_service.get_batch(session, package.batch_id)
     body = _package_dict(package)
     body["stale"] = batch.version != package.batch_version
@@ -80,8 +97,8 @@ async def get_package_exceptions(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="qa_review.view", site_id=None)
     package = await qa_review_service.get_package(session, package_id)
+    await evaluate_policy(session, actor.user_id, action="qa_review.view", site_id=package.site_id)
     return await qa_review_service.get_exceptions_view(session, package)
 
 
@@ -95,7 +112,8 @@ async def post_reindex_package(
     if cmd.package_id != package_id:
         raise ValidationFailedError("package_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qa_review.execute", site_id=None)
+        package = await qa_review_service.get_package(session, package_id)
+        await evaluate_policy(session, actor.user_id, action="qa_review.execute", site_id=package.site_id)
         return await reindex_review_package(session, cmd, actor.user_id)
 
 
@@ -110,8 +128,8 @@ async def post_signature_challenge(
     complete_review_package()'s own consume_challenge call exactly (SIG-FR-012/013/014) -- same shape as
     recipe_master's `POST /drafts/{id}/signature-challenges` (SG-035 precedent)."""
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qa_review.execute", site_id=None)
         package = await qa_review_service.get_package(session, package_id)
+        await evaluate_policy(session, actor.user_id, action="qa_review.execute", site_id=package.site_id)
         meaning = _CHALLENGE_MEANINGS.get(body.action)
         if meaning is None:
             raise ValidationFailedError("Unknown or unsigned action", action=body.action)
@@ -133,7 +151,8 @@ async def post_complete_package(
     if cmd.package_id != package_id:
         raise ValidationFailedError("package_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qa_review.execute", site_id=None)
+        package = await qa_review_service.get_package(session, package_id)
+        await evaluate_policy(session, actor.user_id, action="qa_review.execute", site_id=package.site_id)
         return await complete_review_package(session, cmd, actor.user_id)
 
 
@@ -146,6 +165,6 @@ async def get_dashboard(
 ) -> dict:
     """RBE-FR-026 (partial): site-scoped package list filterable by state; exception-class/review-age
     filtering is not built -- it would need qa_review_item, SG-053."""
-    await evaluate_policy(session, actor.user_id, action="qa_review.view", site_id=None)
+    await evaluate_policy(session, actor.user_id, action="qa_review.view", site_id=site_id)
     packages = await qa_review_service.list_packages(session, site_id, state=state)
     return {"packages": [_package_dict(p) for p in packages]}

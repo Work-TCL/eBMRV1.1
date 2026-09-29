@@ -55,7 +55,10 @@ async def post_release_metric_definition(
     if cmd.definition_id != definition_id:
         raise ValidationFailedError("definition_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="quality_metric.definition.release", site_id=None)
+        definition = await session.get(QualityMetricDefinition, definition_id)
+        if definition is None:
+            raise NotFoundError("Quality metric definition not found")
+        await evaluate_policy(session, actor.user_id, action="quality_metric.definition.release", site_id=definition.site_id)
         return await release_metric_definition(session, cmd, actor.user_id)
 
 
@@ -168,10 +171,10 @@ def _effectiveness_check_dict(c: EffectivenessCheck) -> dict:
 async def get_effectiveness_check(
     check_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="effectiveness_check.view", site_id=None)
     check = await session.get(EffectivenessCheck, check_id)
     if check is None:
         raise NotFoundError("Effectiveness check not found")
+    await evaluate_policy(session, actor.user_id, action="effectiveness_check.view", site_id=check.site_id)
     return _effectiveness_check_dict(check)
 
 
@@ -192,5 +195,8 @@ async def post_evaluate_effectiveness_check(
     if cmd.check_id != check_id:
         raise ValidationFailedError("check_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="effectiveness_check.evaluate", site_id=None)
+        check = await session.get(EffectivenessCheck, check_id)
+        if check is None:
+            raise NotFoundError("Effectiveness check not found")
+        await evaluate_policy(session, actor.user_id, action="effectiveness_check.evaluate", site_id=check.site_id)
         return await evaluate_effectiveness_check(session, cmd, actor.user_id)

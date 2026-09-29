@@ -60,7 +60,10 @@ async def post_triage(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.triage", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.triage", site_id=deviation.site_id)
         return await triage_deviation(session, cmd, actor.user_id)
 
 
@@ -74,7 +77,10 @@ async def post_contain(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.contain", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.contain", site_id=deviation.site_id)
         return await contain_deviation(session, cmd, actor.user_id)
 
 
@@ -88,7 +94,10 @@ async def post_investigation(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.investigate", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.investigate", site_id=deviation.site_id)
         return await record_investigation(session, cmd, actor.user_id)
 
 
@@ -102,7 +111,10 @@ async def post_impact(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.impact", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.impact", site_id=deviation.site_id)
         return await assess_impact(session, cmd, actor.user_id)
 
 
@@ -116,7 +128,10 @@ async def post_disposition(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.disposition", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.disposition", site_id=deviation.site_id)
         return await disposition_deviation(session, cmd, actor.user_id)
 
 
@@ -130,7 +145,10 @@ async def post_extend(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.extend", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.extend", site_id=deviation.site_id)
         return await extend_deviation(session, cmd, actor.user_id)
 
 
@@ -144,7 +162,10 @@ async def post_close(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.close", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.close", site_id=deviation.site_id)
         return await close_deviation(session, cmd, actor.user_id)
 
 
@@ -175,7 +196,10 @@ async def post_reopen(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.reopen", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.reopen", site_id=deviation.site_id)
         return await reopen_deviation(session, cmd, actor.user_id)
 
 

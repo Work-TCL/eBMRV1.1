@@ -59,7 +59,10 @@ async def get_mfa_requirement(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="application_session.view", site_id=None)
+        # site_id is an explicit query parameter defining the scope of the MFA requirement being
+        # queried (it is passed straight to effective_role_names below) -- the policy check must be
+        # scoped to that same site, not "any site the caller holds a role at".
+        await evaluate_policy(session, actor.user_id, action="application_session.view", site_id=site_id)
         return await commands.evaluate_mfa_requirement(session, user_id, site_id)
 
 

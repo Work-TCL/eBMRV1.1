@@ -125,7 +125,8 @@ async def post_create_assignment(
     cmd: CreateTrainingAssignmentCommand, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="training.assignment.create", site_id=None)
+        requirement = await training_service.get_requirement(session, cmd.requirement_id)
+        await evaluate_policy(session, actor.user_id, action="training.assignment.create", site_id=requirement.site_id)
         return await create_assignment(session, cmd, actor.user_id)
 
 
@@ -137,7 +138,8 @@ async def post_complete_assignment(
     if cmd.assignment_id != assignment_id:
         raise ValidationFailedError("assignment_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="training.assignment.complete", site_id=None)
+        assignment = await training_service.get_assignment(session, assignment_id)
+        await evaluate_policy(session, actor.user_id, action="training.assignment.complete", site_id=assignment.site_id)
         return await complete_assignment(session, cmd, actor.user_id)
 
 
@@ -149,7 +151,8 @@ async def post_assess_assignment(
     if cmd.assignment_id != assignment_id:
         raise ValidationFailedError("assignment_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="training.assignment.assess", site_id=None)
+        assignment = await training_service.get_assignment(session, assignment_id)
+        await evaluate_policy(session, actor.user_id, action="training.assignment.assess", site_id=assignment.site_id)
         return await assess_assignment(session, cmd, actor.user_id)
 
 
@@ -206,8 +209,8 @@ async def get_subject_status(
 async def get_waiver(
     waiver_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="training.subject.view", site_id=None)
     waiver = await training_service.get_waiver(session, waiver_id)
+    await evaluate_policy(session, actor.user_id, action="training.subject.view", site_id=waiver.site_id)
     return _waiver_dict(waiver)
 
 

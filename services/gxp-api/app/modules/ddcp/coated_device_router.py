@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.batch_execution.models import Batch
 from app.modules.ddcp import coated_device_commands
 from app.modules.ddcp import commands as ddcp_commands
 from app.modules.ddcp.models import DdcpProcessOperation, DdcpProfileVersion
@@ -92,7 +93,10 @@ async def post_start_coating_run(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_fill.start", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_fill.start", site_id=batch.site_id)
         return await coated_device_commands.start_coating_run(session, cmd, actor.user_id)
 
 
@@ -132,7 +136,10 @@ async def post_record_drug_coating_usage(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_fill.record_count", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_fill.record_count", site_id=batch.site_id)
         return await coated_device_commands.record_drug_coating_usage(session, cmd, actor.user_id)
 
 
@@ -142,7 +149,10 @@ async def post_bind_device_to_coating_constituent(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_constituent.handoff", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_constituent.handoff", site_id=batch.site_id)
         return await coated_device_commands.bind_device_to_coating_constituent(session, cmd, actor.user_id)
 
 
@@ -152,7 +162,10 @@ async def post_record_drug_loading_result(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=batch.site_id)
         return await coated_device_commands.record_drug_loading_result(session, cmd, actor.user_id)
 
 
@@ -162,7 +175,10 @@ async def post_record_post_sterilization_test(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=batch.site_id)
         return await coated_device_commands.record_post_sterilization_test(session, cmd, actor.user_id)
 
 
@@ -171,7 +187,10 @@ async def post_evaluate_release_readiness(
     batch_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_release.evaluate", site_id=None)
+        batch = await session.get(Batch, batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_release.evaluate", site_id=batch.site_id)
         return await coated_device_commands.evaluate_coated_device_release_readiness(session, batch_id, actor.user_id)
 
 
@@ -183,7 +202,10 @@ async def post_create_evidence_package(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_release.export", site_id=None)
+        batch = await session.get(Batch, batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_release.export", site_id=batch.site_id)
         return await coated_device_commands.create_coated_device_batch_evidence_package(session, cmd, actor.user_id)
 
 
@@ -203,7 +225,10 @@ async def post_record_device_functional_test(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=batch.site_id)
         return await coated_device_commands.record_device_functional_test(session, cmd, actor.user_id)
 
 
@@ -213,5 +238,8 @@ async def post_record_coated_device_disposition(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.verify", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.verify", site_id=batch.site_id)
         return await coated_device_commands.record_coated_device_disposition(session, cmd, actor.user_id)

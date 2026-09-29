@@ -8,6 +8,7 @@ from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy
 from app.modules.recipe_master import service as recipe_master_service
+from app.modules.recipe_master.models import RecipeFamily
 from app.modules.recipe_master.commands import (
     CreateEquipmentClassCommand,
     CreateRecipeDraftCommand,
@@ -32,7 +33,7 @@ from app.modules.recipe_master.commands import (
     validate_draft_command,
 )
 from app.modules.signature.service import create_challenge
-from app.mutation.errors import ValidationFailedError
+from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import MutationReceipt
 
@@ -201,7 +202,8 @@ async def put_update_draft(
     if cmd.recipe_version_id != recipe_version_id:
         raise ValidationFailedError("recipe_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="recipe.author", site_id=None)
+        version = await recipe_master_service.get_version(session, recipe_version_id)
+        await evaluate_policy(session, actor.user_id, action="recipe.author", site_id=version.site_id)
         return await update_draft(session, cmd, actor.user_id)
 
 
@@ -215,7 +217,8 @@ async def post_validate_draft(
     if cmd.recipe_version_id != recipe_version_id:
         raise ValidationFailedError("recipe_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="recipe.author", site_id=None)
+        version = await recipe_master_service.get_version(session, recipe_version_id)
+        await evaluate_policy(session, actor.user_id, action="recipe.author", site_id=version.site_id)
         return await validate_draft_command(session, cmd, actor.user_id)
 
 
@@ -225,7 +228,8 @@ async def post_simulate_draft(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="recipe.author", site_id=None)
+    version = await recipe_master_service.get_version(session, recipe_version_id)
+    await evaluate_policy(session, actor.user_id, action="recipe.author", site_id=version.site_id)
     return await simulate_draft(session, recipe_version_id=recipe_version_id)
 
 
@@ -239,7 +243,8 @@ async def post_submit_draft(
     if cmd.recipe_version_id != recipe_version_id:
         raise ValidationFailedError("recipe_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="recipe.author", site_id=None)
+        version = await recipe_master_service.get_version(session, recipe_version_id)
+        await evaluate_policy(session, actor.user_id, action="recipe.author", site_id=version.site_id)
         return await submit_draft(session, cmd, actor.user_id)
 
 
@@ -253,8 +258,8 @@ async def post_release_signature_challenge(
     """Issue the Part 11 challenge for `POST .../release`. record_version + record_hash match
     release_recipe_version()'s own consume_challenge call exactly (SIG-FR-012/013/014)."""
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="recipe.release", site_id=None)
         version = await recipe_master_service.get_version(session, recipe_version_id)
+        await evaluate_policy(session, actor.user_id, action="recipe.release", site_id=version.site_id)
         meaning = _CHALLENGE_MEANINGS.get(body.action)
         if meaning is None:
             raise ValidationFailedError("Unknown or unsigned action", action=body.action)
@@ -280,7 +285,8 @@ async def post_release_draft(
     if cmd.recipe_version_id != recipe_version_id:
         raise ValidationFailedError("recipe_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="recipe.release", site_id=None)
+        version = await recipe_master_service.get_version(session, recipe_version_id)
+        await evaluate_policy(session, actor.user_id, action="recipe.release", site_id=version.site_id)
         return await release_recipe_version(session, cmd, actor.user_id)
 
 
@@ -295,7 +301,8 @@ async def post_suspend(
     if cmd.recipe_version_id != recipe_version_id:
         raise ValidationFailedError("recipe_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="recipe.suspend", site_id=None)
+        version = await recipe_master_service.get_version(session, recipe_version_id)
+        await evaluate_policy(session, actor.user_id, action="recipe.suspend", site_id=version.site_id)
         return await suspend_recipe_version(session, cmd, actor.user_id)
 
 
@@ -310,7 +317,8 @@ async def post_reinstate(
     if cmd.recipe_version_id != recipe_version_id:
         raise ValidationFailedError("recipe_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="recipe.suspend", site_id=None)
+        version = await recipe_master_service.get_version(session, recipe_version_id)
+        await evaluate_policy(session, actor.user_id, action="recipe.suspend", site_id=version.site_id)
         return await reinstate_recipe_version(session, cmd, actor.user_id)
 
 
@@ -325,7 +333,8 @@ async def post_obsolete(
     if cmd.recipe_version_id != recipe_version_id:
         raise ValidationFailedError("recipe_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="recipe.suspend", site_id=None)
+        version = await recipe_master_service.get_version(session, recipe_version_id)
+        await evaluate_policy(session, actor.user_id, action="recipe.suspend", site_id=version.site_id)
         return await obsolete_recipe_version(session, cmd, actor.user_id)
 
 
@@ -341,7 +350,8 @@ async def post_supersede(
     if cmd.recipe_version_id != recipe_version_id:
         raise ValidationFailedError("recipe_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="recipe.suspend", site_id=None)
+        version = await recipe_master_service.get_version(session, recipe_version_id)
+        await evaluate_policy(session, actor.user_id, action="recipe.suspend", site_id=version.site_id)
         return await supersede_recipe_version(session, cmd, actor.user_id)
 
 
@@ -389,7 +399,10 @@ async def get_versions(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
-    await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=None)
+    family = await session.get(RecipeFamily, recipe_family_id)
+    if family is None:
+        raise NotFoundError("Recipe family not found")
+    await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=family.site_id)
     versions = await recipe_master_service.list_versions_for_family(session, recipe_family_id)
     return [_version_dict(v) for v in versions]
 
@@ -400,8 +413,8 @@ async def get_version_detail(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=None)
     version = await recipe_master_service.get_version(session, recipe_version_id)
+    await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=version.site_id)
     graph = await recipe_master_service.get_graph(session, recipe_version_id)
     body = _version_dict(version)
     body["sections"] = [_section_dict(s) for s in graph["sections"]]
@@ -422,7 +435,8 @@ async def get_compare(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=None)
+    version = await recipe_master_service.get_version(session, recipe_version_id)
+    await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=version.site_id)
     return await recipe_master_service.compare_versions(session, recipe_version_id, other_version_id)
 
 
@@ -434,7 +448,7 @@ async def get_issue_eligibility(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=None)
     version = await recipe_master_service.get_version(session, recipe_version_id)
+    await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=version.site_id)
     findings = await recipe_master_service.validate_completeness(session, recipe_version_id)
     return recipe_master_service.check_issue_eligibility(version, findings)

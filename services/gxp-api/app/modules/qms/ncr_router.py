@@ -50,7 +50,10 @@ async def post_segregate_ncr(
     if cmd.ncr_id != ncr_id:
         raise ValidationFailedError("ncr_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ncr.segregate", site_id=None)
+        ncr = await session.get(NonconformanceRecord, ncr_id)
+        if ncr is None:
+            raise NotFoundError("Nonconformance not found")
+        await evaluate_policy(session, actor.user_id, action="ncr.segregate", site_id=ncr.site_id)
         return await segregate_ncr(session, cmd, actor.user_id)
 
 
@@ -62,7 +65,10 @@ async def post_evaluate_ncr(
     if cmd.ncr_id != ncr_id:
         raise ValidationFailedError("ncr_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ncr.evaluate", site_id=None)
+        ncr = await session.get(NonconformanceRecord, ncr_id)
+        if ncr is None:
+            raise NotFoundError("Nonconformance not found")
+        await evaluate_policy(session, actor.user_id, action="ncr.evaluate", site_id=ncr.site_id)
         return await evaluate_ncr(session, cmd, actor.user_id)
 
 
@@ -74,7 +80,10 @@ async def post_disposition_ncr(
     if cmd.ncr_id != ncr_id:
         raise ValidationFailedError("ncr_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ncr.disposition", site_id=None)
+        ncr = await session.get(NonconformanceRecord, ncr_id)
+        if ncr is None:
+            raise NotFoundError("Nonconformance not found")
+        await evaluate_policy(session, actor.user_id, action="ncr.disposition", site_id=ncr.site_id)
         return await disposition_ncr(session, cmd, actor.user_id)
 
 
@@ -86,7 +95,10 @@ async def post_verify_ncr(
     if cmd.ncr_id != ncr_id:
         raise ValidationFailedError("ncr_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ncr.verify", site_id=None)
+        ncr = await session.get(NonconformanceRecord, ncr_id)
+        if ncr is None:
+            raise NotFoundError("Nonconformance not found")
+        await evaluate_policy(session, actor.user_id, action="ncr.verify", site_id=ncr.site_id)
         return await verify_ncr(session, cmd, actor.user_id)
 
 
@@ -113,7 +125,10 @@ async def post_close_ncr(
     if cmd.ncr_id != ncr_id:
         raise ValidationFailedError("ncr_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ncr.close", site_id=None)
+        ncr = await session.get(NonconformanceRecord, ncr_id)
+        if ncr is None:
+            raise NotFoundError("Nonconformance not found")
+        await evaluate_policy(session, actor.user_id, action="ncr.close", site_id=ncr.site_id)
         return await close_ncr(session, cmd, actor.user_id)
 
 

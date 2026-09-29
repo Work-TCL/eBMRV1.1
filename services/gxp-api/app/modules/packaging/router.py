@@ -21,6 +21,7 @@ from app.modules.packaging.commands import (
     reconcile_labels,
     reconcile_packaging,
 )
+from app.modules.packaging import service as packaging_service
 from app.modules.packaging.models import LabelIssue, LabelReconciliation, PackageNode, PackagingRun
 from app.modules.policy.service import evaluate_policy
 from app.modules.qms.read_support import iso, sid
@@ -37,7 +38,8 @@ async def post_create_run(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="packaging.execute", site_id=None)
+        batch = await packaging_service.get_batch(session, cmd.batch_id)
+        await evaluate_policy(session, actor.user_id, action="packaging.execute", site_id=batch.site_id)
         return await create_packaging_run(session, cmd, actor.user_id)
 
 
@@ -51,7 +53,10 @@ async def post_line_clearance(
     if cmd.run_id != run_id:
         raise ValidationFailedError("run_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="packaging.execute", site_id=None)
+        run = await session.get(PackagingRun, run_id)
+        if run is None:
+            raise NotFoundError("Packaging run not found")
+        await evaluate_policy(session, actor.user_id, action="packaging.execute", site_id=run.site_id)
         return await complete_line_clearance(session, cmd, actor.user_id)
 
 
@@ -65,7 +70,10 @@ async def post_issue_label(
     if cmd.run_id != run_id:
         raise ValidationFailedError("run_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="packaging.execute", site_id=None)
+        run = await session.get(PackagingRun, run_id)
+        if run is None:
+            raise NotFoundError("Packaging run not found")
+        await evaluate_policy(session, actor.user_id, action="packaging.execute", site_id=run.site_id)
         return await issue_label(session, cmd, actor.user_id)
 
 
@@ -79,7 +87,10 @@ async def post_reconcile_labels(
     if cmd.run_id != run_id:
         raise ValidationFailedError("run_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="packaging.execute", site_id=None)
+        run = await session.get(PackagingRun, run_id)
+        if run is None:
+            raise NotFoundError("Packaging run not found")
+        await evaluate_policy(session, actor.user_id, action="packaging.execute", site_id=run.site_id)
         return await reconcile_labels(session, cmd, actor.user_id)
 
 
@@ -93,7 +104,10 @@ async def post_reconcile_packaging(
     if cmd.run_id != run_id:
         raise ValidationFailedError("run_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="packaging.execute", site_id=None)
+        run = await session.get(PackagingRun, run_id)
+        if run is None:
+            raise NotFoundError("Packaging run not found")
+        await evaluate_policy(session, actor.user_id, action="packaging.execute", site_id=run.site_id)
         return await reconcile_packaging(session, cmd, actor.user_id)
 
 
@@ -107,7 +121,10 @@ async def post_complete_run(
     if cmd.run_id != run_id:
         raise ValidationFailedError("run_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="packaging.execute", site_id=None)
+        run = await session.get(PackagingRun, run_id)
+        if run is None:
+            raise NotFoundError("Packaging run not found")
+        await evaluate_policy(session, actor.user_id, action="packaging.execute", site_id=run.site_id)
         return await complete_packaging_run(session, cmd, actor.user_id)
 
 

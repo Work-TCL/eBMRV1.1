@@ -27,7 +27,6 @@ from app.modules.material.commands import (
     CreateSamplingOrderCommand,
     CreateWarehouseLocationCommand,
     DeleteMaterialCommand,
-    DispositionMaterialLotCommand,
     EvaluateMaterialReconciliationCommand,
     ExamineReceiptCommand,
     ExecuteDestructionCommand,
@@ -65,7 +64,6 @@ from app.modules.material.commands import (
     delete_material,
     destruction_record_hash,
     dispensing_order_record_hash,
-    disposition_material_lot,
     evaluate_material_reconciliation,
     examine_receipt,
     execute_destruction,
@@ -192,7 +190,7 @@ async def post_create_material(
     async with session.begin():
         # 2026-09-18, project-owner-directed: create_material() had no evaluate_policy() call at all —
         # same "master-data technical author" role class as material_spec.author/product.author.
-        await evaluate_policy(session, actor.user_id, action="material.create", site_id=None)
+        await evaluate_policy(session, actor.user_id, action="material.create", site_id=cmd.site_id)
         return await create_material(session, cmd, actor.user_id)
 
 
@@ -236,7 +234,10 @@ async def patch_material(
     if cmd.material_id != material_id:
         raise ValidationFailedError("material_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="material.update", site_id=None)
+        material = await session.get(Material, material_id)
+        if material is None:
+            raise NotFoundError("Material not found")
+        await evaluate_policy(session, actor.user_id, action="material.update", site_id=material.site_id)
         return await update_material(session, cmd, actor.user_id)
 
 
@@ -389,10 +390,10 @@ async def list_lot_containers(lot_id: uuid.UUID, session: AsyncSession = Depends
 
 
 class LotSignatureChallengeRequest(BaseModel):
-    action: str  # "disposition" (legacy, Document 18) | "release" | "reject" (Document 19, RCV-FR-026/027)
+    action: str  # "release" | "reject" (Document 19, RCV-FR-026/027)
 
 
-_LOT_CHALLENGE_MEANINGS = {"disposition": "Disposition", **_QUALITY_DISPOSITION_MEANING}
+_LOT_CHALLENGE_MEANINGS = _QUALITY_DISPOSITION_MEANING
 
 
 @lots_router.post("/{lot_id}/signature-challenges")
@@ -423,22 +424,6 @@ async def post_lot_signature_challenge(
             "meaning": challenge.meaning,
             "expires_at": challenge.expires_at.isoformat(),
         }
-
-
-@lots_router.post("/{lot_id}/disposition", response_model=MutationReceipt)
-async def post_disposition_lot(
-    lot_id: uuid.UUID,
-    cmd: DispositionMaterialLotCommand,
-    session: AsyncSession = Depends(get_session),
-    actor: AuthenticatedActor = Depends(get_current_actor),
-) -> MutationReceipt:
-    if cmd.lot_id != lot_id:
-        raise ValidationFailedError("lot_id in path and body must match")
-    async with session.begin():
-        lot = await session.get(MaterialLot, lot_id)
-        if lot is None:
-            raise NotFoundError("Material lot not found")
-        return await disposition_material_lot(session, cmd, actor.user_id, lot.site_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1219,10 +1204,10 @@ async def post_adjustment_signature_challenge(
     if permission is None or meaning is None:
         raise ValidationFailedError("Unknown or unsigned action", action=body.action)
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action=permission, site_id=None)
         request = await session.get(InventoryAdjustmentRequest, request_id)
         if request is None:
             raise NotFoundError("Inventory adjustment request not found")
+        await evaluate_policy(session, actor.user_id, action=permission, site_id=request.site_id)
         challenge = await create_challenge(
             session,
             user_id=actor.user_id,

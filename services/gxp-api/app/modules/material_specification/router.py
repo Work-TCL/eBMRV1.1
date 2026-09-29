@@ -115,10 +115,10 @@ async def get_version_detail(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="material_spec.view", site_id=None)
     version = await session.get(MaterialSpecificationVersion, material_spec_version_id)
     if version is None:
         raise NotFoundError("Material specification version not found")
+    await evaluate_policy(session, actor.user_id, action="material_spec.view", site_id=version.site_id)
     return _version_dict(version)
 
 
@@ -167,5 +167,8 @@ async def post_release_draft(
     if cmd.material_spec_version_id != material_spec_version_id:
         raise ValidationFailedError("material_spec_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="material_spec.release", site_id=None)
+        version = await session.get(MaterialSpecificationVersion, material_spec_version_id)
+        if version is None:
+            raise NotFoundError("Material specification version not found")
+        await evaluate_policy(session, actor.user_id, action="material_spec.release", site_id=version.site_id)
         return await release_material_spec_version(session, cmd, actor.user_id)

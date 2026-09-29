@@ -100,10 +100,10 @@ async def get_evidence_object(
     GET does not conflict with any write/CRUD contract). Not state-restricted, unlike download -- seeing
     *that* an object is STAGED/QUARANTINE/PURGED, and its legal_hold/signature_id, is exactly what a
     caller needs regardless of whether the bytes themselves are downloadable right now."""
-    await evaluate_policy(session, actor.user_id, action="evidence.download", site_id=None)
     obj = await session.get(EvidenceObject, evidence_id)
     if obj is None:
         raise NotFoundError("Evidence object not found")
+    await evaluate_policy(session, actor.user_id, action="evidence.download", site_id=obj.site_id)
     return _evidence_object_dict(obj)
 
 
@@ -125,7 +125,10 @@ async def post_finalize_upload(
     if cmd.evidence_id != evidence_id:
         raise ValidationFailedError("evidence_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="evidence.upload", site_id=None)
+        obj = await session.get(EvidenceObject, evidence_id)
+        if obj is None:
+            raise NotFoundError("Evidence object not found")
+        await evaluate_policy(session, actor.user_id, action="evidence.upload", site_id=obj.site_id)
         return await commands.finalize_evidence_upload(session, cmd, actor.user_id)
 
 
@@ -137,10 +140,10 @@ async def get_download(
     """`authorizeEvidenceDownload()` -- OBJ-FR-011/012. RBAC + object-state check, then stream bytes.
     A STAGED/QUARANTINE/PURGED/MISSING object is never downloadable via the ordinary path."""
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="evidence.download", site_id=None)
         obj = await session.get(EvidenceObject, evidence_id)
-    if obj is None:
-        raise NotFoundError("Evidence object not found")
+        if obj is None:
+            raise NotFoundError("Evidence object not found")
+        await evaluate_policy(session, actor.user_id, action="evidence.download", site_id=obj.site_id)
     if obj.state not in ("FINALIZED", "ARCHIVED"):
         raise EvidenceAccessDeniedError(
             "Evidence object is not in a downloadable state", evidence_id=str(obj.id), state=obj.state
@@ -213,7 +216,10 @@ async def post_legal_hold(
     if cmd.evidence_id != evidence_id:
         raise ValidationFailedError("evidence_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="evidence.legal_hold", site_id=None)
+        obj = await session.get(EvidenceObject, evidence_id)
+        if obj is None:
+            raise NotFoundError("Evidence object not found")
+        await evaluate_policy(session, actor.user_id, action="evidence.legal_hold", site_id=obj.site_id)
         return await commands.apply_evidence_legal_hold(session, cmd, actor.user_id)
 
 
