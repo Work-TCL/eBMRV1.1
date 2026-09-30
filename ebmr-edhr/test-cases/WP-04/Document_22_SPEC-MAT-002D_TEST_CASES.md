@@ -384,6 +384,18 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
 - **Status:** PASS  |  **Executed by:** claude-code  |  **Date:** 2026-08-25  |  **Actual result:** PASS -- exercised by real pytest in services/gxp-api/tests/test_material_consumption_flow.py::test_inventory_transaction_table_rejects_direct_delete (the immutable ADJUST_POSITIVE/ADJUST_NEGATIVE ledger evidence an approved adjustment creates; inventory_adjustment_requests itself is intentionally a mutable status-transition aggregate -- see the migration's own append-only-vs-mutable privilege-split rationale).  |  **Defect:** —
 
+### TC-022-013-03 — Inventory adjustment — Reject required behaviour
+
+- **Requirement:** CON-FR-013
+- **Type / priority:** positive / P1
+- **Automation:** integration | **Qualification stage:** OQ
+- **Preconditions:** Tenant and site fixtures loaded; actor holds the role and current qualification required for this action; `material_consumption`, `material_return`, `inventory_adjustment_request` in a valid starting state; a `requested` adjustment exists.
+- **Test data:** Minimum valid data set for `material_consumption`, `material_return`, `inventory_adjustment_request`; actor with required role/qualification.
+- **Steps:** 1. Load the fixture data listed in test_data. | 2. Authenticate as the qualified actor for this action. | 3. Invoke `POST /inventory/v1/adjustments/{request_id}/reject` with a completed signature challenge (`action: "reject"`). | 4. Read back the aggregate, the audit stream and the outbox by command id.
+- **Expected result:** Request status becomes `rejected`; no `InventoryTransaction`/balance change (a rejected adjustment never touched inventory); one audit event; one outbox row; receipt returned with a signature id.
+- **Evidence to capture:** request/response, aggregate before/after, audit event id, outbox row, unchanged `InventoryBalanceProjection`
+- **Status:** PASS  |  **Executed by:** claude-code  |  **Date:** 2026-09-17  |  **Actual result:** PASS -- until this pass `reject_inventory_adjustment_request` did not exist at all (only approve was built) -- a wrong/unwanted request had no way out of `requested` (docs/testing/DDCP_Client_Demo_Guide_Gujarati.md §19 #7). Built as approve's counterpart: signed (`Rejected` meaning, independent QA Releaser signer -- Document 106 has no dedicated reject row for this action, so this reuses row 55's approve shape + P1's own "approves ... rejects ..." principle + this codebase's own `material_lot.reject` precedent), no balance/transaction side effect. Also fixed a latent bug found while wiring this in: `POST .../signature-challenges` always issued an `Approved`-meaning challenge regardless of the requested `action`, which would have signed a rejection decision under the wrong meaning. Exercised by real pytest: services/gxp-api/tests/test_material_consumption_flow.py::test_adjustment_request_create_and_reject.  |  **Defect:** —
+
 ### TC-022-014-01 — Adjustment SoD — required behaviour
 
 - **Requirement:** CON-FR-014
@@ -423,6 +435,20 @@ Execution rules: run cases in listed order; a case with `depends_on` runs after 
 - **Depends on:** TC-022-014-01
 - **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
 - **Status:** PASS  |  **Executed by:** claude-code  |  **Date:** 2026-08-25  |  **Actual result:** PASS -- exercised by real pytest in services/gxp-api/tests/test_material_consumption_flow.py::test_adjustment_approve_stale_version_rejected.  |  **Defect:** —
+
+### TC-022-014-04 — Adjustment SoD — Reject requires independence
+
+- **Requirement:** CON-FR-014
+- **Type / priority:** negative / P1
+- **Automation:** integration | **Qualification stage:** OQ
+- **Preconditions:** Tenant and site fixtures loaded; actor holds the role and current qualification required for this action; `material_consumption`, `material_return`, `inventory_adjustment_request` in a valid starting state; a `requested` adjustment exists, requested by the same actor attempting to reject it.
+- **Test data:** As positive case, modified to create the condition under test.
+- **Steps:** 1. Load fixtures. | 2. Establish the precondition described. | 3. The requester attempts `POST .../reject` on their own request with a valid signature. | 4. Verify state, audit stream and outbox are unchanged where rejection is expected.
+- **Expected result:** Refused; the same CON-FR-014 independence rule approve already enforces applies symmetrically to reject.
+- **Expected error code:** `VALIDATION_FAILED`
+- **Depends on:** TC-022-014-01
+- **Evidence to capture:** request/response with error code, unchanged aggregate proof, audit/security event
+- **Status:** PASS  |  **Executed by:** claude-code  |  **Date:** 2026-09-17  |  **Actual result:** PASS -- `reject_inventory_adjustment_request()` runs the identical `actor_user_id == request.requested_by_user_id` check `approve_inventory_adjustment_request()` uses, so self-rejection is refused the same way self-approval already was. Exercised by real pytest: services/gxp-api/tests/test_material_consumption_flow.py::test_adjustment_self_rejection_denied.  |  **Defect:** —
 
 ### TC-022-015-01 — Destruction request — required behaviour
 

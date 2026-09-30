@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
+from app.modules.codegen import service as codegen_service
 from app.modules.iam.models import User
 from app.modules.policy.service import evaluate_policy
 from app.modules.signature import service as signature_service
@@ -69,7 +70,7 @@ class SupplierSiteInput(BaseModel):
 
 
 class CreateSupplierCommand(CommandEnvelope):
-    supplier_code: str
+    supplier_code: str | None = None
     legal_name: str
     role_type: str  # supplier | manufacturer | both
     country: str | None = None
@@ -102,8 +103,18 @@ async def create_supplier(
             existing_supplier_id=str(duplicate.id),
         )
 
+    if cmd.supplier_code and cmd.supplier_code.strip():
+        code_conflict = (
+            await session.execute(select(Supplier).where(Supplier.supplier_code == cmd.supplier_code))
+        ).scalar_one_or_none()
+        if code_conflict is not None:
+            raise ValidationFailedError("supplier_code is already in use", supplier_code=cmd.supplier_code)
+        supplier_code = cmd.supplier_code
+    else:
+        supplier_code = await codegen_service.next_code(session, entity_type="SUPPLIER", prefix="SUP")
+
     supplier = Supplier(
-        supplier_code=cmd.supplier_code,
+        supplier_code=supplier_code,
         legal_name=cmd.legal_name,
         role_type=cmd.role_type,
         status="draft",

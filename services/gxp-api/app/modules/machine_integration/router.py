@@ -200,9 +200,18 @@ async def get_machine_command(request_id: uuid.UUID, session: AsyncSession = Dep
     if request is None:
         raise NotFoundError("Machine command request not found")
     return {
-        "id": str(request.id), "status": request.status, "source_id": str(request.source_id),
-        "batch_id": str(request.batch_id) if request.batch_id else None, "version": request.version,
+        "id": str(request.id), "site_id": str(request.site_id),
+        "command_profile_id": str(request.command_profile_id),
+        "status": request.status, "source_id": str(request.source_id),
+        "batch_id": str(request.batch_id) if request.batch_id else None,
+        "parameters": request.parameters,
+        "requested_by_user_id": str(request.requested_by_user_id),
+        "signature_id": str(request.signature_id) if request.signature_id else None,
+        "expires_at": request.expires_at.isoformat(),
+        "version": request.version,
         "native_response": request.native_response, "evidence_ref": request.evidence_ref,
+        "finalized_at": request.finalized_at.isoformat() if request.finalized_at else None,
+        "created_at": request.created_at.isoformat(),
     }
 
 

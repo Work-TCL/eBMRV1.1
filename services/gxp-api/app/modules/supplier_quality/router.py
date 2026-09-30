@@ -40,6 +40,9 @@ async def post_create_supplier(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # 2026-09-18, project-owner-directed: create_supplier() had no evaluate_policy() call at all —
+        # matching material.create's resolution (same session, same decision), Process Engineer + Admin.
+        await evaluate_policy(session, actor.user_id, action="supplier.create", site_id=None)
         return await create_supplier(session, cmd, actor.user_id)
 
 
@@ -53,6 +56,7 @@ async def post_create_supplier_qualification(
     if str(cmd.supplier_id) != supplier_id:
         raise ValidationFailedError("supplier_id in path and body must match")
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="supplier_qualification.create", site_id=None)
         return await create_supplier_qualification(session, cmd, actor.user_id)
 
 

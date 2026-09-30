@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, canInvestigateQms, formatDate, newIdempotencyKey, type InternalAudit } from "@/lib/api";
-import { useMe, useSiteId } from "@/lib/hooks";
+import { api, ApiError, hasPermission, formatDate, newIdempotencyKey, type InternalAudit } from "@/lib/api";
+import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -60,7 +61,7 @@ export default function AuditsPage() {
         reloadToken={reloadToken}
         defaultSort={{ by: "scheduled_at", dir: "desc" }}
         action={
-          canInvestigateQms(me) ? (
+          hasPermission(me, "internal_audit.create") ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" /> Schedule audit
             </Button>
@@ -83,6 +84,7 @@ export default function AuditsPage() {
 function ScheduleAuditModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { siteId } = useSiteId();
   const { me } = useMe();
+  const entities = useEntityOptions();
   const [auditNumber, setAuditNumber] = useState("");
   const [programRef, setProgramRef] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
@@ -145,9 +147,16 @@ function ScheduleAuditModal({ onClose, onDone }: { onClose: () => void; onDone: 
             required
           />
         </Field>
-        <Field label="Lead auditor (user ID)" required hint="SOD-016: the auditor must be independent of the area audited.">
-          <Input value={leadAuditor} onChange={(e) => setLeadAuditor(e.target.value)} required />
-        </Field>
+        <EntityPickerField
+          label="Lead auditor (user ID)"
+          required
+          hint="SOD-016: the auditor must be independent of the area audited."
+          value={leadAuditor}
+          onChange={setLeadAuditor}
+          options={entities.users}
+          status={entities.usersStatus}
+          kind="user"
+        />
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-2">
           <Button type="button" variant="secondary" onClick={onClose}>

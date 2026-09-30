@@ -582,6 +582,13 @@ async def update_role(
     role = await session.get(Role, cmd.role_id)
     if role is None:
         raise NotFoundError("Role not found")
+    # Admin is the one role this deployment defines, not a customer -- every other role is data a
+    # customer creates/renames/deletes freely via /admin/roles. Renaming or redescribing it would break
+    # every isAdminAnywhere()/"Admin" break-glass check across the app (frontend and backend alike), so
+    # it is the sole role name still allowed to be hardcoded anywhere in this codebase -- and the sole
+    # role this endpoint refuses to touch (2026-09-18, project-owner-directed).
+    if role.name == "Admin":
+        raise ValidationFailedError("The Admin role is the system's default role and cannot be edited")
     if cmd.name != role.name:
         conflict = (await session.execute(select(Role).where(Role.name == cmd.name))).scalar_one_or_none()
         if conflict is not None:
@@ -650,6 +657,11 @@ async def delete_role(
     role = await session.get(Role, cmd.role_id)
     if role is None:
         raise NotFoundError("Role not found")
+    # Same Admin protection as update_role above -- deleting it would strand the system with no
+    # break-glass superuser at all, and every "user assignment" blocker below would only catch this if
+    # someone had already unassigned every Admin-role user first.
+    if role.name == "Admin":
+        raise ValidationFailedError("The Admin role is the system's default role and cannot be deleted")
 
     from app.modules.iam.models import SodRule
     from app.modules.signature.models import SignaturePolicy
@@ -914,6 +926,12 @@ async def set_role_permissions(
     role = await session.get(Role, cmd.role_id)
     if role is None:
         raise NotFoundError("Role not found")
+    # Same Admin protection as update_role/delete_role above -- stripping Admin's own grants through
+    # this UI could lock every operator out of the one role that can re-grant anything (no other role
+    # holds platform.administer), so its permission set stays fixed (scripts/seed.py ROLE_PERMISSIONS,
+    # re-applied by scripts/sync_permissions.py) rather than editable here.
+    if role.name == "Admin":
+        raise ValidationFailedError("The Admin role's permissions are fixed and cannot be changed here")
 
     requested_ids = set(cmd.permission_ids)
     if requested_ids:

@@ -13,6 +13,7 @@ from app.modules.equipment.models import EquipmentAsset
 from app.modules.equipment.sterilization_commands import (
     CompleteFilterUseCommand,
     CreateProcessCycleCommand,
+    CreateProcessCycleProfileVersionCommand,
     InstallFilterCommand,
     RecordCycleDataCommand,
     RecordFilterIntegrityTestCommand,
@@ -20,6 +21,7 @@ from app.modules.equipment.sterilization_commands import (
     StartCycleCommand,
     complete_filter_use,
     create_process_cycle,
+    create_process_cycle_profile_version,
     cycle_record_hash,
     filter_use_record_hash,
     get_item_status,
@@ -72,11 +74,15 @@ def _cycle_dict(cycle: ProcessCycle, refs: dict | None = None) -> dict:
         "reprocessing_authorization_ref": cycle.reprocessing_authorization_ref,
         "requires_deviation": cycle.requires_deviation,
         "started_at": cycle.started_at.isoformat() if cycle.started_at else None,
+        "started_by_user_id": str(cycle.started_by_user_id) if cycle.started_by_user_id else None,
         "started_by_full_name": refs.get("started_by_full_name"),
         "started_by_username": refs.get("started_by_username"),
         "completed_at": cycle.completed_at.isoformat() if cycle.completed_at else None,
+        "reviewer_user_id": str(cycle.reviewer_user_id) if cycle.reviewer_user_id else None,
         "reviewer_full_name": refs.get("reviewer_full_name"),
         "reviewer_username": refs.get("reviewer_username"),
+        "review_signature_id": str(cycle.review_signature_id) if cycle.review_signature_id else None,
+        "deviation_reference_id": str(cycle.deviation_reference_id) if cycle.deviation_reference_id else None,
         "version": cycle.version,
         "created_at": cycle.created_at.isoformat() if cycle.created_at else None,
     }
@@ -249,6 +255,19 @@ async def list_profiles(
             session, stmt, params, sortable=PROFILE_SORTABLE, default_sort=ProcessCycleProfileVersion.created_at
         )
         return {**envelope, "items": [_profile_summary_dict(p) for (p,) in rows]}
+
+
+@router.post("/profiles", response_model=MutationReceipt)
+async def post_create_profile(
+    cmd: CreateProcessCycleProfileVersionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    """SG-203 RESOLVED 2026-09-16, project-owner-directed. See sterilization_commands.py's own docstring
+    note above `CreateProcessCycleProfileVersionCommand` for the authoring-role/lifecycle decision."""
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="process_cycle_profile_version.create", site_id=cmd.site_id)
+        return await create_process_cycle_profile_version(session, cmd, actor.user_id)
 
 
 @router.post("/cycles", response_model=MutationReceipt)
@@ -445,13 +464,28 @@ def _filter_use_dict(use: SterileFilterUse) -> dict:
     return {
         "id": str(use.id),
         "site_id": str(use.site_id),
+        "filter_lot": use.filter_lot,
         "filter_serial": use.filter_serial,
+        "filter_type": use.filter_type,
+        "manufacturer": use.manufacturer,
+        "batch_id": str(use.batch_id) if use.batch_id else None,
+        "sterilization_cycle_id": str(use.sterilization_cycle_id) if use.sterilization_cycle_id else None,
+        "housing_location": use.housing_location,
+        "direction": use.direction,
+        "installed_by_user_id": str(use.installed_by_user_id) if use.installed_by_user_id else None,
+        "installed_at": use.installed_at.isoformat() if use.installed_at else None,
         "state": use.state,
         "pre_use_integrity_result": use.pre_use_integrity_result,
+        "pre_use_integrity_ref": use.pre_use_integrity_ref,
         "post_use_integrity_result": use.post_use_integrity_result,
+        "post_use_integrity_ref": use.post_use_integrity_ref,
+        "process_parameters": use.process_parameters,
         "reuse_count": use.reuse_count,
+        "performer_user_id": str(use.performer_user_id) if use.performer_user_id else None,
         "requires_deviation": use.requires_deviation,
+        "deviation_reference_id": str(use.deviation_reference_id) if use.deviation_reference_id else None,
         "version": use.version,
+        "created_at": use.created_at.isoformat() if use.created_at else None,
     }
 
 

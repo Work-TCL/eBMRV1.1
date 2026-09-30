@@ -82,6 +82,52 @@ async def test_unauthorized_without_token_rejected(client):
     assert resp.status_code == 401
 
 
+async def test_create_draft_with_qc_requirements_round_trips_through_graph(client, seeded, db):
+    """Client requirement #12: a step's declared required in-process QC test(s) persist as
+    RecipeStepQcRequirement rows and round-trip through GET /recipes/v2/versions/{id}."""
+    import uuid as uuid_mod
+
+    from app.modules.qc.models import QcTestSpecification
+
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe.qcreq")
+        spec = QcTestSpecification(
+            spec_code="SPEC-RCPQC1", version_no=1, scope_type="in_process",
+            scope_version_id=uuid_mod.uuid4(), status="released",
+        )
+        db.add(spec)
+        await db.flush()
+        spec_id = spec.id
+    admin_token = await login(client, "admin.recipe.qcreq")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], "RCPPRD-QCREQ")
+
+    body = _two_step_body(product_version_id, seeded["site_id"], "RCP-QCREQ")
+    body["product_business_id"] = "RCPPRD-QCREQ"
+    body["steps"][0]["qc_requirements"] = [{"qc_test_specification_id": str(spec_id), "required": True}]
+    resp = await client.post("/recipes/v2/drafts", json=body, headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    version_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/recipes/v2/versions/{version_id}", headers=auth_headers(admin_token))).json()
+    assert len(detail["qc_requirements"]) == 1
+    assert detail["qc_requirements"][0]["qc_test_specification_id"] == str(spec_id)
+    assert detail["qc_requirements"][0]["required"] is True
+
+
+async def test_create_draft_rejects_unknown_qc_test_specification_id(client, seeded, db):
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe.qcreq2")
+    admin_token = await login(client, "admin.recipe.qcreq2")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], "RCPPRD-QCREQ2")
+
+    body = _two_step_body(product_version_id, seeded["site_id"], "RCP-QCREQ2")
+    body["product_business_id"] = "RCPPRD-QCREQ2"
+    body["steps"][0]["qc_requirements"] = [{"qc_test_specification_id": str(uuid.uuid4()), "required": True}]
+    resp = await client.post("/recipes/v2/drafts", json=body, headers=auth_headers(admin_token))
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
 async def test_create_draft_requires_recipe_author_permission(client, seeded, db):
     async with db.begin():
         await _make_admin(db, seeded, "admin.recipe1")
@@ -96,6 +142,25 @@ async def test_create_draft_requires_recipe_author_permission(client, seeded, db
     )
     assert resp.status_code == 403
     assert resp.json()["code"] == "ROLE_MISSING"
+
+
+async def test_create_draft_without_recipe_code_auto_generates_new_family(client, seeded, db):
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe.autocode")
+    admin_token = await login(client, "admin.recipe.autocode")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], "RCPPRD-AUTOCODE")
+
+    body = _two_step_body(product_version_id, seeded["site_id"])
+    body["product_business_id"] = "RCPPRD-AUTOCODE"
+    body.pop("recipe_code")
+    resp = await client.post("/recipes/v2/drafts", json=body, headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    version_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/recipes/v2/versions/{version_id}", headers=auth_headers(admin_token))).json()
+    families_resp = (await client.get("/recipes/v2/families", headers=auth_headers(admin_token))).json()
+    family = next(f for f in families_resp if f["recipe_family_id"] == detail["recipe_family_id"])
+    assert family["recipe_code"].startswith("RCP-")
 
 
 async def test_draft_rejects_unknown_product_version_with_404(client, seeded, db):
@@ -664,3 +729,172 @@ async def test_update_draft_replaces_material_and_equipment_requirements(client,
     assert detail["equipment_requirements"] == []
     assert len(detail["material_requirements"]) == 1
     assert detail["material_requirements"][0]["genealogy_required"] is False
+
+
+async def _release_recipe(client, admin_token, rv, expected_version):
+    """Uses the global recipe_version/release signature policy conftest.py already seeds for every
+    other test in this file that doesn't override it locally."""
+    ch = (
+        await client.post(
+            f"/recipes/v2/drafts/{rv}/signature-challenges", json={"action": "release"}, headers=auth_headers(admin_token)
+        )
+    ).json()
+    return await client.post(
+        f"/recipes/v2/drafts/{rv}/release",
+        json={
+            "idempotency_key": idem(), "recipe_version_id": rv, "expected_version": expected_version,
+            "challenge_id": ch["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+
+
+async def test_recipe_obsolete_and_supersede(client, seeded, db):
+    """Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 1), corrected per SG-208: Recipe
+    Master had no suspend/reinstate/obsolete/supersede at all before this. Uses the global recipe_version
+    signature policy rows conftest.py seeds. `obsolete`/`supersede` match Document 106 §8's "cancel/
+    abort/void" family (Approved, QA Releaser, independent of the author) -- the author (admin, even
+    though also granted QA Releaser directly) cannot obsolete/supersede their own draft; a separate,
+    independent QA Releaser can, once signed."""
+    async with db.begin():
+        author = await _make_admin(db, seeded, "admin.recipe.obsolete")
+        # Also grant the author QA Releaser directly so the independence check is exercised specifically
+        # (not just a role they happen to lack) -- same trick
+        # test_reinstate_wrong_role_no_challenge_and_independent_success uses.
+        db.add(UserSiteRole(user_id=author.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+        await _make_user_with_role(db, seeded, "qa.recipe.obsolete", "QA Releaser")
+        db.add(
+            SignaturePolicy(
+                record_type="recipe_version", action="release", meaning="Released",
+                required_role_id=seeded["roles"]["Admin"].id, requires_independent_signer=False,
+                signature_required=True, reason_required=False,
+            )
+        )
+    admin_token = await login(client, "admin.recipe.obsolete")
+    qa_token = await login(client, "qa.recipe.obsolete")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], business_id="RCPOBS-1")
+
+    rv1 = (
+        await client.post(
+            "/recipes/v2/drafts",
+            json=_two_step_body(product_version_id, seeded["site_id"], "RCP-OBS", version_no=1),
+            headers=auth_headers(admin_token),
+        )
+    ).json()["aggregate_id"]
+    await client.post(
+        f"/recipes/v2/drafts/{rv1}/submit",
+        json={"idempotency_key": idem(), "recipe_version_id": rv1, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert (await _release_recipe(client, admin_token, rv1, 2)).status_code == 200
+
+    # The author (admin), despite also holding QA Releaser, is not independent of themselves.
+    not_independent = await client.post(
+        f"/recipes/v2/{rv1}/obsolete",
+        json={"idempotency_key": idem(), "recipe_version_id": rv1, "expected_version": 3, "reason": "discontinued"},
+        headers=auth_headers(admin_token),
+    )
+    assert not_independent.status_code == 409, not_independent.text
+    assert not_independent.json()["code"] == "SOD_INDEPENDENCE_REQUIRED"
+
+    # Obsolete: unsigned -> 428, signed -> success, then terminal.
+    unsigned = await client.post(
+        f"/recipes/v2/{rv1}/obsolete",
+        json={"idempotency_key": idem(), "recipe_version_id": rv1, "expected_version": 3, "reason": "discontinued"},
+        headers=auth_headers(qa_token),
+    )
+    assert unsigned.status_code == 428, unsigned.text
+
+    ch = (
+        await client.post(
+            f"/recipes/v2/drafts/{rv1}/signature-challenges", json={"action": "obsolete"}, headers=auth_headers(qa_token),
+        )
+    ).json()
+    assert ch["meaning"] == "Approved"
+    resp = await client.post(
+        f"/recipes/v2/{rv1}/obsolete",
+        json={
+            "idempotency_key": idem(), "recipe_version_id": rv1, "expected_version": 3, "reason": "discontinued",
+            "challenge_id": ch["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/recipes/v2/versions/{rv1}", headers=auth_headers(qa_token))).json()
+    assert detail["lifecycle_state"] == "obsolete"
+
+    retry = await client.post(
+        f"/recipes/v2/{rv1}/suspend",
+        json={"idempotency_key": idem(), "recipe_version_id": rv1, "expected_version": 4, "reason": "x"},
+        headers=auth_headers(admin_token),
+    )
+    assert retry.status_code == 409
+    assert retry.json()["code"] == "INVALID_TRANSITION"
+
+    # Supersede: a second released version of the same family.
+    rv2 = (
+        await client.post(
+            "/recipes/v2/drafts",
+            json=_two_step_body(product_version_id, seeded["site_id"], "RCP-OBS", version_no=2),
+            headers=auth_headers(admin_token),
+        )
+    ).json()["aggregate_id"]
+    await client.post(
+        f"/recipes/v2/drafts/{rv2}/submit",
+        json={"idempotency_key": idem(), "recipe_version_id": rv2, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert (await _release_recipe(client, admin_token, rv2, 2)).status_code == 200
+
+    rv3 = (
+        await client.post(
+            "/recipes/v2/drafts",
+            json=_two_step_body(product_version_id, seeded["site_id"], "RCP-OBS", version_no=3),
+            headers=auth_headers(admin_token),
+        )
+    ).json()["aggregate_id"]
+
+    ch2 = (
+        await client.post(
+            f"/recipes/v2/drafts/{rv2}/signature-challenges", json={"action": "supersede"}, headers=auth_headers(qa_token),
+        )
+    ).json()
+    assert ch2["meaning"] == "Approved"
+
+    # A draft (not released) successor is rejected.
+    bad = await client.post(
+        f"/recipes/v2/{rv2}/supersede",
+        json={
+            "idempotency_key": idem(), "recipe_version_id": rv2, "expected_version": 3, "reason": "replaced",
+            "superseding_version_id": rv3, "challenge_id": ch2["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert bad.status_code == 422, bad.text
+
+    # Release rv3 too, then a real supersede of rv2 by rv3 succeeds.
+    await client.post(
+        f"/recipes/v2/drafts/{rv3}/submit",
+        json={"idempotency_key": idem(), "recipe_version_id": rv3, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert (await _release_recipe(client, admin_token, rv3, 2)).status_code == 200
+
+    ch3 = (
+        await client.post(
+            f"/recipes/v2/drafts/{rv2}/signature-challenges", json={"action": "supersede"}, headers=auth_headers(qa_token),
+        )
+    ).json()
+    good = await client.post(
+        f"/recipes/v2/{rv2}/supersede",
+        json={
+            "idempotency_key": idem(), "recipe_version_id": rv2, "expected_version": 3,
+            "reason": "replaced", "superseding_version_id": rv3,
+            "challenge_id": ch3["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert good.status_code == 200, good.text
+    detail2 = (await client.get(f"/recipes/v2/versions/{rv2}", headers=auth_headers(qa_token))).json()
+    assert detail2["lifecycle_state"] == "superseded"
+    assert detail2["superseded_by_version_id"] == rv3

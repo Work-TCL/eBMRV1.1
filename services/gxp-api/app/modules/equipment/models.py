@@ -36,7 +36,11 @@ EQUIPMENT_STATES = (
 
 CALIBRATION_RESULTS = ("pass", "fail", "oot")
 CALIBRATION_STATES = ("due", "in_progress", "completed")
-MAINTENANCE_TYPES = ("planned", "corrective")
+# Client requirement #7.
+CALIBRATION_TYPES = ("internal", "external")
+# Client requirement #9: "breakdown" added alongside the existing planned/corrective pair -- routed
+# through the same hold/OUT_OF_SERVICE side effect corrective already triggers.
+MAINTENANCE_TYPES = ("planned", "corrective", "breakdown")
 MAINTENANCE_STATES = ("open", "in_progress", "completed", "verified")
 # EQP-FR-013 (use) / EQP-FR-016 (reservation, no dedicated reservation entity in the frozen 4-entity
 # model) / and a trace row from every other mutating command, so the use log stays this module's one
@@ -147,6 +151,12 @@ class EquipmentCalibration(Base):
     standard_calibration_status: Mapped[str | None] = mapped_column(String(40))
     standard_expiry_date: Mapped[date | None] = mapped_column()
 
+    # Client requirement #7: internal vs external calibration. provider_name/certificate_reference are
+    # meaningful only when calibration_type="external" (enforced in commands.py, not a DB constraint).
+    calibration_type: Mapped[str] = mapped_column(String(20), nullable=False, default="internal")
+    provider_name: Mapped[str | None] = mapped_column(String(255))
+    certificate_reference: Mapped[str | None] = mapped_column(String(160))
+
     performer_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     reviewer_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     result: Mapped[str | None] = mapped_column(String(20))
@@ -192,6 +202,9 @@ class MaintenanceWorkOrder(Base):
     frequency_days: Mapped[int | None] = mapped_column(Integer())
     next_due_date: Mapped[date | None] = mapped_column()
     expected_downtime_hours: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    # Client requirement #9: caller-entered actual downtime, typically supplied at verification/
+    # completion time once the real elapsed impact is known.
+    actual_downtime_hours: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
 
     technician_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False

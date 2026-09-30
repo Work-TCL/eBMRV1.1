@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, canApproveQms, canInvestigateQms, formatDate, newIdempotencyKey } from "@/lib/api";
+import { api, hasPermission, formatDate, newIdempotencyKey } from "@/lib/api";
 import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -60,16 +60,18 @@ export default function QualityMetricsPage() {
         title="Quality metrics"
         subtitle="Metric definitions, periodic snapshots and the management review package."
         action={
-          canInvestigateQms(me) || canApproveQms(me) ? (
+          hasPermission(me, "quality_metric.definition.create") || hasPermission(me, "quality_metric.calculate") ? (
             <div className="flex gap-2">
-              {canApproveQms(me) && (
+              {hasPermission(me, "quality_metric.definition.create") && (
                 <Button variant="secondary" onClick={() => setDefineOpen(true)}>
                   <Icon name="plus" /> Define metric
                 </Button>
               )}
-              <Button variant="primary" onClick={() => setCalculateOpen(true)}>
-                <Icon name="refresh" /> Calculate snapshot
-              </Button>
+              {hasPermission(me, "quality_metric.calculate") && (
+                <Button variant="primary" onClick={() => setCalculateOpen(true)}>
+                  <Icon name="refresh" /> Calculate snapshot
+                </Button>
+              )}
             </div>
           ) : undefined
         }
@@ -175,7 +177,7 @@ export default function QualityMetricsPage() {
         </Card>
       )}
 
-      {canApproveQms(me) && siteId && (
+      {hasPermission(me, "quality_metric.management_review") && siteId && (
         <ManagementReviewCard
           siteId={siteId}
           metrics={metrics}

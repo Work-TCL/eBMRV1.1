@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { api, ApiError, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
-import { useRequireAdmin } from "@/lib/hooks";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { api, ApiError, canOperateSecurity, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
+import { useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -26,8 +27,15 @@ const READS = [
 ];
 
 export default function SecurityPage() {
-  const { isAdmin } = useRequireAdmin();
-  if (!isAdmin) return null;
+  const { me, loading } = useMe();
+  const router = useRouter();
+  const canOperate = canOperateSecurity(me);
+
+  useEffect(() => {
+    if (!loading && !canOperate) router.replace("/batch-execution");
+  }, [me, loading, canOperate, router]);
+
+  if (!canOperate) return null;
 
   return (
     <div>

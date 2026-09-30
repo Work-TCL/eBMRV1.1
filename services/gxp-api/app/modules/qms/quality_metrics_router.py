@@ -22,7 +22,7 @@ from app.modules.qms.quality_metrics_commands import (
     freeze_management_review_package,
     release_metric_definition,
 )
-from app.modules.qms.quality_metrics_models import QualityMetricDefinition, QualityMetricSnapshot
+from app.modules.qms.quality_metrics_models import EffectivenessCheck, QualityMetricDefinition, QualityMetricSnapshot
 from app.modules.qms.signature_support import SignatureChallengeRequest, create_qms_signature_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
@@ -143,6 +143,36 @@ async def post_management_review_signature_challenge(
             session, actor_user_id=actor.user_id, record_type="quality_metric_snapshot", record=snapshot,
             action=body.action, allowed_actions=METRIC_SNAPSHOT_SIGNATURE_ACTIONS,
         )
+
+
+def _effectiveness_check_dict(c: EffectivenessCheck) -> dict:
+    return {
+        "id": str(c.id), "site_id": str(c.site_id),
+        "source_module": c.source_module, "source_record_id": str(c.source_record_id),
+        "criterion": c.criterion,
+        "metric_definition_id": str(c.metric_definition_id) if c.metric_definition_id else None,
+        "observation_period_start": c.observation_period_start.isoformat(),
+        "observation_period_end": c.observation_period_end.isoformat(),
+        "due_date": c.due_date.isoformat() if c.due_date else None,
+        "result": c.result, "evidence": c.evidence,
+        "reviewer_subject_id": str(c.reviewer_subject_id) if c.reviewer_subject_id else None,
+        "escalation_required": c.escalation_required, "escalation_rationale": c.escalation_rationale,
+        "next_observation_due": c.next_observation_due.isoformat() if c.next_observation_due else None,
+        "state": c.state, "version": c.version,
+        "created_at": c.created_at.isoformat(),
+        "evaluated_at": c.evaluated_at.isoformat() if c.evaluated_at else None,
+    }
+
+
+@effectiveness_router.get("/checks/{check_id}")
+async def get_effectiveness_check(
+    check_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    await evaluate_policy(session, actor.user_id, action="effectiveness_check.view", site_id=None)
+    check = await session.get(EffectivenessCheck, check_id)
+    if check is None:
+        raise NotFoundError("Effectiveness check not found")
+    return _effectiveness_check_dict(check)
 
 
 @effectiveness_router.post("/checks", response_model=MutationReceipt)

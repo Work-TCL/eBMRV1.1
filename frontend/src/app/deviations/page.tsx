@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   api,
   ApiError,
-  canRaiseQualityEvent,
+  hasPermission,
   formatDate,
   isOverdue,
   newIdempotencyKey,
@@ -102,7 +102,7 @@ export default function DeviationsPage() {
         rowHref={(d) => `/deviations/${d.id}`}
         reloadToken={reloadToken}
         action={
-          canRaiseQualityEvent(me) ? (
+          hasPermission(me, "qms_deviation.create") ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" /> Raise deviation
             </Button>

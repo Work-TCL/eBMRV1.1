@@ -6,8 +6,8 @@ import {
   ApiError,
   canAuthorProduct,
   canReleaseProduct,
+  canSuspendProduct,
   clientPagedFetcher,
-  holdsAnyRole,
   newIdempotencyKey,
 } from "@/lib/api";
 import { useApiResource, useMe, useSites } from "@/lib/hooks";
@@ -18,6 +18,8 @@ import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { CodeField } from "@/components/ui/CodeField";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -45,6 +47,7 @@ interface ProductVersion {
   name: string;
   product_family_id: string | null;
   lifecycle_state: string;
+  superseded_by_version_id: string | null;
   manufacturing_profile_code: string;
   combination_product_type: string | null;
   pmoa_reference: string | null;
@@ -80,6 +83,108 @@ function sterileProfileLabel(p: SterileProfile): string {
   return `${p.profile_number} v${p.version_no}${p.required_area_classification ? ` - ${p.required_area_classification}` : ""}`;
 }
 
+// Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 2): matches app/modules/product_master/
+// router.py::get_families / _family_dict. product_family_id previously rendered nowhere in the UI at all
+// (orphaned FK) -- this is now a real, selectable picker with inline create.
+interface ProductFamily {
+  id: string;
+  family_code: string;
+  name: string;
+  profile_code: string | null;
+  status: string;
+}
+
+function NewProductFamilyModal({ onClose, onDone }: { onClose: () => void; onDone: (id: string) => void }) {
+  const [familyCode, setFamilyCode] = useState("");
+  const [name, setName] = useState("");
+  const [profileCode, setProfileCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const receipt = await api.post<{ aggregate_id: string }>("/products/v1/families", {
+        idempotency_key: newIdempotencyKey(),
+        family_code: familyCode,
+        name,
+        profile_code: profileCode || null,
+      });
+      onDone(receipt.aggregate_id);
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed to create family");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="New product family"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={onSubmit} disabled={busy || !familyCode.trim() || !name.trim()}>
+            {busy ? "Creating…" : "Create"}
+          </Button>
+        </>
+      }
+    >
+      <Field label="Family code" required>
+        <Input value={familyCode} onChange={(e) => setFamilyCode(e.target.value)} autoFocus />
+      </Field>
+      <Field label="Name" required>
+        <Input value={name} onChange={(e) => setName(e.target.value)} />
+      </Field>
+      <Field label="Profile code" hint="Optional.">
+        <Input value={profileCode} onChange={(e) => setProfileCode(e.target.value)} />
+      </Field>
+      {error && <p className="error-text mt-2">{error}</p>}
+    </Modal>
+  );
+}
+
+function ProductFamilyPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const { data: families, reload } = useApiResource<ProductFamily[]>("/products/v1/families");
+  const [creating, setCreating] = useState(false);
+
+  return (
+    <div className="flex flex-wrap items-start gap-3">
+      <Field label="Product family" hint="Optional.">
+        <Select value={value} onChange={(e) => onChange(e.target.value)} style={{ minWidth: 220 }}>
+          <option value="">—</option>
+          {(families ?? []).map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.family_code} - {f.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <RowButtonSlot>
+        <Button type="button" variant="secondary" size="sm" onClick={() => setCreating(true)}>
+          + New family
+        </Button>
+      </RowButtonSlot>
+      {creating && (
+        <NewProductFamilyModal
+          onClose={() => setCreating(false)}
+          onDone={(id) => {
+            setCreating(false);
+            reload();
+            onChange(id);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 // Matches app/modules/product_master/router.py::get_business_ids — one row per distinct
 // product_business_id (its highest version_no), used to populate the Constituent editor's Business ID
 // field as a real picker instead of free-text (SG-081 read-side precedent: a plain read-only GET listing
@@ -97,6 +202,11 @@ function businessIdOptionLabel(o: BusinessIdOption): string {
 }
 
 const MANUFACTURING_PROFILES = ["pharma", "device", "injectable_ddcp", "inhalation_ddcp", "drug_eluting_device"];
+// Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 3): matches
+// product_master/commands.py::COMBINATION_PRODUCT_TYPES exactly -- provisional taxonomy, no controlled
+// value set exists anywhere else in the codebase (logged as a SPEC_GAP). "other" keeps the field free
+// text for anything not yet covered so nothing already stored breaks.
+const COMBINATION_PRODUCT_TYPES = ["", "prefilled_syringe", "autoinjector", "inhalation_device", "drug_eluting_device", "other"];
 // STERILE_REQUIRED_PROFILES (services/gxp-api/app/modules/product_master/models.py) — matches the
 // PRD-FR-010 completeness check exactly, so the UI can hint before Release ever blocks on it.
 const STERILE_REQUIRED_PROFILES = ["injectable_ddcp", "inhalation_ddcp"];
@@ -538,7 +648,9 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
   const [udiApplicable, setUdiApplicable] = useState(false);
   const [deviceModelCode, setDeviceModelCode] = useState("");
   const [sterileProfileId, setSterileProfileId] = useState("");
+  const [productFamilyId, setProductFamilyId] = useState("");
   const [combinationProductType, setCombinationProductType] = useState("");
+  const [combinationProductTypeOther, setCombinationProductTypeOther] = useState("");
   const [strengthValue, setStrengthValue] = useState("");
   const [strengthUom, setStrengthUom] = useState("");
   const [pmoaReference, setPmoaReference] = useState("");
@@ -570,7 +682,7 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
       await api.post("/products/v1/drafts", {
         idempotency_key: newIdempotencyKey(),
         product_business_id: businessId,
-        product_code: code || businessId,
+        product_code: code || undefined,
         name,
         version_no: Number(versionNo),
         site_id: siteId,
@@ -578,7 +690,9 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
         udi_applicable: udiApplicable,
         device_model_code: deviceModelCode || null,
         sterile_profile_id: sterileProfileId || null,
-        combination_product_type: combinationProductType || null,
+        product_family_id: productFamilyId || null,
+        combination_product_type:
+          combinationProductType === "other" ? combinationProductTypeOther || null : combinationProductType || null,
         strength_value: strengthValue || null,
         strength_uom: strengthUom || null,
         pmoa_reference: pmoaReference || null,
@@ -609,9 +723,12 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
           <Field label="Business ID" required>
             <Input value={businessId} onChange={(e) => setBusinessId(e.target.value)} required autoFocus />
           </Field>
-          <Field label="Product code" hint="Defaults to business ID">
-            <Input value={code} onChange={(e) => setCode(e.target.value)} />
-          </Field>
+          <CodeField
+            label="Product code"
+            value={code}
+            onChange={setCode}
+            hint="Only used for a version 1 draft; later versions reuse the product's established code."
+          />
           <Field label="Version no." required>
             <Input type="number" min={1} value={versionNo} onChange={(e) => setVersionNo(e.target.value)} required />
           </Field>
@@ -669,18 +786,32 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
           UDI applicable
         </label>
 
+        <ProductFamilyPicker value={productFamilyId} onChange={setProductFamilyId} />
+
         <p className="fact-k mb-2">Combination product (optional)</p>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Combination product type" hint="Free text, e.g. drug-device-combination.">
-            <Input value={combinationProductType} onChange={(e) => setCombinationProductType(e.target.value)} />
+          <Field label="Combination product type" hint="Provisional taxonomy - pick 'other' for anything not listed.">
+            <Select value={combinationProductType} onChange={(e) => setCombinationProductType(e.target.value)}>
+              {COMBINATION_PRODUCT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t || "—"}
+                </option>
+              ))}
+            </Select>
+            {combinationProductType === "other" && (
+              <Input
+                className="mt-2"
+                value={combinationProductTypeOther}
+                onChange={(e) => setCombinationProductTypeOther(e.target.value)}
+                placeholder="Describe the combination product type"
+              />
+            )}
           </Field>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Strength value">
               <Input type="number" step="any" value={strengthValue} onChange={(e) => setStrengthValue(e.target.value)} />
             </Field>
-            <Field label="Strength UOM">
-              <Input value={strengthUom} onChange={(e) => setStrengthUom(e.target.value)} placeholder="mg" />
-            </Field>
+            <UomSelect label="Strength UOM" value={strengthUom} onChange={setStrengthUom} />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4">
@@ -737,7 +868,14 @@ function EditDraftModal({
   const [udiApplicable, setUdiApplicable] = useState(!!version.udi_applicable);
   const [deviceModelCode, setDeviceModelCode] = useState(version.device_model_code ?? "");
   const [sterileProfileId, setSterileProfileId] = useState(version.sterile_profile_id ?? "");
-  const [combinationProductType, setCombinationProductType] = useState(version.combination_product_type ?? "");
+  const [productFamilyId, setProductFamilyId] = useState(version.product_family_id ?? "");
+  const knownType = COMBINATION_PRODUCT_TYPES.includes(version.combination_product_type ?? "");
+  const [combinationProductType, setCombinationProductType] = useState(
+    version.combination_product_type ? (knownType ? version.combination_product_type : "other") : ""
+  );
+  const [combinationProductTypeOther, setCombinationProductTypeOther] = useState(
+    version.combination_product_type && !knownType ? version.combination_product_type : ""
+  );
   const [strengthValue, setStrengthValue] = useState(version.strength_value ?? "");
   const [strengthUom, setStrengthUom] = useState(version.strength_uom ?? "");
   const [pmoaReference, setPmoaReference] = useState(version.pmoa_reference ?? "");
@@ -765,7 +903,9 @@ function EditDraftModal({
         udi_applicable: udiApplicable,
         device_model_code: deviceModelCode || null,
         sterile_profile_id: sterileProfileId || null,
-        combination_product_type: combinationProductType || null,
+        product_family_id: productFamilyId || null,
+        combination_product_type:
+          combinationProductType === "other" ? combinationProductTypeOther || null : combinationProductType || null,
         strength_value: strengthValue || null,
         strength_uom: strengthUom || null,
         pmoa_reference: pmoaReference || null,
@@ -840,18 +980,32 @@ function EditDraftModal({
           </label>
         </div>
 
+        <ProductFamilyPicker value={productFamilyId} onChange={setProductFamilyId} />
+
         <p className="fact-k mb-2">Combination product (optional)</p>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Combination product type" hint="Free text, e.g. drug-device-combination.">
-            <Input value={combinationProductType} onChange={(e) => setCombinationProductType(e.target.value)} />
+          <Field label="Combination product type" hint="Provisional taxonomy - pick 'other' for anything not listed.">
+            <Select value={combinationProductType} onChange={(e) => setCombinationProductType(e.target.value)}>
+              {COMBINATION_PRODUCT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t || "—"}
+                </option>
+              ))}
+            </Select>
+            {combinationProductType === "other" && (
+              <Input
+                className="mt-2"
+                value={combinationProductTypeOther}
+                onChange={(e) => setCombinationProductTypeOther(e.target.value)}
+                placeholder="Describe the combination product type"
+              />
+            )}
           </Field>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Strength value">
               <Input type="number" step="any" value={strengthValue} onChange={(e) => setStrengthValue(e.target.value)} />
             </Field>
-            <Field label="Strength UOM">
-              <Input value={strengthUom} onChange={(e) => setStrengthUom(e.target.value)} placeholder="mg" />
-            </Field>
+            <UomSelect label="Strength UOM" value={strengthUom} onChange={setStrengthUom} />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4">
@@ -915,6 +1069,11 @@ function VersionDetailModal({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [suspendSigOpen, setSuspendSigOpen] = useState(false);
+  const [reinstateSigOpen, setReinstateSigOpen] = useState(false);
+  const [obsoleteSigOpen, setObsoleteSigOpen] = useState(false);
+  const [supersedeSigOpen, setSupersedeSigOpen] = useState(false);
+  const [supersedingVersionId, setSupersedingVersionId] = useState("");
   const [releaseSigOpen, setReleaseSigOpen] = useState(false);
 
   const { data: sterileProfiles } = useApiResource<SterileProfile[]>(
@@ -970,25 +1129,17 @@ function VersionDetailModal({
     );
 
 
-  const suspend = () =>
-    runAction(() =>
-      api.post(`/products/v1/${productVersionId}/suspend`, {
-        idempotency_key: newIdempotencyKey(),
-        product_version_id: productVersionId,
-        expected_version: version!.version,
-        reason: "Suspended from Product Master UI",
-      })
-    );
-
-  const reinstate = () =>
-    runAction(() =>
-      api.post(`/products/v1/${productVersionId}/reinstate`, {
-        idempotency_key: newIdempotencyKey(),
-        product_version_id: productVersionId,
-        expected_version: version!.version,
-        reason: "Reinstated from Product Master UI",
-      })
-    );
+  // Known-limitations fix (docs/testing/demo-gujarati/06 §6.8): suspend/reinstate previously called
+  // their endpoints directly with no challenge_id/reauth_password, which the backend's real signature
+  // policy (signature_required=True) always rejects with 428 MISSING_SIGNATURE -- these buttons could
+  // never actually succeed. All four lifecycle actions below now go through SignatureCeremony, the same
+  // ceremony Release already uses.
+  const { data: otherVersions } = useApiResource<ProductVersion[]>(
+    version && supersedeSigOpen ? `/products/v1/${version.product_business_id}/versions` : null
+  );
+  const supersessionCandidates = (otherVersions ?? []).filter(
+    (v) => v.product_version_id !== productVersionId && v.lifecycle_state === "released"
+  );
 
   if (!version) {
     return (
@@ -1007,6 +1158,9 @@ function VersionDetailModal({
           [
             ["Business ID", version.product_business_id],
             ["Lifecycle state", version.lifecycle_state],
+            ...(version.superseded_by_version_id
+              ? ([["Superseded by", version.superseded_by_version_id]] as [string, string][])
+              : []),
             ["Manufacturing profile", version.manufacturing_profile_code],
             ...(version.sterile_profile_id
               ? ([
@@ -1154,13 +1308,21 @@ function VersionDetailModal({
               Release
             </Button>
           )}
-          {holdsAnyRole(me, ["Admin"]) && version.lifecycle_state === "released" && (
-            <Button variant="danger" onClick={suspend} disabled={busy}>
-              Suspend
-            </Button>
+          {canSuspendProduct(me) && version.lifecycle_state === "released" && (
+            <>
+              <Button variant="danger" onClick={() => setSuspendSigOpen(true)} disabled={busy}>
+                Suspend
+              </Button>
+              <Button variant="secondary" onClick={() => setObsoleteSigOpen(true)} disabled={busy}>
+                Obsolete
+              </Button>
+              <Button variant="secondary" onClick={() => setSupersedeSigOpen(true)} disabled={busy}>
+                Supersede
+              </Button>
+            </>
           )}
-          {holdsAnyRole(me, ["Admin"]) && version.lifecycle_state === "suspended" && (
-            <Button variant="primary" onClick={reinstate} disabled={busy}>
+          {canSuspendProduct(me) && version.lifecycle_state === "suspended" && (
+            <Button variant="primary" onClick={() => setReinstateSigOpen(true)} disabled={busy}>
               Reinstate
             </Button>
           )}
@@ -1205,6 +1367,162 @@ function VersionDetailModal({
               idempotency_key: p.idempotency_key,
               product_version_id: productVersionId,
               expected_version: version.version,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+
+      {suspendSigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setSuspendSigOpen(false)}
+          onDone={() => {
+            setSuspendSigOpen(false);
+            refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to reload"));
+            onChanged();
+          }}
+          challengePath={`/products/v1/${productVersionId}/signature-challenges`}
+          action="suspend"
+          title={`Suspend ${version.name} v${version.version_no}`}
+          submitLabel="Sign & suspend"
+          submitVariant="danger"
+          reason="required"
+          summary={
+            <>
+              This suspends <strong>{version.product_business_id}</strong> v{version.version_no} - it can
+              no longer be used to create new batches until reinstated.
+            </>
+          }
+          onSign={(p) =>
+            api.post(`/products/v1/${productVersionId}/suspend`, {
+              idempotency_key: p.idempotency_key,
+              product_version_id: productVersionId,
+              expected_version: version.version,
+              reason: p.reason,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+
+      {reinstateSigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setReinstateSigOpen(false)}
+          onDone={() => {
+            setReinstateSigOpen(false);
+            refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to reload"));
+            onChanged();
+          }}
+          challengePath={`/products/v1/${productVersionId}/signature-challenges`}
+          action="reinstate"
+          title={`Reinstate ${version.name} v${version.version_no}`}
+          submitLabel="Sign & reinstate"
+          submitVariant="primary"
+          reason="required"
+          summary={
+            <>
+              This reinstates <strong>{version.product_business_id}</strong> v{version.version_no} back to
+              released. Must be signed by someone other than whoever suspended it.
+            </>
+          }
+          onSign={(p) =>
+            api.post(`/products/v1/${productVersionId}/reinstate`, {
+              idempotency_key: p.idempotency_key,
+              product_version_id: productVersionId,
+              expected_version: version.version,
+              reason: p.reason,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+
+      {obsoleteSigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setObsoleteSigOpen(false)}
+          onDone={() => {
+            setObsoleteSigOpen(false);
+            refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to reload"));
+            onChanged();
+          }}
+          challengePath={`/products/v1/${productVersionId}/signature-challenges`}
+          action="obsolete"
+          title={`Obsolete ${version.name} v${version.version_no}`}
+          submitLabel="Sign & obsolete"
+          submitVariant="danger"
+          reason="required"
+          summary={
+            <>
+              This retires <strong>{version.product_business_id}</strong> v{version.version_no}{" "}
+              permanently - obsolete is a terminal state with no further transitions.
+            </>
+          }
+          onSign={(p) =>
+            api.post(`/products/v1/${productVersionId}/obsolete`, {
+              idempotency_key: p.idempotency_key,
+              product_version_id: productVersionId,
+              expected_version: version.version,
+              reason: p.reason,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+
+      {supersedeSigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setSupersedeSigOpen(false)}
+          onDone={() => {
+            setSupersedeSigOpen(false);
+            setSupersedingVersionId("");
+            refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to reload"));
+            onChanged();
+          }}
+          challengePath={`/products/v1/${productVersionId}/signature-challenges`}
+          action="supersede"
+          title={`Supersede ${version.name} v${version.version_no}`}
+          submitLabel="Sign & supersede"
+          submitVariant="danger"
+          reason="required"
+          disabled={!supersedingVersionId}
+          summary={
+            <>
+              This marks <strong>{version.product_business_id}</strong> v{version.version_no} as
+              superseded by the released version chosen below - terminal, no further transitions.
+            </>
+          }
+          extraFields={
+            <Field label="Superseded by" required>
+              <Select value={supersedingVersionId} onChange={(e) => setSupersedingVersionId(e.target.value)}>
+                <option value="">Select a released version…</option>
+                {supersessionCandidates.map((v) => (
+                  <option key={v.product_version_id} value={v.product_version_id}>
+                    v{v.version_no} - {v.name}
+                  </option>
+                ))}
+              </Select>
+              {supersessionCandidates.length === 0 && (
+                <p className="hint mt-1">
+                  No other released version of {version.product_business_id} exists yet.
+                </p>
+              )}
+            </Field>
+          }
+          onSign={(p) =>
+            api.post(`/products/v1/${productVersionId}/supersede`, {
+              idempotency_key: p.idempotency_key,
+              product_version_id: productVersionId,
+              expected_version: version.version,
+              reason: p.reason,
+              superseding_version_id: supersedingVersionId,
               challenge_id: p.challenge_id,
               reauth_password: p.reauth_password,
             })

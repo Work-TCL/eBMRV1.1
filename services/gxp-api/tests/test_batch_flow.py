@@ -158,11 +158,11 @@ async def test_full_happy_path_and_audit_outbox_guarantee(client, seeded, db):
     product_id, recipe_id = await _create_product_recipe(client, op_token, site_id)
     batch_id = await _create_and_issue_batch(client, op_token, site_id, product_id, recipe_id)
 
-    # SG-146 (remainder, module 4 of 8): "kg" has no released rules.gxp_uom row in this environment --
-    # the dual-write is a no-op (expand-phase contract, nothing breaks).
+    # Client requirements #2/#3 (2026-09-21): "kg" is now a baseline released rules.gxp_uom row (see
+    # conftest.py's `seeded` fixture) -- the dual-write resolves.
     batch_row = await db.get(Batch, uuid.UUID(batch_id))
     assert batch_row.uom == "kg"
-    assert batch_row.uom_id is None
+    assert batch_row.uom_id is not None
 
     detail = (await client.get(f"/batches/{batch_id}")).json()
     step1, step2 = detail["steps"]

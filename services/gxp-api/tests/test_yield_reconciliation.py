@@ -124,11 +124,10 @@ async def test_evaluate_yield_normal_calculation(client, seeded, db):
     assert calc.result["yield_percent"] == "95.00"
     assert calc.rule_object_id is not None
     assert calc.rule_evaluation_id is not None
-    # SG-146 (remainder): "kg" has no released rules.gxp_uom row in this environment (no production UOM
-    # master data is seeded anywhere in this baseline) -- the free-text uom column stays authoritative
-    # and the dual-write is a no-op, exactly the expand-phase contract (nothing breaks).
+    # Client requirements #2/#3 (2026-09-21): "kg" is now a baseline released rules.gxp_uom row (see
+    # conftest.py's `seeded` fixture) -- the dual-write resolves.
     assert calc.uom == "kg"
-    assert calc.uom_id is None
+    assert calc.uom_id is not None
 
 
 async def test_evaluate_yield_dual_writes_uom_id_when_a_released_uom_resolves(client, seeded, db):

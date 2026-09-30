@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import {
   api,
   ApiError,
+  canDispositionMaterialLot,
+  canReleaseMaterialLotV2,
   formatDateTime,
   listAll,
   newIdempotencyKey,
@@ -13,8 +15,10 @@ import {
   type MaterialLot,
   type MutationReceipt,
   type Paged,
+  type WarehouseLocation,
+  STORAGE_CONDITIONS,
 } from "@/lib/api";
-import { useEntityOptions } from "@/lib/hooks";
+import { useEntityOptions, useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -22,6 +26,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { MaterialLotStatePill } from "@/components/ui/StatePill";
@@ -32,15 +37,19 @@ import { EntityPickerField } from "@/components/shared/EntityPicker";
 const STATUS_OPTIONS = ["", "quarantine", "released", "rejected", "consumed", "expired"];
 
 export default function MaterialLotsPage() {
+  const { me } = useMe();
   const [statusFilter, setStatusFilter] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
 
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [dispositionLot, setDispositionLot] = useState<MaterialLot | null>(null);
+  const [releaseLot, setReleaseLot] = useState<MaterialLot | null>(null);
+  const [rejectLot, setRejectLot] = useState<MaterialLot | null>(null);
   const [samplingLot, setSamplingLot] = useState<MaterialLot | null>(null);
   const [collectingOrder, setCollectingOrder] = useState<{ id: string; version: number } | null>(null);
   const [qualityStatusLot, setQualityStatusLot] = useState<MaterialLot | null>(null);
   const [retestingLot, setRetestingLot] = useState<MaterialLot | null>(null);
+  const canReleaseV2 = canReleaseMaterialLotV2(me);
 
   function fetchLots(query: ListQuery): Promise<Paged<MaterialLot>> {
     const search = new URLSearchParams({
@@ -85,6 +94,7 @@ export default function MaterialLotsPage() {
     { key: "received_at", header: "Received", sortable: true, render: (l) => formatDateTime(l.received_at) },
     { key: "released_at", header: "Released", sortable: true, render: (l) => formatDateTime(l.released_at) },
     { key: "expiry_date", header: "Expiry", sortable: true, render: (l) => l.expiry_date ?? "—" },
+    { key: "storage_condition", header: "Storage", sortable: false, render: (l) => l.storage_condition ?? "—" },
     { key: "status", header: "Status", sortable: true, render: (l) => <MaterialLotStatePill status={l.status} /> },
     {
       key: "actions",
@@ -104,10 +114,20 @@ export default function MaterialLotsPage() {
               <Icon name="refresh" /> Retest
             </Button>
           )}
-          {l.status === "quarantine" && (
+          {l.status === "quarantine" && canDispositionMaterialLot(me) && (
             <Button size="sm" variant="secondary" onClick={() => setDispositionLot(l)}>
               <Icon name="badge-check" /> Disposition
             </Button>
+          )}
+          {l.status === "quarantine" && canReleaseV2 && (
+            <>
+              <Button size="sm" variant="secondary" onClick={() => setReleaseLot(l)}>
+                <Icon name="badge-check" /> Release (QA)
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setRejectLot(l)}>
+                <Icon name="x" /> Reject (QA)
+              </Button>
+            </>
           )}
         </div>
       ),
@@ -179,6 +199,30 @@ export default function MaterialLotsPage() {
         />
       )}
 
+      {releaseLot && (
+        <ReleaseRejectV2Modal
+          lot={releaseLot}
+          decision="release"
+          onClose={() => setReleaseLot(null)}
+          onDone={() => {
+            setReleaseLot(null);
+            setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
+
+      {rejectLot && (
+        <ReleaseRejectV2Modal
+          lot={rejectLot}
+          decision="reject"
+          onClose={() => setRejectLot(null)}
+          onDone={() => {
+            setRejectLot(null);
+            setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
+
       {samplingLot && (
         <NewSamplingOrderModal
           lot={samplingLot}
@@ -227,6 +271,9 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
   const [uom, setUom] = useState("");
   const [uomTouched, setUomTouched] = useState(false);
   const [expiryDate, setExpiryDate] = useState("");
+  const [storageLocationId, setStorageLocationId] = useState("");
+  const [storageCondition, setStorageCondition] = useState("");
+  const [locations, setLocations] = useState<WarehouseLocation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -236,18 +283,27 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
       if (ms.length) {
         setMaterialId(ms[0].id);
         setUom(ms[0].uom);
+        setStorageCondition(ms[0].default_storage_condition ?? "");
       }
     });
   }, []);
+
+  useEffect(() => {
+    const material = materials.find((m) => m.id === materialId);
+    if (!material) return;
+    listAll<WarehouseLocation>("/inventory/v1/warehouse-locations", { site_id: material.site_id })
+      .then(setLocations)
+      .catch(() => setLocations([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [materialId]);
 
   // Switching material re-seeds the unit with that material's standard unit — but only while the
   // operator hasn't overridden it, so picking "Liter" for this receipt survives a later material change.
   function selectMaterial(id: string) {
     setMaterialId(id);
-    if (!uomTouched) {
-      const material = materials.find((m) => m.id === id);
-      if (material) setUom(material.uom);
-    }
+    const material = materials.find((m) => m.id === id);
+    if (!uomTouched && material) setUom(material.uom);
+    if (material) setStorageCondition(material.default_storage_condition ?? "");
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -266,6 +322,8 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
         received_quantity: quantity,
         uom: uom.trim() || material.uom,
         expiry_date: expiryDate || null,
+        storage_location_id: storageLocationId || null,
+        storage_condition: storageCondition || null,
       });
       onDone();
     } catch (err) {
@@ -297,20 +355,41 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
           <Field label="Received quantity" required>
             <Input value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
           </Field>
-          <Field label="Unit of measure" required hint="Defaults to the material's standard unit - change it if this lot was received in a different unit, e.g. L instead of mL.">
-            <Input
-              value={uom}
-              onChange={(e) => {
-                setUomTouched(true);
-                setUom(e.target.value);
-              }}
-              required
-            />
+          <UomSelect
+            value={uom}
+            onChange={(v) => {
+              setUomTouched(true);
+              setUom(v);
+            }}
+            required
+            hint="Defaults to the material's standard unit - change it if this lot was received in a different unit, e.g. L instead of mL."
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <Field label="Expiry date" hint="Optional.">
+            <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+          </Field>
+          <Field label="Storage condition" hint="Defaults to the material's own default.">
+            <Select value={storageCondition} onChange={(e) => setStorageCondition(e.target.value)}>
+              <option value="">—</option>
+              {STORAGE_CONDITIONS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Storage location" hint="Optional.">
+            <Select value={storageLocationId} onChange={(e) => setStorageLocationId(e.target.value)}>
+              <option value="">—</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.location_code} ({loc.zone_type})
+                </option>
+              ))}
+            </Select>
           </Field>
         </div>
-        <Field label="Expiry date" hint="Optional.">
-          <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
-        </Field>
         {error && <p className="error-text mb-3">{error}</p>}
         <p className="hint mb-3">Received lots enter Quarantine automatically and cannot be issued until QC dispositions them.</p>
         <div className="flex justify-between gap-3 mt-2">
@@ -374,6 +453,65 @@ function DispositionModal({
           lot_id: lot.id,
           expected_version: lot.version,
           decision,
+          reason: reason || null,
+          challenge_id: p.challenge_id,
+          reauth_password: p.reauth_password,
+        })
+      }
+    />
+  );
+}
+
+/** Document 19 v2 (RCV-FR-026/027) — the formal QA release/reject path, distinct from the legacy
+ * `disposition` endpoint `DispositionModal` above uses. Backend (`POST /materials/v1/lots/{id}/release`
+ * or `.../reject`) enforces material_lot.release/.reject (QA Releaser + Admin only) and independence
+ * (signer must not be the receiver or sampler of this same lot) — both already built; this modal was the
+ * missing piece (2026-09-18), no backend change needed. `container_ids` left blank means the whole lot;
+ * the underlying command already supports a partial per-container decision if ever needed here. */
+function ReleaseRejectV2Modal({
+  lot,
+  decision,
+  onClose,
+  onDone,
+}: {
+  lot: MaterialLot;
+  decision: "release" | "reject";
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const label = decision === "release" ? "Release" : "Reject";
+
+  return (
+    <SignatureCeremony
+      open
+      onClose={onClose}
+      onDone={onDone}
+      challengePath={`/material-lots/${lot.id}/signature-challenges`}
+      action={decision}
+      title={`${label} (QA) - lot ${lot.internal_lot}`}
+      summary={
+        <>
+          {lot.material_name} ({lot.material_code}) - {lot.received_quantity} {lot.uom} received{" "}
+          {lot.received_at ? formatDateTime(lot.received_at) : ""}
+          {lot.expiry_date ? `, expires ${lot.expiry_date}` : ""}. Signer must be independent of this
+          lot&apos;s receiver and sampler (enforced server-side).
+        </>
+      }
+      submitLabel={`Sign & ${label.toLowerCase()}`}
+      submitVariant={decision === "reject" ? "danger" : "success"}
+      reason="none"
+      disabled={decision === "reject" && !reason.trim()}
+      extraFields={
+        <Field label="Reason" required={decision === "reject"} hint={decision === "release" ? "Optional." : "Required for a reject decision."}>
+          <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+      }
+      onSign={(p) =>
+        api.post<MutationReceipt>(`/materials/v1/lots/${lot.id}/${decision}`, {
+          idempotency_key: p.idempotency_key,
+          lot_id: lot.id,
+          expected_version: lot.version,
           reason: reason || null,
           challenge_id: p.challenge_id,
           reauth_password: p.reauth_password,
@@ -559,9 +697,7 @@ function CollectSampleModal({
           <Field label="Sample quantity" required>
             <Input value={sampleQuantity} onChange={(e) => setSampleQuantity(e.target.value)} required />
           </Field>
-          <Field label="Sample UOM" required>
-            <Input value={sampleUom} onChange={(e) => setSampleUom(e.target.value)} required />
-          </Field>
+          <UomSelect label="Sample UOM" value={sampleUom} onChange={setSampleUom} required />
         </div>
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-3">

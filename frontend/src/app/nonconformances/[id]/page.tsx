@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDate,
   formatDateTime,
   newIdempotencyKey,
@@ -79,6 +78,18 @@ const LABEL: Record<Transition, string> = {
   close: "Close",
 };
 
+// The exact permission code app/modules/qms/ncr_router.py checks for each transition. Note ncr.verify
+// is held by QA Reviewer/QC Reviewer, NOT QA Releaser (unlike disposition/close) -- the old shared
+// "SIGNATURE_GATED -> approver role" split lumped verify in with disposition/close and would have hidden
+// this button from the QA Reviewer/QC Reviewer users who actually hold it (audit finding 2026-09-18).
+const PERMISSION_FOR_TRANSITION: Record<Transition, string> = {
+  segregate: "ncr.segregate",
+  evaluate: "ncr.evaluate",
+  disposition: "ncr.disposition",
+  verify: "ncr.verify",
+  close: "ncr.close",
+};
+
 // app/modules/qms/ncr_models.py NCR_DISPOSITION_TYPES.
 const DISPOSITION_TYPES = ["REWORK", "REPAIR", "RETURN", "SCRAP", "USE_AS_IS"];
 
@@ -89,8 +100,7 @@ export default function NcrDetailPage({ params }: { params: Promise<{ id: string
   const { data, loading, error, reload } = useApiResource<NcrDetail>(`/qms/v1/nonconformances/${id}`);
 
   const allowed = data ? (ALLOWED_FROM[data.state] ?? []) : [];
-  const canDo = (t: Transition) =>
-    allowed.includes(t) && (SIGNATURE_GATED.includes(t) ? canApproveQms(me) : canInvestigateQms(me));
+  const canDo = (t: Transition) => allowed.includes(t) && hasPermission(me, PERMISSION_FOR_TRANSITION[t]);
 
   return (
     <QmsDetailShell

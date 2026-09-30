@@ -56,6 +56,11 @@ class ProductVersion(Base):
         UUID(as_uuid=True), ForeignKey("ebmr.gxp_product_family.id")
     )
     lifecycle_state: Mapped[str] = mapped_column(String(40), nullable=False, default="draft")
+    # Known-limitations fix (migration 321e3db43c4a_0111): set only by supersede_product_version() when
+    # this version transitions released -> superseded. Nullable -- most versions never get one.
+    superseded_by_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ebmr.gxp_product_version.id")
+    )
     manufacturing_profile_code: Mapped[str] = mapped_column(String(80), nullable=False)
     combination_product_type: Mapped[str | None] = mapped_column(String(40))
     pmoa_reference: Mapped[str | None] = mapped_column(String(255))

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import {
   api,
   ApiError,
@@ -10,18 +10,135 @@ import {
   newIdempotencyKey,
   type MutationReceipt,
 } from "@/lib/api";
-import { useMe } from "@/lib/hooks";
+import { useEntityOptions, useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { WorkflowStatePill, SeverityPill } from "@/components/ui/StatePill";
 import { WorkflowActionButton } from "@/components/shared/WorkflowActionButton";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+
+// GET /qc/v1/results?batch_id=... — real picker data for a field referencing a `qc_result` row by id
+// (qc/router.py::list_results_for_batch's own docstring names DDCP's `qc_record_reference` as the first
+// caller this was built for; OOS/OOT's "Source QC result ID" is the same shape of gap). Scoped to a
+// chosen batch, not a flat list — a QC result only makes sense in the context of which batch it came
+// from, so this cascades on a batch picker exactly like `inventory/page.tsx`'s lot -> container picker
+// cascades on a chosen lot (same "state lags behind the id it was fetched for" guard against a stale list
+// flashing while a new batch's fetch is in flight).
+interface QcResultOption {
+  id: string;
+  label: string;
+}
+
+const linkBtnStyle: CSSProperties = {
+  background: "none",
+  border: "none",
+  padding: 0,
+  color: "var(--brand-600)",
+  fontSize: "var(--fs-1)",
+  cursor: "pointer",
+  textDecoration: "underline",
+  marginTop: 4,
+};
+
+function useQcResultsForBatch(batchId: string): { options: QcResultOption[]; loading: boolean } {
+  const [results, setResults] = useState<QcResultOption[]>([]);
+  const [resultsBatchId, setResultsBatchId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!batchId) return;
+    let cancelled = false;
+    api
+      .get<QcResultOption[]>(`/qc/v1/results?batch_id=${encodeURIComponent(batchId)}`)
+      .then((rows) => {
+        if (cancelled) return;
+        setResults(rows);
+        setResultsBatchId(batchId);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setResults([]);
+          setResultsBatchId(batchId);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [batchId]);
+  const current = resultsBatchId === batchId ? results : [];
+  return { options: current, loading: !!batchId && resultsBatchId !== batchId };
+}
+
+/** A batch picker plus a dependent QC-result picker scoped to whichever batch is chosen — replaces a
+ * raw "Source QC result ID" text box across both `OotCard` and `OpenFromResultCard` below, which
+ * previously asked the operator to already know a QC result's UUID (there is no "browse QC results"
+ * page; this is the only place that id is discoverable without going to the database directly). */
+function QcResultPickerField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const entities = useEntityOptions();
+  const [batchId, setBatchId] = useState("");
+  const { options: results, loading: resultsLoading } = useQcResultsForBatch(batchId);
+  const [manual, setManual] = useState(false);
+
+  if (manual) {
+    return (
+      <Field label="Source QC result ID" required hint="Enter the QC result's ID directly.">
+        <Input value={value} onChange={(e) => onChange(e.target.value)} style={{ minWidth: 260 }} required />
+        <button type="button" style={linkBtnStyle} onClick={() => setManual(false)}>
+          Choose from a batch&rsquo;s results instead
+        </button>
+      </Field>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-3">
+      <Field label="Batch" hint="Pick the batch the QC result belongs to.">
+        <Select
+          value={batchId}
+          onChange={(e) => {
+            setBatchId(e.target.value);
+            onChange("");
+          }}
+          disabled={entities.batchesStatus === "loading"}
+          style={{ minWidth: 220 }}
+        >
+          <option value="">{entities.batchesStatus === "loading" ? "Loading batches…" : "Select a batch…"}</option>
+          {entities.batches.map((b) => (
+            <option key={b.value} value={b.value}>
+              {b.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Source QC result" required hint={!batchId ? "Pick a batch first." : undefined}>
+        <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={!batchId || resultsLoading}>
+          <option value="">
+            {!batchId ? "—" : resultsLoading ? "Loading results…" : results.length ? "Select a result…" : "No QC results for this batch"}
+          </option>
+          {results.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.label}
+            </option>
+          ))}
+        </Select>
+        <button type="button" style={linkBtnStyle} onClick={() => setManual(true)}>
+          Can&rsquo;t find it? Enter ID manually
+        </button>
+      </Field>
+    </div>
+  );
+}
 
 // GET /quality/oos/v1/{oos_id} — app/modules/qc/router.py::get_oos_record
 interface OosRecord {
@@ -331,9 +448,7 @@ function OotCard() {
         straight from the evaluate response, or can be entered directly if already known.
       </p>
       <form onSubmit={evaluate} className="flex flex-wrap items-end gap-3 mb-3">
-        <Field label="Source QC result ID" required>
-          <Input value={sourceResultId} onChange={(e) => setSourceResultId(e.target.value)} style={{ minWidth: 260 }} required />
-        </Field>
+        <QcResultPickerField value={sourceResultId} onChange={setSourceResultId} />
         <Button type="submit" variant="primary" disabled={busy || !sourceResultId.trim()}>
           {busy ? "Evaluating…" : "Evaluate for OOT"}
         </Button>
@@ -413,9 +528,7 @@ function OpenFromResultCard({ onOpened }: { onOpened: (oosId: string) => void })
     <Card pad>
       <CardHeader title="Open OOS from a result" />
       <form onSubmit={submit} className="mt-3">
-        <Field label="Source QC result ID" required>
-          <Input value={resultId} onChange={(e) => setResultId(e.target.value)} required />
-        </Field>
+        <QcResultPickerField value={resultId} onChange={setResultId} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="OOS number" required>
             <Input value={oosNumber} onChange={(e) => setOosNumber(e.target.value)} required />

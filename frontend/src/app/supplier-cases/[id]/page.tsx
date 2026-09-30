@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDate,
   formatDateTime,
   isOverdue,
@@ -56,13 +55,27 @@ type Action = "issue_scar" | "response" | "review" | "effectiveness" | "close";
 const SIGNATURE_GATED: Action[] = ["review", "close"];
 const SOURCE_STATUS_DECISIONS = ["no_change", "requalify", "suspend", "reinstate"];
 
+// The exact permission code app/modules/qms/scar_router.py checks for each action. Note scar.effectiveness
+// is held by QA Releaser, NOT QA Reviewer (unlike scar.response, which IS QA Reviewer) -- the old code's
+// "canWork" bucket lumped response+effectiveness together and would have shown QA Reviewer an
+// Effectiveness button it has no grant for, while hiding it from the QA Releaser who actually holds it
+// (audit finding 2026-09-18).
+const PERMISSION_FOR_ACTION: Record<Action, string> = {
+  issue_scar: "scar.issue",
+  response: "scar.response",
+  review: "scar.review",
+  effectiveness: "scar.effectiveness",
+  close: "scar.close",
+};
+
 export default function SupplierCaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { me } = useMe();
   const [pending, setPending] = useState<{ action: Action; scar?: Scar } | null>(null);
   const { data, loading, error, reload } = useApiResource<CaseDetail>(`/qms/v1/supplier-cases/${id}`);
 
-  const canIssue = data && data.scars.length === 0 && canInvestigateQms(me);
+  const canDoAction = (a: Action) => hasPermission(me, PERMISSION_FOR_ACTION[a]);
+  const canIssue = data && data.scars.length === 0 && canDoAction("issue_scar");
 
   return (
     <QmsDetailShell
@@ -120,8 +133,7 @@ export default function SupplierCaseDetailPage({ params }: { params: Promise<{ i
                 key={scar.id}
                 scar={scar}
                 onAction={(action) => setPending({ action, scar })}
-                canWork={canInvestigateQms(me)}
-                canApprove={canApproveQms(me)}
+                canDo={canDoAction}
               />
             ))
           )}
@@ -147,13 +159,11 @@ export default function SupplierCaseDetailPage({ params }: { params: Promise<{ i
 function ScarCard({
   scar,
   onAction,
-  canWork,
-  canApprove,
+  canDo,
 }: {
   scar: Scar;
   onAction: (action: Action) => void;
-  canWork: boolean;
-  canApprove: boolean;
+  canDo: (action: Action) => boolean;
 }) {
   const detail = useApiResource<ScarDetail>(`/qms/v1/scars/${scar.id}`);
   const d = detail.data;
@@ -166,22 +176,22 @@ function ScarCard({
           {scar.scar_number} <WorkflowStatePill state={scar.state} />
         </span>
         <div className="flex gap-2">
-          {scar.state === "SCAR_ISSUED" && canWork && (
+          {scar.state === "SCAR_ISSUED" && canDo("response") && (
             <Button size="sm" variant="secondary" onClick={() => onAction("response")}>
               Record supplier response
             </Button>
           )}
-          {scar.state === "SUPPLIER_RESPONSE" && canApprove && (
+          {scar.state === "SUPPLIER_RESPONSE" && canDo("review") && (
             <Button size="sm" variant="secondary" onClick={() => onAction("review")}>
               <Icon name="pen" /> Review
             </Button>
           )}
-          {scar.state === "IMPLEMENTATION" && canWork && (
+          {scar.state === "IMPLEMENTATION" && canDo("effectiveness") && (
             <Button size="sm" variant="secondary" onClick={() => onAction("effectiveness")}>
               Effectiveness
             </Button>
           )}
-          {scar.state === "EFFECTIVENESS" && canApprove && (
+          {scar.state === "EFFECTIVENESS" && canDo("close") && (
             <Button size="sm" variant="primary" onClick={() => onAction("close")}>
               <Icon name="pen" /> Close
             </Button>

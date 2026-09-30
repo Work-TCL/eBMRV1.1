@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   formatDateTime,
-  holdsAnyRole,
+  hasPermission,
+  listAll,
   newIdempotencyKey,
+  STORAGE_CONDITIONS,
   type ListQuery,
   type Me,
   type MutationReceipt,
   type Paged,
+  type WarehouseLocation,
 } from "@/lib/api";
 import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { useCommand } from "@/components/shared/RecordDetailShell";
@@ -21,6 +24,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid } from "@/components/ui/FactGrid";
@@ -66,7 +70,8 @@ interface MaterialReceipt {
   version: number;
 }
 
-const canReceive = (me: Me | null) => holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
+// material_receipt.create/.examine share one grant (Admin/Operator/Supervisor).
+const canReceive = (me: Me | null) => hasPermission(me, "material_receipt.create");
 
 function fetchReceipts(query: ListQuery): Promise<Paged<MaterialReceipt>> {
   const search = new URLSearchParams({
@@ -392,9 +397,7 @@ function CreateReceiptModal({
           <Field label="Received quantity (gross)" required hint="Kept as exact text.">
             <Input value={grossQuantity} onChange={(e) => setGrossQuantity(e.target.value)} required />
           </Field>
-          <Field label="Unit of measure" required>
-            <Input value={uom} onChange={(e) => setUom(e.target.value)} placeholder="e.g. ML, L, KG" required />
-          </Field>
+          <UomSelect value={uom} onChange={setUom} required />
  <Field label="Received quantity (net)" hint="Optional if different from gross.">
             <Input value={netQuantity} onChange={(e) => setNetQuantity(e.target.value)} />
           </Field>
@@ -472,6 +475,15 @@ function ExamineReceiptModal({
   const [containerCount, setContainerCount] = useState("1");
   const [examinationNotes, setExaminationNotes] = useState("");
   const [discrepancyReason, setDiscrepancyReason] = useState("");
+  const [storageLocationId, setStorageLocationId] = useState("");
+  const [storageCondition, setStorageCondition] = useState("");
+  const [locations, setLocations] = useState<WarehouseLocation[]>([]);
+
+  useEffect(() => {
+    listAll<WarehouseLocation>("/inventory/v1/warehouse-locations", { site_id: receipt.site_id })
+      .then(setLocations)
+      .catch(() => setLocations([]));
+  }, [receipt.site_id]);
 
   // All five checks are required (no default) on the backend command — a real visual examination has
   // no "unanswered" state, so none of these silently default; the submit button itself stays disabled
@@ -505,6 +517,8 @@ function ExamineReceiptModal({
               container_count: containerCount ? Number(containerCount) : 1,
               examination_notes: examinationNotes || null,
               discrepancy_reason: discrepancyReason || null,
+              storage_location_id: storageLocationId || null,
+              storage_condition: storageCondition || null,
             })
           );
         }}
@@ -528,6 +542,28 @@ function ExamineReceiptModal({
         <Field label="Discrepancy reason" hint="Required when identity is not confirmed; optional (auto-filled) for every other discrepancy type.">
           <textarea className="input" rows={2} value={discrepancyReason} onChange={(e) => setDiscrepancyReason(e.target.value)} />
         </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Storage condition" hint="Only used when the result is clean.">
+            <Select value={storageCondition} onChange={(e) => setStorageCondition(e.target.value)}>
+              <option value="">—</option>
+              {STORAGE_CONDITIONS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Storage location" hint="Only used when the result is clean.">
+            <Select value={storageLocationId} onChange={(e) => setStorageLocationId(e.target.value)}>
+              <option value="">—</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.location_code} ({loc.zone_type})
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-3">
           <Button type="button" variant="secondary" onClick={onClose}>

@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDate,
   formatDateTime,
   isOverdue,
@@ -13,6 +12,7 @@ import {
 } from "@/lib/api";
 import { useApiResource, useMe } from "@/lib/hooks";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
+import { RiskMethodologyPickerField } from "@/components/shared/RiskMethodologyPicker";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/Table";
@@ -71,6 +71,17 @@ const LABEL: Record<Transition, string> = {
   review: "Periodic review",
 };
 
+// The exact permission code app/modules/qms/risk_router.py checks for each transition. Note risk.review
+// is held by QA Reviewer, NOT QA Releaser (risk.accept is the QA Releaser one) -- the old code lumped
+// accept+review into one "approver" check and would have hidden the Periodic review button from the
+// QA Reviewer users who actually hold it (audit finding 2026-09-18).
+const PERMISSION_FOR_TRANSITION: Record<Transition, string> = {
+  assessment: "risk.assessment.add",
+  controls: "risk.controls.add",
+  accept: "risk.accept",
+  review: "risk.review",
+};
+
 export default function RiskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { me } = useMe();
@@ -78,8 +89,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
   const { data, loading, error, reload } = useApiResource<RiskDetail>(`/qms/v1/risks/${id}`);
 
   const allowed = data ? (ALLOWED_FROM[data.state] ?? []) : [];
-  const canDo = (t: Transition) =>
-    allowed.includes(t) && (t === "accept" || t === "review" ? canApproveQms(me) : canInvestigateQms(me));
+  const canDo = (t: Transition) => allowed.includes(t) && hasPermission(me, PERMISSION_FOR_TRANSITION[t]);
 
   const current = data?.assessment_versions.find((v) => v.is_current);
   const reviewOverdue = data ? isOverdue(data.next_review_due_at) && data.state === "ACCEPTED" : false;
@@ -289,13 +299,12 @@ function TransitionModal({
 
         {transition === "assessment" && (
           <>
-            <Field
-              label="Methodology ID"
+            <RiskMethodologyPickerField
+              value={methodologyId}
+              onChange={setMethodologyId}
               required
               hint="A released rule of type risk_methodology (see the Rules page) - required for the first assessment of a cycle."
-            >
-              <Input value={methodologyId} onChange={(e) => setMethodologyId(e.target.value)} required />
-            </Field>
+            />
             <div className="grid grid-cols-3 gap-4">
               <Field label="Severity" required>
                 <Input type="number" min={1} max={10} value={severity} onChange={(e) => setSeverity(e.target.value)} required />

@@ -12,12 +12,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.batch_execution.models import (
     Batch,
     BatchStep,
+    BatchStepEquipmentRequirement,
     StepComment,
     StepEvidenceLink,
     StepHandover,
     StepHold,
     StepResult,
+    StepResultCorrection,
 )
+from app.modules.qc.models import QcResult, QcSample, QcTestDefinition, QcTestOrder
 from app.modules.recipe_master import service as recipe_master_service
 from app.modules.recipe_master.models import RecipeStepDependency
 from app.mutation.errors import NotFoundError
@@ -161,6 +164,21 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
         if code:
             evidence_by_code[code].append(e)
 
+    # Display-only, same precedent as evidence_by_code above (SG-048 #012/#013's own gap note: these
+    # were declared/gathered by the recipe editor already but never surfaced in the execution-side step
+    # Detail view). Read-only visibility, not a step towards the still-open lot/asset-linking question.
+    material_requirements_by_code: dict[str, list] = defaultdict(list)
+    for m in graph["material_requirements"]:
+        code = code_by_step_id.get(m.step_id)
+        if code:
+            material_requirements_by_code[code].append(m)
+
+    equipment_requirements_by_code: dict[str, list] = defaultdict(list)
+    for eq in graph["equipment_requirements"]:
+        code = code_by_step_id.get(eq.step_id)
+        if code:
+            equipment_requirements_by_code[code].append(eq)
+
     predecessors_of: dict[str, list[str]] = defaultdict(list)
     successors_of: dict[str, list[str]] = defaultdict(list)
     for dep in graph["dependencies"]:
@@ -223,6 +241,65 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
         for h in handover_rows:
             handovers_by_step_id[h.step_id].append(h)
 
+    evidence_links_by_step_id: dict[uuid.UUID, list[StepEvidenceLink]] = defaultdict(list)
+    if steps:
+        evidence_link_rows = (
+            (
+                await session.execute(
+                    select(StepEvidenceLink).where(StepEvidenceLink.step_id.in_([s.id for s in steps])).order_by(StepEvidenceLink.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for e in evidence_link_rows:
+            evidence_links_by_step_id[e.step_id].append(e)
+
+    # SG-048 #023's own gap: the request/approve flow (commands.py) has always existed, but nothing
+    # ever surfaced a pending/completed correction back to a caller — added so the UI can show "there's
+    # a correction awaiting an independent approver" and who may act on it (SoD: not the requester).
+    corrections_by_step_id: dict[uuid.UUID, list] = defaultdict(list)
+    if steps and results_by_step_id:
+        result_ids = [r.id for rows in results_by_step_id.values() for r in rows]
+        result_to_step = {r.id: r.step_id for rows in results_by_step_id.values() for r in rows}
+        if result_ids:
+            correction_rows = (
+                (
+                    await session.execute(
+                        select(StepResultCorrection)
+                        .where(StepResultCorrection.original_result_id.in_(result_ids))
+                        .order_by(StepResultCorrection.created_at)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for c in correction_rows:
+                step_id = result_to_step.get(c.original_result_id)
+                if step_id:
+                    corrections_by_step_id[step_id].append(c)
+
+    # Known-limitations fix (docs/testing/demo-gujarati/08 §8.8): the FROZEN equipment requirements
+    # (BatchStepEquipmentRequirement, set at issue_batch()) are the ones commands.py::
+    # _enforce_step_equipment actually checks -- distinct from equipment_requirements_by_code above, which
+    # reads the live recipe graph and is display-only. Surfaced so the step-start UI can build an accurate
+    # equipment-asset picker even if the recipe has since been edited.
+    frozen_equipment_requirements_by_step_id: dict[uuid.UUID, list[BatchStepEquipmentRequirement]] = defaultdict(list)
+    if steps:
+        frozen_eq_rows = (
+            (
+                await session.execute(
+                    select(BatchStepEquipmentRequirement).where(
+                        BatchStepEquipmentRequirement.batch_step_id.in_([s.id for s in steps])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for eq in frozen_eq_rows:
+            frozen_equipment_requirements_by_step_id[eq.batch_step_id].append(eq)
+
     return {
         "batch": batch,
         "steps": steps,
@@ -230,15 +307,43 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
         "section_by_id": section_by_id,
         "parameters_by_code": parameters_by_code,
         "evidence_by_code": evidence_by_code,
+        "material_requirements_by_code": material_requirements_by_code,
+        "equipment_requirements_by_code": equipment_requirements_by_code,
+        "frozen_equipment_requirements_by_step_id": frozen_equipment_requirements_by_step_id,
         "predecessors_of": predecessors_of,
         "successors_of": successors_of,
         "results_by_step_id": results_by_step_id,
         "active_hold_by_step_id": active_hold_by_step_id,
         "comments_by_step_id": comments_by_step_id,
         "handovers_by_step_id": handovers_by_step_id,
+        "evidence_links_by_step_id": evidence_links_by_step_id,
+        "corrections_by_step_id": corrections_by_step_id,
         "blockers": [
             {"step_id": str(s.id), "recipe_step_code": s.recipe_step_code, "reason": "predecessor not yet completed"}
             for s in steps
             if s.state == "pending"
         ],
     }
+
+
+async def get_passed_qc_spec_ids_for_step(session: AsyncSession, step_id: uuid.UUID) -> set[uuid.UUID]:
+    """Client requirement #12: the set of `qc.QcTestSpecification.id`s with a passing result recorded
+    against this specific step's in-process QC samples. Join chain: `QcSample(source_type="batch_step",
+    source_id=step_id)` -> `QcTestOrder(sample_id)` -> `QcTestDefinition(test_definition_id)
+    .specification_id` -> the spec id being checked, keyed on each order's latest `QcResult.outcome`
+    (qc_result is append-only, AG-08, so a later corrected/retested row naturally supersedes an earlier
+    one by being later, same reasoning as `release.service._qc_signals`)."""
+    rows = (
+        await session.execute(
+            select(QcTestDefinition.specification_id, QcResult)
+            .join(QcTestOrder, QcTestOrder.test_definition_id == QcTestDefinition.id)
+            .join(QcSample, QcSample.id == QcTestOrder.sample_id)
+            .join(QcResult, QcResult.test_order_id == QcTestOrder.id)
+            .where(QcSample.source_type == "batch_step", QcSample.source_id == step_id)
+            .order_by(QcTestOrder.id, QcResult.created_at.desc(), QcResult.id.desc())
+        )
+    ).all()
+    latest_by_order: dict[uuid.UUID, tuple[uuid.UUID, QcResult]] = {}
+    for specification_id, result in rows:
+        latest_by_order.setdefault(result.test_order_id, (specification_id, result))
+    return {spec_id for spec_id, result in latest_by_order.values() if result.outcome == "pass"}

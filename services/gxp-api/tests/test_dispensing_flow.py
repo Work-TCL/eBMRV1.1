@@ -265,7 +265,7 @@ async def test_select_source_wrong_material_rejected(client, db, seeded):
     site_id = seeded["site_id"]
 
     material_id, lot_id, container_id = await _prepared_lot(client, db, op_token, qa_token, site_id, "MAT-WRONG", "LOT-WRONG")
-    other_material_id = await _create_material(client, op_token, site_id, code="RM-OTHER", name="Other")
+    other_material_id = await _create_material(client, site_id, code="RM-OTHER", name="Other")
     batch_id = await _create_batch(client, op_token, site_id, "WRONGMAT")
     order_id = await _create_order(client, op_token, site_id, batch_id, other_material_id)
 
@@ -381,7 +381,7 @@ async def test_cancel_requires_reason(client, db, seeded):
     op_token = await login(client, "operator1")
     qa_token = await login(client, "qa.releaser")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-CANCELREASON", name="X")
+    material_id = await _create_material(client, site_id, code="RM-CANCELREASON", name="X")
     batch_id = await _create_batch(client, op_token, site_id, "CANCELREASON")
     order_id = await _create_order(client, op_token, site_id, batch_id, material_id)
 
@@ -393,7 +393,7 @@ async def test_cancel_requires_reason(client, db, seeded):
 async def test_cancel_requires_independence_from_author(client, db, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-CANCELSOD", name="X")
+    material_id = await _create_material(client, site_id, code="RM-CANCELSOD", name="X")
     batch_id = await _create_batch(client, op_token, site_id, "CANCELSOD")
     order_id = await _create_order(client, op_token, site_id, batch_id, material_id)
 
@@ -451,7 +451,7 @@ async def test_cancel_returns_active_reservation(client, db, seeded):
 async def test_queue_lists_noncompleted_orders(client, db, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-QUEUE", name="X")
+    material_id = await _create_material(client, site_id, code="RM-QUEUE", name="X")
     batch_id = await _create_batch(client, op_token, site_id, "QUEUE")
     order_id = await _create_order(client, op_token, site_id, batch_id, material_id)
 
@@ -463,7 +463,7 @@ async def test_queue_lists_noncompleted_orders(client, db, seeded):
 async def test_duplicate_create_order_idempotency_key_returns_same_receipt(client, db, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-IDEM21", name="X")
+    material_id = await _create_material(client, site_id, code="RM-IDEM21", name="X")
     batch_id = await _create_batch(client, op_token, site_id, "IDEM21")
 
     key = idem()
@@ -480,7 +480,7 @@ async def test_duplicate_create_order_idempotency_key_returns_same_receipt(clien
 async def test_select_source_stale_version_rejected(client, db, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-STALE21", name="X")
+    material_id = await _create_material(client, site_id, code="RM-STALE21", name="X")
     batch_id = await _create_batch(client, op_token, site_id, "STALE21")
     order_id = await _create_order(client, op_token, site_id, batch_id, material_id)
 
@@ -548,7 +548,7 @@ async def test_cancel_without_valid_signature_challenge_rejected(client, db, see
     op_token = await login(client, "operator1")
     qa_token = await login(client, "qa.releaser")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-NOSIG21", name="X")
+    material_id = await _create_material(client, site_id, code="RM-NOSIG21", name="X")
     batch_id = await _create_batch(client, op_token, site_id, "NOSIG21")
     order_id = await _create_order(client, op_token, site_id, batch_id, material_id)
 
@@ -620,7 +620,7 @@ async def test_multi_lot_dispensing_conserves_genealogy_per_source(client, db, s
     site_id = seeded["site_id"]
     released_location_id = str(seeded["locations"]["RELEASED-01"].id)
 
-    material_id = await _create_material(client, op_token, site_id, code="RM-MULTILOT", name="Multi-lot material")
+    material_id = await _create_material(client, site_id, code="RM-MULTILOT", name="Multi-lot material")
     lot1_id, container1_id = await _receive_lot_for_material(client, db, op_token, site_id, material_id, "LOT-MULTILOT-1", quantity="20.000000")
     await _release_lot(client, qa_token, lot1_id)
     await _put_away(client, op_token, lot1_id, container1_id, released_location_id, "20.000000")

@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { api, ApiError, newIdempotencyKey } from "@/lib/api";
+import { useEntityOptions } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
 import { Modal } from "@/components/ui/Modal";
-import { Field } from "@/components/ui/Field";
+import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
@@ -14,6 +15,7 @@ import { Icon } from "@/components/ui/Icon";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { JsonPanel, summarizeJson } from "@/components/ui/JsonPanel";
 import {
   ExprNodeEditor,
@@ -55,6 +57,7 @@ export default function RulesPage() {
   const [error, setError] = useState<string | null>(null);
   const [draftOpen, setDraftOpen] = useState(false);
   const [selected, setSelected] = useState<RuleDefinition | null>(null);
+  const entities = useEntityOptions();
 
   async function performLookup() {
     if (!ruleId.trim()) return;
@@ -88,14 +91,22 @@ export default function RulesPage() {
           e.preventDefault();
           performLookup();
         }}
-        className="flex flex-wrap items-end gap-4 mb-4"
+        className="flex flex-wrap items-start gap-4 mb-4"
       >
-        <Field label="Rule ID">
-          <Input value={ruleId} onChange={(e) => setRuleId(e.target.value)} placeholder="e.g. ASSAY-ELIGIBILITY" style={{ minWidth: 200, maxWidth: 260, width: "100%" }} />
-        </Field>
-        <Button type="submit" variant="secondary" disabled={loading || !ruleId.trim()}>
-          <Icon name="search" /> {loading ? "Looking up…" : "Look up versions"}
-        </Button>
+        <EntityPickerField
+          label="Rule ID"
+          value={ruleId}
+          onChange={setRuleId}
+          options={entities.rules}
+          status={entities.rulesStatus}
+          kind="rule"
+          placeholder="e.g. ASSAY-ELIGIBILITY"
+        />
+        <RowButtonSlot>
+          <Button type="submit" variant="secondary" disabled={loading || !ruleId.trim()}>
+            <Icon name="search" /> {loading ? "Looking up…" : "Look up versions"}
+          </Button>
+        </RowButtonSlot>
       </form>
 
       {error && (
@@ -811,6 +822,7 @@ function RuleDetailModal({
   const [simResult, setSimResult] = useState<unknown>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [releasing, setReleasing] = useState(false);
 
   async function onValidate() {
     setBusy(true);
@@ -836,22 +848,6 @@ function RuleDetailModal({
       setSimResult(result.result);
     } catch (err) {
       setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Simulation failed");
-    }
-  }
-
-  async function onRelease() {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.post(`/rules/v1/${rule.rule_object_id}/release`, {
-        idempotency_key: newIdempotencyKey(),
-        rule_object_id: rule.rule_object_id,
-      });
-      onChanged();
-    } catch (err) {
-      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Release failed");
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -899,12 +895,41 @@ function RuleDetailModal({
             </Button>
           )}
           {rule.status === "validated" && (
-            <Button variant="success" onClick={onRelease} disabled={busy}>
-              {busy ? "Releasing…" : "Release"}
+            <Button variant="success" onClick={() => setReleasing(true)} disabled={busy}>
+              Release
             </Button>
           )}
         </div>
       </div>
+
+      {releasing && (
+        <SignatureCeremony
+          open
+          onClose={() => setReleasing(false)}
+          onDone={() => {
+            setReleasing(false);
+            onChanged();
+          }}
+          challengePath={`/rules/v1/${rule.rule_object_id}/signature-challenges`}
+          action="release"
+          title={`Release - ${rule.rule_id} v${rule.semantic_version}`}
+          summary={
+            <>
+              You are about to release <strong>{rule.rule_id} v{rule.semantic_version}</strong>.
+            </>
+          }
+          submitVariant="success"
+          reason="none"
+          onSign={(payload) =>
+            api.post(`/rules/v1/${rule.rule_object_id}/release`, {
+              idempotency_key: payload.idempotency_key,
+              rule_object_id: rule.rule_object_id,
+              challenge_id: payload.challenge_id,
+              reauth_password: payload.reauth_password,
+            })
+          }
+        />
+      )}
     </Modal>
   );
 }

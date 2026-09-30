@@ -55,6 +55,10 @@ INVENTORY_TRANSACTION_TYPES = (
 CONTAINER_STATUSES = ("active", "split", "merged", "destroyed")
 RESERVATION_STATES = ("active", "released", "consumed", "expired", "cancelled")
 
+# Client requirement #4: captured, application-validated list -- same "no DB CHECK constraint" treatment
+# as INVENTORY_TRANSACTION_TYPES above.
+STORAGE_CONDITIONS = ("ambient", "cold_storage", "freezer", "refrigerator", "controlled_temperature", "warehouse")
+
 
 class Material(Base):
     """Raw material / component master (MAT-001-adjacent — the regulated identity a lot is received
@@ -75,6 +79,11 @@ class Material(Base):
     # actually-used BatchStep -> ebmr.recipe_steps path (SG-090); conditional-independence enforcement
     # itself is deferred, this flag is captured for a future pass.
     critical: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Client requirement #4: whether this material is manufactured/maintained in-house (vs. purchased),
+    # and its required storage condition -- a lot's own `storage_condition` (below) overrides this
+    # master-level default when set, resolved at read time rather than copied at write time.
+    is_in_house: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    default_storage_condition: Mapped[str | None] = mapped_column(String(40))
     version: Mapped[int] = mapped_column(nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -120,6 +129,13 @@ class MaterialLot(Base):
     manufacture_date: Mapped[date | None] = mapped_column()
     released_at: Mapped[datetime | None] = mapped_column()
     release_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+    # Client requirement #4: where this lot is stored and under what condition -- optional overrides of
+    # the parent Material's own default_storage_condition.
+    storage_location_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("materials.warehouse_locations.id")
+    )
+    storage_condition: Mapped[str | None] = mapped_column(String(40))
 
 
 class MaterialLotDisposition(Base):

@@ -1,6 +1,6 @@
 "use client";
 
-import { canMaintainEquipment, holdsAnyRole, type Me } from "@/lib/api";
+import { hasPermission, type Me } from "@/lib/api";
 import { Fact, IdFact, OpsRecordPage, type OpsRecordConfig } from "@/components/shared/OpsRecordPage";
 import { StatePill } from "@/components/ui/StatePill";
 
@@ -20,8 +20,13 @@ interface CleaningExecution {
   version: number;
 }
 
-const canOperate = (me: Me | null) => holdsAnyRole(me, ["Admin", "Operator", "Supervisor", "Sanitation Operator"]);
-const canVerify = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer", "QC Reviewer"]);
+// cleaning_execution.create / .complete (Document 39) — Admin, Operator, QA Reviewer, Sanitation
+// Operator per scripts/seed.py. Audit finding 2026-09-18: this previously included Supervisor (who
+// holds no cleaning_execution.* grant — silent 403) and omitted QA Reviewer (who does hold it — hidden
+// feature). Also removed a stray `|| canMaintainEquipment(me)` on the create gate, which wrongly let
+// Maintenance Technician (whose only grant is equipment_asset.maintain) start a cleaning execution.
+const canOperate = (me: Me | null) => hasPermission(me, "cleaning_execution.create");
+const canVerify = (me: Me | null) => hasPermission(me, "cleaning_execution.verify");
 
 const config: OpsRecordConfig<CleaningExecution> = {
   title: "Cleaning executions",
@@ -30,7 +35,7 @@ const config: OpsRecordConfig<CleaningExecution> = {
   apiRoot: "/cleaning/v1/executions",
   create: {
     label: "Start cleaning execution",
-    can: (me) => canOperate(me) || canMaintainEquipment(me),
+    can: canOperate,
     path: "/cleaning/v1/executions",
     fields: [
       { name: "procedure_version_id", label: "Cleaning procedure version ID", required: true },

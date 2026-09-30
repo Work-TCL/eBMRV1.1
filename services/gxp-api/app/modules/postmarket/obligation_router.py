@@ -30,6 +30,94 @@ from app.mutation.schemas import MutationReceipt
 router = APIRouter(prefix="/postmarket/v1", tags=["postmarket-obligations"])
 
 
+def _obligation_dict(o: RegulatoryObligation) -> dict:
+    return {
+        "id": str(o.id), "site_id": str(o.site_id), "obligation_type": o.obligation_type,
+        "source_type": o.source_type, "source_id": str(o.source_id) if o.source_id else None,
+        "source_version": o.source_version, "application_id": o.application_id,
+        "rule_version_id": o.rule_version_id,
+        "clock_start_at": o.clock_start_at.isoformat() if o.clock_start_at else None,
+        "original_due_at": o.original_due_at.isoformat() if o.original_due_at else None,
+        "current_due_at": o.current_due_at.isoformat() if o.current_due_at else None,
+        "calendar_profile_id": o.calendar_profile_id, "details": o.details,
+        "decision": o.decision, "decision_rationale": o.decision_rationale,
+        "decision_by": str(o.decision_by) if o.decision_by else None,
+        "decision_signature_id": str(o.decision_signature_id) if o.decision_signature_id else None,
+        "deadline_override_evidence": o.deadline_override_evidence, "retention_basis": o.retention_basis,
+        "legal_hold": o.legal_hold, "legal_hold_reason": o.legal_hold_reason,
+        "legal_hold_authority": o.legal_hold_authority,
+        "legal_hold_at": o.legal_hold_at.isoformat() if o.legal_hold_at else None,
+        "state": o.state, "owner_subject_id": str(o.owner_subject_id) if o.owner_subject_id else None,
+        "version": o.version, "created_at": o.created_at.isoformat(),
+    }
+
+
+def _share_dict(s: ConstituentInformationShare) -> dict:
+    return {
+        "id": str(s.id), "site_id": str(s.site_id), "safety_case_id": str(s.safety_case_id),
+        "applicant_relationship_id": str(s.applicant_relationship_id),
+        "applicant_relationship_version": s.applicant_relationship_version,
+        "company_receipt_at": s.company_receipt_at.isoformat(), "due_at": s.due_at.isoformat(),
+        "package_content": s.package_content, "package_digest": s.package_digest,
+        "package_version": s.package_version,
+        "shared_at": s.shared_at.isoformat() if s.shared_at else None,
+        "shared_by": str(s.shared_by) if s.shared_by else None,
+        "sharing_signature_id": str(s.sharing_signature_id) if s.sharing_signature_id else None,
+        "delivery_evidence": s.delivery_evidence, "state": s.state, "version": s.version,
+    }
+
+
+def _correction_removal_dict(r: CorrectionRemovalRegulatoryRecord) -> dict:
+    return {
+        "id": str(r.id), "site_id": str(r.site_id), "field_action_reference": r.field_action_reference,
+        "assessment_state": r.assessment_state, "regime": r.regime,
+        "initiation_at": r.initiation_at.isoformat(), "due_at": r.due_at.isoformat() if r.due_at else None,
+        "calendar_version": r.calendar_version, "required_facts": r.required_facts,
+        "decision_by": str(r.decision_by) if r.decision_by else None,
+        "decision_signature_id": str(r.decision_signature_id) if r.decision_signature_id else None,
+        "scope_amendments": r.scope_amendments, "retention_class_code": r.retention_class_code,
+        "assessment_approval_signatures": r.assessment_approval_signatures,
+        "decision_approval_signatures": r.decision_approval_signatures,
+        "state": r.state, "version": r.version,
+    }
+
+
+@router.get("/obligations/{obligation_id}")
+async def get_obligation(
+    obligation_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    obligation = await session.get(RegulatoryObligation, obligation_id)
+    if obligation is None:
+        raise NotFoundError("Regulatory obligation not found")
+    await evaluate_policy(session, actor.user_id, action="regulatory_obligation.view", site_id=obligation.site_id)
+    return _obligation_dict(obligation)
+
+
+@router.get("/sharing/{share_id}")
+async def get_sharing(
+    share_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    share = await session.get(ConstituentInformationShare, share_id)
+    if share is None:
+        raise NotFoundError("Constituent information share not found")
+    # No dedicated `.view` code exists for this entity -- reusing `.evaluate`, the same read-adjacent
+    # reuse precedent as `evidence.download` for evidence metadata (see that module's GET for the pattern).
+    await evaluate_policy(session, actor.user_id, action="constituent_information_share.evaluate", site_id=share.site_id)
+    return _share_dict(share)
+
+
+@router.get("/correction-removal/{record_id}")
+async def get_correction_removal(
+    record_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    record = await session.get(CorrectionRemovalRegulatoryRecord, record_id)
+    if record is None:
+        raise NotFoundError("Correction/removal regulatory record not found")
+    # No dedicated `.view` code exists for this entity -- reusing `.create`, same reuse precedent as above.
+    await evaluate_policy(session, actor.user_id, action="correction_removal.create", site_id=record.site_id)
+    return _correction_removal_dict(record)
+
+
 @router.post("/applicant-relationships", response_model=MutationReceipt)
 async def post_configure_applicant_relationship(
     cmd: commands.ConfigureApplicantRelationshipCommand, session: AsyncSession = Depends(get_session),

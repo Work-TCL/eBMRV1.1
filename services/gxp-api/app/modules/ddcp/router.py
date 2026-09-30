@@ -30,9 +30,18 @@ PROFILE_SORTABLE = {"profile_code": DdcpProfileVersion.profile_code, "created_at
 
 def _profile_summary_dict(profile: DdcpProfileVersion) -> dict:
     return {
-        "id": str(profile.id), "profile_code": profile.profile_code, "subtype": profile.subtype,
-        "version": profile.version, "state": profile.state,
+        "id": str(profile.id), "site_id": str(profile.site_id), "profile_code": profile.profile_code,
+        "subtype": profile.subtype, "version": profile.version, "state": profile.state,
         "product_version_id": str(profile.product_version_id) if profile.product_version_id else None,
+        "dosage_form": profile.dosage_form, "presentation": profile.presentation,
+        "constituent_architecture": profile.constituent_architecture,
+        "required_controls": profile.required_controls,
+        "release_checkpoint_set": profile.release_checkpoint_set,
+        "vault_object_id": str(profile.vault_object_id) if profile.vault_object_id else None,
+        "released_by": str(profile.released_by) if profile.released_by else None,
+        "release_signature_id": str(profile.release_signature_id) if profile.release_signature_id else None,
+        "effective_from": profile.effective_from.isoformat() if profile.effective_from else None,
+        "created_at": profile.created_at.isoformat(),
     }
 
 
@@ -99,6 +108,44 @@ async def list_profiles(
 
 
 # --- ConstituentHandoff (PFS-FR-003/004, §8) -------------------------------------------------------------
+
+
+def _handoff_dict(h: ConstituentHandoff) -> dict:
+    return {
+        "id": str(h.id), "site_id": str(h.site_id), "batch_id": str(h.batch_id),
+        "from_constituent": h.from_constituent, "to_constituent": h.to_constituent,
+        "source_batch_reference": h.source_batch_reference, "attributes": h.attributes,
+        "accepted_by": str(h.accepted_by) if h.accepted_by else None,
+        "acceptance_signature_id": str(h.acceptance_signature_id) if h.acceptance_signature_id else None,
+        "accepted_at": h.accepted_at.isoformat() if h.accepted_at else None,
+        "state": h.state, "rejection_reason": h.rejection_reason, "version": h.version,
+    }
+
+
+@router.get("/constituent-handoffs/{handoff_id}")
+async def get_handoff(
+    handoff_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    # Matches this router's other batch/record read endpoints (readiness/genealogy/review-summary):
+    # authenticated, not yet RBAC-scoped -- see get_batch_review_summary()'s note.
+    del actor
+    handoff = await session.get(ConstituentHandoff, handoff_id)
+    if handoff is None:
+        raise NotFoundError("Constituent handoff not found")
+    return _handoff_dict(handoff)
+
+
+@router.get("/batches/{batch_id}/constituent-handoffs")
+async def get_batch_handoffs(
+    batch_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    del actor
+    handoffs = (
+        (await session.execute(select(ConstituentHandoff).where(ConstituentHandoff.batch_id == batch_id)))
+        .scalars()
+        .all()
+    )
+    return [_handoff_dict(h) for h in handoffs]
 
 
 @router.post("/constituent-handoffs", response_model=MutationReceipt)

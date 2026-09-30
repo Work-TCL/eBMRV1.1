@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, canCreateDevice, canViewDevices, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
-import { useMe, useSiteId } from "@/lib/hooks";
+import { api, ApiError, canCreateDevice, canExecuteDevice, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
+import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/Table";
@@ -12,6 +12,8 @@ import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { ProductVersionPickerField } from "@/components/shared/ProductVersionPicker";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
@@ -116,7 +118,7 @@ export default function DevicesPage() {
             <span className="font-semibold">
               {unit.serial_number} <WorkflowStatePill state={unit.state} />
             </span>
-            {canViewDevices(me) && unit.state !== "HELD" && (
+            {canExecuteDevice(me) && unit.state !== "HELD" && (
               <Button variant="danger" onClick={() => setHoldOpen(true)}>
                 <Icon name="lock" /> Hold unit
               </Button>
@@ -243,6 +245,7 @@ function CreateLotCard({ siteId }: { siteId: string | null }) {
   const [serials, setSerials] = useState("");
   const [unitCount, setUnitCount] = useState<number | null>(null);
   const { busy, error, run } = useCommand(() => undefined);
+  const entities = useEntityOptions();
 
   function createLot(e: React.FormEvent) {
     e.preventDefault();
@@ -284,12 +287,21 @@ function CreateLotCard({ siteId }: { siteId: string | null }) {
     <Card pad className="mb-4">
       <CardHeader title="Device lot & unit assembly" />
       <form onSubmit={createLot} className="grid grid-cols-3 gap-4 mt-3">
-        <Field label="Product version ID" required>
-          <Input value={productVersionId} onChange={(e) => setProductVersionId(e.target.value)} required />
-        </Field>
-        <Field label="Batch ID" hint="Optional link to the producing batch.">
-          <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} />
-        </Field>
+        <ProductVersionPickerField
+          label="Product version ID"
+          required
+          value={productVersionId}
+          onChange={setProductVersionId}
+        />
+        <EntityPickerField
+          label="Batch ID"
+          hint="Optional link to the producing batch."
+          value={batchId}
+          onChange={setBatchId}
+          options={entities.batches}
+          status={entities.batchesStatus}
+          kind="batch"
+        />
         <Field label="UDI-DI" hint="Optional.">
           <Input value={udiDi} onChange={(e) => setUdiDi(e.target.value)} />
         </Field>

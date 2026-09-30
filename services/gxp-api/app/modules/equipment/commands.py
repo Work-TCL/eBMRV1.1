@@ -13,16 +13,18 @@ two can never disagree.
 """
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
+from app.modules.codegen import service as codegen_service
 from app.modules.equipment.cleaning_models import EquipmentArea
 from app.modules.equipment.models import (
     CALIBRATION_RESULTS,
+    CALIBRATION_TYPES,
     MAINTENANCE_TYPES,
     EquipmentAsset,
     EquipmentCalibration,
@@ -175,7 +177,7 @@ async def _write_receipt(
 
 class CreateEquipmentAssetCommand(CommandEnvelope):
     site_id: uuid.UUID
-    equipment_code: str
+    equipment_code: str | None = None
     equipment_class_id: uuid.UUID | None = None
     manufacturer: str | None = None
     model: str | None = None
@@ -193,16 +195,18 @@ async def create_equipment_asset(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    if not cmd.equipment_code.strip():
-        raise ValidationFailedError("equipment_code is required")
-    conflict = (
-        await session.execute(select(EquipmentAsset).where(EquipmentAsset.equipment_code == cmd.equipment_code))
-    ).scalar_one_or_none()
-    if conflict is not None:
-        raise ValidationFailedError("equipment_code is already in use", equipment_code=cmd.equipment_code)
+    if cmd.equipment_code and cmd.equipment_code.strip():
+        conflict = (
+            await session.execute(select(EquipmentAsset).where(EquipmentAsset.equipment_code == cmd.equipment_code))
+        ).scalar_one_or_none()
+        if conflict is not None:
+            raise ValidationFailedError("equipment_code is already in use", equipment_code=cmd.equipment_code)
+        equipment_code = cmd.equipment_code
+    else:
+        equipment_code = await codegen_service.next_code(session, entity_type="EQUIPMENT_ASSET", prefix="EQP")
 
     asset = EquipmentAsset(
-        site_id=cmd.site_id, equipment_code=cmd.equipment_code, equipment_class_id=cmd.equipment_class_id,
+        site_id=cmd.site_id, equipment_code=equipment_code, equipment_class_id=cmd.equipment_class_id,
         manufacturer=cmd.manufacturer, model=cmd.model, serial_no=cmd.serial_no, location_id=cmd.location_id,
         state="INSTALLED", dedicated=cmd.dedicated, firmware_version=cmd.firmware_version, version=1,
     )
@@ -232,7 +236,7 @@ async def create_equipment_asset(
 
 class CreateEquipmentAreaCommand(CommandEnvelope):
     site_id: uuid.UUID
-    area_code: str
+    area_code: str | None = None
     area_type: str | None = None
     classification: str | None = None
     criticality: str | None = None
@@ -247,17 +251,21 @@ async def create_equipment_area(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    if not cmd.area_code.strip():
-        raise ValidationFailedError("area_code is required")
-    # Matches the DB's own UniqueConstraint("area_code") — table-wide, not per-site.
-    conflict = (
-        await session.execute(select(EquipmentArea).where(EquipmentArea.area_code == cmd.area_code))
-    ).scalar_one_or_none()
-    if conflict is not None:
-        raise ValidationFailedError("area_code is already in use", area_code=cmd.area_code, existing_id=str(conflict.id))
+    if cmd.area_code and cmd.area_code.strip():
+        # Matches the DB's own UniqueConstraint("area_code") — table-wide, not per-site.
+        conflict = (
+            await session.execute(select(EquipmentArea).where(EquipmentArea.area_code == cmd.area_code))
+        ).scalar_one_or_none()
+        if conflict is not None:
+            raise ValidationFailedError(
+                "area_code is already in use", area_code=cmd.area_code, existing_id=str(conflict.id)
+            )
+        area_code = cmd.area_code
+    else:
+        area_code = await codegen_service.next_code(session, entity_type="EQUIPMENT_AREA", prefix="ARE")
 
     area = EquipmentArea(
-        site_id=cmd.site_id, area_code=cmd.area_code, area_type=cmd.area_type,
+        site_id=cmd.site_id, area_code=area_code, area_type=cmd.area_type,
         classification=cmd.classification, criticality=cmd.criticality,
         cleanliness_status=cmd.cleanliness_status, status="active", version=1,
     )
@@ -370,6 +378,10 @@ class RecordCalibrationCommand(CommandEnvelope):
     standard_expiry_date: date | None = None
     reviewer_user_id: uuid.UUID | None = None
     reason: str | None = None
+    # Client requirement #7.
+    calibration_type: str = "internal"
+    provider_name: str | None = None
+    certificate_reference: str | None = None
 
 
 async def record_calibration(
@@ -382,6 +394,12 @@ async def record_calibration(
 
     if cmd.result not in CALIBRATION_RESULTS:
         raise ValidationFailedError("Unrecognized result", result=cmd.result, allowed=list(CALIBRATION_RESULTS))
+    if cmd.calibration_type not in CALIBRATION_TYPES:
+        raise ValidationFailedError(
+            "Unrecognized calibration_type", calibration_type=cmd.calibration_type, allowed=list(CALIBRATION_TYPES)
+        )
+    if cmd.calibration_type == "external" and not (cmd.provider_name and cmd.provider_name.strip()):
+        raise ValidationFailedError("provider_name is required for an external calibration")
 
     asset = await _load_asset_for_update(session, cmd.asset_id, cmd.expected_version)
     old_state = asset.state
@@ -395,11 +413,19 @@ async def record_calibration(
         standard_calibration_status=cmd.standard_calibration_status, standard_expiry_date=cmd.standard_expiry_date,
         performer_user_id=actor_user_id, reviewer_user_id=cmd.reviewer_user_id, result=cmd.result,
         impact_assessment_required=is_oot, state="completed", version=1,
+        calibration_type=cmd.calibration_type, provider_name=cmd.provider_name,
+        certificate_reference=cmd.certificate_reference,
     )
     session.add(calibration)
     await session.flush()
 
-    asset.next_calibration_due_date = cmd.due_date
+    # Client requirement #8: when a calibration interval is supplied, calculate the asset's next due
+    # date from it instead of trusting the caller's own due_date field (which represents the due date
+    # *this* calibration was performed against, a distinct fact) -- the whole point of the feature is to
+    # stop callers hand-computing this themselves.
+    asset.next_calibration_due_date = (
+        cmd.performed_date + timedelta(days=cmd.frequency_days) if cmd.frequency_days else cmd.due_date
+    )
     if is_oot:
         asset.calibration_status = "oot"
         asset.hold_flag = True
@@ -456,6 +482,9 @@ class RecordMaintenanceCommand(CommandEnvelope):
     frequency_days: int | None = None
     next_due_date: date | None = None
     expected_downtime_hours: Decimal | None = None
+    # Client requirement #9: caller-entered actual downtime, typically supplied on the continuation
+    # (work_order_id-provided) call once the real elapsed impact is known.
+    actual_downtime_hours: Decimal | None = None
     post_maintenance_verification_required: bool = True
     verified: bool = False
     reason: str | None = None
@@ -484,6 +513,7 @@ async def record_maintenance(
             fault_description=cmd.fault_description, diagnosis=cmd.diagnosis, work_performed=cmd.work_performed,
             parts_used=cmd.parts_used, procedure_version=cmd.procedure_version, frequency_days=cmd.frequency_days,
             next_due_date=cmd.next_due_date, expected_downtime_hours=cmd.expected_downtime_hours,
+            actual_downtime_hours=cmd.actual_downtime_hours,
             technician_user_id=actor_user_id,
             post_maintenance_verification_required=cmd.post_maintenance_verification_required,
             state="open", version=1,
@@ -493,7 +523,7 @@ async def record_maintenance(
 
         if cmd.next_due_date is not None:
             asset.next_maintenance_due_date = cmd.next_due_date
-        if cmd.type == "corrective":
+        if cmd.type in ("corrective", "breakdown"):
             asset.hold_flag = True
             asset.hold_reason = f"Breakdown ({work_order.id})"
             asset.hold_source = "maintenance"
@@ -541,6 +571,8 @@ async def record_maintenance(
             work_order.diagnosis = cmd.diagnosis
         if cmd.parts_used is not None:
             work_order.parts_used = cmd.parts_used
+        if cmd.actual_downtime_hours is not None:
+            work_order.actual_downtime_hours = cmd.actual_downtime_hours
 
         if cmd.verified:
             work_order.state = "verified"
@@ -759,28 +791,40 @@ async def get_equipment_history(session: AsyncSession, asset_id: uuid.UUID) -> d
         "asset_id": str(asset.id),
         "calibrations": [
             {
-                "id": str(c.id), "due_date": c.due_date.isoformat(),
+                "id": str(c.id), "calibration_plan_ref": c.calibration_plan_ref,
+                "procedure_version": c.procedure_version, "frequency_days": c.frequency_days,
+                "tolerance": c.tolerance, "due_date": c.due_date.isoformat(),
                 "performed_date": c.performed_date.isoformat() if c.performed_date else None, "result": c.result,
                 "standard_reference": c.standard_reference,
                 "standard_calibration_status": c.standard_calibration_status,
                 "standard_expiry_date": c.standard_expiry_date.isoformat() if c.standard_expiry_date else None,
+                "calibration_type": c.calibration_type, "provider_name": c.provider_name,
+                "certificate_reference": c.certificate_reference,
                 "as_found": c.as_found, "adjustments": c.adjustments, "as_left": c.as_left,
                 "impact_assessment_required": c.impact_assessment_required,
+                "deviation_reference_id": str(c.deviation_reference_id) if c.deviation_reference_id else None,
                 "performer_user_id": str(c.performer_user_id) if c.performer_user_id else None,
+                "reviewer_user_id": str(c.reviewer_user_id) if c.reviewer_user_id else None,
+                "state": c.state, "version": c.version,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
             }
             for c in calibrations
         ],
         "maintenance_work_orders": [
             {
                 "id": str(w.id), "type": w.type, "state": w.state, "started_at": w.started_at.isoformat(),
+                "completed_at": w.completed_at.isoformat() if w.completed_at else None,
                 "fault_description": w.fault_description, "diagnosis": w.diagnosis,
                 "work_performed": w.work_performed, "parts_used": w.parts_used,
                 "procedure_version": w.procedure_version, "frequency_days": w.frequency_days,
                 "next_due_date": w.next_due_date.isoformat() if w.next_due_date else None,
                 "expected_downtime_hours": str(w.expected_downtime_hours) if w.expected_downtime_hours is not None else None,
+                "actual_downtime_hours": str(w.actual_downtime_hours) if w.actual_downtime_hours is not None else None,
                 "post_maintenance_verification_required": w.post_maintenance_verification_required,
                 "verified_at": w.verified_at.isoformat() if w.verified_at else None,
+                "verified_by_user_id": str(w.verified_by_user_id) if w.verified_by_user_id else None,
                 "technician_user_id": str(w.technician_user_id),
+                "version": w.version, "created_at": w.created_at.isoformat() if w.created_at else None,
             }
             for w in work_orders
         ],

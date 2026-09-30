@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, holdsAnyRole } from "@/lib/api";
+import { api, hasPermission } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -295,7 +295,7 @@ const READS = [
 
 export default function GoLivePage() {
   const { me } = useMe();
-  const canWork = holdsAnyRole(me, ["Admin", "QA Releaser", "QA Reviewer"]);
+  const canWork = hasPermission(me, "validation.gate.view");
 
   return (
     <div>

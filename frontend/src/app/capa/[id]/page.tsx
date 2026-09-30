@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDate,
   formatDateTime,
   isOverdue,
@@ -14,6 +13,7 @@ import {
 } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Tabs } from "@/components/ui/Tabs";
@@ -57,29 +57,61 @@ interface CapaDetail extends Capa {
   effectiveness_checks: EffectivenessCheck[];
 }
 
-type Transition = "plan" | "add_action" | "effectiveness" | "extend" | "close" | "reopen";
+type Transition =
+  | "plan"
+  | "add_action"
+  | "define_effectiveness"
+  | "record_effectiveness_result"
+  | "extend"
+  | "close"
+  | "cancel"
+  | "reopen";
 
+// Mirrors each command's own state guard in app/modules/qms/capa_commands.py exactly (several diverge
+// from the declared CAPA_ALLOWED_TRANSITIONS table with a narrower, hardcoded check — e.g. add_capa_action
+// only accepts entering from PLAN or already being in IMPLEMENTATION, not every state
+// CAPA_ALLOWED_TRANSITIONS lists as eventually reaching IMPLEMENTATION).
 const ALLOWED_FROM: Record<string, Transition[]> = {
   OPEN: ["plan"],
-  PLAN: ["plan", "add_action", "extend"],
-  IMPLEMENTATION: ["add_action", "extend"],
-  IMPLEMENTATION_VERIFIED: ["effectiveness", "extend"],
-  EFFECTIVENESS_MONITORING: ["effectiveness", "close", "extend"],
-  EFFECTIVENESS_FAILED: ["reopen", "close"],
+  PLAN: ["add_action", "extend", "cancel"],
+  IMPLEMENTATION: ["add_action", "extend", "cancel"],
+  IMPLEMENTATION_VERIFIED: ["define_effectiveness", "extend", "cancel"],
+  EFFECTIVENESS_MONITORING: ["define_effectiveness", "record_effectiveness_result", "extend", "cancel"],
+  EFFECTIVENESS_REVIEW: ["close", "extend", "cancel"],
+  EFFECTIVENESS_FAILED: ["reopen", "extend", "cancel"],
   CLOSED: ["reopen"],
-  REOPENED: ["plan", "add_action"],
+  REOPENED: ["define_effectiveness", "close", "extend", "cancel"],
 };
 
-// SG-138: no Document 106 policy row exists for capa_record.close.
-const SIGNATURE_GATED: Transition[] = ["close"];
+// Document 106 row 80 (capa_record/close — resolved, seed.py:1339): "Approved" by an independent QA
+// Releaser. close_capa() resolves this same policy under action="close" for BOTH the close path
+// (conclusion) and the cancel path (cancellation_reason) — see capa_commands.py::close_capa.
+const SIGNATURE_GATED: Transition[] = ["close", "cancel"];
 
 const LABEL: Record<Transition, string> = {
   plan: "Record plan",
   add_action: "Add action",
-  effectiveness: "Effectiveness check",
+  define_effectiveness: "Define effectiveness check",
+  record_effectiveness_result: "Record effectiveness result",
   extend: "Extend target",
   close: "Close",
+  cancel: "Cancel",
   reopen: "Reopen",
+};
+
+// The exact permission code app/modules/qms/capa_router.py checks for each transition -- checking these
+// directly (rather than a shared "investigator vs approver" role-set helper) means this page stays
+// correct even if a customer edits which roles hold which of these codes.
+const PERMISSION_FOR_TRANSITION: Record<Transition, string> = {
+  plan: "capa.plan",
+  add_action: "capa.action.add",
+  define_effectiveness: "capa.effectiveness",
+  record_effectiveness_result: "capa.effectiveness",
+  extend: "capa.extend",
+  // close_capa() resolves action="close" for both the close and cancel paths (capa_commands.py).
+  close: "capa.close",
+  cancel: "capa.close",
+  reopen: "capa.reopen",
 };
 
 export default function CapaDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -90,8 +122,7 @@ export default function CapaDetailPage({ params }: { params: Promise<{ id: strin
   const { data, loading, error, reload } = useApiResource<CapaDetail>(`/qms/v1/capas/${id}`);
 
   const allowed = data ? (ALLOWED_FROM[data.state] ?? []) : [];
-  const canDo = (t: Transition) =>
-    allowed.includes(t) && (t === "close" || t === "reopen" || t === "effectiveness" ? canApproveQms(me) : canInvestigateQms(me));
+  const canDo = (t: Transition) => allowed.includes(t) && hasPermission(me, PERMISSION_FOR_TRANSITION[t]);
 
   return (
     <QmsDetailShell
@@ -156,7 +187,7 @@ export default function CapaDetailPage({ params }: { params: Promise<{ id: strin
                 content: (
                   <ActionsTab
                     actions={data.actions}
-                    canComplete={canInvestigateQms(me)}
+                    canComplete={hasPermission(me, "capa.action.complete")}
                     onComplete={setCompleting}
                   />
                 ),
@@ -407,11 +438,17 @@ function TransitionModal({
   const [dataSource, setDataSource] = useState("");
   const [observationStart, setObservationStart] = useState("");
   const [observationEnd, setObservationEnd] = useState("");
-  const [result, setResult] = useState("");
+  const [effectivenessDueDate, setEffectivenessDueDate] = useState("");
+  const [checkId, setCheckId] = useState(
+    capa.effectiveness_checks.find((c) => !c.result)?.id ?? ""
+  );
+  const [result, setResult] = useState("pass");
+  const [evidenceDescription, setEvidenceDescription] = useState("");
   const [newTargetDate, setNewTargetDate] = useState("");
   const [reason, setReason] = useState("");
   const [riskReview, setRiskReview] = useState("");
   const [conclusion, setConclusion] = useState("");
+  const [cancellationReason, setCancellationReason] = useState("");
   const [newEvidence, setNewEvidence] = useState("");
 
   const base = { idempotency_key: newIdempotencyKey(), capa_id: capa.id, expected_version: capa.version };
@@ -436,15 +473,16 @@ function TransitionModal({
             owner_subject_id: actionOwner,
             due_date: new Date(dueDate).toISOString(),
           });
-        case "effectiveness":
+        case "define_effectiveness":
+          // app/modules/qms/capa_commands.py::record_effectiveness — result omitted defines a new
+          // check; criterion/data_source/observation_start/observation_end/due_date are all required.
           return api.post(`${path}/effectiveness`, {
             ...base,
-            criterion: criterion || null,
-            data_source: dataSource || null,
-            observation_start: observationStart ? new Date(observationStart).toISOString() : null,
-            observation_end: observationEnd ? new Date(observationEnd).toISOString() : null,
-            result: result || null,
-            reviewer_subject_id: me?.user_id ?? null,
+            criterion,
+            data_source: dataSource,
+            observation_start: new Date(observationStart).toISOString(),
+            observation_end: new Date(observationEnd).toISOString(),
+            due_date: new Date(effectivenessDueDate).toISOString(),
           });
         case "extend":
           return api.post(`${path}/extend`, {
@@ -453,23 +491,170 @@ function TransitionModal({
             reason,
             risk_review: riskReview,
           });
-        case "close":
-          return api.post(`${path}/close`, { ...base, conclusion });
         case "reopen":
           return api.post(`${path}/reopen`, { ...base, reason, new_evidence: newEvidence });
+        default:
+          // close/cancel/record_effectiveness_result are signature-gated and never reach this form —
+          // see the early returns below that render <SignatureCeremony> for them instead.
+          throw new Error(`${transition} does not submit through the plain form`);
       }
     });
+  }
+
+  // Document 106 row 80 (capa_record/close, resolved seed.py:1339): "Approved" by an independent QA
+  // Releaser, via the shared Part 11 ceremony (challenge -> password re-entry -> signed mutation) —
+  // same pattern as the deviations detail page's disposition/close. Close and Cancel both post to
+  // /close: Close carries `conclusion`, Cancel carries `cancellation_reason` (capa_commands.py::close_capa
+  // branches on which one is present).
+  if (transition === "close") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="close"
+        title={`Close - ${capa.capa_number}`}
+        summary="Closes the CAPA permanently. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & close"
+        submitVariant="success"
+        disabled={!conclusion.trim()}
+        extraFields={
+          <Field label="Conclusion" required>
+            <textarea
+              className="input"
+              rows={3}
+              value={conclusion}
+              onChange={(e) => setConclusion(e.target.value)}
+              required
+            />
+          </Field>
+        }
+        onSign={(p) =>
+          api.post(`${path}/close`, {
+            idempotency_key: p.idempotency_key,
+            capa_id: capa.id,
+            expected_version: capa.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            conclusion,
+          })
+        }
+      />
+    );
+  }
+
+  if (transition === "cancel") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="close"
+        title={`Cancel - ${capa.capa_number}`}
+        summary="Cancels the CAPA before closure. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & cancel"
+        submitVariant="danger"
+        disabled={!cancellationReason.trim()}
+        extraFields={
+          <Field label="Cancellation reason" required>
+            <textarea
+              className="input"
+              rows={3}
+              value={cancellationReason}
+              onChange={(e) => setCancellationReason(e.target.value)}
+              required
+            />
+          </Field>
+        }
+        onSign={(p) =>
+          api.post(`${path}/close`, {
+            idempotency_key: p.idempotency_key,
+            capa_id: capa.id,
+            expected_version: capa.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            cancellation_reason: cancellationReason,
+          })
+        }
+      />
+    );
+  }
+
+  // Known-limitations fix (docs/testing/demo-gujarati/10 §10.6 item 2), 2026-09-18,
+  // project-owner-directed: recording the effectiveness result is the pass/fail/inconclusive quality
+  // conclusion — same "Approved"/QA Releaser/independent-of-owner signature shape as close() above.
+  // Defining the check itself stays on the plain form below (it's plan-time criteria, not a conclusion).
+  if (transition === "record_effectiveness_result") {
+    const openChecks = capa.effectiveness_checks.filter((c) => !c.result);
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="effectiveness"
+        title={`Record effectiveness result - ${capa.capa_number}`}
+        summary="Records the pass/fail/inconclusive effectiveness conclusion. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & record result"
+        submitVariant="success"
+        disabled={openChecks.length === 0 || !checkId || !evidenceDescription.trim()}
+        extraFields={
+          <>
+            {openChecks.length === 0 ? (
+              <Banner tone="warn" title="No open effectiveness check">
+                Define an effectiveness check first before a result can be recorded against it.
+              </Banner>
+            ) : (
+              <Field label="Effectiveness check" required hint="Which defined check this result answers.">
+                <Select value={checkId} onChange={(e) => setCheckId(e.target.value)} required>
+                  {openChecks.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.criterion} (due {formatDate(c.due_date)})
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+            <Field label="Result" required>
+              <Select value={result} onChange={(e) => setResult(e.target.value)} required>
+                <option value="pass">pass</option>
+                <option value="fail">fail</option>
+                <option value="inconclusive">inconclusive</option>
+              </Select>
+            </Field>
+            <Field label="Evidence" required hint="What was observed, and what shows it.">
+              <textarea
+                className="input"
+                rows={3}
+                value={evidenceDescription}
+                onChange={(e) => setEvidenceDescription(e.target.value)}
+                required
+              />
+            </Field>
+          </>
+        }
+        onSign={(p) =>
+          api.post(`${path}/effectiveness`, {
+            idempotency_key: p.idempotency_key,
+            capa_id: capa.id,
+            expected_version: capa.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            check_id: checkId,
+            result,
+            evidence: { description: evidenceDescription },
+            reviewer_subject_id: me?.user_id ?? null,
+          })
+        }
+      />
+    );
   }
 
   return (
     <Modal open onClose={onClose} title={`${LABEL[transition]} - ${capa.capa_number}`} large={transition === "plan"}>
       <form onSubmit={submit}>
-        {SIGNATURE_GATED.includes(transition) && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
-          </Banner>
-        )}
-
         {transition === "plan" && (
           <>
             <Field label="Corrective action" required hint="What fixes the problem that occurred.">
@@ -518,7 +703,7 @@ function TransitionModal({
           </>
         )}
 
-        {transition === "effectiveness" && (
+        {transition === "define_effectiveness" && (
           <>
             <Field label="Criterion" required hint="The measurable test of whether the CAPA worked.">
               <Input value={criterion} onChange={(e) => setCriterion(e.target.value)} required />
@@ -527,20 +712,20 @@ function TransitionModal({
               <Input value={dataSource} onChange={(e) => setDataSource(e.target.value)} required />
             </Field>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Observation start">
-                <Input type="date" value={observationStart} onChange={(e) => setObservationStart(e.target.value)} />
+              <Field label="Observation start" required>
+                <Input type="date" value={observationStart} onChange={(e) => setObservationStart(e.target.value)} required />
               </Field>
-              <Field label="Observation end">
-                <Input type="date" value={observationEnd} onChange={(e) => setObservationEnd(e.target.value)} />
+              <Field label="Observation end" required>
+                <Input type="date" value={observationEnd} onChange={(e) => setObservationEnd(e.target.value)} required />
               </Field>
             </div>
-            <Field label="Result" hint="Leave blank to define the check now and evaluate it later.">
-              <Select value={result} onChange={(e) => setResult(e.target.value)}>
-                <option value="">Not yet evaluated</option>
-                <option value="pass">pass</option>
-                <option value="fail">fail</option>
-                <option value="inconclusive">inconclusive</option>
-              </Select>
+            <Field label="Due date" required hint="When the result is due to be evaluated by.">
+              <Input
+                type="date"
+                value={effectivenessDueDate}
+                onChange={(e) => setEffectivenessDueDate(e.target.value)}
+                required
+              />
             </Field>
           </>
         )}
@@ -557,12 +742,6 @@ function TransitionModal({
               <textarea className="input" rows={2} value={riskReview} onChange={(e) => setRiskReview(e.target.value)} required />
             </Field>
           </>
-        )}
-
-        {transition === "close" && (
-          <Field label="Conclusion" required>
-            <textarea className="input" rows={3} value={conclusion} onChange={(e) => setConclusion(e.target.value)} required />
-          </Field>
         )}
 
         {transition === "reopen" && (

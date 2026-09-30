@@ -1471,14 +1471,26 @@ async def get_pfs_batch_review_summary(session: AsyncSession, batch_id: uuid.UUI
         ],
         "defect_counts": defect_counts,
         "device_assembly_exceptions": [
-            {"id": str(a.id), "unit_identifier": a.unit_identifier, "assembly_step": a.assembly_step, "result": a.result}
+            {
+                "id": str(a.id), "unit_identifier": a.unit_identifier, "assembly_step": a.assembly_step, "result": a.result,
+                "performed_by": str(a.performed_by) if a.performed_by else None,
+                "performed_signature_id": str(a.performed_signature_id) if a.performed_signature_id else None,
+                "verified_by": str(a.verified_by) if a.verified_by else None,
+                "verified_signature_id": str(a.verified_signature_id) if a.verified_signature_id else None,
+            }
             for a in failed_assembly
         ],
         "device_test_exceptions": [
             {"id": str(t.id), "test_type": t.test_type, "result_state": t.result_state} for t in failed_tests
         ],
         "release_checkpoints": [
-            {"checkpoint_code": cp.checkpoint_code, "state": cp.state, "blocker_state": cp.blocker_state} for cp in checkpoints
+            {
+                "checkpoint_code": cp.checkpoint_code, "state": cp.state, "blocker_state": cp.blocker_state,
+                "decided_by": str(cp.decided_by) if cp.decided_by else None,
+                "decision_signature_id": str(cp.decision_signature_id) if cp.decision_signature_id else None,
+                "decided_at": cp.decided_at.isoformat() if cp.decided_at else None,
+            }
+            for cp in checkpoints
         ],
         "deviations": [
             {"id": str(d.id), "deviation_number": d.deviation_number, "state": d.state, "severity": d.severity} for d in deviations
@@ -1725,6 +1737,11 @@ async def get_batch_ddcp_sync_status(session: AsyncSession, batch_id: uuid.UUID)
                 "ddcp_action": m.ddcp_action,
                 "stable_step_code": m.stable_step_code,
                 "generic_step_state": steps_by_code[m.stable_step_code].state if m.stable_step_code in steps_by_code else None,
+                # SG-180 shortcut (2026-09-17, project-owner-directed): enough to call the *existing*
+                # signed batch_execution complete-step flow directly from this view -- not a new
+                # cross-module completion mechanism, just surfacing the ids that flow already needs.
+                "batch_step_id": str(steps_by_code[m.stable_step_code].id) if m.stable_step_code in steps_by_code else None,
+                "expected_version": steps_by_code[m.stable_step_code].version if m.stable_step_code in steps_by_code else None,
             }
             for m in mappings
         ],

@@ -54,6 +54,11 @@ interface Exceptions {
   corrections: unknown[];
   integrity_check: Record<string, unknown> | null;
   batch_on_hold: boolean;
+  // 2026-09-19: QC/materials/environment (hard blockers) and QC/environment/packaging (non-blocking
+  // warnings) - see app/modules/qa_review/service.py::_extra_signals. Plain strings, not the structured
+  // {code,message_key,...} shape /release/v1 uses - qa_review's blocker list has always been list[str].
+  blockers: string[];
+  warnings: string[];
 }
 
 // qa_review/models.py::QA_REVIEW_STATES — the real state vocabulary. The previous OPEN/IN_REVIEW/COMPLETE
@@ -320,6 +325,16 @@ function PackageModal({
       {integrityOk === false && (
         <Banner tone="critical" title="Execution snapshot failed integrity verification">
           The Vault object backing this batch does not match its recorded hash.
+        </Banner>
+      )}
+      {e && e.blockers.length > 0 && (
+        <Banner tone="critical" title={`${e.blockers.length} blocker(s) prevent completing this review`}>
+          {e.blockers.join(" · ")}
+        </Banner>
+      )}
+      {e && e.warnings.length > 0 && (
+        <Banner tone="warn" title={`${e.warnings.length} warning(s) - visible, does not block review`}>
+          {e.warnings.join(" · ")}
         </Banner>
       )}
 

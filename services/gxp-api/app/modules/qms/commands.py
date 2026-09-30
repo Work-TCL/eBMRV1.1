@@ -179,9 +179,16 @@ class CreateDeviationCommand(CommandEnvelope):
     source_id: uuid.UUID
     source_version: int | None = None
     severity: str
-    owner_subject_id: uuid.UUID
+    # Optional since the auto-deviation fix (docs/testing/demo-gujarati/08 §8.8 item 2): a system-opened
+    # deviation starts with no owner -- a human claims it at triage. Manual creation still normally sets
+    # one (the frontend form keeps requiring it), but the schema/command no longer forces it.
+    owner_subject_id: uuid.UUID | None = None
     planned: bool = False
     planned_scope: dict | None = None
+    # Threaded into the "Created" audit event's `reason` (was always None before) -- lets an
+    # auto-created deviation carry a real narrative ("out-of-range result on step X") instead of a blank
+    # audit trail; optional for manual creation too, unused by the frontend today.
+    reason: str | None = None
 
 
 async def create_deviation(session: AsyncSession, cmd: CreateDeviationCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
@@ -215,7 +222,7 @@ async def create_deviation(session: AsyncSession, cmd: CreateDeviationCommand, a
 
     return await _write_receipt(
         session, cmd=cmd, payload_hash=payload_hash, deviation=deviation, action="Created",
-        actor_user_id=actor_user_id, reason=None, old_state="OPEN",
+        actor_user_id=actor_user_id, reason=cmd.reason, old_state="OPEN",
         event_type="DeviationOpened", event_payload={"id": str(deviation.id), "deviation_number": deviation.deviation_number},
         signature_id=None, expected_version=None, command_type="CreateDeviation",
     )

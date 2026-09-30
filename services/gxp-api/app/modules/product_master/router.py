@@ -11,16 +11,22 @@ from app.modules.policy.service import evaluate_policy
 from app.modules.product_master import service as product_master_service
 from app.modules.product_master.commands import (
     CreateProductDraftCommand,
+    CreateProductFamilyCommand,
+    ObsoleteProductVersionCommand,
     ReinstateProductVersionCommand,
     ReleaseProductVersionCommand,
     SubmitProductDraftCommand,
+    SupersedeProductVersionCommand,
     SuspendProductVersionCommand,
     UpdateProductDraftCommand,
     ValidateCompletenessCommand,
     create_draft,
+    create_product_family,
+    obsolete_product_version,
     reinstate_product_version,
     release_product_version,
     submit_draft,
+    supersede_product_version,
     suspend_product_version,
     update_draft,
     validate_completeness_command,
@@ -43,6 +49,7 @@ def _version_dict(version) -> dict:
         "name": version.name,
         "product_family_id": str(version.product_family_id) if version.product_family_id else None,
         "lifecycle_state": version.lifecycle_state,
+        "superseded_by_version_id": str(version.superseded_by_version_id) if version.superseded_by_version_id else None,
         "manufacturing_profile_code": version.manufacturing_profile_code,
         "combination_product_type": version.combination_product_type,
         "pmoa_reference": version.pmoa_reference,
@@ -52,6 +59,7 @@ def _version_dict(version) -> dict:
         "udi_applicable": version.udi_applicable,
         "strength_value": str(version.strength_value) if version.strength_value is not None else None,
         "strength_uom": version.strength_uom,
+        "strength_uom_id": str(version.strength_uom_id) if version.strength_uom_id else None,
         "device_model_code": version.device_model_code,
         "effective_from": version.effective_from.isoformat() if version.effective_from else None,
         "effective_to": version.effective_to.isoformat() if version.effective_to else None,
@@ -139,7 +147,15 @@ def _version_record_hash(version: ProductVersion) -> str:
     return sha256_hex({"id": str(version.id), "version": version.version})
 
 
-_VERSION_CHALLENGE_MEANINGS = {"release": "Released", "suspend": "Performed", "reinstate": "Approved"}
+_VERSION_CHALLENGE_MEANINGS = {
+    "release": "Released",
+    "suspend": "Performed",
+    "reinstate": "Approved",
+    # Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 1): no Document 106 row exists for
+    # either; meaning matches the closest section 8 "cancel/abort/void" family (see SG-208).
+    "obsolete": "Approved",
+    "supersede": "Approved",
+}
 
 
 @router.post("/{product_version_id}/signature-challenges")
@@ -209,6 +225,38 @@ async def post_reinstate(
         return await reinstate_product_version(session, cmd, actor.user_id)
 
 
+@router.post("/{product_version_id}/obsolete", response_model=MutationReceipt)
+async def post_obsolete(
+    product_version_id: uuid.UUID,
+    cmd: ObsoleteProductVersionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    """Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 1). Reuses `product.suspend`
+    (same RBAC floor as suspend/reinstate -- Admin + QA Releaser)."""
+    if cmd.product_version_id != product_version_id:
+        raise ValidationFailedError("product_version_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=None)
+        return await obsolete_product_version(session, cmd, actor.user_id)
+
+
+@router.post("/{product_version_id}/supersede", response_model=MutationReceipt)
+async def post_supersede(
+    product_version_id: uuid.UUID,
+    cmd: SupersedeProductVersionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    """Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 1). `superseding_version_id` must
+    reference another RELEASED version of the same product; enforced in supersede_product_version()."""
+    if cmd.product_version_id != product_version_id:
+        raise ValidationFailedError("product_version_id in path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=None)
+        return await supersede_product_version(session, cmd, actor.user_id)
+
+
 @router.get("/business-ids")
 async def get_business_ids(
     session: AsyncSession = Depends(get_session),
@@ -255,6 +303,39 @@ async def get_sterile_profiles(
         }
         for p in profiles
     ]
+
+
+def _family_dict(f) -> dict:
+    return {
+        "id": str(f.id),
+        "family_code": f.family_code,
+        "name": f.name,
+        "profile_code": f.profile_code,
+        "status": f.status,
+    }
+
+
+@router.get("/families")
+async def get_families(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 2) -- registered ahead of the
+    single-segment `/{product_version_id}` GET below so "families" is never parsed as one."""
+    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
+    families = await product_master_service.list_product_families(session)
+    return [_family_dict(f) for f in families]
+
+
+@router.post("/families", response_model=MutationReceipt)
+async def post_create_family(
+    cmd: CreateProductFamilyCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="product.author", site_id=None)
+        return await create_product_family(session, cmd, actor.user_id)
 
 
 @router.get("/{product_business_id}/versions")

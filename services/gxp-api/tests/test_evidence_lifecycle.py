@@ -346,13 +346,29 @@ async def test_purge_blocked_by_legal_hold_and_manifest(db, seeded):
 
 async def test_api_rbac_and_download(api, seeded):
     """TC-072-M01/M02 + OBJ-FR-011/012: unauthenticated -> 401; a user without the permission -> 403;
-    an authorized user completes stage->finalize->download and a STAGED object is not downloadable."""
+    an authorized user completes stage->finalize->download and a STAGED object is not downloadable.
+
+    SG-204 (2026-09-17, project-owner-directed): Operator/Supervisor were granted evidence.upload/
+    evidence.download so the role that executes a batch step can self-capture its own evidence
+    (RCP-FR-021) instead of needing a separate Admin/QA Reviewer login. QC Reviewer still holds neither
+    permission, so it is the negative case here instead of Operator."""
     body = {"idempotency_key": idem(), "owner_type": "gxp_batch", "owner_id": str(uuid.uuid4()),
             "filename": "r.pdf", "mime_type": "application/pdf", "reason": "x"}
     assert (await api.post("/evidence/v1/uploads", json=body)).status_code == 401
 
+    qc_tok = await login(api, "qc.reviewer")
+    assert (await api.post("/evidence/v1/uploads", json=body, headers=auth_headers(qc_tok))).status_code == 403
+
     op_tok = await login(api, "operator1")
-    assert (await api.post("/evidence/v1/uploads", json=body, headers=auth_headers(op_tok))).status_code == 403
+    op_body = {**body, "idempotency_key": idem(), "owner_id": str(uuid.uuid4())}
+    op_staged = await api.post("/evidence/v1/uploads", json=op_body, headers=auth_headers(op_tok))
+    assert op_staged.status_code == 200
+    assert (
+        await api.get(
+            f"/evidence/v1/objects?owner_type={op_body['owner_type']}&owner_id={op_body['owner_id']}",
+            headers=auth_headers(op_tok),
+        )
+    ).status_code == 200
 
     tok = await login(api, "qa.reviewer")
     data = b"%PDF api roundtrip"
@@ -376,6 +392,63 @@ async def test_api_rbac_and_download(api, seeded):
     assert dl.status_code == 200
     assert dl.content == data
     assert dl.headers["x-evidence-content-hash"] == sha256_bytes(data)
+
+
+async def test_signature_challenge_endpoint_round_trip_signs_legal_hold(api, seeded):
+    """The `POST /evidence/v1/{evidence_id}/signature-challenges` endpoint (SG-204-class fix: the
+    command has always accepted challenge_id/reauth_password, but no HTTP endpoint ever produced a
+    challenge_id for a client to send back). Full round trip over real HTTP: stage, finalize, request a
+    challenge, apply the legal hold with it — mirrors CAPA's
+    test_signature_challenge_round_trip_signs_close and Documents'
+    test_signature_challenge_round_trip_signs_release."""
+    tok = await login(api, "qa.reviewer")
+    data = b"%PDF legal hold challenge round trip"
+    staged = await api.post(
+        "/evidence/v1/uploads",
+        json={"idempotency_key": idem(), "owner_type": "gxp_batch", "owner_id": str(uuid.uuid4()),
+              "filename": "r.pdf", "mime_type": "application/pdf", "expected_hash": sha256_bytes(data),
+              "reason": "x"},
+        headers=auth_headers(tok),
+    )
+    assert staged.status_code == 200
+    eid = staged.json()["aggregate_id"]
+    fin = await api.post(
+        f"/evidence/v1/{eid}:finalize",
+        json={"idempotency_key": idem(), "evidence_id": eid, "expected_version": 1,
+              "content_base64": base64.b64encode(data).decode(), "reason": "done"},
+        headers=auth_headers(tok),
+    )
+    assert fin.status_code == 200
+    version = fin.json()["resulting_version"]
+
+    # Unknown action is rejected before any policy lookup.
+    bad = await api.post(
+        f"/evidence/v1/{eid}/signature-challenges", json={"action": "not_a_real_action"},
+        headers=auth_headers(tok),
+    )
+    assert bad.status_code == 422
+
+    challenge = await api.post(
+        f"/evidence/v1/{eid}/signature-challenges", json={"action": "legal_hold"}, headers=auth_headers(tok),
+    )
+    assert challenge.status_code == 200
+    challenge_body = challenge.json()
+    assert challenge_body["meaning"] == "Performed"
+    assert challenge_body["challenge_id"]
+
+    hold = await api.post(
+        f"/evidence/v1/{eid}/legal-holds",
+        json={"idempotency_key": idem(), "evidence_id": eid, "expected_version": version,
+              "hold_ref": "LEGAL-2026-02", "reason": "litigation hold",
+              "challenge_id": challenge_body["challenge_id"], "reauth_password": DEMO_PASSWORD},
+        headers=auth_headers(tok),
+    )
+    assert hold.status_code == 200
+    assert hold.json()["signature_id"] is not None
+
+    async with SessionLocal() as s:
+        obj = await s.get(EvidenceObject, uuid.UUID(eid))
+        assert obj.legal_hold is True and obj.legal_hold_ref == "LEGAL-2026-02"
 
 
 async def test_generic_delete_denied_at_db_privilege_level(db, seeded):

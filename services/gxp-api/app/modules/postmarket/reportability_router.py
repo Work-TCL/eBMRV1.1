@@ -8,6 +8,7 @@ all -- exposed here as an extra endpoint (same precedent used for Document 58's 
 import uuid
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
@@ -18,6 +19,7 @@ from app.modules.postmarket.models import SafetyCase
 from app.modules.postmarket.reportability_commands import _track_hash
 from app.modules.postmarket.reportability_models import (
     RegulatoryReport,
+    RegulatorySubmissionAck,
     RegulatorySubmissionAttempt,
     ReportabilityTrack,
 )
@@ -27,6 +29,123 @@ from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/regulatory/v1", tags=["postmarket-regulatory"])
+
+
+def _track_dict(t: ReportabilityTrack) -> dict:
+    return {
+        "id": str(t.id), "site_id": str(t.site_id), "safety_case_id": str(t.safety_case_id),
+        "report_type_code": t.report_type_code, "report_type_version": t.report_type_version,
+        "application_context": t.application_context,
+        "clock_start_basis": t.clock_start_basis,
+        "clock_start_at": t.clock_start_at.isoformat() if t.clock_start_at else None,
+        "clock_start_rationale": t.clock_start_rationale,
+        "calendar_type": t.calendar_type, "calendar_version": t.calendar_version,
+        "due_at": t.due_at.isoformat() if t.due_at else None,
+        "original_due_at": t.original_due_at.isoformat() if t.original_due_at else None,
+        "decision": t.decision, "decision_by": str(t.decision_by) if t.decision_by else None,
+        "decision_signature_id": str(t.decision_signature_id) if t.decision_signature_id else None,
+        "decision_rationale": t.decision_rationale, "decision_evidence_refs": t.decision_evidence_refs,
+        "rule_version": t.rule_version,
+        "parent_track_id": str(t.parent_track_id) if t.parent_track_id else None,
+        "state": t.state, "version": t.version, "created_at": t.created_at.isoformat(),
+    }
+
+
+def _report_dict(r: RegulatoryReport) -> dict:
+    return {
+        "id": str(r.id), "site_id": str(r.site_id), "reportability_track_id": str(r.reportability_track_id),
+        "report_version": r.report_version, "schema_code": r.schema_code, "schema_version": r.schema_version,
+        "content": r.content, "field_provenance": r.field_provenance, "missing_information": r.missing_information,
+        "narrative_version": r.narrative_version,
+        "approved_by": str(r.approved_by) if r.approved_by else None,
+        "approval_signature_id": str(r.approval_signature_id) if r.approval_signature_id else None,
+        "payload_digest": r.payload_digest, "state": r.state, "created_at": r.created_at.isoformat(),
+    }
+
+
+def _ack_dict(a: RegulatorySubmissionAck) -> dict:
+    return {
+        "id": str(a.id), "submission_attempt_id": str(a.submission_attempt_id), "ack_level": a.ack_level,
+        "ack_state": a.ack_state, "ack_reference": a.ack_reference, "ack_payload": a.ack_payload,
+        "ack_received_at": a.ack_received_at.isoformat(), "rejection_reason": a.rejection_reason,
+    }
+
+
+def _attempt_dict(a: RegulatorySubmissionAttempt) -> dict:
+    return {
+        "id": str(a.id), "site_id": str(a.site_id), "regulatory_report_id": str(a.regulatory_report_id),
+        "attempt_no": a.attempt_no, "channel": a.channel, "endpoint_profile": a.endpoint_profile,
+        "payload_version": a.payload_version, "payload_digest": a.payload_digest,
+        "sender_identity": a.sender_identity, "authorized_by": str(a.authorized_by),
+        "authorization_signature_id": str(a.authorization_signature_id) if a.authorization_signature_id else None,
+        "attempted_at": a.attempted_at.isoformat(), "transport_result": a.transport_result,
+        "failure_detail": a.failure_detail,
+        "manual_evidence_id": str(a.manual_evidence_id) if a.manual_evidence_id else None,
+    }
+
+
+@router.get("/tracks/{track_id}")
+async def get_track(
+    track_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    track = await session.get(ReportabilityTrack, track_id)
+    if track is None:
+        raise NotFoundError("Reportability track not found")
+    await evaluate_policy(session, actor.user_id, action="reportability_track.view", site_id=track.site_id)
+    reports = (
+        (await session.execute(select(RegulatoryReport).where(RegulatoryReport.reportability_track_id == track_id).order_by(RegulatoryReport.report_version)))
+        .scalars()
+        .all()
+    )
+    body = _track_dict(track)
+    body["reports"] = [_report_dict(r) for r in reports]
+    return body
+
+
+@router.get("/reports/{report_id}")
+async def get_report(
+    report_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    report = await session.get(RegulatoryReport, report_id)
+    if report is None:
+        raise NotFoundError("Regulatory report not found")
+    await evaluate_policy(session, actor.user_id, action="reportability_track.view", site_id=report.site_id)
+    attempts = (
+        (await session.execute(select(RegulatorySubmissionAttempt).where(RegulatorySubmissionAttempt.regulatory_report_id == report_id).order_by(RegulatorySubmissionAttempt.attempt_no)))
+        .scalars()
+        .all()
+    )
+    attempt_dicts = []
+    for a in attempts:
+        acks = (
+            (await session.execute(select(RegulatorySubmissionAck).where(RegulatorySubmissionAck.submission_attempt_id == a.id)))
+            .scalars()
+            .all()
+        )
+        d = _attempt_dict(a)
+        d["acks"] = [_ack_dict(k) for k in acks]
+        attempt_dicts.append(d)
+    body = _report_dict(report)
+    body["submission_attempts"] = attempt_dicts
+    return body
+
+
+@router.get("/submissions/{attempt_id}")
+async def get_submission_attempt(
+    attempt_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    attempt = await session.get(RegulatorySubmissionAttempt, attempt_id)
+    if attempt is None:
+        raise NotFoundError("Submission attempt not found")
+    await evaluate_policy(session, actor.user_id, action="reportability_track.view", site_id=attempt.site_id)
+    acks = (
+        (await session.execute(select(RegulatorySubmissionAck).where(RegulatorySubmissionAck.submission_attempt_id == attempt_id)))
+        .scalars()
+        .all()
+    )
+    body = _attempt_dict(attempt)
+    body["acks"] = [_ack_dict(k) for k in acks]
+    return body
 
 
 async def _create_signature_challenge(

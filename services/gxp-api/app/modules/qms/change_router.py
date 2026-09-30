@@ -230,6 +230,7 @@ async def get_change(
                 "object_version": o.object_version,
                 "impact_category": o.impact_category,
                 "action_required": o.action_required,
+                "created_by": sid(o.created_by),
                 "created_at": iso(o.created_at),
             }
             for o in objects

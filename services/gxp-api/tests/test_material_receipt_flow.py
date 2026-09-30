@@ -8,11 +8,15 @@ import uuid
 from tests.conftest import auth_headers, idem, login
 
 
-async def _create_material(client, token, site_id, code="RM-D19", name="Raw Material D19", uom="kg"):
+async def _create_material(client, site_id, code="RM-D19", name="Raw Material D19", uom="kg"):
+    # 2026-09-18: material.create is now Process Engineer/Admin-only (RBAC gap closure) -- this helper
+    # always authors as process.engineer regardless of which actor the calling test is otherwise
+    # exercising (receipt/examine/disposition remain that actor's own job).
+    pe_token = await login(client, "process.engineer")
     resp = await client.post(
         "/materials",
         json={"idempotency_key": idem(), "site_id": str(site_id), "code": code, "name": name, "uom": uom},
-        headers=auth_headers(token),
+        headers=auth_headers(pe_token),
     )
     assert resp.status_code == 200, resp.text
     return resp.json()["aggregate_id"]
@@ -116,7 +120,7 @@ async def _reject(client, token, lot_id, expected_version, reason="Failed inspec
 async def test_receipt_examine_creates_lot_and_containers_in_quarantine(client, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id)
+    material_id = await _create_material(client, site_id)
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-QTN")
 
     receipt = await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-QTN", container_count=3)
@@ -138,7 +142,7 @@ async def test_receipt_examine_creates_lot_and_containers_in_quarantine(client, 
 async def test_identity_mismatch_holds_receipt_no_lot_created(client, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-MISMATCH")
+    material_id = await _create_material(client, site_id, code="RM-MISMATCH")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-MISMATCH")
 
     resp = await client.post(
@@ -170,7 +174,7 @@ async def test_identity_mismatch_holds_receipt_no_lot_created(client, seeded):
 async def test_identity_mismatch_without_reason_rejected(client, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-NOREASON")
+    material_id = await _create_material(client, site_id, code="RM-NOREASON")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-NOREASON")
 
     resp = await client.post(
@@ -197,7 +201,7 @@ async def test_damage_observed_holds_without_requiring_free_text_reason(client, 
     mismatch, damage/seal/contamination need no separate free-text reason to create the hold."""
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-DAMAGE")
+    material_id = await _create_material(client, site_id, code="RM-DAMAGE")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-DAMAGE")
 
     resp = await client.post(
@@ -237,7 +241,7 @@ async def test_unapproved_supplier_holds_receipt(client, seeded, db):
 
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-SUP")
+    material_id = await _create_material(client, site_id, code="RM-SUP")
     receipt_id = await _create_receipt(
         client, op_token, site_id, material_id, receipt_number="RCPT-SUP", supplier_id=supplier_id
     )
@@ -259,7 +263,7 @@ async def test_sampling_order_and_collect_creates_qc_sample(client, seeded, db):
     op_token = await login(client, "operator1")
     qc_token = await login(client, "qc.reviewer")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-SAMPLE")
+    material_id = await _create_material(client, site_id, code="RM-SAMPLE")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-SAMPLE")
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-SAMPLE", container_count=2)
 
@@ -312,7 +316,7 @@ async def test_sampling_order_and_collect_creates_qc_sample(client, seeded, db):
 async def test_sampling_order_container_not_in_lot_rejected(client, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-WRONGCTR")
+    material_id = await _create_material(client, site_id, code="RM-WRONGCTR")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-WRONGCTR")
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-WRONGCTR", container_count=1)
     lot_id = await _lot_id_for_receipt(client, receipt_id)
@@ -339,7 +343,7 @@ async def test_release_lot_signed_by_qa_releaser(client, seeded):
     op_token = await login(client, "operator1")
     qa_token = await login(client, "qa.releaser")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-REL")
+    material_id = await _create_material(client, site_id, code="RM-REL")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-REL")
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-REL", container_count=1)
     lot_id = await _lot_id_for_receipt(client, receipt_id)
@@ -359,7 +363,7 @@ async def test_release_lot_signed_by_qa_releaser(client, seeded):
 async def test_release_by_wrong_role_denied(client, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-RELWRONG")
+    material_id = await _create_material(client, site_id, code="RM-RELWRONG")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-RELWRONG")
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-RELWRONG", container_count=1)
     lot_id = await _lot_id_for_receipt(client, receipt_id)
@@ -373,7 +377,7 @@ async def test_release_without_signature_challenge_rejected(client, seeded):
     op_token = await login(client, "operator1")
     qa_token = await login(client, "qa.releaser")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-NOSIG")
+    material_id = await _create_material(client, site_id, code="RM-NOSIG")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-NOSIG")
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-NOSIG", container_count=1)
     lot_id = await _lot_id_for_receipt(client, receipt_id)
@@ -397,7 +401,7 @@ async def test_reject_requires_reason(client, seeded):
     op_token = await login(client, "operator1")
     qa_token = await login(client, "qa.releaser")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-REJNOREASON")
+    material_id = await _create_material(client, site_id, code="RM-REJNOREASON")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-REJNOREASON")
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-REJNOREASON", container_count=1)
     lot_id = await _lot_id_for_receipt(client, receipt_id)
@@ -411,7 +415,7 @@ async def test_reject_lot_and_stale_version_retry_rejected(client, seeded):
     op_token = await login(client, "operator1")
     qa_token = await login(client, "qa.releaser")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-REJ")
+    material_id = await _create_material(client, site_id, code="RM-REJ")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-REJ")
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-REJ", container_count=1)
     lot_id = await _lot_id_for_receipt(client, receipt_id)
@@ -432,7 +436,7 @@ async def test_release_of_already_disposed_lot_invalid_transition(client, seeded
     op_token = await login(client, "operator1")
     qa_token = await login(client, "qa.releaser")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-DOUBLEREL")
+    material_id = await _create_material(client, site_id, code="RM-DOUBLEREL")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-DOUBLEREL")
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-DOUBLEREL", container_count=1)
     lot_id = await _lot_id_for_receipt(client, receipt_id)
@@ -449,7 +453,7 @@ async def test_retest_material_lot(client, seeded):
     op_token = await login(client, "operator1")
     qc_token = await login(client, "qc.reviewer")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-RETEST")
+    material_id = await _create_material(client, site_id, code="RM-RETEST")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-RETEST")
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-RETEST", container_count=1)
     lot_id = await _lot_id_for_receipt(client, receipt_id)
@@ -480,7 +484,7 @@ async def test_partial_container_release_does_not_change_lot_status(client, seed
     op_token = await login(client, "operator1")
     qa_token = await login(client, "qa.releaser")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-PARTIAL")
+    material_id = await _create_material(client, site_id, code="RM-PARTIAL")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-PARTIAL")
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-PARTIAL", container_count=2)
 
@@ -513,7 +517,7 @@ async def test_release_readiness_reports_qc_sample_evidence(client, seeded, db):
 
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-READY")
+    material_id = await _create_material(client, site_id, code="RM-READY")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-READY")
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-READY", container_count=1)
     lot = (await db.execute(select(MaterialLot).where(MaterialLot.internal_lot == "LOT-READY"))).scalar_one()
@@ -531,7 +535,7 @@ async def test_release_readiness_reports_qc_sample_evidence(client, seeded, db):
 async def test_duplicate_receipt_submission_idempotent(client, seeded):
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-DUP")
+    material_id = await _create_material(client, site_id, code="RM-DUP")
 
     key = idem()
     payload = {
@@ -558,7 +562,7 @@ async def test_coa_document_hash_creates_vault_evidence(client, seeded, db):
 
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-COA")
+    material_id = await _create_material(client, site_id, code="RM-COA")
 
     resp = await client.post(
         "/materials/v1/receipts",
@@ -613,7 +617,7 @@ async def test_release_by_the_receiver_of_the_same_lot_denied(client, seeded, db
 
     op_token = await login(client, "operator1")
     site_id = seeded["site_id"]
-    material_id = await _create_material(client, op_token, site_id, code="RM-SELFREL")
+    material_id = await _create_material(client, site_id, code="RM-SELFREL")
     receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-SELFREL")
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-SELFREL", container_count=1)
     lot_id = await _lot_id_for_receipt(client, receipt_id)

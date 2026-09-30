@@ -423,8 +423,12 @@ async def test_uom_conversion_applied_when_released_conversion_resolves(client, 
     before the expression sees it, using the released factor (never a literal in code, §9)."""
     async with db.begin():
         await _make_admin(db, seeded, "admin.rules9")
-        db.add(UnitOfMeasure(code="mg", dimension="MASS", base_unit="g", factor=Decimal("0.001"), precision_dp=4, status="released"))
-        db.add(UnitOfMeasure(code="g", dimension="MASS", base_unit="g", factor=Decimal("1"), precision_dp=4, status="released"))
+        # Client requirements #2/#3 (2026-09-21): conftest.py's `seeded` fixture now seeds baseline
+        # released "mg"/"g" rows at version=1 (so hardened material/QC/etc. UOM resolution has real data
+        # to resolve against) -- version=2 here avoids the UniqueConstraint(code, version) collision;
+        # `resolve_uom` always picks the highest released version per code, so these still win.
+        db.add(UnitOfMeasure(code="mg", dimension="MASS", base_unit="g", factor=Decimal("0.001"), precision_dp=4, status="released", version=2))
+        db.add(UnitOfMeasure(code="g", dimension="MASS", base_unit="g", factor=Decimal("1"), precision_dp=4, status="released", version=2))
         db.add(
             UomConversion(
                 from_code="mg", to_code="g", factor=Decimal("0.001"), rounding_stage="none",

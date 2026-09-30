@@ -20,7 +20,7 @@ from app.modules.lims_integration.commands import (
     reconcile_lims_instance,
     request_lims_sample,
 )
-from app.modules.lims_integration.models import LimsInstance, LimsMessage
+from app.modules.lims_integration.models import LimsInstance, LimsMapping, LimsMessage
 from app.modules.qc.models import QcSample
 from app.modules.signature.service import create_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
@@ -141,6 +141,84 @@ async def get_health(instance_id: str, session: AsyncSession = Depends(get_sessi
         "dead_letter_count": len(dead_lettered),
         "last_message_at": last_message.created_at.isoformat() if last_message else None,
     }
+
+
+def _mapping_dict(m: LimsMapping) -> dict:
+    return {
+        "id": str(m.id), "instance_id": str(m.instance_id),
+        "internal_object_type": m.internal_object_type,
+        "internal_object_id": str(m.internal_object_id) if m.internal_object_id else None,
+        "internal_object_version": m.internal_object_version,
+        "external_entity_type": m.external_entity_type, "external_entity_id": m.external_entity_id,
+        "mapping_version": m.mapping_version,
+        "effective_from": m.effective_from.isoformat() if m.effective_from else None,
+        "effective_to": m.effective_to.isoformat() if m.effective_to else None,
+        "status": m.status, "version": m.version, "created_at": m.created_at.isoformat(),
+    }
+
+
+def _message_dict(msg: LimsMessage) -> dict:
+    return {
+        "id": str(msg.id), "instance_id": str(msg.instance_id), "direction": msg.direction,
+        "external_event_id": msg.external_event_id,
+        "internal_correlation_id": str(msg.internal_correlation_id) if msg.internal_correlation_id else None,
+        "payload_hash": msg.payload_hash, "schema_version": msg.schema_version,
+        "adapter_version": msg.adapter_version, "status": msg.status, "error_code": msg.error_code,
+        "retry_count": msg.retry_count,
+        "sent_at": msg.sent_at.isoformat() if msg.sent_at else None,
+        "received_at": msg.received_at.isoformat() if msg.received_at else None,
+        "created_at": msg.created_at.isoformat(),
+    }
+
+
+# LIMS-FR-011's ordering ledger — a mapping's own fields (external id, mapping_version, effective window)
+# were saved and even read back internally by reconcile_lims_instance(), but no caller could retrieve them.
+@router.get("/{instance_id}/mappings")
+async def list_mappings(
+    instance_id: str, session: AsyncSession = Depends(get_session),
+    internal_object_type: str | None = None, external_entity_type: str | None = None,
+) -> list[dict]:
+    instance = await _get_instance(session, instance_id)
+    stmt = select(LimsMapping).where(LimsMapping.instance_id == instance.id)
+    if internal_object_type:
+        stmt = stmt.where(LimsMapping.internal_object_type == internal_object_type)
+    if external_entity_type:
+        stmt = stmt.where(LimsMapping.external_entity_type == external_entity_type)
+    mappings = (await session.execute(stmt.order_by(LimsMapping.created_at.desc()))).scalars().all()
+    return [_mapping_dict(m) for m in mappings]
+
+
+@router.get("/{instance_id}/mappings/{mapping_id}")
+async def get_mapping(instance_id: str, mapping_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+    await _get_instance(session, instance_id)
+    mapping = await session.get(LimsMapping, mapping_id)
+    if mapping is None or str(mapping.instance_id) != instance_id:
+        raise NotFoundError("LIMS mapping not found")
+    return _mapping_dict(mapping)
+
+
+# LIMS-FR-024's dead-letter record — get_health() above only ever counted these; an operator troubleshooting
+# a stuck/failed integration event had no way to see why (error_code) or which event (external_event_id)
+# failed. Optional `status` filter mirrors get_health()'s own pending/dead_letter breakdown.
+@router.get("/{instance_id}/messages")
+async def list_messages(
+    instance_id: str, session: AsyncSession = Depends(get_session), status: str | None = None,
+) -> list[dict]:
+    instance = await _get_instance(session, instance_id)
+    stmt = select(LimsMessage).where(LimsMessage.instance_id == instance.id)
+    if status:
+        stmt = stmt.where(LimsMessage.status == status)
+    messages = (await session.execute(stmt.order_by(LimsMessage.created_at.desc()))).scalars().all()
+    return [_message_dict(m) for m in messages]
+
+
+@router.get("/{instance_id}/messages/{message_id}")
+async def get_message(instance_id: str, message_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+    await _get_instance(session, instance_id)
+    message = await session.get(LimsMessage, message_id)
+    if message is None or str(message.instance_id) != instance_id:
+        raise NotFoundError("LIMS message not found")
+    return _message_dict(message)
 
 
 @router.post("/{instance_id}/events/results", response_model=MutationReceipt)

@@ -107,7 +107,10 @@ class DeviationRecord(Base):
     source_version: Mapped[int | None] = mapped_column()
     severity: Mapped[str] = mapped_column(String(40), nullable=False)
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="OPEN")
-    owner_subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
+    # Nullable since the auto-deviation-on-out-of-range-result fix (docs/testing/demo-gujarati/08 §8.8
+    # item 2, project-owner-directed 2026-09-18): a system-opened deviation starts unassigned -- a human
+    # (Supervisor/QA Reviewer) triages and claims it, same as investigator_subject_id already works.
+    owner_subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     investigator_subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     planned: Mapped[bool] = mapped_column(nullable=False, default=False)
     planned_scope: Mapped[dict | None] = mapped_column(JSONB)

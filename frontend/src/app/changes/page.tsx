@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, canInvestigateQms, formatDate, newIdempotencyKey, type ChangeControl } from "@/lib/api";
+import { api, ApiError, hasPermission, formatDate, newIdempotencyKey, type ChangeControl } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import type { DataTableColumn } from "@/components/ui/DataTable";
@@ -82,7 +82,7 @@ export default function ChangesPage() {
         rowHref={(c) => `/changes/${c.id}`}
         reloadToken={reloadToken}
         action={
-          canInvestigateQms(me) ? (
+          hasPermission(me, "change.create") ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" /> Raise change
             </Button>

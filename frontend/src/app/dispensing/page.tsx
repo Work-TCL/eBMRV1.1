@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   api,
-  holdsAnyRole,
+  hasPermission,
   listAll,
   listBatchesForSite,
   newIdempotencyKey,
@@ -11,7 +11,7 @@ import {
   type BatchSummary,
   type Material,
 } from "@/lib/api";
-import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -20,12 +20,14 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { FormConsole } from "@/components/shared/FormConsole";
 import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 
@@ -72,7 +74,7 @@ export default function DispensingPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
-  const canDispense = holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
+  const canDispense = hasPermission(me, "dispensing_order.create");
 
   const columns: DataTableColumn<DispensingOrder>[] = [
     {
@@ -154,7 +156,7 @@ export default function DispensingPage() {
               { name: "dispensed_container_id", label: "Dispensed container ID", required: true },
               { name: "material_lot_id", label: "Material lot ID", hint: "Optional, if not derivable from the container." },
               { name: "quantity", label: "Quantity", required: true },
-              { name: "uom", label: "Unit of measure", required: true },
+              { name: "uom", label: "Unit of measure", type: "uomSelect", required: true },
               { name: "source_type", label: "Source type", default: "manual", placeholder: "e.g. manual, machine" },
               { name: "source_id", label: "Source ID", hint: "Optional - e.g. a machine evidence reference." },
             ],
@@ -167,7 +169,7 @@ export default function DispensingPage() {
               { name: "dispensed_container_id", label: "Dispensed container ID", required: true },
               { name: "material_lot_id", label: "Material lot ID", hint: "Optional, if not derivable from the container." },
               { name: "quantity", label: "Quantity", required: true },
-              { name: "uom", label: "Unit of measure", required: true },
+              { name: "uom", label: "Unit of measure", type: "uomSelect", required: true },
               { name: "container_condition", label: "Container condition", required: true },
               { name: "condition_acceptable", label: "Condition acceptable", type: "bool", required: true },
               { name: "storage_exposure_evidence", label: "Storage exposure evidence", type: "kv" },
@@ -183,7 +185,7 @@ export default function DispensingPage() {
               { name: "dispensed_container_id", label: "Dispensed container ID", required: true },
               { name: "loss_type", label: "Loss type", required: true, placeholder: "e.g. SAMPLE, REJECT, SPILL, APPROVED_LOSS" },
               { name: "quantity", label: "Quantity", required: true },
-              { name: "uom", label: "Unit of measure", required: true },
+              { name: "uom", label: "Unit of measure", type: "uomSelect", required: true },
               { name: "reason", label: "Reason", type: "textarea", required: true },
               { name: "location_id", label: "Location ID", hint: "Optional." },
               { name: "evidence", label: "Evidence", type: "kv" },
@@ -198,7 +200,7 @@ export default function DispensingPage() {
               { name: "container_id", label: "Container ID", hint: "One of the three scope fields." },
               { name: "dispensed_container_id", label: "Dispensed container ID", hint: "One of the three scope fields." },
               { name: "quantity", label: "Quantity", required: true },
-              { name: "uom", label: "Unit of measure", required: true },
+              { name: "uom", label: "Unit of measure", type: "uomSelect", required: true },
               { name: "reason", label: "Reason", type: "textarea", required: true },
               { name: "method", label: "Method", hint: "Optional - e.g. incineration, chemical treatment." },
               { name: "vendor_name", label: "Vendor name", hint: "Optional - for third-party destruction." },
@@ -339,9 +341,7 @@ function CreateOrderModal({
           <Field label="Target quantity" required>
             <Input type="number" step="any" value={targetQty} onChange={(e) => setTargetQty(e.target.value)} required />
           </Field>
-          <Field label="UOM" required>
-            <Input value={targetUom} onChange={(e) => setTargetUom(e.target.value)} required />
-          </Field>
+          <UomSelect label="UOM" value={targetUom} onChange={setTargetUom} required />
           <Field label="Tolerance −" required>
             <Input type="number" step="any" value={toleranceLow} onChange={(e) => setToleranceLow(e.target.value)} required />
           </Field>
@@ -388,9 +388,10 @@ function OrderModal({
   const allowed = ALLOWED_FROM[o.state] ?? [];
   // Document 21 / SOD-011: verification must be performed by someone other than the weigher. The backend
   // enforces the actual independence rule; this only picks who is offered the button.
-  const canVerify = holdsAnyRole(me, ["Admin", "QC Reviewer"]);
-  const canWeigh = holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
-  const canCancel = holdsAnyRole(me, ["Admin", "QA Releaser"]);
+  const canVerify = hasPermission(me, "dispensing_order.verify");
+  // select_source/start/readings/manual_reading/complete share one grant (Admin/Operator/Supervisor).
+  const canWeigh = hasPermission(me, "dispensing_order.select_source");
+  const canCancel = hasPermission(me, "dispensing_order.cancel");
 
   function offered(s: Step): boolean {
     if (!allowed.includes(s)) return false;
@@ -466,6 +467,7 @@ function StepModal({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const entities = useEntityOptions();
   const [lotId, setLotId] = useState("");
   const [containerId, setContainerId] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -496,11 +498,16 @@ function StepModal({
       {step === "select_source" && (
         <>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Material lot ID">
-              <Input value={lotId} onChange={(e) => setLotId(e.target.value)} autoFocus />
-            </Field>
+            <EntityPickerField
+              label="Material lot ID"
+              value={lotId}
+              onChange={setLotId}
+              options={entities.materialLots}
+              status={entities.materialLotsStatus}
+              kind="material lot"
+            />
             <Field label="Container ID">
-              <Input value={containerId} onChange={(e) => setContainerId(e.target.value)} />
+              <Input value={containerId} onChange={(e) => setContainerId(e.target.value)} autoFocus />
             </Field>
           </div>
           <Field label="Quantity to take" required>
@@ -541,9 +548,15 @@ function StepModal({
             <input type="checkbox" checked={stable} onChange={(e) => setStable(e.target.checked)} />
             Balance reading was stable
           </label>
-          <Field label="Device ID" hint="Optional - which connected balance/device reported this reading.">
-            <Input value={deviceId} onChange={(e) => setDeviceId(e.target.value)} />
-          </Field>
+          <EntityPickerField
+            label="Device ID"
+            hint="Optional - which connected balance/device reported this reading."
+            value={deviceId}
+            onChange={setDeviceId}
+            options={entities.equipment}
+            status={entities.equipmentStatus}
+            kind="equipment asset"
+          />
         </>
       )}
 

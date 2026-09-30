@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDateTime,
   newIdempotencyKey,
   type FieldAction,
@@ -94,6 +93,21 @@ const LABEL: Record<Transition, string> = {
   close: "Close",
 };
 
+// The exact permission code app/modules/qms/field_action_router.py checks for each transition. Note
+// field_action.effectiveness is held by QA Releaser, NOT QA Reviewer (unlike scope/communications/
+// reconcile) -- the old code's SIGNATURE_GATED list omitted "effectiveness" from the approver bucket, so
+// it fell into the QA-Reviewer-class check instead and would have hidden the Effectiveness button from
+// the QA Releaser who actually holds it (audit finding 2026-09-18).
+const PERMISSION_FOR_TRANSITION: Record<Transition, string> = {
+  scope: "field_action.scope",
+  reportability: "field_action.reportability",
+  approve: "field_action.approve",
+  communications: "field_action.communications",
+  reconcile: "field_action.reconcile",
+  effectiveness: "field_action.effectiveness",
+  close: "field_action.close",
+};
+
 const REGIMES = ["FDA_21CFR806", "FDA_RECALL", "EU_MDR_FSCA", "HEALTH_CANADA", "NONE"];
 
 export default function FieldActionDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -103,8 +117,7 @@ export default function FieldActionDetailPage({ params }: { params: Promise<{ id
   const { data, loading, error, reload } = useApiResource<FieldActionDetail>(`/qms/v1/field-actions/${id}`);
 
   const allowed = data ? (ALLOWED_FROM[data.state] ?? []) : [];
-  const canDo = (t: Transition) =>
-    allowed.includes(t) && (SIGNATURE_GATED.includes(t) ? canApproveQms(me) : canInvestigateQms(me));
+  const canDo = (t: Transition) => allowed.includes(t) && hasPermission(me, PERMISSION_FOR_TRANSITION[t]);
 
   const rec = data?.reconciliation;
 
