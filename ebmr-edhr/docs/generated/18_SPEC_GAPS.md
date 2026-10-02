@@ -5653,9 +5653,29 @@ built" to "confirmed out of scope"), not a resolution of merge (still open) or o
 true-cross-site-transfer gap (still open, unrelated to genealogy).
 
 ```yaml
-resolution_document: "SPLIT_FROM built: services/gxp-api/app/modules/material/commands.py split_container(), services/gxp-api/tests/test_inventory_flow.py::test_split_container_wires_split_from_genealogy_edge. Merge: investigated (AGGREGATED_INTO ruled out via GEN-FR-012 cross-check), no confirmed edge type, not built. Transfer: investigated and confirmed out of scope for genealogy (same-container location change, no new node)."
-status: PARTIALLY_RESOLVED  # split done 2026-09-23; merge still open (no confirmed edge type); transfer confirmed out of scope, not a gap
+resolution_document: "SPLIT_FROM built: services/gxp-api/app/modules/material/commands.py split_container(), services/gxp-api/tests/test_inventory_flow.py::test_split_container_wires_split_from_genealogy_edge. Merge RESOLVED_APPROVED 2026-10-02 via Client_Decisions_Neededanswers Topic 2 (see note below). Transfer: investigated and confirmed out of scope for genealogy (same-container location change, no new node)."
+status: RESOLVED_APPROVED  # split done 2026-09-23; merge resolved 2026-10-02; transfer confirmed out of scope, not a gap
 ```
+
+**Merge RESOLVED_APPROVED 2026-10-02, project-owner-directed via client decision document, Topic 2.**
+The client confirmed the actual requirement directly -- "a formal traceability record showing which
+original containers were combined, their quantities, the resulting container, and the date/time of the
+combination" -- settling the regulated question this entry was blocked on (whether a merge traceability
+record is required at all, which this pass could not invent). What remained was a plain naming/catalogue
+decision, not a guess at regulated behaviour: a new `MERGED_FROM` entry was added to
+`genealogy.models.EDGE_TYPES` (Document 13's own controlled list, enforced in application code via
+`genealogy_service.create_edge()`, not a DB constraint -- no migration needed) rather than reusing
+`AGGREGATED_INTO`/`SPLIT_FROM`, both already ruled out above as ill-fitting. Same "add a real considered
+catalogue entry rather than guess-reuse an existing one" precedent as every other project-owner-directed
+addition in this codebase (e.g. `warehouse_location.create`/SG-081).
+
+`merge_containers()` now writes one `MERGED_FROM` edge per source container into the new container's
+genealogy node (`get_or_create_node`/`create_edge`, the exact mirror-image of `split_container`'s
+`SPLIT_FROM` wiring -- many-to-one instead of one-to-many), quantity-tagged with each source's
+pre-merge quantity (captured before the zeroing step, timestamped via the edge's own `created_at`).
+Tested in `test_inventory_flow.py::test_merge_containers_wires_merged_from_genealogy_edge` (queries
+`genealogy_service.get_ancestors` on the merged node, confirms both source containers/edges and their
+quantities) -- 24/24 in `test_inventory_flow.py` pass.
 
 ### SG-086 — TRN-FR-009: `qms.qualification_record` and pre-existing `iam.qualifications` (Document 07) are two stores for what looks like the same real-world concept
 

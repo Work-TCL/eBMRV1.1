@@ -3025,6 +3025,8 @@ async def merge_containers(
     session.add(merged)
     await session.flush()
 
+    original_quantities = {c.id: c.current_quantity for c in containers}
+
     for c in containers:
         balances = (
             await session.execute(
@@ -3052,6 +3054,25 @@ async def merge_containers(
         c.current_quantity = Decimal("0")
         c.container_status = "merged"
         c.version += 1
+
+    # Client_Decisions_Neededanswers Topic 2 (2026-10-02, project-owner-directed): closes SG-085's
+    # "merge investigated, not built" gap -- a MERGED_FROM edge from the new container's genealogy node
+    # back to each source container's node, quantity-tagged, same get_or_create_node/create_edge shape
+    # split_container already established (mirrored, not reinvented).
+    merged_node = await genealogy_service.get_or_create_node(
+        session, site_id=site_id, node_type="material_container", authoritative_record_type="material_container",
+        authoritative_record_id=merged.id, business_ref=merged.container_code, actor_user_id=actor_user_id,
+    )
+    for c in containers:
+        source_node = await genealogy_service.get_or_create_node(
+            session, site_id=site_id, node_type="material_container", authoritative_record_type="material_container",
+            authoritative_record_id=c.id, business_ref=c.container_code, actor_user_id=actor_user_id,
+        )
+        await genealogy_service.create_edge(
+            session, from_node_id=source_node.id, to_node_id=merged_node.id, edge_type="MERGED_FROM",
+            quantity=original_quantities[c.id], uom=c.uom, source_event_id=merged.id,
+            actor_user_id=actor_user_id,
+        )
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(

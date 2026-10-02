@@ -694,6 +694,45 @@ async def test_merge_compatible_containers(client, db, seeded):
     assert merged[0].current_quantity == Decimal("60.000000")
 
 
+async def test_merge_containers_wires_merged_from_genealogy_edge(client, db, seeded):
+    """Client_Decisions_Neededanswers Topic 2 / SG-085: merge_containers now writes a MERGED_FROM edge
+    per source container into the new container's genealogy node -- the reverse shape of
+    split_container's SPLIT_FROM, closing the "merge investigated, not built" half of SG-085."""
+    op_token = await login(client, "operator1")
+    site_id = seeded["site_id"]
+
+    material_id, lot_id, containers = await _receive_and_examine(
+        client, db, op_token, site_id, "MAT-MERGE-GEN", "LOT-MERGE-GEN", container_count=2, quantity="60.000000"
+    )
+
+    resp = await client.post(
+        "/inventory/v1/containers/merge",
+        json={
+            "idempotency_key": idem(),
+            "source_container_ids": containers,
+            "new_container_code": "LOT-MERGE-GEN-MERGED",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    all_containers = (
+        (await db.execute(select(MaterialContainer).where(MaterialContainer.material_lot_id == lot_id)))
+        .scalars()
+        .all()
+    )
+    merged = next(c for c in all_containers if c.container_status == "active")
+    sources = [c for c in all_containers if c.container_status == "merged"]
+    assert len(sources) == 2
+
+    [merged_node] = await genealogy_service.lookup(db, site_id, business_ref=merged.container_code)
+    ancestors = await genealogy_service.get_ancestors(db, merged_node.id)
+    ancestor_record_ids = {n.authoritative_record_id for n in ancestors["nodes"]}
+    assert {c.id for c in sources} == ancestor_record_ids
+    assert all(e.edge_type == "MERGED_FROM" for e in ancestors["edges"])
+    assert {e.quantity for e in ancestors["edges"]} == {Decimal("30.000000")}
+
+
 # --- INV-FR-020/022 cycle count -------------------------------------------------------------------
 
 
