@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.capa_commands import (
     AddCapaActionCommand,
     CloseCapaCommand,
@@ -229,8 +229,8 @@ async def list_capas(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="capa.view", site_id=site_id)
-    stmt = filtered(CapaRecord, params, search_column=CapaRecord.capa_number, site_id=site_id, state=state)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="capa.view")
+    stmt = filtered(CapaRecord, params, search_column=CapaRecord.capa_number, site_id=site_scope, state=state)
     rows, envelope = await paginate(
         session, stmt, params, sortable=CAPA_SORTABLE, default_sort=CapaRecord.created_at
     )
@@ -295,10 +295,20 @@ async def list_capa_actions(
     state: str | None = None,
 ) -> dict:
     """Cross-CAPA action worklist (CAPA-FR-019 "my open actions"), or one CAPA's actions via capa_id."""
-    await evaluate_policy(session, actor.user_id, action="capa.view", site_id=None)
-    stmt = select(CapaAction)
     if capa_id is not None:
-        stmt = stmt.where(CapaAction.capa_id == capa_id)
+        parent = await session.get(CapaRecord, capa_id)
+        if parent is None:
+            raise NotFoundError("CAPA not found")
+        await evaluate_policy(session, actor.user_id, action="capa.view", site_id=parent.site_id)
+        stmt = select(CapaAction).where(CapaAction.capa_id == capa_id)
+    else:
+        # No capa_id: a cross-CAPA worklist, so the site scope must come from a join to the owning
+        # CapaRecord rather than CapaAction itself (which carries no site_id) -- same cross-site leak
+        # class as the list endpoints `resolve_site_scope` closes, just one join deeper.
+        site_scope = await resolve_site_scope(session, actor.user_id, None, action="capa.view")
+        stmt = select(CapaAction).join(CapaRecord, CapaRecord.id == CapaAction.capa_id).where(
+            CapaRecord.site_id.in_(site_scope)
+        )
     if state:
         stmt = stmt.where(CapaAction.state == state)
     if params.q:

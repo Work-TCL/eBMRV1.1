@@ -80,3 +80,48 @@ async def evaluate_policy(
                 role_a=rule.role_a,
                 role_b=rule.role_b,
             )
+
+
+async def resolve_actor_site_ids(session: AsyncSession, user_id: uuid.UUID) -> set[uuid.UUID]:
+    """Every site the actor currently holds any active role at (IAM-FR-017 time-bounded assignment).
+
+    Used to turn an *omitted* `site_id` on a list endpoint into "my own assigned sites" instead of
+    the `effective_role_names(site_id=None)` "any site" semantics `evaluate_policy` itself uses for a
+    single capability check -- the two must stay separate, or an actor who merely holds a role
+    *somewhere* ends up with every site's records unfiltered (client-reported cross-site leak).
+    """
+    now = datetime.now(timezone.utc)
+    stmt = select(UserSiteRole.site_id).where(
+        UserSiteRole.user_id == user_id,
+        UserSiteRole.status == "active",
+        UserSiteRole.effective_from <= now,
+        (UserSiteRole.expires_at.is_(None)) | (UserSiteRole.expires_at > now),
+    ).distinct()
+    return set((await session.execute(stmt)).scalars().all())
+
+
+async def resolve_site_scope(
+    session: AsyncSession, actor_user_id: uuid.UUID, site_id: uuid.UUID | None, *, action: str
+) -> list[uuid.UUID]:
+    """Resolve the concrete site(s) a list/read endpoint should filter to for `action`.
+
+    A caller-supplied `site_id` is validated the normal way (the actor must hold `action` there).
+    An *omitted* `site_id` must never fall through to `filtered()`/a raw query as `None` -- that
+    silently returns every site's rows to anyone holding the permission at any single site. Instead
+    it resolves to every site the actor actually holds `action` at (usually one), still fail-closed
+    if that set is empty.
+    """
+    if site_id is not None:
+        await evaluate_policy(session, actor_user_id, action=action, site_id=site_id)
+        return [site_id]
+
+    allowed: list[uuid.UUID] = []
+    for candidate in sorted(await resolve_actor_site_ids(session, actor_user_id)):
+        try:
+            await evaluate_policy(session, actor_user_id, action=action, site_id=candidate)
+        except (RoleMissingError, SodConflictError):
+            continue
+        allowed.append(candidate)
+    if not allowed:
+        raise RoleMissingError("Actor holds no role granting this action at any assigned site", action=action)
+    return allowed

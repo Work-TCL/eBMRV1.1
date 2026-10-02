@@ -1568,6 +1568,10 @@ async def seeded(db: AsyncSession) -> dict:
             # scripts/seed.py's PERMISSION_CATALOG adds.
             ("material.create", "create", "material"),
             ("material.update", "update", "material"),
+            # Client Topic 15 fix (2026-10-02, project-owner-directed) -- same rows scripts/seed.py's
+            # PERMISSION_CATALOG adds (list_materials/list_warehouse_locations/get_availability had no
+            # evaluate_policy() call, and equipment reads had an actor dependency but no RBAC/site check).
+            ("material.view", "view", "material"),
             ("supplier.create", "create", "supplier"),
             ("supplier_qualification.create", "create", "supplier_qualification"),
             ("qc_sample.create", "create", "qc_sample"),
@@ -1592,9 +1596,11 @@ async def seeded(db: AsyncSession) -> dict:
             ("warehouse_location.create", "create", "warehouse_location"),
             ("warehouse_location.update", "update", "warehouse_location"),
             ("warehouse_location.retire", "retire", "warehouse_location"),
+            ("warehouse_location.view", "view", "warehouse_location"),
             ("inventory_reservation.create", "create", "inventory_reservation"),
             ("inventory_reservation.release", "release", "inventory_reservation"),
             ("inventory_transaction.transfer", "transfer", "inventory_transaction"),
+            ("inventory_availability.view", "view", "inventory_balance"),
             ("material_container.split", "split", "material_container"),
             ("material_container.merge", "merge", "material_container"),
             ("inventory_cycle_count.execute", "execute", "inventory_cycle_count"),
@@ -1665,6 +1671,8 @@ async def seeded(db: AsyncSession) -> dict:
             ("equipment_asset.maintain", "maintain", "equipment_asset"),
             ("equipment_asset.hold", "hold", "equipment_asset"),
             ("equipment_asset.return_to_service", "return_to_service", "equipment_asset"),
+            ("equipment_asset.view", "view", "equipment_asset"),
+            ("equipment_area.view", "view", "equipment_area"),
             ("cleaning_execution.create", "create", "cleaning_execution"),
             ("cleaning_execution.complete", "complete", "cleaning_execution"),
             ("cleaning_execution.verify", "verify", "cleaning_execution"),
@@ -2083,17 +2091,23 @@ async def seeded(db: AsyncSession) -> dict:
                     "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
                     "oos_record.lab_investigation", "oos_record.classify_lab_cause", "oos_record.retest_plan",
                     "oos_record.resample_plan", "oos_record.impact",
+                    # Client Topic 15 fix (2026-10-02, project-owner-directed) -- same grant
+                    # scripts/seed.py's Admin role gets.
+                    "material.view", "warehouse_location.view", "inventory_availability.view",
+                    "equipment_asset.view", "equipment_area.view",
                 ],
             ),
             ("Operator", ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.execute", "batch_execution.view", "device.execute", "device.view", "genealogy.view", "evidence.upload", "evidence.download", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
                 "qc_sample.create", "qc_sample.receive", "qc_test_order.create", "qc_test_order.start", "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
+                "material.view", "warehouse_location.view", "inventory_availability.view", "equipment_asset.view", "equipment_area.view",
                 "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "equipment_asset.hold", "cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", "validation.plan.manage", "validation.gate.view", "validation.package.view", "validation.intended_use.manage", "validation.function_risk.manage", "validation.function_risk.view", "validation.requirement.manage", "validation.trace_link.manage", "validation.baseline.manage", "validation.traceability.view", "validation.test_definition.manage", "validation.test_execution.manage", "validation.test_execution.complete", "validation.iq.manage", "validation.iq.complete", "validation.oq.manage", "validation.oq.view", "validation.infrastructure.manage", "validation.part11.manage", "validation.data_integrity.manage", "validation.interface.manage", "validation.dr.manage", "validation.security.manage", "validation.security.view", "validation.performance.manage", "validation.performance.view", "validation.exception.view", "validation.change_impact.manage", "validation.periodic_review.manage", "validation.periodic_review.decide", "validation.state_baseline.decommission", "validation.pq.execute", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"]),
             ("Supervisor", ["batch_step.start", "batch_step.role_override", "batch_step.correct", "rules.evaluate", "product.view", "recipe.view", "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view", "device.create", "device.execute", "device.view", "genealogy.view", "evidence.upload", "evidence.download", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
                 "qc_sample.create", "qc_sample.receive", "qc_test_order.create", "qc_test_order.start", "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
                 "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire",
+                "material.view", "warehouse_location.view", "inventory_availability.view", "equipment_asset.view", "equipment_area.view",
                 "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate"]),
-            ("Process Engineer", ["product.author", "product.view", "material_spec.author", "material_spec.view", "recipe.author", "recipe.view", "rules.evaluate", "training.qualification_code.list", "material.create", "material.update", "supplier.create", "supplier_qualification.create", "qms_deviation.view", "capa.view"]),
-            ("QA Reviewer", ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation", "oos_record.lab_investigation", "oos_record.classify_lab_cause", "oos_record.retest_plan", "oos_record.resample_plan", "oos_record.impact", "equipment_asset.hold", "equipment_asset.return_to_service", "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify", "em_sample.review", "em_excursion.impact", "process_cycle.create", "process_cycle.start", "process_cycle.review", "process_cycle_profile_version.create", "reconciliation.verify", "machine_evidence.review_view", "evidence.upload", "evidence.download", "evidence.manifest", "evidence.legal_hold", "evidence.integrity_check", "ai_governance.use_case.register", "ai_governance.use_case.assess_risk", "ai_governance.context.build", "ai_governance.advisory.execute", "ai_governance.disposition.record", "ai_governance.evaluation.run", "ai_governance.release_gate.evaluate", "ai_governance.injection.detect", "validation.gate.view", "validation.package.view", "validation.function_risk.approve", "validation.function_risk.view", "validation.traceability.view", "validation.oq.view", "validation.security.view", "validation.performance.view", "validation.exception.view", "validation.periodic_review.decide", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view",
+            ("Process Engineer", ["product.author", "product.view", "material_spec.author", "material_spec.view", "recipe.author", "recipe.view", "rules.evaluate", "training.qualification_code.list", "material.create", "material.update", "material.view", "supplier.create", "supplier_qualification.create", "qms_deviation.view", "capa.view"]),
+            ("QA Reviewer", ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation", "oos_record.lab_investigation", "oos_record.classify_lab_cause", "oos_record.retest_plan", "oos_record.resample_plan", "oos_record.impact", "material.view", "warehouse_location.view", "inventory_availability.view", "equipment_asset.view", "equipment_area.view", "equipment_asset.hold", "equipment_asset.return_to_service", "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify", "em_sample.review", "em_excursion.impact", "process_cycle.create", "process_cycle.start", "process_cycle.review", "process_cycle_profile_version.create", "reconciliation.verify", "machine_evidence.review_view", "evidence.upload", "evidence.download", "evidence.manifest", "evidence.legal_hold", "evidence.integrity_check", "ai_governance.use_case.register", "ai_governance.use_case.assess_risk", "ai_governance.context.build", "ai_governance.advisory.execute", "ai_governance.disposition.record", "ai_governance.evaluation.run", "ai_governance.release_gate.evaluate", "ai_governance.injection.detect", "validation.gate.view", "validation.package.view", "validation.function_risk.approve", "validation.function_risk.view", "validation.traceability.view", "validation.oq.view", "validation.security.view", "validation.performance.view", "validation.exception.view", "validation.periodic_review.decide", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view",
                 # SG-138 policy-data half (2026-09-10) -- QMS review codes the "QA Reviewer" signer class
                 # (Document 106 section 9 rows 96/97/107) needs; aligned with scripts/seed.py's own
                 # QA Reviewer grant.
@@ -2103,6 +2117,7 @@ async def seeded(db: AsyncSession) -> dict:
                 # is the sole signer of batch.record_export (the action that creates the batch record PDF
                 # as evidence) but held no evidence.* permission to retrieve it afterward.
                 "evidence.download",
+                "material.view", "warehouse_location.view", "inventory_availability.view", "equipment_asset.view", "equipment_area.view",
                 "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", "security_incident.close",
                 # SG-138 policy-data half (2026-09-10) -- QMS signing codes, aligned with scripts/seed.py's
                 # own QA Releaser grant so an independent QA Releaser can actually reach the signed QMS
@@ -2122,17 +2137,17 @@ async def seeded(db: AsyncSession) -> dict:
                 "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
                 "quality_metric.definition.create", "quality_metric.definition.release", "quality_metric.management_review",
                 "validation.exception.create", "validation.exception.triage", "validation.exception.retest_plan", "validation.exception.disposition", "validation.plan.release", "validation.function_risk.approve", "validation.test_definition.approve", "validation.iq.approve", "validation.oq.approve", "validation.infrastructure.approve", "validation.part11.approve", "validation.data_integrity.approve", "validation.interface.approve", "validation.dr.approve", "validation.security.approve", "validation.pq.approve", "validation.migration.approve", "validation.vsr.approve", "validation.release_auth.authorize", "validation.release_auth.deployment_check", "validation.post_go_live.record"]),
-            ("QC Reviewer", ["material_lot.disposition", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.view", "qc_method.author", "qc_method.view", "qc_result.correct", "material_lot.collect_sample", "material_lot.retest", "dispensing_order.verify", "cleaning_execution.verify", "em_sample.review", "process_cycle.review", "oos_record.lab_investigation", "oos_record.classify_lab_cause", "oos_record.retest_plan", "oos_record.resample_plan", "oos_record.impact"]),
-            ("Equipment Administrator", ["equipment_asset.create", "equipment_asset.qualify", "machine_command.submit", "equipment_area.create"]),
-            ("Engineering Manager", ["equipment_asset.return_to_service"]),
-            ("Calibration Technician", ["equipment_asset.calibrate"]),
-            ("Maintenance Technician", ["equipment_asset.maintain"]),
-            ("Sanitation Operator", ["cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete"]),
-            ("EM Technician", ["em_program.create", "em_sample.create", "em_sample.record_result"]),
-            ("Microbiology Analyst", ["em_sample.record_result"]),
-            ("Sterilization Operator", ["process_cycle.create", "process_cycle.start", "sterile_filter_use.create", "sterile_filter_use.complete"]),
-            ("Aseptic Operator", ["aseptic_operation.create", "aseptic_operation.intervention", "aseptic_operation.event", "aseptic_operation.complete"]),
-            ("Aseptic Supervisor", ["aseptic_operation.start", "aseptic_profile_version.create"]),
+            ("QC Reviewer", ["material_lot.disposition", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.view", "qc_method.author", "qc_method.view", "qc_result.correct", "material_lot.collect_sample", "material_lot.retest", "dispensing_order.verify", "cleaning_execution.verify", "em_sample.review", "process_cycle.review", "oos_record.lab_investigation", "oos_record.classify_lab_cause", "oos_record.retest_plan", "oos_record.resample_plan", "oos_record.impact", "material.view", "warehouse_location.view", "inventory_availability.view", "equipment_asset.view", "equipment_area.view"]),
+            ("Equipment Administrator", ["equipment_asset.create", "equipment_asset.qualify", "machine_command.submit", "equipment_area.create", "equipment_asset.view", "equipment_area.view"]),
+            ("Engineering Manager", ["equipment_asset.return_to_service", "equipment_asset.view", "equipment_area.view"]),
+            ("Calibration Technician", ["equipment_asset.calibrate", "equipment_asset.view", "equipment_area.view"]),
+            ("Maintenance Technician", ["equipment_asset.maintain", "equipment_asset.view", "equipment_area.view"]),
+            ("Sanitation Operator", ["cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", "equipment_asset.view", "equipment_area.view"]),
+            ("EM Technician", ["em_program.create", "em_sample.create", "em_sample.record_result", "equipment_asset.view", "equipment_area.view"]),
+            ("Microbiology Analyst", ["em_sample.record_result", "equipment_asset.view", "equipment_area.view"]),
+            ("Sterilization Operator", ["process_cycle.create", "process_cycle.start", "sterile_filter_use.create", "sterile_filter_use.complete", "equipment_asset.view", "equipment_area.view"]),
+            ("Aseptic Operator", ["aseptic_operation.create", "aseptic_operation.intervention", "aseptic_operation.event", "aseptic_operation.complete", "equipment_asset.view", "equipment_area.view"]),
+            ("Aseptic Supervisor", ["aseptic_operation.start", "aseptic_profile_version.create", "equipment_asset.view", "equipment_area.view"]),
             ("Integration Administrator", [
                 "erp_instance.administer", "erp_mapping.propose", "erp_mapping.approve", "erp_mapping.resolve_conflict",
                 "erp_sync.checkpoint", "integration_command.queue", "integration_command.dispatch",

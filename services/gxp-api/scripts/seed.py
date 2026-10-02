@@ -113,6 +113,9 @@ PERMISSION_CATALOG = [
     # author" role class as material_spec.author/product.author/recipe.author.
     ("material.create", "create", "material", "Create a Material master record"),
     ("material.update", "update", "material", "Update a Material master record's name/status"),
+    # Client Topic 15 fix (2026-10-02, project-owner-directed): list_materials had no evaluate_policy()
+    # call at all -- any caller, authenticated or not, could list every site's Material master rows.
+    ("material.view", "view", "material", "Read Material master records (Client Topic 15 fix)"),
     ("platform.administer", "administer", "platform", "Create/edit/delete master data and IAM records"),
     ("audit.review", "review", "audit_event", "Search and read the audit ledger (Document 05)"),
     ("audit.export", "export", "audit_event", "Create a structured audit export (Document 05)"),
@@ -202,9 +205,15 @@ PERMISSION_CATALOG = [
     # location can be referenced by MaterialLot.storage_location_id (req #4).
     ("warehouse_location.update", "update", "warehouse_location", "Rename/reclassify a warehouse/zone/bin location (Document 20)"),
     ("warehouse_location.retire", "retire", "warehouse_location", "Retire a warehouse/zone/bin location (Document 20)"),
+    # Client Topic 15 fix (2026-10-02, project-owner-directed): GET .../warehouse-locations had no
+    # `actor` dependency or evaluate_policy() call at all -- a genuinely unauthenticated read.
+    ("warehouse_location.view", "view", "warehouse_location", "Read warehouse/zone/bin locations (Client Topic 15 fix)"),
     ("inventory_reservation.create", "create", "inventory_reservation", "Reserve material for a batch (Document 20)"),
     ("inventory_reservation.release", "release", "inventory_reservation", "Release (give back) a material reservation (Document 20)"),
     ("inventory_transaction.transfer", "transfer", "inventory_transaction", "Transfer a lot/container between warehouse locations (Document 20)"),
+    # Client Topic 15 fix (2026-10-02, project-owner-directed): GET .../availability had no `actor`
+    # dependency or evaluate_policy() call at all -- a genuinely unauthenticated read.
+    ("inventory_availability.view", "view", "inventory_balance", "Read per-material inventory availability by site (Client Topic 15 fix)"),
     ("material_container.split", "split", "material_container", "Split a container into child containers (Document 20)"),
     ("material_container.merge", "merge", "material_container", "Merge compatible containers (Document 20)"),
     ("inventory_cycle_count.execute", "execute", "inventory_cycle_count", "Record a physical inventory cycle count (Document 20)"),
@@ -233,12 +242,19 @@ PERMISSION_CATALOG = [
     ("equipment_asset.maintain", "maintain", "equipment_asset", "Create/continue/verify an equipment maintenance work order (Document 38)"),
     ("equipment_asset.hold", "hold", "equipment_asset", "Place an equipment asset on hold (Document 38, Document 106 row 108)"),
     ("equipment_asset.return_to_service", "return_to_service", "equipment_asset", "Return an equipment asset to service (Document 38)"),
+    # Client Topic 15 fix (2026-10-02, project-owner-directed): list_assets/get_asset held an `actor`
+    # dependency but never called evaluate_policy() -- any authenticated actor, any role, any site,
+    # could read any other site's equipment. Supersedes this router's prior "no RBAC gate here, same
+    # precedent as other plain reads" convention per the client's explicit Topic 15 answer.
+    ("equipment_asset.view", "view", "equipment_asset", "Read equipment assets (Client Topic 15 fix)"),
     # equipment_area.create — added 2026-09-07, project-owner-directed (same "genuinely uncreatable
     # through the app" pattern as warehouse_location.create/aseptic_profile_version.create):
     # EquipmentArea was seed-only, "provisioned outside the app today" per its own docstring, with no
     # write operation in any of Document 38/39/40/41/42's declared API lists. Same roles as
     # equipment_asset.create (Admin + Equipment Administrator).
     ("equipment_area.create", "create", "equipment_area", "Create a classified/monitored equipment area (Document 38/39/40/41 shared master)"),
+    # Client Topic 15 fix (2026-10-02, project-owner-directed): same gap as equipment_asset.view above.
+    ("equipment_area.view", "view", "equipment_area", "Read equipment areas (Client Topic 15 fix)"),
     # Document 39 (SPEC-EQP-002) — 4 grants covering the module's 7 API operations; the GET status query
     # is an unauthenticated read, same treatment as material lot detail.
     ("cleaning_execution.create", "create", "cleaning_execution", "Create/progress a cleaning execution (Document 39)"),
@@ -711,6 +727,16 @@ QMS_WRITE_CODES = [
     "quality_metric.management_review", "effectiveness_check.create", "effectiveness_check.evaluate",
 ]
 
+# Client Topic 15 fix (2026-10-02, project-owner-directed): these four `.view` codes close the
+# cross-site/unauthenticated list-endpoint leaks found while investigating the client's site-based
+# access control question (Client_Decisions_Neededanswers Topic 15) -- `list_materials`,
+# `list_warehouse_locations` and `get_availability` had no RBAC at all, and `equipment_asset`/
+# `equipment_area` reads had an `actor` dependency but no permission/site check. Spread into every
+# role that already holds the corresponding write codes, same "view code travels with the write
+# codes" pattern as `product.view`/`recipe.view` elsewhere in this file.
+MATERIAL_VIEW_CODES = ["material.view", "warehouse_location.view", "inventory_availability.view"]
+EQUIPMENT_VIEW_CODES = ["equipment_asset.view", "equipment_area.view"]
+
 # Role -> permission codes it's granted, matching exactly what require_role()/require_admin_anywhere()
 # hardcoded before the policy engine replaced them — this seed is what keeps behaviour identical.
 ROLE_PERMISSIONS = {
@@ -731,6 +757,7 @@ ROLE_PERMISSIONS = {
         "oos_record.extended_investigation", "oos_record.disposition", "oos_record.close", "oot_record.close", "oot_record.reopen",
         "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
         "material_lot.collect_sample", "material_lot.release", "material_lot.reject", "material_lot.retest",
+        *MATERIAL_VIEW_CODES,
         "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire",
         "inventory_reservation.create", "inventory_reservation.release", "inventory_transaction.transfer",
         "material_container.split", "material_container.merge", "inventory_cycle_count.execute",
@@ -743,6 +770,7 @@ ROLE_PERMISSIONS = {
         "equipment_asset.create", "equipment_asset.qualify", "equipment_asset.calibrate",
         "equipment_asset.maintain", "equipment_asset.hold", "equipment_asset.return_to_service",
         "equipment_area.create",
+        *EQUIPMENT_VIEW_CODES,
         "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify",
         "line_clearance.create", "line_clearance.complete",
         "em_program.create", "em_sample.create", "em_sample.record_result", "em_sample.review",
@@ -836,17 +864,20 @@ ROLE_PERMISSIONS = {
         # separate reviewer role (qc_test_order.review/qc_result.correct).
         "qc_sample.create", "qc_sample.receive", "qc_test_order.create", "qc_test_order.start",
         "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
+        *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
         "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "equipment_asset.hold", "cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "ncr.create", "complaint.create", "training.assignment.complete", "validation.plan.manage", "validation.gate.view", "validation.package.view", "validation.intended_use.manage", "validation.function_risk.manage", "validation.function_risk.view", "validation.requirement.manage", "validation.trace_link.manage", "validation.baseline.manage", "validation.traceability.view", "validation.test_definition.manage", "validation.test_execution.manage", "validation.test_execution.complete", "validation.iq.manage", "validation.iq.complete", "validation.oq.manage", "validation.oq.view", "validation.infrastructure.manage", "validation.part11.manage", "validation.data_integrity.manage", "validation.interface.manage", "validation.dr.manage", "validation.security.manage", "validation.security.view", "validation.performance.manage", "validation.performance.view", "validation.exception.view", "validation.change_impact.manage", "validation.periodic_review.manage", "validation.periodic_review.decide", "validation.state_baseline.decommission", "validation.pq.execute", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"],
     "Supervisor": ["batch_step.start", "batch_step.role_override", "batch_step.correct", "rules.evaluate", "product.view", "recipe.view", "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view", "device.create", "device.execute", "device.view", "genealogy.view", "evidence.upload", "evidence.download", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
         # 2026-09-18, project-owner-directed: same QC execution class as Operator above.
         "qc_sample.create", "qc_sample.receive", "qc_test_order.create", "qc_test_order.start",
         "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
+        *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
         "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
     "QA Reviewer": ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation",
         # 2026-09-18, project-owner-directed: QC investigation class — mirrors qms_deviation.investigate
         # (also QA Reviewer) plus QC Reviewer since this is QC-domain investigation work.
         "oos_record.lab_investigation", "oos_record.classify_lab_cause", "oos_record.retest_plan",
         "oos_record.resample_plan", "oos_record.impact",
+        *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
         "equipment_asset.hold", "equipment_asset.return_to_service", "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify", "em_sample.review", "em_excursion.impact", "process_cycle.create", "process_cycle.start", "process_cycle.review", "process_cycle_profile_version.create", "reconciliation.verify", "machine_evidence.review_view", "evidence.upload", "evidence.download", "evidence.manifest", "evidence.legal_hold", "evidence.integrity_check", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "qms_deviation.investigate", "qms_deviation.impact", "qms_deviation.extend", "capa.create", "capa.plan", "capa.action.add", "capa.action.complete", "capa.extend", "ncr.create", "ncr.segregate", "ncr.evaluate", "ncr.verify", "change.create", "change.impact", "change.task.add", "change.implement", "change.verify", "document.create", "document.submit", "complaint.create", "complaint.triage", "complaint.investigation_decision", "complaint.investigate", "risk.create", "risk.assessment.add", "risk.controls.add", "risk.review", "scar.case.create", "scar.issue", "scar.response", "scar.review", "internal_audit.create", "internal_audit.start", "internal_audit.finding.add", "internal_audit.finding.response", "field_action.create", "field_action.scope", "field_action.communications", "field_action.reconcile", "quality_metric.calculate",
         # SG-138 (2026-09-10, project-owner-directed): Document 106 section 9 row 107's "QA Reviewer"
         # signer class for `quality_metric_snapshot/management_review` -> this role holds it.
@@ -860,6 +891,7 @@ ROLE_PERMISSIONS = {
         # the QA Releaser role record_export requires; QA Releaser holds neither). Same evidence.download
         # code QA Reviewer already holds for the same "view what this role's own actions produce" reason.
         "evidence.download",
+        *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
         "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.plan", "capa.effectiveness", "capa.extend", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "supplier.suspend", "supplier.reinstate", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
     # SG-157 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): closest existing real role to Document
     # 106's "QA Manager/Head of Quality per record class" text for regulatory_report.approve -- QA Releaser
@@ -869,32 +901,36 @@ ROLE_PERMISSIONS = {
         # 2026-09-18, project-owner-directed: QC investigation class — same as QA Reviewer above.
         "oos_record.lab_investigation", "oos_record.classify_lab_cause", "oos_record.retest_plan",
         "oos_record.resample_plan", "oos_record.impact",
+        *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
         *QMS_VIEW_CODES, "qms_deviation.create", "ncr.create", "ncr.evaluate", "ncr.verify", "capa.action.complete"],
     # Document 38 (SPEC-EQP-001) actor-specific roles — grants scoped to exactly the operation each actor
-    # performs (§2), no broader platform access.
-    "Equipment Administrator": ["equipment_asset.create", "equipment_asset.qualify", "machine_command.submit", "equipment_area.create"],
-    "Engineering Manager": ["equipment_asset.return_to_service"],
-    "Calibration Technician": ["equipment_asset.calibrate"],
-    "Maintenance Technician": ["equipment_asset.maintain"],
+    # performs (§2), no broader platform access. `*EQUIPMENT_VIEW_CODES` added to all of these plus the
+    # Document 39/40/41/42 actor roles below (2026-10-02, Client Topic 15 fix, project-owner-directed):
+    # they all act on equipment/areas already (create/calibrate/maintain/clean/etc.) so they need to be
+    # able to read the one(s) they're acting on, same "view travels with write" pattern as elsewhere.
+    "Equipment Administrator": ["equipment_asset.create", "equipment_asset.qualify", "machine_command.submit", "equipment_area.create", *EQUIPMENT_VIEW_CODES],
+    "Engineering Manager": ["equipment_asset.return_to_service", *EQUIPMENT_VIEW_CODES],
+    "Calibration Technician": ["equipment_asset.calibrate", *EQUIPMENT_VIEW_CODES],
+    "Maintenance Technician": ["equipment_asset.maintain", *EQUIPMENT_VIEW_CODES],
     # Document 39 (SPEC-EQP-002) actor-specific role.
-    "Sanitation Operator": ["cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete"],
+    "Sanitation Operator": ["cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", *EQUIPMENT_VIEW_CODES],
     # Document 41 (SPEC-EQP-004) actor-specific roles.
-    "EM Technician": ["em_program.create", "em_sample.create", "em_sample.record_result"],
-    "Microbiology Analyst": ["em_sample.record_result"],
+    "EM Technician": ["em_program.create", "em_sample.create", "em_sample.record_result", *EQUIPMENT_VIEW_CODES],
+    "Microbiology Analyst": ["em_sample.record_result", *EQUIPMENT_VIEW_CODES],
     # Document 42 (SPEC-EQP-005) actor-specific role.
-    "Sterilization Operator": ["process_cycle.create", "process_cycle.start", "sterile_filter_use.create", "sterile_filter_use.complete"],
+    "Sterilization Operator": ["process_cycle.create", "process_cycle.start", "sterile_filter_use.create", "sterile_filter_use.complete", *EQUIPMENT_VIEW_CODES],
     # Document 40 (SPEC-EQP-003) actor-specific roles -- Aseptic Operator performs the recorded work
     # (create/interventions/events/complete, Document 106 row 112's "qualified performer for the task");
     # Aseptic Supervisor authorizes start (row 113's "Production Supervisor or qualified issuer").
-    "Aseptic Operator": ["aseptic_operation.create", "aseptic_operation.intervention", "aseptic_operation.event", "aseptic_operation.complete"],
-    "Aseptic Supervisor": ["aseptic_operation.start", "aseptic_profile_version.create"],
+    "Aseptic Operator": ["aseptic_operation.create", "aseptic_operation.intervention", "aseptic_operation.event", "aseptic_operation.complete", *EQUIPMENT_VIEW_CODES],
+    "Aseptic Supervisor": ["aseptic_operation.start", "aseptic_profile_version.create", *EQUIPMENT_VIEW_CODES],
     # Document 10 (SPEC-EBMR-002) -- master-recipe author. Draft/edit/validate/simulate/submit only;
     # recipe.release is deliberately NOT here (it sits with QA Releaser / Admin) so authoring and release
     # are held by different roles. Closes the DDCP_Client_Demo_Guide §9.1 "author == releaser" gap.
     "Process Engineer": ["product.author", "product.view", "material_spec.author", "material_spec.view", "recipe.author", "recipe.view", "rules.evaluate", "training.qualification_code.list",
         # 2026-09-18, project-owner-directed: Supplier/Material master creation — same "master-data
         # technical author" class as product.author/material_spec.author above.
-        "material.create", "material.update", "supplier.create", "supplier_qualification.create",
+        "material.create", "material.update", "material.view", "supplier.create", "supplier_qualification.create",
         # Known-limitations fix (docs/testing/demo-gujarati/10 §10.4 note / 11 §11.6 item 4),
         # project-owner-directed 2026-09-18: a Process Engineer previously had no way to see a deviation
         # or CAPA implicating their own recipe/process, not even read-only. Read-only view only —

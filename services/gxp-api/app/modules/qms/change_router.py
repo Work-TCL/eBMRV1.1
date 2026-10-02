@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.change_commands import (
     AddChangeTaskCommand,
     ApproveChangeCommand,
@@ -204,9 +204,9 @@ async def list_changes(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="change.view", site_id=site_id)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="change.view")
     stmt = filtered(
-        ChangeControl, params, search_column=ChangeControl.change_number, site_id=site_id, state=state
+        ChangeControl, params, search_column=ChangeControl.change_number, site_id=site_scope, state=state
     )
     rows, envelope = await paginate(
         session, stmt, params, sortable=CHANGE_SORTABLE, default_sort=ChangeControl.created_at

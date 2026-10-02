@@ -34,11 +34,17 @@ def filtered(
     params: PageParams,
     *,
     search_column: Column,
-    site_id: uuid.UUID | None = None,
+    site_id: uuid.UUID | list[uuid.UUID] | None = None,
     state: str | None = None,
     state_column: Column | None = None,
 ) -> Select:
     """Base statement for a QMS list endpoint: site scope, optional workflow state, free-text search.
+
+    `site_id` is normally a list resolved by `policy.service.resolve_site_scope` (the actor's own
+    assigned site, or all sites they hold the relevant `view` permission at) -- a bare scalar is
+    still accepted for direct/internal callers. `None` applies no site filter at all and must never
+    be reached from a caller-facing list endpoint (that is exactly the cross-site leak SG-213-class
+    gap this signature closes).
 
     Returns a statement carrying filters only -- no order_by/limit/offset -- which is exactly what
     `paginate()` requires of its `base_stmt`.
@@ -46,7 +52,9 @@ def filtered(
     from sqlalchemy import select
 
     stmt = select(model)
-    if site_id is not None:
+    if isinstance(site_id, list):
+        stmt = stmt.where(model.site_id.in_(site_id))
+    elif site_id is not None:
         stmt = stmt.where(model.site_id == site_id)
     if state:
         column = state_column if state_column is not None else model.state

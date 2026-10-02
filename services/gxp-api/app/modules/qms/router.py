@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.commands import (
     CloseCommand,
     ContainDeviationCommand,
@@ -252,9 +252,9 @@ async def list_deviations(
     state: str | None = None,
     severity: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="qms_deviation.view", site_id=site_id)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="qms_deviation.view")
     stmt = filtered(
-        DeviationRecord, params, search_column=DeviationRecord.deviation_number, site_id=site_id, state=state
+        DeviationRecord, params, search_column=DeviationRecord.deviation_number, site_id=site_scope, state=state
     )
     if severity:
         stmt = stmt.where(DeviationRecord.severity == severity)

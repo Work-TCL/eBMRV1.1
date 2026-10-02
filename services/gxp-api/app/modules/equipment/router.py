@@ -30,7 +30,7 @@ from app.modules.equipment.commands import (
     return_to_service,
 )
 from app.modules.equipment.models import EquipmentAsset
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.recipe_master.service import list_equipment_classes
 from app.modules.signature.service import create_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
@@ -86,14 +86,23 @@ async def post_create_asset(
         return await create_equipment_asset(session, cmd, actor.user_id)
 
 
+# Client Topic 15 fix (2026-10-02, project-owner-directed): this router's reads held an `actor`
+# dependency but never called evaluate_policy() or filtered by site -- any authenticated actor, any
+# role, any site, could list/fetch any other site's equipment (the module docstring's own prior
+# "no RBAC gate here ... same precedent" note is superseded by the client's explicit Topic 15 answer
+# that cross-site access must be controlled, full stop). `equipment_asset.view`/`equipment_area.view`
+# are new permission codes (seed.py), granted to every role that already touches equipment plus the
+# standard "view" roleset.
 @router.get("/assets")
 async def list_assets(
     session: AsyncSession = Depends(get_session),
     params: PageParams = Depends(page_params),
     state: str | None = None,
+    site_id: uuid.UUID | None = None,
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    stmt = select(EquipmentAsset)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="equipment_asset.view")
+    stmt = select(EquipmentAsset).where(EquipmentAsset.site_id.in_(site_scope))
     if params.q:
         stmt = stmt.where(EquipmentAsset.equipment_code.ilike(f"%{params.q}%"))
     if state:
@@ -111,6 +120,7 @@ async def get_asset(
     asset = await session.get(EquipmentAsset, asset_id)
     if asset is None:
         raise NotFoundError("Equipment asset not found")
+    await evaluate_policy(session, actor.user_id, action="equipment_asset.view", site_id=asset.site_id)
     return _asset_dict(asset)
 
 
@@ -161,9 +171,11 @@ async def post_create_area(
 async def list_areas(
     session: AsyncSession = Depends(get_session),
     params: PageParams = Depends(page_params),
+    site_id: uuid.UUID | None = None,
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    stmt = select(EquipmentArea)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="equipment_area.view")
+    stmt = select(EquipmentArea).where(EquipmentArea.site_id.in_(site_scope))
     if params.q:
         stmt = stmt.where(EquipmentArea.area_code.ilike(f"%{params.q}%"))
     rows, envelope = await paginate(session, stmt, params, sortable=AREA_SORTABLE, default_sort=EquipmentArea.created_at)
@@ -179,6 +191,7 @@ async def get_area(
     area = await session.get(EquipmentArea, area_id)
     if area is None:
         raise NotFoundError("Equipment area not found")
+    await evaluate_policy(session, actor.user_id, action="equipment_area.view", site_id=area.site_id)
     return _area_dict(area)
 
 

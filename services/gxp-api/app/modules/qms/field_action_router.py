@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.field_action_commands import (
     ApproveFieldActionCommand,
     CloseFieldActionCommand,
@@ -208,9 +208,9 @@ async def list_field_actions(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="field_action.view", site_id=site_id)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="field_action.view")
     stmt = filtered(
-        FieldAction, params, search_column=FieldAction.action_number, site_id=site_id, state=state
+        FieldAction, params, search_column=FieldAction.action_number, site_id=site_scope, state=state
     )
     rows, envelope = await paginate(
         session, stmt, params, sortable=FIELD_ACTION_SORTABLE, default_sort=FieldAction.created_at

@@ -107,7 +107,7 @@ from app.modules.material.models import (
     SamplingOrder,
     WarehouseLocation,
 )
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.signature.service import create_challenge
 from app.modules.supplier_quality.models import Supplier
 from app.mutation.errors import NotFoundError, ValidationFailedError
@@ -196,9 +196,18 @@ async def post_create_material(
 
 @router.get("")
 async def list_materials(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+    params: PageParams = Depends(page_params),
+    site_id: uuid.UUID | None = None,
 ) -> dict:
-    stmt = select(Material)
+    # Client Topic 15 fix (2026-10-02, project-owner-directed): this endpoint had no `actor` dependency
+    # and no site filter at all -- any caller, authenticated or not, could list every Material master
+    # row across every site. `material.view` is a new permission code (seed.py), granted the same
+    # roles as `material.create`/`material.update` plus the broad "view" roleset (Operator, Supervisor,
+    # QA Reviewer, QA Releaser, QC Reviewer) this codebase already uses for product.view/recipe.view.
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="material.view")
+    stmt = select(Material).where(Material.site_id.in_(site_scope))
     if params.q:
         needle = f"%{params.q}%"
         stmt = stmt.where(or_(Material.code.ilike(needle), Material.name.ilike(needle)))
@@ -721,8 +730,18 @@ def _warehouse_location_dict(loc: WarehouseLocation) -> dict:
     }
 
 
+# Client Topic 15 fix (2026-10-02, project-owner-directed): this endpoint had no `actor` dependency
+# and no evaluate_policy() call at all -- a genuinely unauthenticated read, not merely an unscoped
+# one (contrast the equipment/cleaning/em "same treatment as material lot detail" convention, which
+# is still an *authenticated* actor just without a permission/site check). `site_id` is already a
+# required param here, so adding the capability+site check below closes this completely.
 @inventory_v1_router.get("/warehouse-locations")
-async def list_warehouse_locations(site_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def list_warehouse_locations(
+    site_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    await evaluate_policy(session, actor.user_id, action="warehouse_location.view", site_id=site_id)
     rows = (
         await session.execute(
             select(WarehouseLocation)
@@ -744,11 +763,17 @@ async def post_create_warehouse_location(
         return await create_warehouse_location(session, cmd, actor.user_id)
 
 
+# Client Topic 15 fix (2026-10-02, project-owner-directed): same "no actor dependency at all" gap as
+# list_warehouse_locations above.
 @inventory_v1_router.get("/availability")
 async def get_availability(
-    material_id: uuid.UUID, site_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    material_id: uuid.UUID,
+    site_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="inventory_availability.view", site_id=site_id)
         return {"items": await get_inventory_availability(session, material_id=material_id, site_id=site_id)}
 
 

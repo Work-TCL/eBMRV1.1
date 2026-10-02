@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.read_support import filtered, iso, sid
 from app.modules.qms.scar_commands import (
     CloseScarCommand,
@@ -198,9 +198,9 @@ async def list_supplier_cases(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="scar.view", site_id=site_id)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="scar.view")
     stmt = filtered(
-        SupplierQualityCase, params, search_column=SupplierQualityCase.case_number, site_id=site_id, state=state
+        SupplierQualityCase, params, search_column=SupplierQualityCase.case_number, site_id=site_scope, state=state
     )
     rows, envelope = await paginate(
         session, stmt, params, sortable=CASE_SORTABLE, default_sort=SupplierQualityCase.created_at
@@ -239,8 +239,8 @@ async def list_scars(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="scar.view", site_id=site_id)
-    stmt = filtered(ScarRecord, params, search_column=ScarRecord.scar_number, site_id=site_id, state=state)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="scar.view")
+    stmt = filtered(ScarRecord, params, search_column=ScarRecord.scar_number, site_id=site_scope, state=state)
     rows, envelope = await paginate(
         session, stmt, params, sortable=SCAR_SORTABLE, default_sort=ScarRecord.issued_at
     )

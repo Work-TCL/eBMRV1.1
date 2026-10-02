@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms import document_service
 from app.modules.qms.document_commands import (
     CreateDocumentDraftCommand,
@@ -192,8 +192,8 @@ async def list_documents(
     params: PageParams = Depends(page_params),
     site_id: uuid.UUID | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="document.view", site_id=site_id)
-    stmt = filtered(ControlledDocument, params, search_column=ControlledDocument.document_code, site_id=site_id)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="document.view")
+    stmt = filtered(ControlledDocument, params, search_column=ControlledDocument.document_code, site_id=site_scope)
     rows, envelope = await paginate(
         session, stmt, params, sortable=DOCUMENT_SORTABLE, default_sort=ControlledDocument.created_at
     )

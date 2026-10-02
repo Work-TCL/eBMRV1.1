@@ -9,15 +9,20 @@ ADR-0013) onto the authoritative `product_master`/`recipe_master`/`batch_executi
 RBAC-isolation guarantee (UserSiteRole is scoped to a specific site, never inherited across
 organizations), same assertion, different (current) endpoints.
 
-SG-213 (found while porting, 2026-09-23): `batch_execution.router`'s step-start endpoint (and 19 of its
-other 20 non-create endpoints) calls `evaluate_policy(..., site_id=None)` -- "does the actor hold this
-role at ANY site", not "at this batch's site" -- unlike the retired legacy `/batches` router, which was
-site-scoped. `test_cross_organization_access_denied` reproduces this deterministically (200, not the
-expected 403) and is left `xfail(strict=True)` citing SG-213 rather than silently weakened to match
-today's behaviour or deleted. Whether this is a real defect or an intended platform-wide-by-role
-authorization model (ADR-0006) is a project-owner decision, not something this pass can resolve
-unilaterally -- see SG-213 for the full analysis (confirmed as a platform-wide pattern across ~24 modules,
-not batch_execution-specific).
+SG-213 (found while porting, 2026-09-23): `batch_execution.router`'s step-start endpoint used to call
+`evaluate_policy(..., site_id=None)` -- "does the actor hold this role at ANY site", not "at this
+batch's site". Fixed in commit ef17d6f (2026-09-29), which rewired step-start and the module's other
+non-create endpoints to fetch the record first and pass `record.site_id`, the same pattern used
+throughout this codebase. `test_cross_organization_access_denied` below now gets the correct 403 and
+is a plain regression test again (the `xfail(strict=True)` that used to document the gap was removed
+2026-10-02 -- it was silently XPASSing, i.e. failing its own `strict` contract, since the ef17d6f fix
+landed).
+
+Client Topic 15 (2026-10-02) asked this same question platform-wide -- not just batch_execution -- and
+confirmed the ef17d6f pattern wasn't applied everywhere: `equipment`/`material` list+read endpoints and
+every QMS list endpoint (`qms.read_support.filtered()`'s optional `site_id` -- see
+`app.modules.policy.service.resolve_site_scope`) had the same class of gap on the *read* side. See
+docs/generated/18_SPEC_GAPS.md SG-213 for the full history.
 """
 
 import uuid
@@ -41,12 +46,6 @@ async def test_assert_single_organization_raises_on_second_organization(db):
         await assert_single_organization(db)
 
 
-@pytest.mark.xfail(
-    reason="SG-213: batch_execution's step-start endpoint authorizes via evaluate_policy(site_id=None) -- "
-    "any actor holding the role at ANY site can act on ANY site's batch. Real, deterministic, not a flake. "
-    "Left failing/xfail(strict) rather than weakened or deleted -- see docs/generated/18_SPEC_GAPS.md SG-213.",
-    strict=True,
-)
 async def test_cross_organization_access_denied(client, seeded, db):
     """An actor holding a role only at org A's site cannot act on a batch belonging to org B's site —
     enforced by the existing RBAC check (UserSiteRole is scoped to a specific site, never inherited

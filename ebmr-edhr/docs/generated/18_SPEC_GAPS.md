@@ -15570,9 +15570,41 @@ options:
     scratch).
 blocking: false
 owner: Security owner + Platform Architect (authorization-trust-boundary decision, platform-wide)
-resolution_document: "-- (open; tests/test_tenancy.py::test_cross_organization_access_denied left xfail(strict=True) citing this entry)"
-status: OPEN
+resolution_document: "Client_Decisions_Neededanswers.txt Topic 15 (2026-10-02) -- Option A confirmed"
+status: PARTIALLY RESOLVED_APPROVED
 ```
+
+**RESOLVED_APPROVED (Option A confirmed) 2026-10-02, project-owner-directed via client decision
+document, Topic 15** ("the most important one in this document"): staff must be restricted to the
+site(s) they are assigned to; cross-site access is a real security gap, not an intended platform-wide-
+by-role model. This confirms Option A over Option B -- the authorization-model decision this entry was
+blocked on is now made.
+
+**Engineering status (partial so far, this pass):** `test_cross_organization_access_denied`'s own
+premise (the specific `batch_execution` step-start case this entry was filed against) was already fixed
+by a prior, unrelated commit (`ef17d6f`, 2026-09-29) -- its `xfail(strict=True)` was stale (silently
+XPASSing) and has been removed. This pass additionally found and fixed the **read side** of the same
+class of gap, which `ef17d6f` did not touch: a new `policy/service.py::resolve_site_scope()` helper
+(validates a caller-supplied `site_id`, or resolves an omitted one to every site the actor actually holds
+the action at -- never "all sites" silently) is now used by all ~12 QMS list endpoints
+(`qms/read_support.py::filtered()` now accepts a site-id list), `material.router`'s
+`list_materials`/`list_warehouse_locations`/`get_availability` (the latter two had no `actor` dependency
+at all -- genuinely unauthenticated, not merely unscoped), and `equipment.router`'s
+`list_assets`/`get_asset`/`list_areas`/`get_area` (had an `actor` dependency but no RBAC/site check at
+all). Five new `.view` permission codes added (`material.view`, `warehouse_location.view`,
+`inventory_availability.view`, `equipment_asset.view`, `equipment_area.view`), granted to every role that
+already holds the corresponding write actions, in both `scripts/seed.py` and `tests/conftest.py`.
+
+**Still open (tracked as follow-on, same gap):** the full write-side sweep across the ~24 affected
+modules this entry originally named (`product_master`, `recipe_master`, `qc`, `qa_review`, `release`,
+`material_specification`, `genealogy`, `evidence`, `vault`, `audit`, `iam`, `rules`, `security`,
+`validation`, `readmodels`, `yield_reconciliation`, `packaging`, `device`, `supplier_quality`,
+`workflowops`, `disaster_recovery`, `dataops`, `ddcp`) has not been audited yet beyond the
+`batch_execution`/`material`/`equipment`/`qms` modules covered by `ef17d6f` and this pass -- each needs
+the same "does every single-record mutate/read endpoint fetch-then-pass `record.site_id`, and does every
+list endpoint resolve an omitted `site_id` via `resolve_site_scope` rather than passing `None` through"
+audit applied. A second seeded `Site` for cross-site test coverage (today only one `Site` is seeded) is
+also still open.
 
 ### SG-214 — Workflow Handoff Notification audience originally read only the RBAC permission code, not the (possibly narrower) `signature.signature_policy.required_role_id` -- RESOLVED (Option B implemented)
 
