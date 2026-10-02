@@ -26,12 +26,13 @@ from app.modules.material.commands import (
     CreateMaterialReceiptCommand,
     CreateSamplingOrderCommand,
     CreateWarehouseLocationCommand,
-    DispositionHeldReceiptCommand,
     DeleteMaterialCommand,
+    DispositionHeldReceiptCommand,
     EvaluateMaterialReconciliationCommand,
     ExamineReceiptCommand,
     ExecuteDestructionCommand,
     MergeContainersCommand,
+    OverrideDispensingOrderTargetCommand,
     ReceiveMaterialLotCommand,
     RecordConsumptionCommand,
     RecordManualReadingCommand,
@@ -77,6 +78,7 @@ from app.modules.material.commands import (
     inventory_adjustment_request_record_hash,
     lot_record_hash,
     merge_containers,
+    override_dispensing_order_target,
     receipt_record_hash,
     receive_material_lot,
     record_consumption,
@@ -1075,11 +1077,29 @@ def _dispensing_dict(order: DispensingOrder) -> dict:
         "target_uom_id": str(order.target_uom_id) if order.target_uom_id else None,
         "tolerance_low": str(order.tolerance_low),
         "tolerance_high": str(order.tolerance_high),
+        "target_from_recipe": order.target_from_recipe,
+        "override_reason": order.override_reason,
+        "overridden_by_user_id": str(order.overridden_by_user_id) if order.overridden_by_user_id else None,
+        "overridden_at": order.overridden_at.isoformat() if order.overridden_at else None,
         "state": order.state,
         "performed_by_user_id": str(order.performed_by_user_id) if order.performed_by_user_id else None,
         "requested_by_user_id": str(order.requested_by_user_id),
         "version": order.version,
     }
+
+
+@dispensing_v1_router.post("/orders/{order_id}/override-target", response_model=MutationReceipt)
+async def post_override_target(
+    order_id: uuid.UUID,
+    cmd: OverrideDispensingOrderTargetCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        order = await session.get(DispensingOrder, order_id)
+        if order is None:
+            raise NotFoundError("Dispensing order not found")
+        return await override_dispensing_order_target(session, order_id, cmd, actor.user_id, order.site_id)
 
 
 @dispensing_v1_router.get("/orders/{order_id}")

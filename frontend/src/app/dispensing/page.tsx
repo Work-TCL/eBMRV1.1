@@ -20,7 +20,6 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
-import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
@@ -35,11 +34,18 @@ interface DispensingOrder {
   id: string;
   site_id: string;
   batch_id: string;
+  batch_step_id: string | null;
   material_id: string;
   target_qty: string;
   target_uom: string;
   tolerance_low: string;
   tolerance_high: string;
+  // SG-094 (Topic 5): target/tolerance are now derived from the batch's recipe at creation time --
+  // target_from_recipe is false only after a Supervisor/Admin `override-target` call.
+  target_from_recipe: boolean;
+  override_reason: string | null;
+  overridden_by_user_id: string | null;
+  overridden_at: string | null;
   state: string;
   version: number;
 }
@@ -271,15 +277,21 @@ function CreateOrderModal({
   const [batches, setBatches] = useState<BatchSummary[]>([]);
   const [batchId, setBatchId] = useState("");
   const [materialId, setMaterialId] = useState("");
-  const [targetQty, setTargetQty] = useState("");
-  const [targetUom, setTargetUom] = useState("kg");
-  // Absolute acceptable min/max total weight -- NOT a delta from target (services/gxp-api's
-  // complete_dispensing checks `tolerance_low <= total_taken <= tolerance_high` directly against these
-  // stored values, confirmed by test_dispensing_flow.py's own fixtures: target 30 / low 28 / high 32,
-  // target 1.0 / low 0.9 / high 1.1). Left blank rather than defaulted -- SG-089: there is no tolerance-
-  // calculation mode anywhere in this codebase, the caller supplies the real captured bounds.
-  const [toleranceLow, setToleranceLow] = useState("");
-  const [toleranceHigh, setToleranceHigh] = useState("");
+  const [batchStepId, setBatchStepId] = useState("");
+
+  // SG-094 (Topic 5, project-owner-directed): target/tolerance are no longer entered here -- they are
+  // derived server-side from the chosen batch step's recipe-declared RecipeMaterialRequirement. The
+  // operator picks the batch and the step within it; a Supervisor/Admin can still override the derived
+  // values afterward (see the order detail's "Override target" action), but only while the order is
+  // still in "created" state.
+  const { data: executionView, loading: stepsLoading } = useApiResource<{
+    steps: { id: string; recipe_step_code: string }[];
+    step_detail_by_step_id: Record<string, { instruction_text: string | null } | undefined>;
+  }>(batchId ? `/batches/v1/${batchId}/execution-view` : null);
+  const steps = executionView?.steps ?? [];
+  // Defaults to the first step once the batch's steps load, without a setState-in-effect round trip --
+  // batchStepId only tracks an explicit user pick (or is reset to "" when the batch itself changes).
+  const effectiveBatchStepId = steps.some((s) => s.id === batchStepId) ? batchStepId : steps[0]?.id ?? "";
 
   useEffect(() => {
     let cancelled = false;
@@ -315,19 +327,24 @@ function CreateOrderModal({
               idempotency_key: newIdempotencyKey(),
               site_id: siteId,
               batch_id: batchId,
+              batch_step_id: effectiveBatchStepId,
               material_id: materialId,
-              target_qty: targetQty,
-              target_uom: targetUom,
-              tolerance_low: toleranceLow,
-              tolerance_high: toleranceHigh,
             })
           );
         }}
       >
         <Field label="Batch" required hint={batches.length === 0 ? "No batches available yet." : undefined}>
           {batches.length > 0 ? (
-            <Select value={batchId} onChange={(e) => setBatchId(e.target.value)} required autoFocus>
- <option value="">Select a batch</option>
+            <Select
+              value={batchId}
+              onChange={(e) => {
+                setBatchId(e.target.value);
+                setBatchStepId("");
+              }}
+              required
+              autoFocus
+            >
+              <option value="">Select a batch</option>
               {batches.map((b) => (
                 <option key={b.id} value={b.id}>
                     {b.batch_number} - {b.product_name} ({b.product_code})
@@ -337,6 +354,28 @@ function CreateOrderModal({
           ) : (
             <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} placeholder="Batch ID" required autoFocus />
           )}
+        </Field>
+        <Field
+          label="Batch step"
+          required
+          hint={
+            !batchId
+              ? "Pick a batch first."
+              : stepsLoading
+              ? "Loading steps…"
+              : steps.length === 0
+              ? "This batch's recipe declares no steps."
+              : "The recipe's declared material requirement for this step sets the target/tolerance."
+          }
+        >
+          <Select value={effectiveBatchStepId} onChange={(e) => setBatchStepId(e.target.value)} required disabled={!batchId || steps.length === 0}>
+            <option value="">Select a step…</option>
+            {steps.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.recipe_step_code}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="Material" required>
           <Select value={materialId} onChange={(e) => setMaterialId(e.target.value)} required>
@@ -348,22 +387,10 @@ function CreateOrderModal({
             ))}
           </Select>
         </Field>
-        <div className="grid grid-cols-4 gap-4">
-          <Field label="Target quantity" required>
-            <Input type="number" step="any" value={targetQty} onChange={(e) => setTargetQty(e.target.value)} required />
-          </Field>
-          <UomSelect label="UOM" value={targetUom} onChange={setTargetUom} required />
-          <Field label="Tolerance low" required hint="Absolute minimum acceptable total weight - not a delta from target.">
-            <Input type="number" step="any" value={toleranceLow} onChange={(e) => setToleranceLow(e.target.value)} required />
-          </Field>
-          <Field label="Tolerance high" required hint="Absolute maximum acceptable total weight - not a delta from target.">
-            <Input type="number" step="any" value={toleranceHigh} onChange={(e) => setToleranceHigh(e.target.value)} required />
-          </Field>
-        </div>
         <p className="hint mb-3">
-          Tolerance low/high are the absolute acceptable range for the total weighed quantity (e.g. target{" "}
-          {targetQty || "40"} with a ±0.5 tolerance means low {targetQty ? (Number(targetQty) - 0.5).toString() : "39.5"}, high{" "}
-          {targetQty ? (Number(targetQty) + 0.5).toString() : "40.5"}) - completion is rejected outside this exact range.
+          Target quantity, UOM and tolerance are not entered here - they come from this step&apos;s released
+          recipe material requirement. If the recipe declares no requirement for this material at this
+          step, creation is rejected rather than guessing a target.
         </p>
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-2">
@@ -373,7 +400,7 @@ function CreateOrderModal({
           <Button
             type="submit"
             variant="primary"
-            disabled={busy || !batchId.trim() || !materialId || !siteId || !toleranceLow.trim() || !toleranceHigh.trim()}
+            disabled={busy || !batchId.trim() || !effectiveBatchStepId || !materialId || !siteId}
           >
             {busy ? "Creating…" : "Create order"}
           </Button>
@@ -396,6 +423,8 @@ function OrderModal({
   const detail = useApiResource<DispensingOrder>(`/dispensing/v1/orders/${orderId}`);
   const [step, setStep] = useState<Step | null>(null);
 
+  const [overriding, setOverriding] = useState(false);
+
   const o = detail.data;
   if (!o) {
     return (
@@ -412,6 +441,8 @@ function OrderModal({
   // select_source/start/readings/manual_reading/complete share one grant (Admin/Operator/Supervisor).
   const canWeigh = hasPermission(me, "dispensing_order.select_source");
   const canCancel = hasPermission(me, "dispensing_order.cancel");
+  // SG-094 (Topic 5): Supervisor/Admin-only, and only reachable before dispensing starts.
+  const canOverrideTarget = o.state === "created" && hasPermission(me, "dispensing_order.override_target");
 
   function offered(s: Step): boolean {
     if (!allowed.includes(s)) return false;
@@ -436,6 +467,22 @@ function OrderModal({
             {o.tolerance_low}–{o.tolerance_high}
           </span>
         </Fact>
+        <Fact label="Target source">
+          {o.target_from_recipe ? (
+            <StatePill state="accepted" icon="check-circle">
+              From recipe
+            </StatePill>
+          ) : (
+            <StatePill state="conflict" icon="alert-triangle">
+              Manually overridden
+            </StatePill>
+          )}
+        </Fact>
+        {!o.target_from_recipe && o.override_reason && (
+          <Fact label="Override reason">
+            <span className="fs-2">{o.override_reason}</span>
+          </Fact>
+        )}
         <Fact label="Record version">{o.version}</Fact>
         <IdFact label="Order ID" value={o.id} />
         <IdFact label="Batch" value={o.batch_id} />
@@ -447,6 +494,11 @@ function OrderModal({
           Close
         </Button>
         <div className="flex gap-2 flex-wrap">
+          {canOverrideTarget && (
+            <Button size="sm" variant="secondary" onClick={() => setOverriding(true)}>
+              <Icon name="pen" /> Override target
+            </Button>
+          )}
           {(Object.keys(STEP_LABEL) as Step[]).filter(offered).map((s) => (
             <Button
               key={s}
@@ -467,6 +519,18 @@ function OrderModal({
           onClose={() => setStep(null)}
           onDone={() => {
             setStep(null);
+            detail.reload();
+            onChanged();
+          }}
+        />
+      )}
+
+      {overriding && (
+        <OverrideTargetModal
+          order={o}
+          onClose={() => setOverriding(false)}
+          onDone={() => {
+            setOverriding(false);
             detail.reload();
             onChanged();
           }}
@@ -777,5 +841,88 @@ function StepModal({
         }
       }}
     />
+  );
+}
+
+// SG-094 (Topic 5) override path: RBAC-only (Supervisor/Admin via dispensing_order.override_target),
+// mandatory reason, no signature -- mirrors the batch_step role-override shape rather than a signature
+// ceremony for a record whose dispensing hasn't started yet. Only reachable while state == "created"
+// (enforced server-side; OrderModal also only offers the button then).
+function OverrideTargetModal({
+  order,
+  onClose,
+  onDone,
+}: {
+  order: DispensingOrder;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { busy, error, run } = useCommand(onDone);
+  const [targetQty, setTargetQty] = useState(order.target_qty);
+  const [targetUom, setTargetUom] = useState(order.target_uom);
+  const [toleranceLow, setToleranceLow] = useState(order.tolerance_low);
+  const [toleranceHigh, setToleranceHigh] = useState(order.tolerance_high);
+  const [overrideReason, setOverrideReason] = useState("");
+
+  return (
+    <Modal open onClose={onClose} title="Override dispensing target">
+      <Banner tone="warn" title="Manual override">
+        This replaces the recipe-derived target/tolerance for this order only. A documented reason is
+        required and is kept on the order&apos;s audit trail.
+      </Banner>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(() =>
+            api.post(`/dispensing/v1/orders/${order.id}/override-target`, {
+              idempotency_key: newIdempotencyKey(),
+              expected_version: order.version,
+              target_qty: targetQty,
+              target_uom: targetUom,
+              tolerance_low: toleranceLow,
+              tolerance_high: toleranceHigh,
+              override_reason: overrideReason,
+            })
+          );
+        }}
+      >
+        <div className="grid grid-cols-4 gap-4 mt-3">
+          <Field label="Target quantity" required>
+            <Input type="number" step="any" value={targetQty} onChange={(e) => setTargetQty(e.target.value)} required />
+          </Field>
+          <Field label="UOM" required>
+            <Input value={targetUom} onChange={(e) => setTargetUom(e.target.value)} required />
+          </Field>
+          <Field label="Tolerance low" required>
+            <Input type="number" step="any" value={toleranceLow} onChange={(e) => setToleranceLow(e.target.value)} required />
+          </Field>
+          <Field label="Tolerance high" required>
+            <Input type="number" step="any" value={toleranceHigh} onChange={(e) => setToleranceHigh(e.target.value)} required />
+          </Field>
+        </div>
+        <Field label="Override reason" required>
+          <textarea
+            className="input"
+            rows={3}
+            value={overrideReason}
+            onChange={(e) => setOverrideReason(e.target.value)}
+            required
+          />
+        </Field>
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={busy || !targetQty.trim() || !targetUom.trim() || !toleranceLow.trim() || !toleranceHigh.trim() || !overrideReason.trim()}
+          >
+            {busy ? "Saving…" : "Override target"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

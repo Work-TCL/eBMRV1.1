@@ -36,12 +36,14 @@ from app.modules.material.models import (
     WeighingReading,
     WeighingSession,
 )
-from app.modules.policy.service import evaluate_policy
 from app.modules.material_specification.models import MaterialSpecificationVersion
+from app.modules.policy.service import evaluate_policy
 from app.modules.qc import commands as qc_commands
 from app.modules.qc.models import QcResult, QcSample, QcTestDefinition, QcTestOrder, QcTestSpecification
 from app.modules.qms import commands as qms_commands
 from app.modules.qms.models import DeviationRecord
+from app.modules.recipe_master import service as recipe_master_service
+from app.modules.recipe_master.models import RecipeMaterialRequirement
 from app.modules.rules import commands as rules_commands
 from app.modules.rules import service as rules_service
 from app.modules.signature import service as signature_service
@@ -3351,22 +3353,58 @@ def _assert_dispensing_version(order: DispensingOrder, expected_version: int) ->
 
 
 # ---------------------------------------------------------------------------
-# CreateDispensingOrder — DSP-FR-001. Unsigned (SG-087). target_qty/tolerance_low/tolerance_high are
-# caller-supplied captured values -- no target-calculation or tolerance-rule execution mode exists
-# anywhere in this codebase (SG-089), only the rules engine's PASS/FAIL gate evaluation.
+# CreateDispensingOrder — DSP-FR-001. Unsigned (SG-087). SG-094 (project-owner-directed, Topic 5):
+# target_qty/target_uom/tolerance_low/tolerance_high are no longer caller-supplied -- they are derived
+# from the batch's released recipe `RecipeMaterialRequirement` at creation time, the same resolution
+# chain `_recipe_material_requirements_for_step` (batch_execution/commands.py) already uses for the live
+# execution path confirmed to be the real `recipe_master` system (not a disconnected stub). A manual
+# value is only reachable afterward via `override_dispensing_order_target` (Supervisor/Admin, mandatory
+# reason, no signature -- mirrors `batch_step.role_override`), and only while state == "created".
 # ---------------------------------------------------------------------------
+
+
+async def _recipe_material_requirement_for_dispensing(
+    session: AsyncSession, batch: Batch, batch_step: BatchStep, material_id: uuid.UUID
+) -> RecipeMaterialRequirement | None:
+    """Same stable_step_code lookup `_recipe_material_requirements_for_step`
+    (batch_execution/commands.py:863-876) uses, narrowed to the single requirement whose
+    `material_spec_version_id` (or `alternative_material_spec_version_id` when
+    `substitution_allowed`) resolves to `material_id`."""
+    graph = await recipe_master_service.get_graph(session, batch.recipe_version_id)
+    code_by_step_id = {s.id: s.stable_step_code for s in graph["steps"]}
+    step_id_by_code = {code: sid for sid, code in code_by_step_id.items()}
+    recipe_step_id = step_id_by_code.get(batch_step.recipe_step_code)
+    candidates = [m for m in graph["material_requirements"] if m.step_id == recipe_step_id]
+    if not candidates:
+        return None
+    spec_version_ids = {m.material_spec_version_id for m in candidates}
+    spec_version_ids |= {
+        m.alternative_material_spec_version_id for m in candidates if m.alternative_material_spec_version_id
+    }
+    spec_versions = (
+        await session.execute(
+            select(MaterialSpecificationVersion).where(MaterialSpecificationVersion.id.in_(spec_version_ids))
+        )
+    ).scalars().all()
+    material_id_by_spec_version = {sv.id: sv.material_id for sv in spec_versions}
+    for req in candidates:
+        if material_id_by_spec_version.get(req.material_spec_version_id) == material_id:
+            return req
+        if (
+            req.substitution_allowed
+            and req.alternative_material_spec_version_id is not None
+            and material_id_by_spec_version.get(req.alternative_material_spec_version_id) == material_id
+        ):
+            return req
+    return None
 
 
 class CreateDispensingOrderCommand(CommandEnvelope):
     site_id: uuid.UUID
     batch_id: uuid.UUID
-    batch_step_id: uuid.UUID | None = None
+    batch_step_id: uuid.UUID
     material_id: uuid.UUID
     material_spec_version_id: uuid.UUID | None = None
-    target_qty: Decimal
-    target_uom: str
-    tolerance_low: Decimal
-    tolerance_high: Decimal
 
 
 async def create_dispensing_order(
@@ -3377,29 +3415,48 @@ async def create_dispensing_order(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    if cmd.target_qty <= 0:
-        raise ValidationFailedError("target_qty must be positive")
-    if cmd.tolerance_low > cmd.tolerance_high:
-        raise ValidationFailedError("tolerance_low must not exceed tolerance_high")
-
     batch = await session.get(Batch, cmd.batch_id)
     if batch is None:
         raise NotFoundError("Batch not found")
     material = await session.get(Material, cmd.material_id)
     if material is None:
         raise NotFoundError("Material not found")
+    batch_step = await session.get(BatchStep, cmd.batch_step_id)
+    if batch_step is None or batch_step.batch_id != cmd.batch_id:
+        raise NotFoundError("Batch step not found on this batch")
+
+    requirement = await _recipe_material_requirement_for_dispensing(session, batch, batch_step, cmd.material_id)
+    if requirement is None:
+        raise ValidationFailedError(
+            "No released recipe material requirement found for this material at this step (SG-094)",
+            material_id=str(cmd.material_id), batch_step_id=str(cmd.batch_step_id),
+        )
+    if requirement.target_value is None or requirement.min_value is None or requirement.max_value is None or not requirement.uom:
+        raise ValidationFailedError(
+            "Recipe material requirement is missing a target/tolerance/UOM declaration (SG-094)",
+            requirement_id=str(requirement.id),
+        )
+    target_qty = requirement.target_value
+    tolerance_low = requirement.min_value
+    tolerance_high = requirement.max_value
+    target_uom = requirement.uom
+    if target_qty <= 0:
+        raise ValidationFailedError("target_qty must be positive")
+    if tolerance_low > tolerance_high:
+        raise ValidationFailedError("tolerance_low must not exceed tolerance_high")
 
     order = DispensingOrder(
         site_id=cmd.site_id,
         batch_id=cmd.batch_id,
         batch_step_id=cmd.batch_step_id,
         material_id=cmd.material_id,
-        material_spec_version_id=cmd.material_spec_version_id,
-        target_qty=cmd.target_qty,
-        target_uom=cmd.target_uom,
-        target_uom_id=await _resolve_uom_id_strict(session, cmd.target_uom),
-        tolerance_low=cmd.tolerance_low,
-        tolerance_high=cmd.tolerance_high,
+        material_spec_version_id=cmd.material_spec_version_id or requirement.material_spec_version_id,
+        target_qty=target_qty,
+        target_uom=target_uom,
+        target_uom_id=requirement.uom_id or await _resolve_uom_id_strict(session, target_uom),
+        tolerance_low=tolerance_low,
+        tolerance_high=tolerance_high,
+        target_from_recipe=True,
         state="created",
         requested_by_user_id=actor_user_id,
         version=1,
@@ -3417,7 +3474,7 @@ async def create_dispensing_order(
         action="Created",
         actor_id=actor_user_id,
         correlation_id=correlation_id,
-        new_value={"material_id": str(cmd.material_id), "target_qty": str(cmd.target_qty)},
+        new_value={"material_id": str(cmd.material_id), "target_qty": str(target_qty), "target_from_recipe": True},
     )
     await write_outbox_event(
         session,
@@ -3445,6 +3502,113 @@ async def create_dispensing_order(
         command_id=receipt.id,
         aggregate_id=order.id,
         resulting_version=1,
+        audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
+    )
+
+
+class OverrideDispensingOrderTargetCommand(CommandEnvelope):
+    expected_version: int
+    target_qty: Decimal
+    target_uom: str
+    tolerance_low: Decimal
+    tolerance_high: Decimal
+    override_reason: str
+
+
+async def override_dispensing_order_target(
+    session: AsyncSession,
+    order_id: uuid.UUID,
+    cmd: OverrideDispensingOrderTargetCommand,
+    actor_user_id: uuid.UUID,
+    site_id: uuid.UUID,
+) -> MutationReceipt:
+    """Topic 5 override path (SG-094): RBAC-only (Supervisor/Admin via `dispensing_order.override_target`),
+    mandatory reason, no signature -- mirrors `_enforce_step_role`'s role-override precedent
+    (batch_execution/commands.py:540-564) rather than inventing a signature ceremony for a record whose
+    dispensing has not yet started. Only usable while `order.state == "created"`, so the overridden
+    values are what `start_dispensing`/`complete_dispensing` actually evaluate against."""
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.override_reason or not cmd.override_reason.strip():
+        raise ValidationFailedError("override_reason is required")
+    if cmd.target_qty <= 0:
+        raise ValidationFailedError("target_qty must be positive")
+    if cmd.tolerance_low > cmd.tolerance_high:
+        raise ValidationFailedError("tolerance_low must not exceed tolerance_high")
+
+    order = await _load_dispensing_order_for_update(session, order_id)
+    _assert_dispensing_version(order, cmd.expected_version)
+    if order.state != "created":
+        raise InvalidTransitionError(
+            "Dispensing target can only be overridden before dispensing starts", current_status=order.state
+        )
+
+    await evaluate_policy(session, actor_user_id, action="dispensing_order.override_target", site_id=site_id)
+
+    old_value = {
+        "target_qty": str(order.target_qty), "target_uom": order.target_uom,
+        "tolerance_low": str(order.tolerance_low), "tolerance_high": str(order.tolerance_high),
+        "target_from_recipe": order.target_from_recipe,
+    }
+    order.target_qty = cmd.target_qty
+    order.target_uom = cmd.target_uom
+    order.target_uom_id = await _resolve_uom_id_strict(session, cmd.target_uom)
+    order.tolerance_low = cmd.tolerance_low
+    order.tolerance_high = cmd.tolerance_high
+    order.target_from_recipe = False
+    order.override_reason = cmd.override_reason
+    order.overridden_by_user_id = actor_user_id
+    order.overridden_at = datetime.now(timezone.utc)
+    order.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=site_id,
+        aggregate_type="dispensing_order",
+        aggregate_id=order.id,
+        aggregate_version=order.version,
+        action="Changed",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        reason=cmd.override_reason,
+        old_value=old_value,
+        new_value={
+            "target_qty": str(order.target_qty), "target_uom": order.target_uom,
+            "tolerance_low": str(order.tolerance_low), "tolerance_high": str(order.tolerance_high),
+            "target_from_recipe": order.target_from_recipe, "override_reason": order.override_reason,
+        },
+    )
+    await write_outbox_event(
+        session,
+        event_type="DispensingOrderTargetOverridden",
+        aggregate_type="dispensing_order",
+        aggregate_id=order.id,
+        aggregate_version=order.version,
+        payload={"order_id": str(order.id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=site_id,
+        command_type="OverrideDispensingOrderTarget",
+        aggregate_type="dispensing_order",
+        aggregate_id=order.id,
+        expected_version=cmd.expected_version,
+        resulting_version=order.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=order.id,
+        resulting_version=order.version,
         audit_event_id=audit_event.id,
         correlation_id=correlation_id,
     )
@@ -4015,6 +4179,16 @@ async def complete_dispensing(
     _assert_dispensing_version(order, cmd.expected_version)
     if order.state not in ("started", "verified"):
         raise InvalidTransitionError("Dispensing is not ready to complete", current_status=order.state)
+
+    # SG-095 (project-owner-directed, Topic 10): a critical material's dispense cannot complete on the
+    # performer's own reading alone -- it must have passed through the existing independent `verify`
+    # step first (VerifierRequiredError + the performer != verifier check already enforced there).
+    dispensed_material = await session.get(Material, order.material_id)
+    if dispensed_material is not None and dispensed_material.critical and order.state != "verified":
+        raise VerifierRequiredError(
+            "Critical material dispensing requires independent verification before it can complete (SG-095)",
+            material_id=str(order.material_id),
+        )
 
     await evaluate_policy(session, actor_user_id, action="dispensing_order.complete", site_id=site_id)
 

@@ -6108,6 +6108,21 @@ resolution_document: "— (open)"
 status: OPEN
 ```
 
+**RESOLVED_APPROVED 2026-10-02, project-owner-directed via Client_Decisions_Neededanswers Topic 6.** The
+client's answer confirms this entry's own already-built fallback is the intended design, not a gap needing
+a Document 04 addendum: order *creation* stays unsigned/RBAC-gated (`dispensing_order.create`), and every
+subsequent operation on the now-existing record (select-source, start, readings, manual-reading, verify,
+complete, cancel) gets a full real Document 04 signature ceremony bound to that record's id/version/hash,
+exactly as already built. No code change was needed or made — this closes the gap by confirming current
+behavior matches the approved answer, not by building anything new. The underlying architecture question
+this entry raised (how a create-time signature *would* bind if one were ever required) remains correctly
+unresolved for any future command that might need it, but is no longer blocking for Document 21/dispensing.
+
+```yaml
+resolution_document: "No code change -- current create_dispensing_order (unsigned/RBAC-gated) plus signed select-source/start/readings/manual-reading/verify/complete/cancel confirmed as the approved design via Client_Decisions_Neededanswers Topic 6."
+status: RESOLVED_APPROVED
+```
+
 ### SG-093 — Document 21 requirements needing infrastructure this codebase does not have yet: balance/Edge adapter, environment monitoring, potency/assay-rule execution
 
 Same class as SG-082/SG-088's WP-06-not-built bundles:
@@ -6211,6 +6226,45 @@ resolution_document: "— (open)"
 status: OPEN
 ```
 
+**RESOLVED_APPROVED 2026-10-02, project-owner-directed via Client_Decisions_Neededanswers Topic 5.**
+This entry's own earlier research ("the batch execution path carries no target-quantity, formula or
+tolerance data at all... the disconnected elaborate `recipe_master` module") turned out to be stale: a
+fresh trace of `Batch.recipe_version_id`'s FK target (`ebmr.gxp_recipe_version`) against
+`recipe_master.RecipeVersion.__tablename__` (also `gxp_recipe_version`) confirms they are the *same*
+table — the live batch execution path is already wired to the real `recipe_master` schema, not a
+disconnected stub, and `batch_execution/commands.py::_recipe_material_requirements_for_step()` already
+implements the exact resolution chain (`stable_step_code` <-> `BatchStep.recipe_step_code`) needed to
+read `RecipeMaterialRequirement` rows for a live batch step. `material_requirement` is therefore not a
+missing entity at all — it is `recipe_master.RecipeMaterialRequirement`, built and in production use by
+the material/equipment-at-step-start enforcement (SG-045/SG-048 #012).
+
+`create_dispensing_order` now reuses that exact chain: `CreateDispensingOrderCommand.batch_step_id` is
+required (was optional/caller-supplied-everything); a new
+`_recipe_material_requirement_for_dispensing()` helper resolves the single `RecipeMaterialRequirement`
+for the given step whose `material_spec_version_id` (or `alternative_material_spec_version_id`, when
+`substitution_allowed`) maps to the requested material, and `target_qty`/`target_uom`/`tolerance_low`/
+`tolerance_high` are taken from that requirement's `target_value`/`uom`/`min_value`/`max_value` —
+creation hard-errors (`VALIDATION_FAILED`) if no matching requirement exists, rather than falling back to
+a guessed target. `DispensingOrder.target_from_recipe` records which path produced the stored values.
+
+DSP-FR-008's "No manual target change" is honored for the normal path, but a deliberate, narrow,
+auditable override exists for real operational need (e.g. a documented potency adjustment): a new
+`override_dispensing_order_target()` command, gated by a new `dispensing_order.override_target`
+permission (Supervisor + Admin only, same mapping convention as `batch_step.role_override`), requires a
+non-empty `override_reason`, and is only callable while `order.state == "created"` — this sidesteps
+SG-092's "signing a not-yet-existent record" question entirely, since the override targets an
+already-created record, and avoids inventing a formula/potency-calculation engine (still correctly out of
+scope — only a *rule-execution mode* would need one; a human-reviewed, reasoned manual override does not).
+No calculation engine, formula, or potency-adjustment rule was invented — the recipe's own already-
+authored `target_value`/`min_value`/`max_value` is used as-is, matching the "captured declared value, no
+execution engine" precedent `RecipeMaterialRequirement`'s own docstring already sets (same class as
+`RecipeParameter`'s tolerance shape).
+
+```yaml
+resolution_document: "services/gxp-api/app/modules/material/commands.py (_recipe_material_requirement_for_dispensing, create_dispensing_order, OverrideDispensingOrderTargetCommand/override_dispensing_order_target), app/modules/material/models.py (DispensingOrder.target_from_recipe/override_reason/overridden_by_user_id/overridden_at), app/modules/material/router.py (POST /dispensing/v1/orders/{id}/override-target), migrations/versions/c7e9a1b3d5f8_0128_dispensing_order_recipe_target.py, scripts/seed.py + tests/conftest.py (dispensing_order.override_target permission, Supervisor+Admin), tests/test_dispensing_flow.py (_create_batch_with_requirement fixture + new tests), frontend/src/app/dispensing/page.tsx (CreateOrderModal batch-step picker replaces manual target/tolerance entry; OverrideTargetModal)."
+status: RESOLVED_APPROVED
+```
+
 ### SG-095 — DSP-FR-018's conditional independence can't be expressed by the current signature-policy schema
 
 Document 106 row 47/49/50/51/52 (order create/complete/manual-reading/readings/select-source) all carry
@@ -6263,6 +6317,35 @@ blocking: false
 owner: Data Architect + Materials module owner + Batch/Recipe module owner
 resolution_document: "— (open)"
 status: OPEN
+```
+
+**PARTIALLY RESOLVED_APPROVED 2026-10-02, project-owner-directed via Client_Decisions_Neededanswers
+Topic 10, material half only.** The client's answer requires independent verification before a critical
+material's dispense can complete — it does not require (and does not answer) *how* that conditional
+should be expressed inside the shared `signature_policies.requires_independent_signer` schema this entry
+originally raised as the blocker. Rather than guess a conditional-expression syntax that would touch every
+module's signature policy, the requirement is enforced one level up, at the command's own state-machine
+precondition, reusing primitives that already exist and are already tested: `complete_dispensing()`
+(`material/commands.py`) now additionally requires `order.state == "verified"` — not merely
+`"started"` — whenever `Material.critical` is true for the order's material, forcing the order through
+`verify_dispensing()`'s pre-existing independence check (`performed_by_user_id` vs the verifying actor,
+raising `VerifierRequiredError`) before it can complete. A non-critical material's dispense is unaffected
+and may still complete straight from `"started"`, exactly as before. No change was made to
+`SignaturePolicy`/`requires_independent_signer` or to any Document 106 row — this resolves the material
+half of DSP-FR-018 without inventing the conditional-policy mechanism the original entry correctly
+declined to guess.
+
+The step-critical half remains exactly as this entry originally documented it: `BatchStep`/the live
+batch-execution path still has no step-level `is_critical` data source (only the separate
+`recipe_master.gxp_recipe_step.is_critical` does, and nothing reads it for dispensing), so step-level
+conditional independence is not built. This is left as a documented known limitation per the original
+plan, not guessed — the client's answer is satisfied by the material-level flag alone, and no client
+decision was given that would justify inventing cross-system wiring between the dispensing path and
+`recipe_master`'s step table.
+
+```yaml
+resolution_document: "services/gxp-api/app/modules/material/commands.py (complete_dispensing critical-material gate, reusing the existing VerifierRequiredError/performer-independence check from verify_dispensing). tests/test_dispensing_flow.py::test_complete_critical_material_requires_verification_first. Step-level is_critical wiring remains an open, documented limitation -- not attempted, no client decision covers it."
+status: RESOLVED_APPROVED  # material half only; step-critical half intentionally left open as a documented limitation, not blocking
 ```
 
 ### SG-096 — Document 21's label printing/reprint, line/booth clearance and genealogy wiring have no real implementation this pass

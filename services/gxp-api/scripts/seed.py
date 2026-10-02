@@ -238,6 +238,7 @@ PERMISSION_CATALOG = [
     ("dispensing_order.verify", "verify", "dispensing_order", "Independently verify a dispensing order (Document 21)"),
     ("dispensing_order.complete", "complete", "dispensing_order", "Complete a dispensing order (Document 21)"),
     ("dispensing_order.cancel", "cancel", "dispensing_order", "Cancel a dispensing order (Document 21)"),
+    ("dispensing_order.override_target", "override_target", "dispensing_order", "SG-094 RESOLVED_APPROVED (project-owner-directed, Topic 5): manually override a dispensing order's recipe-derived target/tolerance before dispensing starts, with a documented reason (Supervisor/Admin, no signature -- mirrors batch_step.role_override)"),
     ("material_consumption.create", "create", "material_consumption", "Record material consumption against a dispensed container (Document 22)"),
     ("material_return.create", "create", "material_return", "Return unused dispensed material to the warehouse (Document 22)"),
     ("material_loss.create", "create", "inventory_transaction", "Record a sample/reject/spill/approved-loss movement (Document 22)"),
@@ -776,7 +777,7 @@ ROLE_PERMISSIONS = {
         "material_container.split", "material_container.merge", "inventory_cycle_count.execute",
         "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start",
         "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.verify",
-        "dispensing_order.complete", "dispensing_order.cancel",
+        "dispensing_order.complete", "dispensing_order.cancel", "dispensing_order.override_target",
         "material_consumption.create", "material_return.create", "material_loss.create",
         "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject",
         "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate",
@@ -884,7 +885,7 @@ ROLE_PERMISSIONS = {
         "qc_sample.create", "qc_sample.receive", "qc_test_order.create", "qc_test_order.start",
         "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
         *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
-        "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
+        "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "dispensing_order.override_target", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
     "QA Reviewer": ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation", "oos_record.link_change_control",
         # 2026-09-18, project-owner-directed: QC investigation class — mirrors qms_deviation.investigate
         # (also QA Reviewer) plus QC Reviewer since this is QC-domain investigation work.

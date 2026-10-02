@@ -520,9 +520,12 @@ class DispensingOrder(Base):
     """Document 21 `dispensing_order` -- DSP-FR-001. `batch_step_id`/`material_spec_version_id` carry no
     FK -- no `material_requirement` entity exists anywhere in this codebase (SG-089), same unenforced-
     reference treatment as `MaterialLot.material_spec_version_id`. `target_qty`/`target_uom`/
-    `tolerance_low`/`tolerance_high` are caller-supplied captured values -- no target-calculation or
-    tolerance-rule execution mode exists (SG-089); `tolerance_rule_id`'s spec-declared field is dropped in
-    favor of the two explicit bound columns actually needed to evaluate against."""
+    `tolerance_low`/`tolerance_high` were originally caller-supplied captured values; SG-094
+    (project-owner-directed, Topic 5) now derives them from the batch's released recipe
+    `RecipeMaterialRequirement` at creation time -- `target_from_recipe` records which path produced the
+    stored values, and `override_reason`/`overridden_by_user_id`/`overridden_at` capture the
+    Supervisor/Admin-only manual override path (RBAC + mandatory reason, no signature, mirrors
+    `batch_step.role_override`), usable only while the order is still in `created` state."""
 
     __tablename__ = "dispensing_orders"
     __table_args__ = (
@@ -544,6 +547,10 @@ class DispensingOrder(Base):
     target_uom_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.gxp_uom.uom_id"))  # SG-146 (remainder)
     tolerance_low: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
     tolerance_high: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    target_from_recipe: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    override_reason: Mapped[str | None] = mapped_column(String(1000))
+    overridden_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
+    overridden_at: Mapped[datetime | None] = mapped_column()
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="created")
     # Set at `start`; the independence baseline `verify` (must not be performer) and `cancel` (must be
     # independent of the author, checked against requested_by_user_id instead) evaluate against.
