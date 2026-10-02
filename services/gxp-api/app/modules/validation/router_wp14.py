@@ -27,6 +27,7 @@ from app.modules.signature.service import create_challenge
 from app.modules.validation import commands_migration, commands_pq, commands_vsr
 from app.modules.validation.models_wp14 import (
     MigrationRun,
+    MigrationValidationPlan,
     PqScenario,
     ValidatedReleaseAuthorization,
     ValidationSummaryReport,
@@ -43,6 +44,17 @@ async def _actor_site(actor: AuthenticatedActor) -> uuid.UUID | None:
     return getattr(actor, "site_id", None)
 
 
+# SG-213 fix: `PqScenario`, `MigrationValidationPlan`, `ValidationSummaryReport` and
+# `ValidatedReleaseAuthorization` all carry their own nullable `site_id` (models_wp14.py docstring --
+# a customer deployment's PQ/migration/release authorization is naturally site-scoped). Every
+# single-record action below now fetches the record (or its parent, for `PqExecution`/`MigrationRun`/
+# `MigrationReconciliation`, none of which have their own `site_id` column) and checks *that* site,
+# instead of a blanket `None`. The two commands that already carry a `site_id` field
+# (`GenerateValidationSummaryReportCommand`, `IssueValidatedReleaseAuthorizationCommand`) use it
+# directly. Plain creates with neither a command `site_id` field nor an actor `site_id` (see
+# router.py's equivalent note) stay `site_id=None` -- there is nothing to consult yet.
+
+
 # =====================================================================================================
 # Document 85 (SPEC-VAL-007) -- Performance Qualification (PQ), UAT & Business Process Verification
 # =====================================================================================================
@@ -54,6 +66,7 @@ async def post_pq_scenarios(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # PqScenario.site_id has no input source on create (command carries none, actor carries none).
         await evaluate_policy(session, actor.user_id, action="validation.pq.manage", site_id=None)
         return await commands_pq.create_pq_scenario(session, cmd, actor.user_id, await _actor_site(actor))
 
@@ -65,7 +78,10 @@ async def post_pq_participants(
 ) -> MutationReceipt:
     cmd.scenario_id = scenario_id
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.pq.manage", site_id=None)
+        scenario = await session.get(PqScenario, scenario_id)
+        if scenario is None:
+            raise NotFoundError("PQ scenario not found")
+        await evaluate_policy(session, actor.user_id, action="validation.pq.manage", site_id=scenario.site_id)
         return await commands_pq.assign_pq_participants(session, cmd, actor.user_id, await _actor_site(actor))
 
 
@@ -75,7 +91,10 @@ async def post_pq_executions(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.pq.execute", site_id=None)
+        scenario = await session.get(PqScenario, cmd.scenario_id)
+        if scenario is None:
+            raise NotFoundError("PQ scenario not found")
+        await evaluate_policy(session, actor.user_id, action="validation.pq.execute", site_id=scenario.site_id)
         return await commands_pq.execute_pq_scenario(session, cmd, actor.user_id, await _actor_site(actor))
 
 
@@ -86,7 +105,10 @@ async def post_pq_approve(
 ) -> MutationReceipt:
     cmd.scenario_id = scenario_id
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.pq.approve", site_id=None)
+        scenario = await session.get(PqScenario, scenario_id)
+        if scenario is None:
+            raise NotFoundError("PQ scenario not found")
+        await evaluate_policy(session, actor.user_id, action="validation.pq.approve", site_id=scenario.site_id)
         return await commands_pq.approve_pq(session, cmd, actor.user_id, await _actor_site(actor))
 
 
@@ -116,6 +138,8 @@ async def post_migration_plans(
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # MigrationValidationPlan.site_id has no input source on create (command carries none, actor
+        # carries none).
         await evaluate_policy(session, actor.user_id, action="validation.migration.manage", site_id=None)
         return await commands_migration.create_migration_validation_plan(
             session, cmd, actor.user_id, await _actor_site(actor)
@@ -128,7 +152,10 @@ async def post_migration_runs(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.migration.manage", site_id=None)
+        plan = await session.get(MigrationValidationPlan, cmd.plan_id)
+        if plan is None:
+            raise NotFoundError("Migration validation plan not found")
+        await evaluate_policy(session, actor.user_id, action="validation.migration.manage", site_id=plan.site_id)
         return await commands_migration.execute_migration_dry_run(
             session, cmd, actor.user_id, await _actor_site(actor)
         )
@@ -141,7 +168,13 @@ async def post_migration_reconcile(
 ) -> MutationReceipt:
     cmd.run_id = run_id
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.migration.manage", site_id=None)
+        run = await session.get(MigrationRun, run_id)
+        if run is None:
+            raise NotFoundError("Migration run not found")
+        plan = await session.get(MigrationValidationPlan, run.plan_id)
+        if plan is None:
+            raise NotFoundError("Migration validation plan not found")
+        await evaluate_policy(session, actor.user_id, action="validation.migration.manage", site_id=plan.site_id)
         return await commands_migration.reconcile_migration_run(
             session, cmd, actor.user_id, await _actor_site(actor)
         )
@@ -154,7 +187,13 @@ async def post_migration_approve(
 ) -> MutationReceipt:
     cmd.run_id = run_id
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.migration.approve", site_id=None)
+        run = await session.get(MigrationRun, run_id)
+        if run is None:
+            raise NotFoundError("Migration run not found")
+        plan = await session.get(MigrationValidationPlan, run.plan_id)
+        if plan is None:
+            raise NotFoundError("Migration validation plan not found")
+        await evaluate_policy(session, actor.user_id, action="validation.migration.approve", site_id=plan.site_id)
         return await commands_migration.approve_migration_cutover(
             session, cmd, actor.user_id, await _actor_site(actor)
         )
@@ -181,7 +220,10 @@ async def get_migration_legacy_trace(
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.migration.trace_view", site_id=None)
+        plan = await session.get(MigrationValidationPlan, plan_id)
+        if plan is None:
+            raise NotFoundError("Migration validation plan not found")
+        await evaluate_policy(session, actor.user_id, action="validation.migration.trace_view", site_id=plan.site_id)
         return await commands_migration.verify_legacy_record_trace(session, plan_id, legacy_id)
 
 
@@ -196,7 +238,8 @@ async def post_summary_reports(
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.vsr.manage", site_id=None)
+        # GenerateValidationSummaryReportCommand carries its own site_id field -- use it directly.
+        await evaluate_policy(session, actor.user_id, action="validation.vsr.manage", site_id=cmd.site_id)
         return await commands_vsr.generate_validation_summary_report(
             session, cmd, actor.user_id, await _actor_site(actor)
         )
@@ -212,10 +255,10 @@ async def get_go_live_readiness(
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.release_auth.view", site_id=None)
         vsr = await session.get(ValidationSummaryReport, vsr_id)
         if vsr is None:
             raise NotFoundError("validation summary report not found")
+        await evaluate_policy(session, actor.user_id, action="validation.release_auth.view", site_id=vsr.site_id)
         gates = {
             "training": training, "production_config": production_config, "backups": backups,
             "interfaces": interfaces, "support": support, "monitoring": monitoring,
@@ -231,7 +274,10 @@ async def post_summary_report_approve(
 ) -> MutationReceipt:
     cmd.report_id = report_id
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.vsr.approve", site_id=None)
+        report = await session.get(ValidationSummaryReport, report_id)
+        if report is None:
+            raise NotFoundError("validation summary report not found")
+        await evaluate_policy(session, actor.user_id, action="validation.vsr.approve", site_id=report.site_id)
         return await commands_vsr.approve_validation_summary(
             session, cmd, actor.user_id, await _actor_site(actor)
         )
@@ -305,7 +351,8 @@ async def post_release_authorize(
 ) -> MutationReceipt:
     cmd.vsr_id = vsr_id
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.release_auth.authorize", site_id=None)
+        # IssueValidatedReleaseAuthorizationCommand carries its own site_id field -- use it directly.
+        await evaluate_policy(session, actor.user_id, action="validation.release_auth.authorize", site_id=cmd.site_id)
         return await commands_vsr.issue_validated_release_authorization(
             session, cmd, actor.user_id, await _actor_site(actor)
         )
@@ -318,7 +365,12 @@ async def post_release_deployment_check(
 ) -> MutationReceipt:
     cmd.authorization_id = authorization_id
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.release_auth.deployment_check", site_id=None)
+        authorization = await session.get(ValidatedReleaseAuthorization, authorization_id)
+        if authorization is None:
+            raise NotFoundError("validated release authorization not found")
+        await evaluate_policy(
+            session, actor.user_id, action="validation.release_auth.deployment_check", site_id=authorization.site_id
+        )
         return await commands_vsr.verify_deployment_against_validation_release(
             session, cmd, actor.user_id, await _actor_site(actor)
         )
@@ -346,7 +398,12 @@ async def post_release_post_go_live(
 ) -> MutationReceipt:
     cmd.authorization_id = authorization_id
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.post_go_live.record", site_id=None)
+        authorization = await session.get(ValidatedReleaseAuthorization, authorization_id)
+        if authorization is None:
+            raise NotFoundError("validated release authorization not found")
+        await evaluate_policy(
+            session, actor.user_id, action="validation.post_go_live.record", site_id=authorization.site_id
+        )
         return await commands_vsr.record_post_go_live_verification(
             session, cmd, actor.user_id, await _actor_site(actor)
         )

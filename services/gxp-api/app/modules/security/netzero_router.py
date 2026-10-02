@@ -16,6 +16,10 @@ from app.mutation.errors import NotFoundError
 
 router = APIRouter(prefix="/security/v1", tags=["security-netzero"])
 
+# SG-213 reviewed: both evaluate_policy calls below use site_id=None intentionally.
+# network_flow_definition/deployment_security_profile carry no site_id column -- site scoping in this
+# module is a deployment_profile value, not a column (see netzero_models.py module docstring).
+
 
 @router.get("/network-flows")
 async def get_network_flows(

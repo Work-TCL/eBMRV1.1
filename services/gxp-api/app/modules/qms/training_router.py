@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms import training_service
 from app.modules.qms.signature_support import (
     SignatureChallengeRequest,
@@ -193,10 +193,15 @@ async def post_create_waiver(
 async def get_subject_status(
     subject_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="training.subject.view", site_id=None)
-    assignments = await training_service.get_assignments_for_subject(session, subject_id)
-    qualifications = await training_service.get_qualifications_for_subject(session, subject_id)
-    waivers = await training_service.get_waivers_for_subject(session, subject_id)
+    # SG-213: a subject (iam.users row) can have assignments/qualifications/waivers recorded at several
+    # sites (each row carries its own site_id) -- site_id=None let any actor holding
+    # training.subject.view at ONE site see that subject's records at every site. resolve_site_scope
+    # resolves to every site the actor actually holds the action at (never silently "all sites"), and
+    # each list is filtered to it below.
+    site_scope = await resolve_site_scope(session, actor.user_id, None, action="training.subject.view")
+    assignments = [a for a in await training_service.get_assignments_for_subject(session, subject_id) if a.site_id in site_scope]
+    qualifications = [q for q in await training_service.get_qualifications_for_subject(session, subject_id) if q.site_id in site_scope]
+    waivers = [w for w in await training_service.get_waivers_for_subject(session, subject_id) if w.site_id in site_scope]
     return {
         "subject_id": str(subject_id),
         "assignments": [_assignment_dict(a) for a in assignments],
@@ -220,10 +225,14 @@ async def get_qualification_codes(
 ) -> list[str]:
     """Suggestion list for Recipe Master's `required_qualification_code` free-text field (SG-086 --
     no catalog table exists; this is a non-authoritative distinct-values read of `qms.qualification_record`,
-    not a controlled code list). Deliberately no site_id filter: a qualification code is a role-level
-    concept re-used across sites, not itself site-scoped data."""
-    await evaluate_policy(session, actor.user_id, action="training.qualification_code.list", site_id=None)
-    return await training_service.list_distinct_qualification_codes(session)
+    not a controlled code list).
+
+    SG-213 correction: the prior comment here claimed this was "not itself site-scoped data" -- false,
+    `qualification_record.site_id` is NOT NULL (training_models.py) -- site_id=None let any actor with
+    the permission at one site see every other site's granted codes. resolve_site_scope scopes this to
+    the sites the actor actually holds the action at."""
+    site_scope = await resolve_site_scope(session, actor.user_id, None, action="training.qualification_code.list")
+    return await training_service.list_distinct_qualification_codes(session, site_scope)
 
 
 @training_router.get("/matrix")

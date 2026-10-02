@@ -9,7 +9,7 @@ from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.iam.models import Site
 from app.modules.material_specification.models import MaterialSpecificationVersion
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.product_master.models import ProductVersion
 from app.modules.qc.models import QcTestSpecification
 from app.modules.recipe_master import service as recipe_master_service
@@ -382,13 +382,18 @@ async def post_supersede(
 
 @router.get("/families")
 async def get_families(
+    site_id: uuid.UUID | None = None,
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
     """Top-level Recipe Master listing (recipe_master/service.py::list_recipe_families). Registered ahead
-    of `/{recipe_family_id}/versions` so "families" is never parsed as a recipe_family_id UUID."""
-    await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=None)
-    return await recipe_master_service.list_recipe_families(session)
+    of `/{recipe_family_id}/versions` so "families" is never parsed as a recipe_family_id UUID.
+
+    SG-213 fix: `gxp_recipe_family.site_id` is a non-nullable per-row site, so this was gating on
+    "holds recipe.view anywhere" and then returning every site's recipe families. resolve_site_scope
+    turns an omitted site_id into only the sites the actor actually holds the action at."""
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="recipe.view")
+    return await recipe_master_service.list_recipe_families(session, site_scope)
 
 
 def _equipment_class_dict(k) -> dict:
@@ -401,7 +406,11 @@ async def get_equipment_classes(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
     """Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 4) -- registered ahead of
-    `/{recipe_family_id}/versions` so "equipment-classes" is never parsed as a recipe_family_id UUID."""
+    `/{recipe_family_id}/versions` so "equipment-classes" is never parsed as a recipe_family_id UUID.
+
+    SG-213 reviewed: gxp_equipment_class (models.py) has no site_id column -- it is a global controlled
+    vocabulary shared across sites (same table equipment/router.py's SG-218 comment documents as
+    cross-module master data), not a per-site record. site_id=None is correct."""
     await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=None)
     classes = await recipe_master_service.list_equipment_classes(session)
     return [_equipment_class_dict(k) for k in classes]
@@ -414,6 +423,9 @@ async def post_create_equipment_class(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # SG-213 reviewed: gxp_equipment_class has no site_id column and CreateEquipmentClassCommand has
+        # no site_id field -- same global-vocabulary reasoning as get_equipment_classes above.
+        # site_id=None is correct.
         await evaluate_policy(session, actor.user_id, action="recipe.author", site_id=None)
         return await create_equipment_class(session, cmd, actor.user_id)
 

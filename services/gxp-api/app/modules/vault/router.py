@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.signature.service import chain_signatures_so_far, create_challenge, resolve_signature_requirement
 from app.modules.vault import service as vault_service
 from app.modules.vault.commands import (
@@ -85,6 +85,12 @@ async def post_release_master(
 ) -> MutationReceipt:
     if cmd.object_type != object_type or cmd.business_id != business_id:
         raise ValidationFailedError("object_type/business_id in path and body must match")
+    # SG-213 reviewed: already intentional, not re-flagged here as a fresh gap -- CreateVaultReleaseCommand
+    # has no site_id field and vault_service.release_master is called here with no site either (see the
+    # SG-035 project-owner-directed comment in vault/commands.py::create_vault_release: "this endpoint has
+    # no site and no prior mutable record, so the required role is enforced at any site"). Domain modules
+    # with a real site (release_batch, disposition_material_lot) call vault_service.release_master directly
+    # with their own site_id and never reach this generic endpoint.
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="vault.correct", site_id=None)
         return await create_vault_release(session, cmd, actor.user_id)
@@ -159,13 +165,19 @@ async def get_object_integrity(
 async def get_versions(
     object_type: str,
     business_id: str,
+    site_id: uuid.UUID | None = None,
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
-    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=None)
+    # SG-213: resolve_site_scope turns an omitted site_id into only the sites the actor holds
+    # vault.review at, instead of "any site" leaking every other site's version chain. A version with
+    # site_id=None (the generic release path above, by design -- see its own comment) stays visible to
+    # anyone holding the permission, matching get_object's single-record behavior for the same object.
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="vault.review")
     objects = await vault_service.list_versions_for_business_id(
         session, object_type=object_type, business_id=business_id
     )
+    objects = [o for o in objects if o.site_id is None or o.site_id in site_scope]
     return [_object_dict(o) for o in objects]
 
 

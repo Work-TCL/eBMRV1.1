@@ -36,12 +36,19 @@ async def get_version(session: AsyncSession, product_version_id: uuid.UUID) -> P
     return version
 
 
-async def list_versions_for_business_id(session: AsyncSession, product_business_id: str) -> list[ProductVersion]:
+async def list_versions_for_business_id(
+    session: AsyncSession, product_business_id: str, site_scope: list[uuid.UUID]
+) -> list[ProductVersion]:
+    # SG-213 fix: product_version.site_id is a non-nullable per-row site; `site_scope` is the caller's
+    # resolve_site_scope() result, never an unfiltered cross-site read.
     return (
         (
             await session.execute(
                 select(ProductVersion)
-                .where(ProductVersion.product_business_id == product_business_id)
+                .where(
+                    ProductVersion.product_business_id == product_business_id,
+                    ProductVersion.site_id.in_(site_scope),
+                )
                 .order_by(ProductVersion.version_no)
             )
         )
@@ -64,7 +71,7 @@ async def get_constituents(session: AsyncSession, product_version_id: uuid.UUID)
     )
 
 
-async def list_product_business_ids(session: AsyncSession) -> list[ProductVersion]:
+async def list_product_business_ids(session: AsyncSession, site_scope: list[uuid.UUID]) -> list[ProductVersion]:
     """Read-only picker data for any field that references *another* Product Master record by its own
     Business ID (e.g. this module's own Constituent editor — PRD-FR-004/006's "meal kit" model: the drug
     substance and the device component are themselves Product Master versions). Document 09 declares no
@@ -74,11 +81,16 @@ async def list_product_business_ids(session: AsyncSession) -> list[ProductVersio
     write/CRUD contract, it only replaces free-text Business-ID entry with a real picker. Returns one row
     per distinct product_business_id — the highest version_no for that id — so callers get a name and
     lifecycle_state to show without a second round trip; the caller still uses
-    `GET /products/v1/{business_id}/versions` to resolve the *specific* version to reference."""
+    `GET /products/v1/{business_id}/versions` to resolve the *specific* version to reference.
+
+    SG-213 fix: `site_scope` (the caller's resolve_site_scope() result) filters product_version.site_id
+    -- previously unfiltered, so any actor holding product.view anywhere saw every site's products."""
     rows = (
         (
             await session.execute(
-                select(ProductVersion).order_by(ProductVersion.product_business_id, ProductVersion.version_no.desc())
+                select(ProductVersion)
+                .where(ProductVersion.site_id.in_(site_scope))
+                .order_by(ProductVersion.product_business_id, ProductVersion.version_no.desc())
             )
         )
         .scalars()

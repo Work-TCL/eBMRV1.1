@@ -44,6 +44,8 @@ async def post_create_supplier(
     async with session.begin():
         # 2026-09-18, project-owner-directed: create_supplier() had no evaluate_policy() call at all —
         # matching material.create's resolution (same session, same decision), Process Engineer + Admin.
+        # SG-213 reviewed: Supplier (models.py) explicitly has no site_id -- "a supplier is an org-wide
+        # legal identity" per the model's own docstring -- so site_id=None is correct, not a gap.
         await evaluate_policy(session, actor.user_id, action="supplier.create", site_id=None)
         return await create_supplier(session, cmd, actor.user_id)
 
@@ -175,6 +177,10 @@ async def list_suppliers(
     params: PageParams = Depends(page_params),
     status: str | None = None,
 ) -> dict:
+    # SG-213 reviewed: checked SupplierSite/SupplierQualification in models.py against the audit's premise
+    # that they carry a site_id -- they don't (SupplierSite has an address, no iam.sites.id FK at all;
+    # SupplierQualification only FKs to supplier_site_id). The whole module is org-wide, same as Supplier
+    # itself, so site_id=None is correct here and on get_supplier/get_supplier_qualification below.
     await evaluate_policy(session, actor.user_id, action="supplier.view", site_id=None)
     stmt = select(Supplier)
     if status:
@@ -198,6 +204,7 @@ async def get_supplier(
     supplier = await session.get(Supplier, supplier_id)
     if supplier is None:
         raise NotFoundError("Supplier not found")
+    # SG-213 reviewed: see list_suppliers' comment above -- org-wide, no site_id anywhere in this module.
     await evaluate_policy(session, actor.user_id, action="supplier.view", site_id=None)
     sites = (
         await session.execute(select(SupplierSite).where(SupplierSite.supplier_id == supplier_id))
@@ -244,6 +251,7 @@ async def get_supplier_qualification(
     qualification = await session.get(SupplierQualification, qualification_id)
     if qualification is None:
         raise NotFoundError("Supplier qualification not found")
+    # SG-213 reviewed: see list_suppliers' comment above -- org-wide, no site_id anywhere in this module.
     await evaluate_policy(session, actor.user_id, action="supplier.view", site_id=None)
     evidence = (
         await session.execute(

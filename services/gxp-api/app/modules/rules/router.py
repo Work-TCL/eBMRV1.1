@@ -39,6 +39,13 @@ from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/rules/v1", tags=["rules"])
 
+# SG-213 review (2026-10-02): every `evaluate_policy`/`resolve_site_scope` call below passes
+# site_id=None. Confirmed via app/modules/rules/models.py -- RuleDefinition (gxp_rule_definition),
+# UnitOfMeasure (gxp_uom) and UomConversion (gxp_uom_conversion) have NO site_id column at all (nor do
+# their commands.py/uom_commands.py write one on create/release, nor accept a site_id in any Command).
+# A rule/UOM/conversion is released, versioned, org-wide reference data (Document 08 / Document 110) --
+# there is no per-site row to scope to, so site_id=None here is intentional, not an unreviewed gap.
+
 
 def _rule_dict(rule) -> dict:
     return {

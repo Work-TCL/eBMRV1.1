@@ -35,14 +35,23 @@ async def get_qualifications_for_subject(session: AsyncSession, subject_id: uuid
     return list(result.scalars().all())
 
 
-async def list_distinct_qualification_codes(session: AsyncSession) -> list[str]:
+async def list_distinct_qualification_codes(session: AsyncSession, site_ids: list[uuid.UUID]) -> list[str]:
     """Recipe Master's `required_qualification_code` (StepInput) has no catalog table to source a
     dropdown from -- SG-086 documents that `iam.qualifications` and `qms.qualification_record` are two
     competing, non-authoritative grant stores for the same concept, neither a controlled code list.
     Project-owner-directed (asked directly, chose qms.qualification_record): suggest codes that have
     actually been granted here, without asserting this is the authoritative catalog -- the caller keeps a
-    free-text fallback for a code not yet granted to anyone."""
-    result = await session.execute(select(QualificationRecord.qualification_code).distinct().order_by(QualificationRecord.qualification_code))
+    free-text fallback for a code not yet granted to anyone.
+
+    SG-213: `qualification_record` carries its own `site_id` per row (it is not org-wide reference
+    data), so `site_ids` scopes the distinct codes to what the caller is actually permitted to see --
+    the caller resolves this via `resolve_site_scope`, never passes every site unconditionally."""
+    result = await session.execute(
+        select(QualificationRecord.qualification_code)
+        .where(QualificationRecord.site_id.in_(site_ids))
+        .distinct()
+        .order_by(QualificationRecord.qualification_code)
+    )
     return [row[0] for row in result.all()]
 
 

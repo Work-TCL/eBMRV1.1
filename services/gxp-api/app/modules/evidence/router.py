@@ -12,7 +12,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
@@ -21,7 +21,7 @@ from app.modules.evidence import commands
 from app.modules.evidence.commands import evidence_record_hash
 from app.modules.evidence.models import EvidenceObject
 from app.modules.evidence.store import get_store
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.signature.service import create_challenge, resolve_signature_requirement
 from app.mutation.errors import EvidenceAccessDeniedError, EvidenceMissingError, NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
@@ -74,20 +74,32 @@ async def list_evidence_objects(
     owner_type: str,
     owner_id: uuid.UUID,
     limit: int = 50,
+    site_id: uuid.UUID | None = None,
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     """Owner-filtered list, added so a caller (e.g. batch-execution's "Link evidence" step action) can
     offer a picker of evidence already staged for a specific owner instead of requiring a pasted raw
     UUID + hash. Same `evidence.download` read-gate precedent as `get_evidence_object()` below (Document
     72 declares no dedicated view/list operation either) -- always owner-scoped, never an unfiltered
-    listing of the whole table."""
-    await evaluate_policy(session, actor.user_id, action="evidence.download", site_id=None)
+    listing of the whole table.
+
+    SG-213 fix: `evidence_object.site_id` is nullable (set from the staging command's own optional
+    `site_id`) -- this was gating on "holds evidence.download anywhere" and then returning every site's
+    evidence for the given owner regardless. resolve_site_scope turns an omitted site_id into only the
+    sites the actor actually holds the action at; an evidence row with no site_id (uploaded without one)
+    stays visible to anyone holding the permission at any site, since it belongs to no single site.
+    """
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="evidence.download")
     limit = max(1, min(limit, 200))
     rows = (
         (
             await session.execute(
                 select(EvidenceObject)
-                .where(EvidenceObject.owner_type == owner_type, EvidenceObject.owner_id == owner_id)
+                .where(
+                    EvidenceObject.owner_type == owner_type,
+                    EvidenceObject.owner_id == owner_id,
+                    or_(EvidenceObject.site_id.is_(None), EvidenceObject.site_id.in_(site_scope)),
+                )
                 .order_by(EvidenceObject.created_at.desc())
                 .limit(limit)
             )
@@ -179,6 +191,14 @@ async def post_create_manifest(
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # SG-213 NOT mechanically fixable: evidence_manifest has no site_id column (models.py) and
+        # CreateEvidenceManifestCommand carries no site_id field, so there is no `cmd.site_id` to use.
+        # The manifest itself isn't site-scoped, but the evidence objects it references (cmd.evidence_ids)
+        # each carry their own (nullable) site_id and may not all share one -- a correct fix would mean
+        # fetching every referenced EvidenceObject here and checking the actor's authorization against
+        # each one's site before create_evidence_manifest() runs, which is new cross-record
+        # authorization logic, not a wrong-argument/query-filter fix. Flagged for a human call rather
+        # than guessed.
         await evaluate_policy(session, actor.user_id, action="evidence.manifest", site_id=None)
         return await commands.create_evidence_manifest(session, cmd, actor.user_id)
 
@@ -238,5 +258,12 @@ async def post_integrity_check(
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
+        # SG-213 NOT mechanically fixable: VerifyEvidenceIntegrityCommand scopes by an explicit
+        # evidence_ids list (which may span evidence from several sites) or an owner_type/owner_id pair,
+        # and has no site_id field. A correct fix means checking the actor's authorization against each
+        # matched EvidenceObject's own (nullable) site_id -- the same records verify_evidence_integrity()
+        # itself queries -- before running the check, not passing a single site_id through. That is new
+        # cross-record authorization logic, not a wrong-argument/query-filter fix. Flagged for a human
+        # call rather than guessed.
         await evaluate_policy(session, actor.user_id, action="evidence.integrity_check", site_id=None)
         return await commands.verify_evidence_integrity(session, cmd, actor.user_id)

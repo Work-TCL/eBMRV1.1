@@ -25,6 +25,8 @@ async def post_create_identity_provider(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # SG-213 reviewed: identity_provider_config carries no site_id column -- it is a platform-wide
+        # SSO/federation config (one issuer/trust_metadata per deployment), not a per-site resource.
         await evaluate_policy(session, actor.user_id, action="identity_provider.create", site_id=None)
         return await commands.create_identity_provider_config(session, cmd, actor.user_id)
 
@@ -37,6 +39,9 @@ async def post_map_external_identity(
     if cmd.identity_provider_config_id != identity_provider_config_id:
         raise ValidationFailedError("identity_provider_config_id in path and body must match")
     async with session.begin():
+        # SG-213 reviewed: operates on identity_provider_config (platform-wide, no site_id -- see
+        # post_create_identity_provider above) plus iam.users, which also carries no site_id (a user's
+        # site scope lives on user_site_roles, not on the user row).
         await evaluate_policy(session, actor.user_id, action="identity_provider.map_identity", site_id=None)
         return await commands.map_external_identity(session, cmd, actor.user_id)
 
@@ -49,6 +54,8 @@ async def post_validate_identity_token(
     if cmd.identity_provider_config_id != identity_provider_config_id:
         raise ValidationFailedError("identity_provider_config_id in path and body must match")
     async with session.begin():
+        # SG-213 reviewed: validates a token against identity_provider_config, which is platform-wide
+        # (no site_id column -- see post_create_identity_provider above).
         await evaluate_policy(session, actor.user_id, action="identity_provider.validate_token", site_id=None)
         return await commands.validate_identity_token(session, cmd)
 

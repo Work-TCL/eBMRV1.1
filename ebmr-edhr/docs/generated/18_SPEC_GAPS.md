@@ -15571,7 +15571,7 @@ options:
 blocking: false
 owner: Security owner + Platform Architect (authorization-trust-boundary decision, platform-wide)
 resolution_document: "Client_Decisions_Neededanswers.txt Topic 15 (2026-10-02) -- Option A confirmed"
-status: PARTIALLY RESOLVED_APPROVED
+status: RESOLVED_APPROVED
 ```
 
 **RESOLVED_APPROVED (Option A confirmed) 2026-10-02, project-owner-directed via client decision
@@ -15580,31 +15580,61 @@ site(s) they are assigned to; cross-site access is a real security gap, not an i
 by-role model. This confirms Option A over Option B -- the authorization-model decision this entry was
 blocked on is now made.
 
-**Engineering status (partial so far, this pass):** `test_cross_organization_access_denied`'s own
-premise (the specific `batch_execution` step-start case this entry was filed against) was already fixed
-by a prior, unrelated commit (`ef17d6f`, 2026-09-29) -- its `xfail(strict=True)` was stale (silently
-XPASSing) and has been removed. This pass additionally found and fixed the **read side** of the same
-class of gap, which `ef17d6f` did not touch: a new `policy/service.py::resolve_site_scope()` helper
-(validates a caller-supplied `site_id`, or resolves an omitted one to every site the actor actually holds
-the action at -- never "all sites" silently) is now used by all ~12 QMS list endpoints
-(`qms/read_support.py::filtered()` now accepts a site-id list), `material.router`'s
-`list_materials`/`list_warehouse_locations`/`get_availability` (the latter two had no `actor` dependency
-at all -- genuinely unauthenticated, not merely unscoped), and `equipment.router`'s
+**Engineering status (complete, two-pass):**
+
+*Pass 1:* `test_cross_organization_access_denied`'s own premise (the specific `batch_execution`
+step-start case this entry was filed against) was already fixed by a prior, unrelated commit (`ef17d6f`,
+2026-09-29) -- its `xfail(strict=True)` was stale (silently XPASSing) and has been removed. This pass
+additionally found and fixed the **read side** of the same class of gap, which `ef17d6f` did not touch: a
+new `policy/service.py::resolve_site_scope()` helper (validates a caller-supplied `site_id`, or resolves
+an omitted one to every site the actor actually holds the action at -- never "all sites" silently) is now
+used by all ~12 QMS list endpoints (`qms/read_support.py::filtered()` now accepts a site-id list),
+`material.router`'s `list_materials`/`list_warehouse_locations`/`get_availability` (the latter two had no
+`actor` dependency at all -- genuinely unauthenticated, not merely unscoped), and `equipment.router`'s
 `list_assets`/`get_asset`/`list_areas`/`get_area` (had an `actor` dependency but no RBAC/site check at
 all). Five new `.view` permission codes added (`material.view`, `warehouse_location.view`,
 `inventory_availability.view`, `equipment_asset.view`, `equipment_area.view`), granted to every role that
 already holds the corresponding write actions, in both `scripts/seed.py` and `tests/conftest.py`.
 
-**Still open (tracked as follow-on, same gap):** the full write-side sweep across the ~24 affected
-modules this entry originally named (`product_master`, `recipe_master`, `qc`, `qa_review`, `release`,
-`material_specification`, `genealogy`, `evidence`, `vault`, `audit`, `iam`, `rules`, `security`,
-`validation`, `readmodels`, `yield_reconciliation`, `packaging`, `device`, `supplier_quality`,
-`workflowops`, `disaster_recovery`, `dataops`, `ddcp`) has not been audited yet beyond the
-`batch_execution`/`material`/`equipment`/`qms` modules covered by `ef17d6f` and this pass -- each needs
-the same "does every single-record mutate/read endpoint fetch-then-pass `record.site_id`, and does every
-list endpoint resolve an omitted `site_id` via `resolve_site_scope` rather than passing `None` through"
-audit applied. A second seeded `Site` for cross-site test coverage (today only one `Site` is seeded) is
-also still open.
+*Pass 2 (same day):* the full write-side sweep across every remaining module (`product_master`,
+`recipe_master`, `qc`, `vault`, `supplier_quality`, `readmodels`, `dataops`, `disaster_recovery`,
+`evidence`, `material_specification`, `dashboard`, `iam`, `qms/training_router`, `rules`, `security/*` (8
+files), `validation` (2 files, ~97 call sites)) applied the same fetch-then-check (single-record
+actions)/`resolve_site_scope` (list endpoints)/`cmd.site_id` (creates) pattern, dispatched across 5
+parallel work streams. Each resource's model was read first to confirm whether it actually carries a
+`site_id` column before changing anything -- several modules turned out to be already-correct or
+genuinely platform-wide by design and were left alone with a documented "reviewed, intentional" comment
+rather than mechanically forced into the pattern: `rules`/UOM (Document 08/110 master data, no site_id
+anywhere), `supplier_quality`'s `Supplier`/`SupplierSite`/`SupplierQualification` (org-wide legal identity,
+no site_id -- the original audit miscategorized this one), most of `security/*` (Documents 61-68's own
+data model has no site_id on nearly every entity, confirmed per-model), `dataops`/`disaster_recovery`'s
+platform-level checkpoints, and the bulk of `validation` (only 7 of ~33 entities ever carried a `site_id`
+at all). 26 real fetch-then-check fixes landed in `validation` alone via two-level fetch chains (e.g. an
+IQ execution's site is its parent `IqProtocol`'s).
+
+Where a genuine architectural gap was found that a mechanical argument fix could not close -- the model
+has no site_id and no documented rationale, or closing it needs new per-record authorization logic rather
+than a different `evaluate_policy` argument -- it was **not guessed**. Seven such gaps were split out as
+their own entries rather than forced into this one: SG-223 (QC sample/test-order/result have no site_id
+at all), SG-224 (search index has no site signal), SG-225 (`ApplicationSession` revoke/view, no
+documented rationale), SG-226 (`privileged_access_router.py`, break-glass/privileged-session authority --
+flagged `blocking: true`, the highest-priority open item from this sweep), SG-227 (5 validation
+record-creation paths have no site_id source at all, so new records are born `site_id=NULL`), SG-228
+(disaster-recovery T5 edge rows, same create-time gap), SG-229 (evidence manifest/integrity-check creation
+needs per-referenced-object authorization, not a single site_id check).
+
+**Verification:** 278 + 26 + 2 = 306 tests (Pass 1 modules) and 397/398 tests (Pass 2 modules, the full
+set of test files for every touched module) pass; the one Pass-2 failure
+(`test_workflow_notifications.py::test_rebuild_covers_every_registered_aggregate_type`) is pre-existing,
+unrelated drift confirmed via `git diff` showing zero changes to that file this session (a stale hardcoded
+count of 18 vs. the now-genuinely-19 registered `WORKFLOW_SPECS` entries, last touched in commit `91940e0`
+before this pass started) -- left as-is per this project's "a failed test is evidence and stays" rule,
+not silently fixed as a drive-by outside this entry's scope.
+
+**Still open:** a second seeded `Site` for actual cross-site integration test coverage (today only one
+`Site` is seeded in `scripts/seed.py`/`tests/conftest.py`, so the fix above is verified by code-path
+inspection + the existing `test_tenancy.py` cross-org test, not a full positive/negative matrix per site);
+and the 7 split-out SG-223..SG-229 entries above.
 
 ### SG-214 — Workflow Handoff Notification audience originally read only the RBAC permission code, not the (possibly narrower) `signature.signature_policy.required_role_id` -- RESOLVED (Option B implemented)
 
@@ -16073,4 +16103,313 @@ blocking: false
 owner: Platform/Materials-Dispensing module owner
 resolution_document: "app/modules/material/router.py, frontend/src/app/dispensing/page.tsx, frontend/src/components/shared/FormConsole.tsx (2026-09-24)"
 status: RESOLVED
+```
+
+### SG-223 — QC sample/test-order/test-run/result have no `site_id` column at all; receive/start/raw-data/results checks the actor's role at ANY site
+
+**Context:** found while closing out SG-213 (client Topic 15 site-isolation sweep, 2026-10-02). `qc/router.py`'s `post_receive_sample`, `post_start_test_order`, `post_record_raw_data`, `post_record_result` all call `evaluate_policy(..., site_id=None)`. Unlike the ~20 other modules fixed in this same pass, this is **not** a fetch-then-check argument bug: `QcSample`, `QcTestOrder`, `QcTestRun`, `QcResult` (`app/modules/qc/models.py`) carry no `site_id` column whatsoever. The only site signal is `QcSample.source_type`/`source_id`, a polymorphic reference that resolves to a real site only for `batch`/`batch_step`/`material_lot` sources (via other modules' tables) and not at all for `reserve`/`environmental`/`investigation` sources. Even `open_oos_from_result` (`qc/commands.py` ~1397) trusts a caller-supplied `site_id` on the resulting `OosRecord` rather than deriving it from the sample.
+
+**Why not guessed:** resolving this requires either (a) adding a `site_id` column to the QC tables (a migration + backfill decision touching every QC write path) or (b) deriving site from `source_type`/`source_id` at authorization time with an explicit fallback rule for the three source types that have no site at all — both are regulated-authorization-model decisions, not a wrong-argument fix.
+
+```yaml
+spec_gap_id: SG-223
+title: "QC sample/test-order/test-run/result have no site_id column; 4 action endpoints authorize at 'any site'"
+class: R
+description: >
+  qc/router.py's post_receive_sample/post_start_test_order/post_record_raw_data/post_record_result call
+  evaluate_policy(..., site_id=None) because QcSample/QcTestOrder/QcTestRun/QcResult have no site_id
+  column to check against. An actor holding the relevant qc_* permission at any one site can act on any
+  other site's QC records today.
+source_documents:
+  - Document 23 (SPEC-QC-001)
+  - Client_Decisions_Neededanswers.txt Topic 15
+source_requirement_ids:
+  - SEC-THR-012
+affected_modules:
+  - qc
+affected_functions:
+  - app/modules/qc/router.py post_receive_sample, post_start_test_order, post_record_raw_data, post_record_result
+  - app/modules/qc/models.py QcSample, QcTestOrder, QcTestRun, QcResult (no site_id column)
+why_material: >
+  Same class of cross-site exposure SG-213/Topic 15 addresses; left open here specifically because fixing
+  it means choosing a data-model/derivation approach, not applying the mechanical fetch-then-check pattern
+  used everywhere else in this pass.
+risk_if_guessed: >
+  Guessing a derivation rule (e.g. "fall back to the actor's own site when source_type has none") could
+  silently narrow or widen QC visibility in a way Document 23 never specified, for a lab-investigation
+  record class where getting this wrong has direct product-release consequences.
+options:
+  - (A) Add a real site_id column to the 4 QC tables (migration + backfill from source_type/source_id
+    where derivable, explicit policy for reserve/environmental/investigation sources) -- recommended, most
+    correct long-term.
+  - (B) Derive site_id from source_type/source_id at the authorization call site only (no schema change),
+    with an explicit, documented fallback for the 3 source types with no site -- faster, but leaves the
+    underlying data model's own gap (QC records without a stored site) unresolved.
+  - (C) Leave as-is, documented (rejected -- real cross-site exposure on lab-investigation records).
+blocking: false
+owner: QC module owner + Security owner
+resolution_document: "-- (open)"
+status: OPEN
+```
+
+### SG-224 — Read-model search index (`readmodels.search`) has no site signal; `search.query`/result-detail can return cross-site hits
+
+**Context:** found during the same SG-213 sweep. `readmodels/router.py`'s `get_search_query`/`get_search_result_detail` call `evaluate_policy(..., site_id=None)`. `search.py`'s own docstring says "tenant/site scoping is applied by the caller... before this," but there is nothing to scope by: `ProjectionDocumentMetadata` carries no `site_id`, and the per-index-type `_ALLOWED_FILTERS` allowlist doesn't expose one either. A rebuild (`rebuild_search_index`) indexes a `source_stream` across every site into one shared index by design (AG-11 non-authoritative rebuildable projection) -- but that design choice is exactly what now leaks cross-site hits to any actor holding `search.query` anywhere.
+
+```yaml
+spec_gap_id: SG-224
+title: "Search index has no site signal; search.query/result-detail return cross-site hits to any actor holding the permission at one site"
+class: R
+description: >
+  readmodels/router.py's get_search_query and get_search_result_detail authorize at site_id=None because
+  the indexed ProjectionDocumentMetadata rows carry no site_id and the rebuild job indexes every site into
+  one shared index by design. Closing this means either adding a site signal to the indexed row (would
+  need the rebuild to carry it through from each source stream) or re-authorizing every hit against its
+  authoritative entity's real site, type-dispatched per index_type -- an architecture decision.
+source_documents:
+  - Document 71 (SPEC-DATA-003) READ-FR series
+  - Client_Decisions_Neededanswers.txt Topic 15
+source_requirement_ids:
+  - SEC-THR-012
+  - DATA-FR-011
+affected_modules:
+  - readmodels
+affected_functions:
+  - app/modules/readmodels/router.py get_search_query, get_search_result_detail
+  - app/modules/readmodels/search.py (index_type dispatch, _ALLOWED_FILTERS)
+why_material: >
+  AG-11 (cache/search is rebuildable/non-authoritative) is why this was never gated at index-build time --
+  but a non-authoritative projection is still real data that must not cross a site boundary on read, which
+  Topic 15's client answer makes explicit.
+risk_if_guessed: >
+  Re-authorizing every search hit per entity type without a specified mapping could either miss an entity
+  type (leaving a silent leak) or over-filter and break the search feature's basic utility -- a design
+  decision, not a one-line fix.
+options:
+  - (A) Carry the source entity's site_id through into the indexed row at rebuild time, then filter search
+    results the same way list endpoints now do (resolve_site_scope + .in_()) -- recommended, consistent
+    with the rest of this pass.
+  - (B) Re-authorize each hit at read time against its authoritative source (type-dispatched), no index
+    schema change -- more authorization overhead per query, no rebuild change needed.
+  - (C) Leave as-is (rejected -- confirmed real cross-site leak on a user-facing search feature).
+blocking: false
+owner: Data Architect + Security owner
+resolution_document: "-- (open)"
+status: OPEN
+```
+
+### SG-225 — `ApplicationSession` revoke/view has no `site_id` and no documented platform-wide rationale (unlike every sibling security entity)
+
+**Context:** found during the security/* portion of the SG-213 sweep. `security/identity_router.py`'s `post_revoke_session`, `post_revoke_user_sessions`, `get_session_freshness` all authorize at `site_id=None`. Every other entity in `app/modules/security/*` that lacks a `site_id` column has an explicit model-docstring statement confirming it's intentionally platform-wide (Documents 61-68's own data model); `ApplicationSession` is the one exception -- `identity_models.py` has no such statement for it. Sessions belong to a `subject_id` (user), and users can hold roles at multiple sites via `UserSiteRole`, so there's no single record-owned site to check and no documented rule for whether revoking/inspecting another user's session should be constrained to sites the actor and the session's subject share.
+
+```yaml
+spec_gap_id: SG-225
+title: "ApplicationSession revoke/view authorizes at 'any site' with no site_id column and no documented platform-wide rationale"
+class: R
+description: >
+  security/identity_router.py's post_revoke_session/post_revoke_user_sessions/get_session_freshness check
+  application_session.revoke/view at site_id=None. ApplicationSession has no site_id, unlike every sibling
+  security entity which explicitly documents why. No rule exists for whether session revoke/view should be
+  constrained to sites the acting admin and the session's subject share.
+source_documents:
+  - Document 63 (SPEC-SEC-003) IAMSEC-FR series
+  - Client_Decisions_Neededanswers.txt Topic 15
+source_requirement_ids:
+  - SEC-THR-012
+  - IAMSEC-FR-010
+affected_modules:
+  - security
+affected_functions:
+  - app/modules/security/identity_router.py post_revoke_session, post_revoke_user_sessions, get_session_freshness
+  - app/modules/security/identity_models.py ApplicationSession (no site_id)
+why_material: >
+  A session-revocation admin action is exactly the kind of privileged, cross-site-sensitive operation
+  Topic 15's answer is aimed at, but inventing a join-based scoping rule (e.g. "actor and subject must
+  share a site") without a specified policy would be guessing at an authorization model.
+risk_if_guessed: >
+  Guessing wrong either leaves a genuine cross-site session-revocation/inspection gap open, or blocks a
+  legitimate platform-wide security-admin action the design may have intended to be unrestricted.
+options:
+  - (A) Confirm sessions are a platform-wide security-admin concern (any Security Admin can revoke/inspect
+    any session regardless of site) and document it the same way every sibling entity already does --
+    simplest, if confirmed.
+  - (B) Require the acting admin to share a site with the session's subject (via UserSiteRole intersection)
+    -- more restrictive, needs explicit policy confirmation first.
+blocking: false
+owner: Security owner
+resolution_document: "-- (open)"
+status: OPEN
+```
+
+### SG-226 — `privileged_access_router.py` (break-glass/privileged-session authority) has no site scoping anywhere and no documented rationale
+
+**Context:** found during the security/* portion of the SG-213 sweep. All 8 call sites in `security/privileged_access_router.py` (`privileged_access.request/approve/view`, `privileged_session.open_support/break_glass/execute_command/close/review`) authorize at `site_id=None`. `PrivilegedAccessRequest`/`PrivilegedGrant`/`PrivilegedSession` (`privileged_access_models.py`) have no `site_id` column, and -- unlike every sibling security module -- there is no docstring statement declaring this intentional. The only scoping concept present is a free-form `scope: dict` (JSONB) that sometimes carries a `resources` key but nothing resembling a reliable `site_id`.
+
+**Why not guessed:** this module governs break-glass and privileged-command authority -- exactly the class of control where inventing a JSONB-parsing scoping rule without a specified policy is highest-risk to get wrong in either direction.
+
+```yaml
+spec_gap_id: SG-226
+title: "privileged_access_router.py (break-glass/privileged-session authority) has no site scoping and no documented rationale"
+class: R
+description: >
+  All 8 action endpoints in security/privileged_access_router.py authorize privileged_access.*/
+  privileged_session.* at site_id=None. PrivilegedAccessRequest/PrivilegedGrant/PrivilegedSession have no
+  site_id column and no documented platform-wide rationale, unlike every sibling security entity. The only
+  scoping signal is a free-form JSONB scope field, not reliably parseable as a site_id.
+source_documents:
+  - Document 63 (SPEC-SEC-003) PAM-FR series
+  - Client_Decisions_Neededanswers.txt Topic 15
+source_requirement_ids:
+  - SEC-THR-012
+  - PAM-FR series
+affected_modules:
+  - security
+affected_functions:
+  - app/modules/security/privileged_access_router.py (all 8 endpoints)
+  - app/modules/security/privileged_access_models.py PrivilegedAccessRequest, PrivilegedGrant, PrivilegedSession
+why_material: >
+  Break-glass/privileged-command authority is this platform's highest-risk administrative control surface;
+  a wrong guess about site scoping here is worse than leaving it open and documented.
+risk_if_guessed: >
+  If privileged access is genuinely meant to be platform-wide (a small number of trusted admins acting
+  across all sites in an emergency), site-scoping it would break the break-glass use case it exists for.
+  If it's meant to be site-scoped and isn't, any privileged-access holder can request/approve/execute
+  commands against any site.
+options:
+  - (A) Confirm privileged/break-glass access is intentionally platform-wide (emergency admin access
+    should not be site-fenced) and document it -- plausible given the "break-glass" use case, needs
+    explicit confirmation, not an engineering guess.
+  - (B) Add a real site_id (or parse `scope.resources` into one) and site-scope all 8 actions --
+    recommended only if confirmed that break-glass access should still respect site boundaries.
+blocking: true
+owner: Security owner (highest-priority open item in this sweep -- privileged/break-glass authority)
+resolution_document: "-- (open)"
+status: OPEN
+```
+
+### SG-227 — Brand-new site-scoped validation records (master plans, IQ protocols, infrastructure profiles, PQ scenarios, migration plans) have no `site_id` source at creation
+
+**Context:** found while fixing SG-213 in `validation/router.py`/`router_wp14.py`. `AuthenticatedActor` (`app/core/security.py`) has no `site_id` attribute at all, and the 5 create commands for `ValidationMasterPlan`, `IqProtocol`, `InfrastructureQualificationProfile`, `PqScenario`, `MigrationValidationPlan` (the only validation entities that carry a real `site_id` column) have no `site_id` field either. Every one of these records is created with `site_id=NULL` today -- not a transient bug, a structural gap: there is no data source anywhere in the create path to populate it from.
+
+```yaml
+spec_gap_id: SG-227
+title: "No data source for site_id when creating ValidationMasterPlan/IqProtocol/InfrastructureQualificationProfile/PqScenario/MigrationValidationPlan -- all created site_id=NULL"
+class: R
+description: >
+  post_master_plans (new-plan path), post_iq_protocols, post_infrastructure_profiles, post_pq_scenarios,
+  post_migration_plans all create records on models with a real, non-nullable-in-spirit site_id column,
+  but neither AuthenticatedActor nor the respective create Commands carry a site_id to populate it with.
+  Every such record is created with site_id=NULL, which then means every subsequent fetch-then-check
+  authorization on that record resolves to "platform-wide" regardless of which site actually owns it.
+source_documents:
+  - Document 79 (SPEC-VAL-001), Document 83 (SPEC-VAL-005), Document 85 (SPEC-VAL-007)
+  - Client_Decisions_Neededanswers.txt Topic 15
+source_requirement_ids:
+  - SEC-THR-012
+  - VAL-FR series
+affected_modules:
+  - validation
+affected_functions:
+  - app/modules/validation/router.py post_master_plans, post_iq_protocols, post_infrastructure_profiles
+  - app/modules/validation/router_wp14.py post_pq_scenarios, post_migration_plans
+  - app/core/security.py AuthenticatedActor (no site_id attribute)
+why_material: >
+  This is the create-time root cause of why so many downstream validation actions in this same file could
+  only ever check site_id=None -- fixing the downstream fetch-then-check calls (done, this pass) doesn't
+  help if the record itself was never given a real site at birth.
+risk_if_guessed: >
+  Inventing a default (e.g. "use the actor's first UserSiteRole site") without confirming that validation
+  master records are meant to be single-site-owned at all risks assigning records to the wrong site
+  permanently, with no clean correction path once qualification work has started against them.
+options:
+  - (A) Add site_id to the 5 create Commands (client-supplied, validated against the actor's own
+    UserSiteRole the same way every other module's create endpoints already do) -- recommended, consistent
+    with the rest of the codebase's create pattern.
+  - (B) Confirm these 5 record types are intentionally platform-wide master records (no single owning
+    site) and remove the site_id column/make it formally always-null -- only if confirmed, contradicts the
+    fetch-then-check fixes already applied this pass.
+blocking: false
+owner: Validation platform owner
+resolution_document: "-- (open)"
+status: OPEN
+```
+
+### SG-228 — `disaster_recovery` `POST /recovery-objectives` create has no `site_id` field for genuinely site-scoped T5 edge rows
+
+```yaml
+spec_gap_id: SG-228
+title: "CreateRecoveryObjectiveProfileCommand has no site_id; T5 edge recovery-objective rows are created platform-wide"
+class: R
+description: >
+  disaster_recovery/router.py's post_recovery_objectives creates RecoveryObjectiveProfile rows.
+  site_id is nullable and meaningful for T5 (edge) tiers, real and site-owned for those rows -- but
+  CreateRecoveryObjectiveProfileCommand has no site_id field and the handler never sets one, so every T5
+  row is created platform-wide (site_id=NULL) regardless of which site's edge infrastructure it actually
+  describes.
+source_documents:
+  - Document 69 (SPEC-DATA-001)
+  - Client_Decisions_Neededanswers.txt Topic 15
+source_requirement_ids:
+  - SEC-THR-012
+affected_modules:
+  - disaster_recovery
+affected_functions:
+  - app/modules/disaster_recovery/router.py post_recovery_objectives
+  - app/modules/disaster_recovery/models.py RecoveryObjectiveProfile (nullable site_id, real for T5)
+why_material: >
+  Same create-time root-cause class as SG-227, scoped to one command/one field this time.
+risk_if_guessed: >
+  Low-moderate: DR/backup configuration, not a GxP production-decision record, but still determines which
+  site's recovery objectives an action applies to.
+options:
+  - (A) Add site_id to CreateRecoveryObjectiveProfileCommand for T5 rows (required when tier="T5", absent
+    otherwise) -- recommended.
+blocking: false
+owner: SRE/Data Architect
+resolution_document: "-- (open)"
+status: OPEN
+```
+
+### SG-229 — `evidence` `POST /manifests` and `POST /integrity-checks` need per-referenced-object authorization, not a single site_id argument
+
+```yaml
+spec_gap_id: SG-229
+title: "EvidenceManifest/integrity-check creation can span evidence_ids from multiple sites with no per-object authorization check"
+class: R
+description: >
+  evidence/router.py's post_manifests and post_integrity_checks accept a list of evidence_ids (or an
+  owner_type/owner_id scope). EvidenceManifest itself has no site_id column, and the referenced
+  EvidenceObject rows each carry their own nullable site_id and may not all share one. Today neither
+  endpoint checks authorization against each referenced object's actual site before including it --
+  CreateEvidenceManifestCommand/VerifyEvidenceIntegrityCommand have no site_id field for a single check to
+  key off either. A correct fix needs new per-record authorization logic (fetch every referenced
+  EvidenceObject, check the actor's role at each one's site before proceeding), not a different argument
+  value.
+source_documents:
+  - Document 72 (SPEC-DATA-004) OBJ-FR series
+  - Client_Decisions_Neededanswers.txt Topic 15
+source_requirement_ids:
+  - SEC-THR-012
+  - OBJ-FR series
+affected_modules:
+  - evidence
+affected_functions:
+  - app/modules/evidence/router.py post_manifests, post_integrity_checks
+  - app/modules/evidence/models.py EvidenceManifest (no site_id), EvidenceObject (nullable site_id)
+why_material: >
+  Evidence objects are hash-controlled, Part-11-adjacent (AG-12) records; an actor assembling a manifest or
+  integrity check across objects from a site they have no role at is exactly the exposure Topic 15 targets,
+  but the fix is architectural (per-object authorization), not mechanical.
+risk_if_guessed: >
+  A manifest/integrity-check spanning evidence the actor shouldn't be able to see from another site would
+  leak object existence/metadata even if the object content itself stays access-controlled elsewhere.
+options:
+  - (A) Fetch every referenced EvidenceObject at request time and require the actor to hold the relevant
+    evidence.* permission at each one's own site before proceeding (reject if any fails) -- recommended,
+    consistent with fetch-then-check elsewhere, but new logic (a loop + per-object check) rather than a
+    single evaluate_policy call.
+blocking: false
+owner: Data Architect + Security owner
+resolution_document: "-- (open)"
+status: OPEN
 ```

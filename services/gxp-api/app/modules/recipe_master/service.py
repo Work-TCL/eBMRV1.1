@@ -39,7 +39,7 @@ async def get_version(session: AsyncSession, recipe_version_id: uuid.UUID) -> Re
     return version
 
 
-async def list_recipe_families(session: AsyncSession) -> list[dict]:
+async def list_recipe_families(session: AsyncSession, site_scope: list[uuid.UUID]) -> list[dict]:
     """Read-only listing for the Recipe Master page's top-level table -- one row per recipe family with
     its latest version's number and lifecycle state, plus a total version count. Document 10 declares no
     "list all recipes" operation in its own API list (docs/generated/06_API_CATALOGUE.yaml); same SG-081
@@ -47,8 +47,15 @@ async def list_recipe_families(session: AsyncSession) -> list[dict]:
     listing does not conflict with any future write/CRUD contract, it only replaces the free-text
     recipe_family_id entry with a real table. The caller still uses
     `GET /recipes/v2/{recipe_family_id}/versions` to resolve the specific version to open.
+
+    SG-213 fix: `gxp_recipe_family.site_id` is a non-nullable per-row site; `site_scope` is the caller's
+    resolve_site_scope() result, never an unfiltered cross-site read.
     """
-    families = (await session.execute(select(RecipeFamily).order_by(RecipeFamily.recipe_code))).scalars().all()
+    families = (
+        await session.execute(
+            select(RecipeFamily).where(RecipeFamily.site_id.in_(site_scope)).order_by(RecipeFamily.recipe_code)
+        )
+    ).scalars().all()
     versions = (await session.execute(select(RecipeVersion).order_by(RecipeVersion.version_no))).scalars().all()
     by_family: dict[uuid.UUID, list[RecipeVersion]] = defaultdict(list)
     for v in versions:

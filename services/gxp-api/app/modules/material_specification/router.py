@@ -14,7 +14,7 @@ from app.modules.material_specification.commands import (
     release_material_spec_version,
 )
 from app.modules.material_specification.models import MaterialSpecificationVersion
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.signature.service import create_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.hashing import sha256_hex
@@ -54,6 +54,7 @@ async def post_create_draft(
 
 @router.get("/business-ids")
 async def get_business_ids(
+    site_id: uuid.UUID | None = None,
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
@@ -63,12 +64,19 @@ async def get_business_ids(
     with any future write/CRUD contract, it only replaces free-text Business-ID entry with a real picker.
     Registered ahead of the single-segment `/{material_spec_version_id}` GET below so "business-ids" is
     never parsed as a version id. Returns one row per distinct material_spec_business_id -- the highest
-    version_no for that id -- the caller still uses `GET /{business_id}/versions` for the full history."""
-    await evaluate_policy(session, actor.user_id, action="material_spec.view", site_id=None)
+    version_no for that id -- the caller still uses `GET /{business_id}/versions` for the full history.
+
+    SG-213 fix: `gxp_material_specification_version.site_id` is a per-row site, so this was gating on
+    "holds material_spec.view anywhere" and then returning every site's specs. resolve_site_scope turns
+    an omitted site_id into only the sites the actor actually holds the action at.
+    """
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="material_spec.view")
     rows = (
         (
             await session.execute(
-                select(MaterialSpecificationVersion).order_by(
+                select(MaterialSpecificationVersion)
+                .where(MaterialSpecificationVersion.site_id.in_(site_scope))
+                .order_by(
                     MaterialSpecificationVersion.material_spec_business_id,
                     MaterialSpecificationVersion.version_no.desc(),
                 )
@@ -95,14 +103,21 @@ async def get_business_ids(
 @router.get("/{material_spec_business_id}/versions")
 async def get_versions(
     material_spec_business_id: str,
+    site_id: uuid.UUID | None = None,
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
-    await evaluate_policy(session, actor.user_id, action="material_spec.view", site_id=None)
+    # SG-213 fix: same resolve_site_scope treatment as get_business_ids above -- this is a list (every
+    # version row for a business id), not a single-record fetch, so it needs the site-scope filter, not
+    # a record.site_id check.
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="material_spec.view")
     versions = (
         await session.execute(
             select(MaterialSpecificationVersion)
-            .where(MaterialSpecificationVersion.material_spec_business_id == material_spec_business_id)
+            .where(
+                MaterialSpecificationVersion.material_spec_business_id == material_spec_business_id,
+                MaterialSpecificationVersion.site_id.in_(site_scope),
+            )
             .order_by(MaterialSpecificationVersion.version_no)
         )
     ).scalars().all()

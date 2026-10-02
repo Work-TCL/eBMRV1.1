@@ -1,5 +1,9 @@
 """Document 61 (SPEC-SEC-001) REST surface, prefix `/security/v1`. No `site_id` scoping -- see
-models.py's module docstring."""
+models.py's module docstring.
+
+SG-213 reviewed: all 10 evaluate_policy calls below use site_id=None intentionally -- none of
+SecurityThreatModelVersion/SecurityThreat/SecurityControl/SecurityException carry a site_id column.
+"""
 
 import uuid
 

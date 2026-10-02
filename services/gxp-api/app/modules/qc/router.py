@@ -9,7 +9,7 @@ from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.batch_execution.models import BatchStep
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.read_support import filtered, iso, sid
 from app.modules.qc.commands import (
     ApproveDispositionCommand,
@@ -268,6 +268,7 @@ METHOD_SORTABLE = {
 async def list_qc_methods(
     session: AsyncSession = Depends(get_session),
     params: PageParams = Depends(page_params),
+    site_id: uuid.UUID | None = None,
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     """Browsable list of every method VERSION row (not deduplicated by method_code -- each version is
@@ -275,8 +276,10 @@ async def list_qc_methods(
     endpoint at all -- only "versions by method_code" and "single by id" -- so the UI was a deliberate
     code-lookup console rather than a browsable table (see that page's own comment). Same qc_method.view
     policy gate as the other two method reads."""
-    await evaluate_policy(session, actor.user_id, action="qc_method.view", site_id=None)
-    stmt = select(QcMethodVersion)
+    # SG-213: site_id=None here used to mean "any site holding qc_method.view anywhere" -- resolve_site_scope
+    # turns an omitted site_id into only the sites the actor actually holds the action at.
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="qc_method.view")
+    stmt = select(QcMethodVersion).where(QcMethodVersion.site_id.in_(site_scope))
     if params.q:
         stmt = stmt.where(QcMethodVersion.method_code.ilike(f"%{params.q}%"))
     rows, envelope = await paginate(session, stmt, params, sortable=METHOD_SORTABLE, default_sort=QcMethodVersion.created_at)
@@ -298,12 +301,18 @@ async def post_create_qc_method_draft(
 async def get_qc_method_versions(
     method_code: str,
     session: AsyncSession = Depends(get_session),
+    site_id: uuid.UUID | None = None,
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
-    await evaluate_policy(session, actor.user_id, action="qc_method.view", site_id=None)
+    # SG-213: same resolve_site_scope treatment as list_qc_methods above -- this is a list (every version
+    # row for a method_code), not a single-record fetch, so it needs the site-scope filter, not a
+    # record.site_id check.
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="qc_method.view")
     versions = (
         await session.execute(
-            select(QcMethodVersion).where(QcMethodVersion.method_code == method_code).order_by(QcMethodVersion.version_no)
+            select(QcMethodVersion)
+            .where(QcMethodVersion.method_code == method_code, QcMethodVersion.site_id.in_(site_scope))
+            .order_by(QcMethodVersion.version_no)
         )
     ).scalars().all()
     return [_qc_method_dict(v) for v in versions]
@@ -391,6 +400,11 @@ async def post_receive_sample(
         raise ValidationFailedError("sample_id in path and body must match")
     # 2026-09-18 RBAC gap closure: gated here (see post_create_sample's comment above) -- also called
     # internally by lims_integration/commands.py's already-authorized flow.
+    # SG-213 NOT mechanically fixable: qc_sample carries no site_id column at all (models.py) -- its only
+    # site signal is the polymorphic source_type/source_id (batch/batch_step/material_lot resolve to a
+    # site via another module's table; reserve/environmental/investigation don't resolve to any entity,
+    # per QcSample's own docstring). Picking a resolution rule here is an authorization-semantics decision,
+    # not a wrong-argument fix -- flagged for a human call rather than guessed.
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="qc_sample.receive", site_id=None)
         return await receive_sample(session, cmd, actor.user_id)
@@ -567,6 +581,9 @@ async def post_start_test_order(
         raise ValidationFailedError("test_order_id in path and body must match")
     # 2026-09-18 RBAC gap closure: gated here (see post_create_sample's comment above) -- also called
     # internally by lims_integration/commands.py's already-authorized flow.
+    # SG-213 NOT mechanically fixable: qc_test_order carries no site_id column (models.py); its only site
+    # signal is two hops away (test_order -> sample -> polymorphic source), same unresolved-resolution-rule
+    # gap as post_receive_sample above -- flagged for a human call rather than guessed.
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="qc_test_order.start", site_id=None)
         await _check_qc_analyst_qualification(session, actor.user_id)
@@ -584,6 +601,7 @@ async def post_record_raw_data(
         raise ValidationFailedError("test_order_id in path and body must match")
     # 2026-09-18 RBAC gap closure: gated here (see post_create_sample's comment above) -- also called
     # internally by lims_integration/commands.py's already-authorized flow.
+    # SG-213 NOT mechanically fixable: same qc_test_order-has-no-site_id gap as post_start_test_order above.
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="qc_test_order.record_raw_data", site_id=None)
         return await record_raw_data(session, cmd, actor.user_id)
@@ -600,6 +618,8 @@ async def post_record_result(
         raise ValidationFailedError("test_order_id in path and body must match")
     # 2026-09-18 RBAC gap closure: gated here (see post_create_sample's comment above) -- also called
     # internally by lims_integration/commands.py's already-authorized flow.
+    # SG-213 NOT mechanically fixable: same qc_test_order-has-no-site_id gap as post_start_test_order above
+    # (qc_result itself also has no site_id -- models.py).
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="qc_result.record", site_id=None)
         return await record_result(session, cmd, actor.user_id)

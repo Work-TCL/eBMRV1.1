@@ -18,6 +18,11 @@ from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/security/v1", tags=["security-incident"])
 
+# SG-213 reviewed: all 5 evaluate_policy calls below use site_id=None intentionally.
+# security_incident carries no site_id column -- affected scope (including sites) is a JSONB value
+# (affected_scope), not a column, same platform-level treatment as every security.* table (see
+# incident_models.py module docstring).
+
 
 @router.post("/incidents", response_model=MutationReceipt)
 async def post_open_incident(

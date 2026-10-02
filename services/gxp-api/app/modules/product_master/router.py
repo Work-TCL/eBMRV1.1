@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.product_master import service as product_master_service
 from app.modules.product_master.commands import (
     CreateProductDraftCommand,
@@ -266,14 +266,19 @@ async def post_supersede(
 
 @router.get("/business-ids")
 async def get_business_ids(
+    site_id: uuid.UUID | None = None,
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
     """Real picker data for any "Constituent's Business ID"-shaped field (product_master/service.py::
     list_product_business_ids) -- registered ahead of the single-segment `/{product_version_id}` GET and
-    the `/{product_business_id}/versions` GET below so "business-ids" is never parsed as either."""
-    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
-    versions = await product_master_service.list_product_business_ids(session)
+    the `/{product_business_id}/versions` GET below so "business-ids" is never parsed as either.
+
+    SG-213 fix: `gxp_product_version.site_id` is a non-nullable per-row site, so this was gating on
+    "holds product.view anywhere" and then returning every site's products. resolve_site_scope turns an
+    omitted site_id into only the sites the actor actually holds the action at."""
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="product.view")
+    versions = await product_master_service.list_product_business_ids(session, site_scope)
     return [
         {
             # 2026-09-07: added for the page's own "Products" list (frontend/src/app/product-master/
@@ -328,7 +333,10 @@ async def get_families(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
     """Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 2) -- registered ahead of the
-    single-segment `/{product_version_id}` GET below so "families" is never parsed as one."""
+    single-segment `/{product_version_id}` GET below so "families" is never parsed as one.
+
+    SG-213 reviewed: gxp_product_family has no site_id column (models.py) -- it is a global controlled
+    vocabulary (family_code/name/profile_code), not a per-site record. site_id=None is correct."""
     await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
     families = await product_master_service.list_product_families(session)
     return [_family_dict(f) for f in families]
@@ -341,6 +349,9 @@ async def post_create_family(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # SG-213 reviewed: gxp_product_family has no site_id column and CreateProductFamilyCommand has
+        # no site_id field -- same global-vocabulary reasoning as get_families above. site_id=None is
+        # correct.
         await evaluate_policy(session, actor.user_id, action="product.author", site_id=None)
         return await create_product_family(session, cmd, actor.user_id)
 
@@ -348,11 +359,15 @@ async def post_create_family(
 @router.get("/{product_business_id}/versions")
 async def get_versions(
     product_business_id: str,
+    site_id: uuid.UUID | None = None,
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
-    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
-    versions = await product_master_service.list_versions_for_business_id(session, product_business_id)
+    # SG-213 fix: same resolve_site_scope treatment as get_business_ids above -- this is a list (every
+    # version row for a business id), not a single-record fetch, so it needs the site-scope filter, not
+    # a record.site_id check.
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="product.view")
+    versions = await product_master_service.list_versions_for_business_id(session, product_business_id, site_scope)
     return [_version_dict(v) for v in versions]
 
 

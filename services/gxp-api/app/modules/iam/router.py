@@ -118,6 +118,8 @@ async def me(
 async def get_organization(
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor)
 ) -> dict:
+    # SG-213 reviewed: Organization (models.py) carries no site_id -- there is exactly one, org-wide,
+    # so site_id=None here is correct, not a leftover gap.
     await evaluate_policy(session, actor.user_id, action="platform.administer", site_id=None)
     org = (await session.execute(select(Organization).limit(1))).scalar_one_or_none()
     if org is None:
@@ -170,7 +172,9 @@ async def patch_site(
     if cmd.site_id != site_id:
         raise ValidationFailedError("site_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="platform.administer", site_id=None)
+        # SG-213: this mutates one specific, already-identified site -- check the actor's role AT
+        # THAT SITE, not "holds platform.administer anywhere" (an admin at Site A must not edit Site B).
+        await evaluate_policy(session, actor.user_id, action="platform.administer", site_id=site_id)
         return await update_site(session, cmd, actor.user_id)
 
 
@@ -184,7 +188,9 @@ async def delete_site_endpoint(
     if cmd.site_id != site_id:
         raise ValidationFailedError("site_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="platform.administer", site_id=None)
+        # SG-213: same fix as patch_site above -- check the actor's role at this specific site, not
+        # "anywhere" (an admin at Site A must not delete Site B).
+        await evaluate_policy(session, actor.user_id, action="platform.administer", site_id=site_id)
         return await delete_site(session, cmd, actor.user_id)
 
 
@@ -329,6 +335,9 @@ async def post_create_role(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # SG-213 reviewed: Role (models.py) carries no site_id -- a role is a platform-wide definition
+        # (site scoping happens on the UserSiteRole assignment, not the role itself), so site_id=None
+        # is correct here and on the other Role/User/Permission management endpoints in this file.
         await evaluate_policy(session, actor.user_id, action="platform.administer", site_id=None)
         return await create_role(session, cmd, actor.user_id)
 

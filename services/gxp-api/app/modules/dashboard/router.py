@@ -67,5 +67,9 @@ async def post_workflow_actions_rebuild(
     permission code, not open to every authenticated user, since a full rescan is an operational action,
     not a read."""
     async with session.begin():
+        # SG-213 reviewed: rebuild_workflow_actions() -> notifications.service.rebuild_all() rescans
+        # every row of every registered aggregate type across every site in one pass (it is the AG-11
+        # recovery path for the whole notification projection, not one site's slice of it) -- confirmed
+        # via notifications/service.py::rebuild_all. Genuinely platform-wide; site_id=None is correct.
         await evaluate_policy(session, actor.user_id, action="notifications.rebuild", site_id=None)
         return await dashboard_service.rebuild_workflow_actions(session)
