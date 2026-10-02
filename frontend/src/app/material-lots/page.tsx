@@ -29,6 +29,7 @@ import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { MaterialLotStatePill } from "@/components/ui/StatePill";
+import { Banner } from "@/components/ui/Banner";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
@@ -104,7 +105,29 @@ export default function MaterialLotsPage() {
     { key: "released_at", header: "Released", sortable: true, render: (l) => formatDateTime(l.released_at) },
     { key: "expiry_date", header: "Expiry", sortable: true, render: (l) => l.expiry_date ?? "—" },
     { key: "storage_condition", header: "Storage", sortable: false, render: (l) => l.storage_condition ?? "—" },
-    { key: "status", header: "Status", sortable: true, render: (l) => <MaterialLotStatePill status={l.status} /> },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      render: (l) => (
+        <span className="flex items-center gap-2">
+          <MaterialLotStatePill status={l.status} />
+          {/* Client Topic 4 (Q10) / Topic 2: a lot accepted despite a receiving discrepancy, or
+           * released via supplier-COA reliance, stays visibly flagged rather than looking like an
+           * ordinary lot. */}
+          {l.is_exception_release && (
+            <span className="fs-2 error-text" title={l.exception_reason ?? "Accepted despite a receiving discrepancy"}>
+              Exception
+            </span>
+          )}
+          {l.coa_reliance && (
+            <span className="fs-2 text-muted" title={l.coa_reliance_reason ?? "Released via supplier COA reliance"}>
+              COA reliance
+            </span>
+          )}
+        </span>
+      ),
+    },
     {
       key: "actions",
       header: "",
@@ -407,6 +430,15 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
  * (signer must not be the receiver or sampler of this same lot). `container_ids` left blank means the
  * whole lot; the underlying command already supports a partial per-container decision if ever needed
  * here. */
+interface ReleaseReadiness {
+  missing_required_tests: string[];
+  coa_reliance_available: boolean;
+}
+
+/** Client_Decisions_Neededanswers Topics 1/2: release_material_lot now hard-blocks until every
+ * required+release_blocking QC test has a passing reviewed result, unless QA explicitly relies on the
+ * supplier's COA instead (approved supplier + COA on file + documented reason). Fetched here so the
+ * signer sees this *before* opening the signature ceremony, not as a surprise 409 after signing. */
 function ReleaseRejectV2Modal({
   lot,
   decision,
@@ -419,7 +451,21 @@ function ReleaseRejectV2Modal({
   onDone: () => void;
 }) {
   const [reason, setReason] = useState("");
+  const [coaReliance, setCoaReliance] = useState(false);
+  const [readiness, setReadiness] = useState<ReleaseReadiness | null>(null);
   const label = decision === "release" ? "Release" : "Reject";
+
+  useEffect(() => {
+    if (decision !== "release") return;
+    api
+      .get<ReleaseReadiness>(`/materials/v1/lots/${lot.id}/release-readiness`)
+      .then(setReadiness)
+      .catch(() => setReadiness(null));
+  }, [decision, lot.id]);
+
+  const missingTests = readiness?.missing_required_tests ?? [];
+  const blockedOnRequiredTest = decision === "release" && missingTests.length > 0;
+  const reasonRequired = decision === "reject" || (blockedOnRequiredTest && coaReliance);
 
   return (
     <SignatureCeremony
@@ -440,11 +486,43 @@ function ReleaseRejectV2Modal({
       submitLabel={`Sign & ${label.toLowerCase()}`}
       submitVariant={decision === "reject" ? "danger" : "success"}
       reason="none"
-      disabled={decision === "reject" && !reason.trim()}
+      disabled={(blockedOnRequiredTest && !coaReliance) || (reasonRequired && !reason.trim())}
       extraFields={
-        <Field label="Reason" required={decision === "reject"} hint={decision === "release" ? "Optional." : "Required for a reject decision."}>
-          <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
-        </Field>
+        <>
+          {blockedOnRequiredTest && (
+            <Banner tone={coaReliance ? "warn" : "critical"} title="Required test(s) not passed">
+              {missingTests.join(", ")}. Release is blocked (Client Topic 1) unless relying on the
+              supplier&rsquo;s Certificate of Analysis instead (Client Topic 2 — only available for an
+              approved supplier with a COA on file).
+            </Banner>
+          )}
+          {blockedOnRequiredTest && (
+            <Field>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={coaReliance}
+                  onChange={(e) => setCoaReliance(e.target.checked)}
+                  disabled={readiness ? !readiness.coa_reliance_available : true}
+                />
+                Rely on the supplier&rsquo;s COA instead of in-house testing
+              </label>
+            </Field>
+          )}
+          <Field
+            label="Reason"
+            required={reasonRequired}
+            hint={
+              decision === "reject"
+                ? "Required for a reject decision."
+                : coaReliance
+                  ? "Required: document that the COA was reviewed and meets specification."
+                  : "Optional."
+            }
+          >
+            <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </Field>
+        </>
       }
       onSign={(p) =>
         api.post<MutationReceipt>(`/materials/v1/lots/${lot.id}/${decision}`, {
@@ -454,6 +532,7 @@ function ReleaseRejectV2Modal({
           reason: reason || null,
           challenge_id: p.challenge_id,
           reauth_password: p.reauth_password,
+          ...(decision === "release" ? { coa_reliance: coaReliance } : {}),
         })
       }
     />

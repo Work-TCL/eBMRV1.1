@@ -412,6 +412,10 @@ export interface MaterialLot {
   storage_location_id: string | null;
   storage_condition: string | null;
   version: number;
+  is_exception_release: boolean;
+  exception_reason: string | null;
+  coa_reliance: boolean;
+  coa_reliance_reason: string | null;
 }
 
 export interface MaterialContainer {

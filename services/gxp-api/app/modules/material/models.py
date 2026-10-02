@@ -148,6 +148,12 @@ class MaterialLot(Base):
     is_exception_release: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     exception_reason: Mapped[str | None] = mapped_column(String(2000))
 
+    # Client_Decisions_Neededanswers Topic 2 (2026-10-02, migration 0126): set when `release_material_lot`
+    # relied on the supplier's COA instead of an in-house required test (approved supplier + COA on file
+    # + QA-signed reason, enforced in `_disposition_material_lot_v2`/`_missing_required_tests`).
+    coa_reliance: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    coa_reliance_reason: Mapped[str | None] = mapped_column(String(2000))
+
 
 class MaterialLotDisposition(Base):
     """QC release/reject decision on a lot (MAT-011). Signed — same pattern as batch_reviews."""

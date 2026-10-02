@@ -316,6 +316,10 @@ def _lot_dict(lot: MaterialLot, material_code: str, material_name: str) -> dict:
         "receipt_id": str(lot.receipt_id) if lot.receipt_id else None,
         "manufacture_date": lot.manufacture_date.isoformat() if lot.manufacture_date else None,
         "version": lot.version,
+        "is_exception_release": lot.is_exception_release,
+        "exception_reason": lot.exception_reason,
+        "coa_reliance": lot.coa_reliance,
+        "coa_reliance_reason": lot.coa_reliance_reason,
     }
 
 

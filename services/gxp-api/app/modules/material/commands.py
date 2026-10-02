@@ -37,7 +37,9 @@ from app.modules.material.models import (
     WeighingSession,
 )
 from app.modules.policy.service import evaluate_policy
+from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.qc import commands as qc_commands
+from app.modules.qc.models import QcResult, QcSample, QcTestDefinition, QcTestOrder, QcTestSpecification
 from app.modules.qms import commands as qms_commands
 from app.modules.qms.models import DeviationRecord
 from app.modules.rules import commands as rules_commands
@@ -1350,6 +1352,78 @@ async def collect_sample(
 # ---------------------------------------------------------------------------
 
 
+async def _missing_required_tests(session: AsyncSession, lot: MaterialLot) -> list[str]:
+    """Client_Decisions_Neededanswers Topic 1 (SG-076 required-test half): the test_code of every
+    required+release_blocking QcTestDefinition, scoped to this lot's material's current released
+    MaterialSpecificationVersion, that does NOT yet have a passing (`outcome == "pass"`), reviewed
+    (`state == "reviewed"`, same terminal-accepted state `cancel_sample`'s own
+    `blocking_reviewed` check already uses) QcResult for a QcSample sourced from this lot
+    (`QcSample.source_type == "material_lot"`). Empty list = nothing outstanding -- either no
+    material-scoped test specification is released for this material at all (nothing to require), or
+    every required test has a passing reviewed result."""
+    spec_version = (
+        await session.execute(
+            select(MaterialSpecificationVersion)
+            .where(
+                MaterialSpecificationVersion.material_id == lot.material_id,
+                MaterialSpecificationVersion.lifecycle_state == "released",
+            )
+            .order_by(MaterialSpecificationVersion.version_no.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if spec_version is None:
+        return []
+
+    test_spec = (
+        await session.execute(
+            select(QcTestSpecification)
+            .where(
+                QcTestSpecification.scope_type == "material",
+                QcTestSpecification.scope_version_id == spec_version.id,
+                QcTestSpecification.status == "released",
+            )
+            .order_by(QcTestSpecification.version_no.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if test_spec is None:
+        return []
+
+    required_tests = (
+        await session.execute(
+            select(QcTestDefinition).where(
+                QcTestDefinition.specification_id == test_spec.id,
+                QcTestDefinition.required.is_(True),
+                QcTestDefinition.release_blocking.is_(True),
+            )
+        )
+    ).scalars().all()
+    if not required_tests:
+        return []
+
+    missing: list[str] = []
+    for definition in required_tests:
+        passing = (
+            await session.execute(
+                select(QcResult.id)
+                .join(QcTestOrder, QcTestOrder.id == QcResult.test_order_id)
+                .join(QcSample, QcSample.id == QcTestOrder.sample_id)
+                .where(
+                    QcTestOrder.test_definition_id == definition.id,
+                    QcTestOrder.state == "reviewed",
+                    QcResult.outcome == "pass",
+                    QcSample.source_type == "material_lot",
+                    QcSample.source_id == lot.id,
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if passing is None:
+            missing.append(definition.test_code)
+    return missing
+
+
 async def _independence_violation(session: AsyncSession, lot: MaterialLot, actor_user_id: uuid.UUID) -> bool:
     if lot.receipt_id is not None:
         receipt_row = await session.get(MaterialReceipt, lot.receipt_id)
@@ -1409,6 +1483,7 @@ async def _disposition_material_lot_v2(
 
     # MUT-FR-014/RUL-FR-016: same no-op-until-authored release-gate hook `disposition_material_lot`
     # already uses — RCV-FR-023/024/025's material-scoped QC requirement stays a SPEC_GAP, not guessed.
+    coa_reliance = False
     if decision == "released":
         await rules_commands.evaluate_release_gate(
             session,
@@ -1422,6 +1497,38 @@ async def _disposition_material_lot_v2(
             aggregate_version=lot.version,
             actor_user_id=actor_user_id,
         )
+
+        # Client_Decisions_Neededanswers Topic 1/2 (SG-076 required-test half, resolved 2026-10-02):
+        # block release until every required+release_blocking test has a passing reviewed result,
+        # unless QA explicitly relies on the supplier's COA instead (Q2 -- only for an approved
+        # supplier, with an actual COA on file, and a documented reason; relying on a non-existent COA
+        # or an unapproved supplier is rejected, not silently allowed).
+        missing_tests = await _missing_required_tests(session, lot)
+        coa_reliance = bool(getattr(cmd, "coa_reliance", False))
+        if missing_tests:
+            if not coa_reliance:
+                raise LotIneligibleError(
+                    "Required test(s) have not passed review; release is blocked (Client Topic 1)",
+                    lot_id=str(lot.id), missing_test_codes=missing_tests,
+                )
+            if lot.receipt_id is None:
+                raise ValidationFailedError(
+                    "No receipt/COA is on file for this lot; supplier-COA reliance is not available"
+                )
+            receipt_row = await session.get(MaterialReceipt, lot.receipt_id)
+            if receipt_row is None or receipt_row.coa_document_hash is None:
+                raise ValidationFailedError(
+                    "A supplier Certificate of Analysis must be on file to rely on it instead of in-house testing (Client Topic 2)"
+                )
+            supplier = await session.get(Supplier, receipt_row.supplier_id) if receipt_row.supplier_id else None
+            if supplier is None or supplier.status != "approved":
+                raise ValidationFailedError(
+                    "Supplier-COA reliance requires an approved supplier (Client Topic 2)"
+                )
+            if not cmd.reason:
+                raise ValidationFailedError(
+                    "A documented reason is required when relying on the supplier's COA instead of in-house testing"
+                )
 
     policy = await signature_service.resolve_signature_requirement(session, record_type="material_lot", action=action)
     signature_id = None
@@ -1446,7 +1553,7 @@ async def _disposition_material_lot_v2(
             material_lot_id=lot.id,
             container_ids={"ids": [str(c) for c in cmd.container_ids]} if cmd.container_ids else None,
             decision=decision,
-            evidence_refs=None,
+            evidence_refs={"coa_reliance": True} if coa_reliance else None,
             reason=cmd.reason,
             signature_id=signature_id,
             disposed_by_user_id=actor_user_id,
@@ -1454,6 +1561,9 @@ async def _disposition_material_lot_v2(
     )
 
     old_status = lot.status
+    if coa_reliance:
+        lot.coa_reliance = True
+        lot.coa_reliance_reason = cmd.reason
     is_partial = bool(cmd.container_ids)
     if is_partial:
         for container_id in cmd.container_ids:
@@ -1537,6 +1647,10 @@ class ReleaseMaterialLotCommand(CommandEnvelope):
     container_ids: list[uuid.UUID] | None = None
     challenge_id: uuid.UUID
     reauth_password: str
+    # Client_Decisions_Neededanswers Topic 2: only consulted when a required test hasn't passed
+    # review -- QA relies on the supplier's COA instead (approved supplier + COA on file + reason
+    # required, enforced in _disposition_material_lot_v2). Ignored on a clean release.
+    coa_reliance: bool = False
 
 
 async def release_material_lot(
@@ -1725,6 +1839,12 @@ async def get_release_readiness(session: AsyncSession, lot_id: uuid.UUID) -> dic
     today = datetime.now(timezone.utc).date()
     not_expired = lot.expiry_date is None or lot.expiry_date >= today
 
+    # Client_Decisions_Neededanswers Topic 1 (SG-076 required-test half, resolved 2026-10-02): this is
+    # now the real, hard-enforced gate release_material_lot checks -- surfaced here too so the UI can
+    # show why release is blocked (or that COA reliance would be needed) before the signer even opens
+    # the release ceremony, not just advisory `qc_sample_ids` as before.
+    missing_required_tests = await _missing_required_tests(session, lot)
+
     return {
         "lot_id": str(lot.id),
         "status": lot.status,
@@ -1733,9 +1853,9 @@ async def get_release_readiness(session: AsyncSession, lot_id: uuid.UUID) -> dic
         "receipt_discrepancy_clear": receipt_clean,
         "sampling_complete": sampling_complete,
         "not_expired": not_expired,
-        # RCV-FR-023/025: whether QC evidence exists cannot be enforced as a required-test rule (no
-        # material-scoped QC specification exists, SG-057/SG-063) — surfaced as advisory information only.
         "qc_sample_ids": [str(o.qc_sample_id) for o in sampling_orders if o.qc_sample_id is not None],
+        "missing_required_tests": missing_required_tests,
+        "coa_reliance_available": bool(missing_required_tests) and lot.receipt_id is not None,
     }
 
 

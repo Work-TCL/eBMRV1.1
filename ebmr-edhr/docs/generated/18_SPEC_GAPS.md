@@ -5022,9 +5022,43 @@ options:
   - (B) Guess a required-test/COA-reliance rule now (rejected -- the risk above).
 blocking: false
 owner: Data Architect + Materials module owner + QC module owner
-resolution_document: "SG-076 partial resolution 2026-09-23: services/gxp-api/app/modules/qc/models.py, app/modules/qc/commands.py, services/gxp-api/tests/test_qc.py"
-status: PARTIALLY_RESOLVED
+resolution_document: "Client_Decisions_Neededanswers.txt Topics 1/2 (2026-10-02) -- Option A implemented"
+status: RESOLVED_APPROVED
 ```
+
+**RESOLVED_APPROVED 2026-10-02, project-owner-directed via client decision document, Topics 1 & 2** --
+Option A implemented directly against the client's own wording, not the generic configurable
+rules-engine hook (`material-lot-release-eligibility:{material_id}`, still a no-op until a customer
+authors one -- untouched, orthogonal to this fix):
+
+1. **Topic 1 (required test blocks release)**: `_disposition_material_lot_v2`'s `decision == "released"`
+   branch now calls a new `_missing_required_tests()` helper that walks
+   `MaterialLot.material_id` -> the material's current released `MaterialSpecificationVersion` ->
+   its released `QcTestSpecification` (`scope_type="material"`) -> every `QcTestDefinition` with
+   `required=True, release_blocking=True` -> for each, checks for a passing (`QcResult.outcome=="pass"`),
+   reviewed (`QcTestOrder.state=="reviewed"`) result on a `QcSample` sourced from this lot
+   (`source_type=="material_lot"`). Any still-missing required test raises `LotIneligibleError` (409,
+   `details.missing_test_codes`) -- release is hard-blocked, not merely advisory. If no material-scoped
+   test specification is released at all for the material, nothing is required (empty list), so every
+   pre-existing release flow with no QC spec configured is unaffected (verified: the full pre-existing
+   material/QC regression suite, 53 tests, passes unchanged).
+2. **Topic 2 (supplier-COA reliance)**: `ReleaseMaterialLotCommand` gains `coa_reliance: bool = False`.
+   When set and a required test is missing, the gate is bypassed only if (a) the lot's receipt has a
+   `coa_document_hash` on file, (b) the receipt's supplier has `status == "approved"`, and (c) a
+   non-empty `reason` is supplied -- re-verified at release time, not trusted from receipt time (a
+   supplier approved when the receipt arrived but since suspended is correctly refused). The decision is
+   itself QA-Releaser-signed (same ceremony as every release) and persisted on the lot
+   (`coa_reliance`/`coa_reliance_reason`, migration 0126) for traceability, matching Q2's "must be
+   reviewed and approved by authorized Quality/QA person... remain blocked until formally released."
+   `GET .../release-readiness` now surfaces `missing_required_tests`/`coa_reliance_available` so the UI
+   shows this before the signer opens the ceremony, and `material-lots/page.tsx`'s release modal renders
+   the blocked-test banner, the COA-reliance checkbox, and an "Exception"/"COA reliance" tag on the lot
+   list going forward.
+
+Verified: 55/55 (`test_material_receipt_flow.py`, `test_material_flow.py`, `test_material_specification.py`,
+`test_qc.py` including 2 new tests covering block-then-pass and the full COA-reliance decision tree:
+unapproved supplier refused, approved-but-no-COA refused, COA+reason succeeds). Frontend `tsc`/`eslint`
+clean.
 
 ### SG-077 — Document 19 requirements needing infrastructure this codebase does not have yet: UOM conversion, edge/equipment integration, a warehouse/location master, and ERP reconciliation
 
