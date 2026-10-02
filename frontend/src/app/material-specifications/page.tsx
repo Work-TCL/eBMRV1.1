@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api, ApiError, clientPagedFetcher, newIdempotencyKey } from "@/lib/api";
-import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
+import { useEntityOptions, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -38,8 +39,9 @@ interface SpecBusinessIdOption {
 }
 
 export default function MaterialSpecificationsPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("material_spec.view");
   const [newDraftOpen, setNewDraftOpen] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
 
   return (
     <div>
@@ -55,26 +57,53 @@ export default function MaterialSpecificationsPage() {
         }
       />
 
-      <SpecificationsCard />
+      <SpecificationsCard reloadToken={reloadToken} bumpReload={() => setReloadToken((n) => n + 1)} />
 
       {newDraftOpen && (
         <NewDraftModal
           onClose={() => setNewDraftOpen(false)}
-          onDone={() => setNewDraftOpen(false)}
+          onDone={() => {
+            setNewDraftOpen(false);
+            setReloadToken((n) => n + 1);
+          }}
         />
       )}
     </div>
   );
 }
 
-function SpecificationsCard() {
-  const [reloadToken, setReloadToken] = useState(0);
+function SpecificationsCard({ reloadToken, bumpReload }: { reloadToken: number; bumpReload: () => void }) {
+  const router = useRouter();
   const [historyBusinessId, setHistoryBusinessId] = useState<string | null>(null);
   const [historyVersions, setHistoryVersions] = useState<MaterialSpecVersion[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [releasing, setReleasing] = useState<MaterialSpecVersion | null>(null);
   const [releaseLookupError, setReleaseLookupError] = useState<string | null>(null);
+
+  // Deep link from the workflow-notifications bell (`?material_spec_version_id=<id>`) — jump straight to
+  // the release signature ceremony for that draft. Reads window.location directly rather than
+  // next/navigation's useSearchParams(), which needs a Suspense boundary this page has no other reason to
+  // opt into.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const versionId = params.get("material_spec_version_id");
+    if (!versionId) return;
+    let cancelled = false;
+    api
+      .get<MaterialSpecVersion>(`/material-specifications/v1/${versionId}`)
+      .then((version) => {
+        if (!cancelled) setReleasing(version);
+      })
+      .catch((err) => {
+        if (!cancelled) setReleaseLookupError(err instanceof ApiError ? err.message : "Could not load specification version");
+      });
+    router.replace("/material-specifications");
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // GET /material-specifications/v1/business-ids returns a plain array, not the server-side Paged<T>
   // envelope (Phase 1, small row counts — same ceiling product_master's/recipe_master's equivalent
@@ -228,7 +257,7 @@ function SpecificationsCard() {
           onClose={() => setReleasing(null)}
           onDone={() => {
             setReleasing(null);
-            setReloadToken((n) => n + 1);
+            bumpReload();
             if (historyBusinessId) void showHistory(historyBusinessId);
           }}
         />

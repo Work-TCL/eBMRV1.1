@@ -77,6 +77,26 @@ async def test_create_draft_succeeds_for_qc_reviewer_and_is_readable(client, see
     assert len(versions.json()) == 1
 
 
+async def test_list_methods_includes_created_versions(client, seeded, db):
+    """Backs /qc's redesigned "QC method master" section (2026-09-26): a real browsable list now exists
+    (previously only "versions by method_code" and "single by id" -- a deliberate code-lookup console)."""
+    async with db.begin():
+        await _make_user(db, seeded, "qc.reviewer.qcmlist", "QC Reviewer")
+    token = await login(client, "qc.reviewer.qcmlist")
+
+    resp = await client.post(
+        "/qc/v1/methods/drafts", json=_draft_body(seeded["site_id"], "MTH-LIST"), headers=auth_headers(token)
+    )
+    assert resp.status_code == 200, resp.text
+    version_id = resp.json()["aggregate_id"]
+
+    listing = await client.get("/qc/v1/methods?page_size=100", headers=auth_headers(token))
+    assert listing.status_code == 200, listing.text
+    body = listing.json()
+    assert "items" in body and "total" in body
+    assert any(m["method_version_id"] == version_id for m in body["items"])
+
+
 async def test_create_draft_rejects_unknown_method_type(client, seeded, db):
     async with db.begin():
         await _make_user(db, seeded, "qc.reviewer.qcm2", "QC Reviewer")

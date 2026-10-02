@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   ApiError,
@@ -10,7 +10,7 @@ import {
   newIdempotencyKey,
   type Capa,
 } from "@/lib/api";
-import { useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
+import { useEntityOptions, useMe, useRequirePermission, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
@@ -42,10 +42,11 @@ const SOURCE_TYPES = [
   "validation",
 ];
 
-// Not every source_type has a browsable list behind it yet — same honest split `deviations/page.tsx`'s
-// own SOURCE_PICKER_KIND/SOURCE_MANUAL_HINT pair already established. `oos`/`oot` have no list endpoint
-// (`qc/router.py`'s oos_router only has get-by-id); `trend`/`security`/`validation` aren't real
-// browsable record types in this system at all (proactive/category labels, not entities with a list).
+// Not every source_type has a browsable list behind it — same honest split `deviations/page.tsx`'s own
+// SOURCE_PICKER_KIND/SOURCE_MANUAL_HINT pair already established. `oos`/`oot` gained real list endpoints
+// (qc/router.py::list_oos_records/list_oot_records, 2026-09-26) so they get real pickers now too;
+// `trend`/`security`/`validation` aren't real browsable record types in this system at all
+// (proactive/category labels, not entities with a list) and stay free text.
 const SOURCE_PICKER_KIND: Partial<Record<string, string>> = {
   deviation: "deviation",
   ncr: "nonconformance",
@@ -53,19 +54,36 @@ const SOURCE_PICKER_KIND: Partial<Record<string, string>> = {
   audit: "internal audit",
   supplier: "supplier",
   risk: "risk",
+  oos: "OOS record",
+  oot: "OOT record",
 };
 const SOURCE_MANUAL_HINT: Partial<Record<string, string>> = {
-  oos: "No OOS record browse list in this deployment yet — the OOS record's ID.",
-  oot: "No OOT record browse list in this deployment yet — the OOT record's ID.",
   trend: "No single record for a trend origin — describe/reference the trend analysis this CAPA answers.",
   security: "No single record for a security-incident origin yet — the relevant reference ID.",
   validation: "No single record for a validation-finding origin yet — the relevant reference ID.",
 };
 
 export default function CapaPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("capa.view");
   const [createOpen, setCreateOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  const [prefillSource, setPrefillSource] = useState<{ sourceType: string; sourceId: string } | null>(null);
+
+  // Deep link from a source record's own "Create linked CAPA" action (e.g. deviations/[id]/page.tsx,
+  // `?source_type=deviation&source_id=<id>`) — opens the Raise CAPA modal pre-filled with that source
+  // instead of making the user re-select it. Reads window.location directly rather than next/navigation's
+  // useSearchParams(), same as suppliers/page.tsx's own `?supplier_id=` deep link, to avoid opting this
+  // page into a Suspense boundary it has no other reason to need.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sourceType = params.get("source_type");
+    const sourceId = params.get("source_id");
+    if (sourceType && sourceId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPrefillSource({ sourceType, sourceId });
+      setCreateOpen(true);
+    }
+  }, []);
 
   const columns: DataTableColumn<Capa>[] = [
     {
@@ -130,9 +148,15 @@ export default function CapaPage() {
       />
       {createOpen && (
         <RaiseCapaModal
-          onClose={() => setCreateOpen(false)}
+          initialSourceType={prefillSource?.sourceType}
+          initialSourceId={prefillSource?.sourceId}
+          onClose={() => {
+            setCreateOpen(false);
+            setPrefillSource(null);
+          }}
           onDone={() => {
             setCreateOpen(false);
+            setPrefillSource(null);
             setReloadToken((n) => n + 1);
           }}
         />
@@ -141,13 +165,28 @@ export default function CapaPage() {
   );
 }
 
-function RaiseCapaModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function RaiseCapaModal({
+  initialSourceType,
+  initialSourceId,
+  onClose,
+  onDone,
+}: {
+  /** Pre-fills the source when this modal was opened from a source record's own "Create linked CAPA"
+   * action (see CapaPage's `?source_type=`/`?source_id=` deep link) — still editable, not locked, in
+   * case the wrong record linked here. */
+  initialSourceType?: string;
+  initialSourceId?: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const { siteId } = useSiteId();
   const { me } = useMe();
   const entities = useEntityOptions();
   const [capaNumber, setCapaNumber] = useState("");
-  const [sourceType, setSourceType] = useState(SOURCE_TYPES[0]);
-  const [sourceId, setSourceId] = useState("");
+  const [sourceType, setSourceType] = useState(
+    initialSourceType && SOURCE_TYPES.includes(initialSourceType) ? initialSourceType : SOURCE_TYPES[0]
+  );
+  const [sourceId, setSourceId] = useState(initialSourceId ?? "");
 
   // Reset the picked/typed record whenever the source type changes — an id chosen against one entity
   // list is never valid once the type switches to a different one (same rule deviations/page.tsx's
@@ -172,6 +211,10 @@ function RaiseCapaModal({ onClose, onDone }: { onClose: () => void; onDone: () =
         return { options: entities.suppliers, status: entities.suppliersStatus };
       case "risk":
         return { options: entities.risks, status: entities.risksStatus };
+      case "oos":
+        return { options: entities.oosRecords, status: entities.oosRecordsStatus };
+      case "oot":
+        return { options: entities.ootRecords, status: entities.ootRecordsStatus };
       default:
         return null;
     }

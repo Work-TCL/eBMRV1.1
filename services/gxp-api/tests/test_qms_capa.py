@@ -43,6 +43,18 @@ async def _setup(db, seeded, tag, *, signed=False):
             required_role_id=seeded["roles"]["QA Releaser"].id if signed else None,
             requires_independent_signer=signed,
         ))
+        # SG-065 (2026-09-22, project-owner-directed): same shape as close/effectiveness above, enforced
+        # in plan_capa()/extend_capa() before any state mutation.
+        db.add(SignaturePolicy(
+            record_type="capa_record", action="plan", meaning="Approved", signature_required=signed,
+            required_role_id=seeded["roles"]["QA Releaser"].id if signed else None,
+            requires_independent_signer=signed,
+        ))
+        db.add(SignaturePolicy(
+            record_type="capa_record", action="extend", meaning="Approved", signature_required=signed,
+            required_role_id=seeded["roles"]["QA Releaser"].id if signed else None,
+            requires_independent_signer=signed,
+        ))
         # Known-limitations fix (docs/testing/demo-gujarati/10 §10.6 item 3): create_capa now
         # FK-validates source_id against a real record for source_type="deviation" -- give every test a
         # real DeviationRecord to point at instead of an arbitrary UUID.
@@ -90,22 +102,36 @@ async def _create(client, token, seeded, owner_id, **overrides):
     return resp.json()["aggregate_id"]
 
 
-async def _advance_to_effectiveness_review(client, db, token, capa_id, owner_id, *, effectiveness_signer_token=None):
+async def _advance_to_effectiveness_review(
+    client, db, token, capa_id, owner_id, *, plan_signer_token=None, effectiveness_signer_token=None
+):
     """create() already called; capa.version == 1. Returns the capa's expected_version once
     EFFECTIVENESS_REVIEW is reached (ready to pass straight into close()).
+
+    `plan_signer_token`: SG-065 (2026-09-22) -- pass this when the caller's `_setup(signed=True)` made
+    `capa_record/plan` signature-required, so "plan" is signed by an independent QA Releaser instead of
+    `token` (usually the CAPA owner, who would fail the independence check). Leave unset when unsigned.
 
     `effectiveness_signer_token`: SG-210 (2026-09-18) -- pass this when the caller's `_setup(signed=True)`
     made `capa_record/effectiveness` signature-required, so "record result" is signed by an independent
     QA Releaser instead of `token` (which is usually the CAPA owner and would fail either the required
     role or the independence check). Leave unset when the policy is unsigned."""
-    resp = await client.post(
-        f"/qms/v1/capas/{capa_id}/plan",
-        json={
-            "idempotency_key": idem(), "capa_id": capa_id, "expected_version": 1,
-            "corrective_action": {"description": "replace seal supplier and add incoming inspection"},
-        },
-        headers=auth_headers(token),
-    )
+    plan_body = {
+        "idempotency_key": idem(), "capa_id": capa_id, "expected_version": 1,
+        "corrective_action": {"description": "replace seal supplier and add incoming inspection"},
+    }
+    plan_token = token
+    if plan_signer_token is not None:
+        plan_token = plan_signer_token
+        challenge = (
+            await client.post(
+                f"/qms/v1/capas/{capa_id}/signature-challenges", json={"action": "plan"},
+                headers=auth_headers(plan_signer_token),
+            )
+        ).json()
+        plan_body["challenge_id"] = challenge["challenge_id"]
+        plan_body["reauth_password"] = DEMO_PASSWORD
+    resp = await client.post(f"/qms/v1/capas/{capa_id}/plan", json=plan_body, headers=auth_headers(plan_token))
     assert resp.status_code == 200, resp.text  # version 1 -> 2
 
     resp = await client.post(
@@ -254,7 +280,7 @@ async def test_close_requires_signature_when_policy_requires_it(client, seeded, 
     signer_token = await login(client, "qa.capa4")
     capa_id = await _create(client, token, seeded, owner.id)
     next_version = await _advance_to_effectiveness_review(
-        client, db, token, capa_id, owner.id, effectiveness_signer_token=signer_token
+        client, db, token, capa_id, owner.id, plan_signer_token=signer_token, effectiveness_signer_token=signer_token
     )
     # Independent QA Releaser, correct role, but no challenge -> still MISSING_SIGNATURE.
     resp = await client.post(
@@ -284,9 +310,10 @@ async def _make_admin_no_policy(db, seeded, tag):
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.capa{tag}")
         # Deliberately no SignaturePolicy(record_type="capa_record", action="close", ...) row -- this is
-        # what test_close_fails_closed_when_signature_policy_unresolved exercises. "effectiveness" gets
-        # an explicit unsigned row so _advance_to_effectiveness_review() can still reach the "close" step
-        # this helper's callers actually want to test.
+        # what test_close_fails_closed_when_signature_policy_unresolved exercises. "plan" and
+        # "effectiveness" get explicit unsigned rows so _advance_to_effectiveness_review() can still reach
+        # the "close" step this helper's callers actually want to test (SG-065 added "plan" to that path).
+        db.add(SignaturePolicy(record_type="capa_record", action="plan", meaning="Approved", signature_required=False))
         db.add(SignaturePolicy(record_type="capa_record", action="effectiveness", meaning="Approved", signature_required=False))
         deviation = DeviationRecord(
             site_id=seeded["site_id"], deviation_number=f"DEV-CAPA-TEST-{tag}-{uuid.uuid4().hex[:6]}",
@@ -669,7 +696,7 @@ async def test_signature_challenge_round_trip_signs_close(client, seeded, db):
     signer_token = await login(client, "qa.capa26")
     capa_id = await _create(client, token, seeded, owner.id)
     next_version = await _advance_to_effectiveness_review(
-        client, db, token, capa_id, owner.id, effectiveness_signer_token=signer_token
+        client, db, token, capa_id, owner.id, plan_signer_token=signer_token, effectiveness_signer_token=signer_token
     )
 
     resp = await client.post(
@@ -705,7 +732,8 @@ async def test_close_by_the_capa_owner_is_refused_as_not_independent(client, see
     qa_token = await login(client, "qa.capa27")
     capa_id = await _create(client, token, seeded, qa_owner.id)
     next_version = await _advance_to_effectiveness_review(
-        client, db, token, capa_id, qa_owner.id, effectiveness_signer_token=effectiveness_signer_token
+        client, db, token, capa_id, qa_owner.id,
+        plan_signer_token=effectiveness_signer_token, effectiveness_signer_token=effectiveness_signer_token,
     )
     challenge = (
         await client.post(
@@ -722,3 +750,95 @@ async def test_close_by_the_capa_owner_is_refused_as_not_independent(client, see
     )
     assert resp.status_code == 409, resp.text
     assert resp.json()["code"] == "SOD_INDEPENDENCE_REQUIRED"
+
+
+async def test_plan_requires_signature_when_policy_requires_it(client, seeded, db):
+    """SG-065: plan_capa() now resolves a signature the same way close()/record_effectiveness() do."""
+    owner = await _setup(db, seeded, "28", signed=True)
+    await _indep_qa_releaser(db, seeded, "qa.capa28")
+    token = await login(client, "admin.capa28")
+    signer_token = await login(client, "qa.capa28")
+    capa_id = await _create(client, token, seeded, owner.id)
+    # Independent QA Releaser, correct role, but no challenge -> still MISSING_SIGNATURE.
+    resp = await client.post(
+        f"/qms/v1/capas/{capa_id}/plan",
+        json={
+            "idempotency_key": idem(), "capa_id": capa_id, "expected_version": 1,
+            "corrective_action": {"description": "replace seal supplier and add incoming inspection"},
+        },
+        headers=auth_headers(signer_token),
+    )
+    assert resp.status_code == 428, resp.text
+    assert resp.json()["code"] == "MISSING_SIGNATURE"
+
+
+async def test_plan_by_the_capa_owner_is_refused_as_not_independent(client, seeded, db):
+    """Same independence shape as test_close_by_the_capa_owner_is_refused_as_not_independent, for plan:
+    the CAPA owner holding QA Releaser still cannot sign their own plan approval."""
+    await _setup(db, seeded, "29", signed=True)
+    qa_owner = await _indep_qa_releaser(db, seeded, "qa.capa29")
+    token = await login(client, "admin.capa29")
+    qa_token = await login(client, "qa.capa29")
+    capa_id = await _create(client, token, seeded, qa_owner.id)
+    challenge = (
+        await client.post(
+            f"/qms/v1/capas/{capa_id}/signature-challenges", json={"action": "plan"}, headers=auth_headers(qa_token),
+        )
+    ).json()
+    resp = await client.post(
+        f"/qms/v1/capas/{capa_id}/plan",
+        json={
+            "idempotency_key": idem(), "capa_id": capa_id, "expected_version": 1,
+            "corrective_action": {"description": "replace seal supplier and add incoming inspection"},
+            "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "SOD_INDEPENDENCE_REQUIRED"
+
+
+async def test_extend_requires_signature_when_policy_requires_it(client, seeded, db):
+    """SG-065: extend_capa() now resolves a signature the same way close()/plan()/effectiveness() do."""
+    owner = await _setup(db, seeded, "30", signed=True)
+    await _indep_qa_releaser(db, seeded, "qa.capa30")
+    token = await login(client, "admin.capa30")
+    signer_token = await login(client, "qa.capa30")
+    capa_id = await _create(client, token, seeded, owner.id)
+    new_target = (datetime.now(timezone.utc) + timedelta(days=60)).isoformat()
+    # Independent QA Releaser, correct role, but no challenge -> still MISSING_SIGNATURE.
+    resp = await client.post(
+        f"/qms/v1/capas/{capa_id}/extend",
+        json={
+            "idempotency_key": idem(), "capa_id": capa_id, "expected_version": 1, "new_target_date": new_target,
+            "reason": "awaiting supplier qualification", "risk_review": "no product impact from delay",
+        },
+        headers=auth_headers(signer_token),
+    )
+    assert resp.status_code == 428, resp.text
+    assert resp.json()["code"] == "MISSING_SIGNATURE"
+
+
+async def test_extend_signature_round_trip_succeeds_for_independent_signer(client, seeded, db):
+    owner = await _setup(db, seeded, "31", signed=True)
+    await _indep_qa_releaser(db, seeded, "qa.capa31")
+    token = await login(client, "admin.capa31")
+    signer_token = await login(client, "qa.capa31")
+    capa_id = await _create(client, token, seeded, owner.id)
+    new_target = (datetime.now(timezone.utc) + timedelta(days=60)).isoformat()
+    challenge = (
+        await client.post(
+            f"/qms/v1/capas/{capa_id}/signature-challenges", json={"action": "extend"}, headers=auth_headers(signer_token),
+        )
+    ).json()
+    resp = await client.post(
+        f"/qms/v1/capas/{capa_id}/extend",
+        json={
+            "idempotency_key": idem(), "capa_id": capa_id, "expected_version": 1, "new_target_date": new_target,
+            "reason": "awaiting supplier qualification", "risk_review": "no product impact from delay",
+            "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(signer_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is not None

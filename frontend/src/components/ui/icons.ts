@@ -56,6 +56,9 @@ export const ICONS: Record<string, string> = {
   clipboard: '<rect x="6" y="5" width="12" height="16" rx="1.5"/><rect x="9" y="3" width="6" height="3.5" rx="1"/>',
   flag: '<line x1="6" y1="3.5" x2="6" y2="20.5"/><path d="M6 4.5h11l-2.5 3.5L17 11.5H6z"/>',
   gauge: '<circle cx="12" cy="13" r="7.5"/><line x1="12" y1="13" x2="15.5" y2="9.5"/><line x1="8" y1="6.5" x2="8.9" y2="7.2"/><line x1="12" y1="5.3" x2="12" y2="6.3"/><line x1="16" y1="6.5" x2="15.1" y2="7.2"/>',
+  tool: '<path d="M14.5 6.5a4 4 0 0 0-5.3 4.6L4 16.3V20h3.7l5.2-5.2a4 4 0 0 0 4.6-5.3l-2.8 2.8-2.2-2.2z"/>',
+  shield: '<path d="M12 3.5 19 6v6c0 4.5-3 7-7 8.5C8 19 5 16.5 5 12V6z"/>',
+  list: '<line x1="9" y1="6.5" x2="20" y2="6.5"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="17.5" x2="20" y2="17.5"/><line x1="4" y1="6.5" x2="4.01" y2="6.5"/><line x1="4" y1="12" x2="4.01" y2="12"/><line x1="4" y1="17.5" x2="4.01" y2="17.5"/>',
 };
 
 export type IconName = keyof typeof ICONS;

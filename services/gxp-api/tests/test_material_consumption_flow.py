@@ -69,6 +69,50 @@ async def _build_dispensed_container(client, db, seeded, op_token, qc_token, qa_
     return batch_id, material_id, lot_id, str(dispensed.id), released_location_id
 
 
+async def consume_material_into_existing_batch(
+    client, db, seeded, op_token, qc_token, qa_token, batch_id, code, lot_code, qty="1.000000"
+):
+    """Like `_build_dispensed_container` above, but dispenses against a batch the caller already created
+    (rather than making a new one) and immediately records a real consumption -- for tests elsewhere that
+    just need one genuine `MaterialConsumption` row against an existing batch (e.g. the Batch Record
+    view's "materials consumed" section). 2026-09-22: replaces the old pattern of hand-inserting a
+    `MaterialIssue` row directly via the ORM, which stopped working once `record_service.py` was fixed to
+    read the real consumption ledger instead of that retired, never-written-by-any-UI table."""
+    site_id = seeded["site_id"]
+    released_location_id = str(seeded["locations"]["RELEASED-01"].id)
+
+    material_id, lot_id, container_id = await _prepared_lot(client, db, op_token, qa_token, site_id, code, lot_code, quantity=qty)
+    await _put_away(client, op_token, lot_id, container_id, released_location_id, qty)
+
+    order_id = await _create_order(client, op_token, site_id, batch_id, material_id, target_qty=qty, low="0.000001", high="999999.000000")
+    select_resp = await _select_source(client, op_token, order_id, 1, lot_id, container_id=container_id, quantity=qty)
+    assert select_resp.status_code == 200, select_resp.text
+    assert (await _start(client, op_token, order_id, 2)).status_code == 200
+    assert (await _manual_reading(client, op_token, order_id, 3, qty)).status_code == 200
+    assert (await _verify(client, qc_token, order_id, 3)).status_code == 200
+
+    from app.modules.material.models import DispensingSource
+
+    src = (await db.execute(select(DispensingSource).where(DispensingSource.dispensing_order_id == order_id))).scalar_one()
+    complete_resp = await _complete(client, op_token, order_id, 4, str(src.id), qty, f"DC-{lot_code}")
+    assert complete_resp.status_code == 200, complete_resp.text
+
+    dispensed = (
+        await db.execute(select(DispensedContainer).where(DispensedContainer.dispensing_order_id == order_id))
+    ).scalar_one()
+
+    consume_resp = await client.post(
+        "/materials/v1/consumptions",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "dispensed_container_id": str(dispensed.id),
+            "quantity": qty, "uom": "kg",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert consume_resp.status_code == 200, consume_resp.text
+    return lot_id, str(dispensed.id)
+
+
 # ---------------------------------------------------------------------------
 # RecordConsumption — CON-FR-001/002/004/027/031
 # ---------------------------------------------------------------------------

@@ -28,9 +28,14 @@
 | ૧૨ | [Batch Review અને Release](12_Batch_Review_Release_Gujarati.md) | QA Review, Release |
 | ૧૩ | [Sterilization, Aseptic, EM, Cleaning](13_Sterilization_Aseptic_Gujarati.md) | Sterile processing |
 | ૧૪ | [Platform, Audit, Evidence, Vault](14_Platform_Audit_Evidence_Vault_Gujarati.md) | Dashboard, Audit trail, Evidence, Documents, Training |
-| ૧૫ | [નવા Client Requirements (2026-09-21)](15_New_Client_Requirements_Testing_Gujarati.md) 🆕 | Auto-code, UOM enforcement, Material storage, Equipment docs/calibration/maintenance, QC gating, Batch Record PDF |
+| ૧૫ | [નવા Client Requirements (2026-09-21)](15_New_Client_Requirements_Testing_Gujarati.md) | Auto-code, UOM enforcement, Material storage, Equipment docs/calibration/maintenance, QC gating, Batch Record PDF |
+| ૧૬ | [Gap-Audit Fixes (2026-09-22)](16_Gap_Audit_Fixes_Testing_Gujarati.md) | Security (login-required APIs), Direct-URL RBAC block, CAPA Plan/Extend signing, Batch Record PDF signing, Material Lot Disposition retirement, SCAR supplier-suspend gate, Warehouse Location rename/retire, Batch step material-required gate, Supplier-suspend blocks already-received material |
+| ૧૭ | [સંપૂર્ણ Platform Field Guide + બધા Fixed Bugs](17_Full_Platform_Field_Guide_Gujarati.md) | **Self-contained**: Material Consumption ↔ Inventory flow, field-by-field data guide (Materials/Suppliers/Recipe Master/Product Master/Batch Execution/Inventory/CAPA/Deviation/Equipment/QC/Release/Review), + બધા fixed bugs ના test cases એક જ જગ્યાએ |
+| ૧૮ | [Workflow Handoff Notifications Testing (2026-09-24)](18_Workflow_Notifications_Testing_Gujarati.md) | નવું Notification bell (📥) — ૧૮ modules (Release, Deviation, CAPA, Document, NCR, Complaint, Change Control, SCAR, Field Action, Internal Audit, Risk, OOS, OOT, Material Lot, Supplier Qualification, Material Specification, Product Master, Recipe Master) માટે module-by-module browser test steps, real field data, કયો user notify થાય/કયો SoD-excluded, module-to-module connection diagram |
+| ૧૯ | [Complete eBMR Journey — Supplier થી Market Release](19_Complete_EBMR_Journey_Gujarati.md) 🆕 | **સંપૂર્ણ end-to-end story, એક જ document**: Supplier → Material → Equipment → Product Master → Recipe Master → Batch → QC → OOS/OOT → Deviation → CAPA → QA Review/Release → Post-market Complaint — "batch market માં release કરવા શું જોઈએ" master checklist સાથે |
 
 ⭐ = user ની મુખ્ય required functionality (Product Master, Recipe Master, Batch Manufacture)
+🆕 = latest session — doc #૧૯ આખા platform ની journey ને એક સળંગ story તરીકે રજૂ કરે છે (doc #૦૧-#૧૮ ના same verified dataset વાપરીને); doc #૧૫ નું §૧૫.૧૦ (Batch Record PDF) doc #૧૬/૧૭ પ્રમાણે stale છે (PDF હવે unsigned નહીં, signed action છે)
 
 ---
 
@@ -45,7 +50,7 @@
 | `supervisor1` | Supervisor | Batch issue, deviation triage — ✅ **2026-09-18: હવે seed થયેલ છે**, manual create ની જરૂર નથી |
 | `qa.reviewer` | QA Reviewer | Batch/deviation/CAPA/EM/cleaning review |
 | `qa.releaser` | QA Releaser | Product/Recipe/Batch/CAPA/Deviation release-class decisions |
-| `qc.reviewer` | QC Reviewer | Material lot disposition, sterilization/cleaning verify, OOS/OOT |
+| `qc.reviewer` | QC Reviewer | Sample/retest, sterilization/cleaning verify, OOS/OOT (⚠️ 2026-09-22: lot release/reject હવે QC Reviewer નહીં, `qa.releaser` કરે છે — જુઓ doc #૧૬ §૧૬.૫) |
 | `equipment.admin` | Equipment Administrator | Equipment/area create, qualify |
 | `engineering.manager` | Engineering Manager | Equipment return-to-service |
 | `calibration.tech` | Calibration Technician | Equipment calibration |

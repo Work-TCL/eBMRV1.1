@@ -102,7 +102,10 @@ PERMISSION_CATALOG = [
     ("batch_step.correct", "correct", "batch_step_result", "Request or approve a 2-signature completed-step-result correction (BAT-FR-023, Document 106 row 20)"),
     ("batch.review", "review", "batch", "QA review of a completed batch"),
     ("batch.release", "release", "batch", "QA release of a reviewed batch"),
-    ("material_lot.disposition", "approve", "material_lot", "QC disposition of a material lot"),
+    # Inert since 2026-09-22 (SG-075, legacy disposition endpoint retired) -- no evaluate_policy() call
+    # anywhere checks this code any more. Left defined/granted (never deleted, same policy as
+    # sync_permissions.py's own upsert-only contract) rather than risk orphaning a RolePermission row.
+    ("material_lot.disposition", "approve", "material_lot", "QC disposition of a material lot (legacy, retired)"),
     # 2026-09-18, project-owner-directed (asked directly, three options presented: master-data-author
     # class like material_spec.author, setup-data class like warehouse_location.create, or leave open —
     # chose the first): create_material()/update_material() had no evaluate_policy() call at all —
@@ -180,6 +183,7 @@ PERMISSION_CATALOG = [
     ("oos_record.disposition", "disposition", "oos_record", "Approve final disposition of an OOS (Document 25)"),
     ("oos_record.close", "close", "oos_record", "Close an OOS record (Document 25)"),
     ("oot_record.close", "close", "oot_record", "Close an OOT record (Document 25)"),
+    ("oot_record.reopen", "reopen", "oot_record", "Reopen a closed OOT record (Document 25, SG-074 Task 3)"),
     ("material_receipt.create", "create", "material_receipt", "Create a material receipt (Document 19)"),
     ("material_receipt.examine", "examine", "material_receipt", "Visual examination / identity check of a material receipt (Document 19)"),
     ("material_lot.sampling_order", "create", "material_lot", "Create a sampling order against a material lot (Document 19)"),
@@ -193,6 +197,11 @@ PERMISSION_CATALOG = [
     # Admin/Supervisor only, not Operator — same "who defines the layout vs who executes against it"
     # split this file already draws for batch_execution.create/device.create.
     ("warehouse_location.create", "create", "warehouse_location", "Create a warehouse/zone/bin location (Document 20)"),
+    # SG-081 (2026-09-22, project-owner-directed): update/delete for warehouse_location -- rename covers
+    # location_code/zone_type/environment_profile_id; delete is a soft retire (status="retired") since a
+    # location can be referenced by MaterialLot.storage_location_id (req #4).
+    ("warehouse_location.update", "update", "warehouse_location", "Rename/reclassify a warehouse/zone/bin location (Document 20)"),
+    ("warehouse_location.retire", "retire", "warehouse_location", "Retire a warehouse/zone/bin location (Document 20)"),
     ("inventory_reservation.create", "create", "inventory_reservation", "Reserve material for a batch (Document 20)"),
     ("inventory_reservation.release", "release", "inventory_reservation", "Release (give back) a material reservation (Document 20)"),
     ("inventory_transaction.transfer", "transfer", "inventory_transaction", "Transfer a lot/container between warehouse locations (Document 20)"),
@@ -379,6 +388,12 @@ PERMISSION_CATALOG = [
     ("scar.effectiveness", "effectiveness", "scar_record", "Record SCAR effectiveness (Document 33)"),
     ("scar.close", "close", "scar_record", "Close a SCAR (Document 33)"),
     ("scar.view", "view", "supplier_quality_case", "Read supplier quality cases and SCARs (Document 33)"),
+    # SG-097 (2026-09-22): the owning command's own permission for the Supplier.status change a SCAR
+    # closure's suspend/reinstate decision triggers -- called from close_scar(), so its actor (QA Releaser)
+    # must also hold this, same cross-module pattern as create_deviation()'s own caller-holds-permission
+    # requirement.
+    ("supplier.suspend", "suspend", "supplier", "Suspend a supplier's approved-source status (Document 18/32, SCAR-FR-011)"),
+    ("supplier.reinstate", "reinstate", "supplier", "Reinstate a suspended supplier's approved-source status (Document 18/32, SCAR-FR-011)"),
     ("internal_audit.create", "create", "internal_audit", "Schedule an internal audit (Document 34)"),
     ("internal_audit.start", "start", "internal_audit", "Start a scheduled internal audit (Document 34)"),
     ("internal_audit.finding.add", "add", "audit_finding", "Record an internal audit finding (Document 34)"),
@@ -561,6 +576,10 @@ PERMISSION_CATALOG = [
     ("search.query", "query", "projection_document_metadata", "Authorized search query / result detail (Document 75)"),
     ("search.rebuild", "rebuild", "read_model_checkpoint", "Rebuild a search index from the authoritative source (Document 75)"),
     ("report.export", "export", "read_model_checkpoint", "Generate a frozen-cutoff async report export (Document 75)"),
+    # Workflow Handoff Notifications (project-owner-directed, no Document/SPEC-xxx baseline id) — same row
+    # tests/conftest.py's own independent copy adds. RBAC-only, same "rebuild is operational, not a
+    # regulated action" reasoning as search.rebuild above.
+    ("notifications.rebuild", "rebuild", "workflow_notification", "Rescan the workflow-notification projection from its authoritative sources"),
     # WP-11 (Document 76, SPEC-DATA-008) — same rows tests/conftest.py's own independent copy adds.
     # RBAC-only: Document 106 has no SPEC-DATA-008 row.
     ("dr.recovery_objective.manage", "manage", "recovery_objective_profile", "Set/update a component's RPO/RTO recovery tier (Document 76)"),
@@ -706,13 +725,13 @@ ROLE_PERMISSIONS = {
         "device.create", "device.execute", "device.view", "genealogy.view",
         "qa_review.create", "qa_review.execute", "qa_review.view",
         "release.evaluate", "release.release", "release.hold", "release.reject", "release.view",
-        "packaging.execute", "supplier_qualification.approve",
+        "packaging.execute", "supplier_qualification.approve", "supplier.suspend", "supplier.reinstate",
         "qc_test_specification.release", "qc_method.author", "qc_method.release", "qc_method.view",
         "qc_test_order.review", "qc_result.correct", "lims_sample.cancel",
-        "oos_record.extended_investigation", "oos_record.disposition", "oos_record.close", "oot_record.close",
+        "oos_record.extended_investigation", "oos_record.disposition", "oos_record.close", "oot_record.close", "oot_record.reopen",
         "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
         "material_lot.collect_sample", "material_lot.release", "material_lot.reject", "material_lot.retest",
-        "warehouse_location.create",
+        "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire",
         "inventory_reservation.create", "inventory_reservation.release", "inventory_transaction.transfer",
         "material_container.split", "material_container.merge", "inventory_cycle_count.execute",
         "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start",
@@ -770,7 +789,7 @@ ROLE_PERMISSIONS = {
         "data_ownership.view", "projection.rebuild", "data_dictionary.view",
         "evidence.upload", "evidence.download", "evidence.manifest", "evidence.legal_hold",
         "evidence.integrity_check",
-        "search.query", "search.rebuild", "report.export",
+        "search.query", "search.rebuild", "report.export", "notifications.rebuild",
         "dr.recovery_objective.manage", "dr.backup.view", "dr.restore_test.execute",
         # WP-11 Stage 2 (Document 74, SPEC-DATA-006, ADR-0011/SG-183).
         "step_stuck_detection.start", "step_stuck_detection.view",
@@ -822,7 +841,7 @@ ROLE_PERMISSIONS = {
         # 2026-09-18, project-owner-directed: same QC execution class as Operator above.
         "qc_sample.create", "qc_sample.receive", "qc_test_order.create", "qc_test_order.start",
         "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
-        "warehouse_location.create", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
+        "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
     "QA Reviewer": ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation",
         # 2026-09-18, project-owner-directed: QC investigation class — mirrors qms_deviation.investigate
         # (also QA Reviewer) plus QC Reviewer since this is QC-domain investigation work.
@@ -833,7 +852,15 @@ ROLE_PERMISSIONS = {
         # signer class for `quality_metric_snapshot/management_review` -> this role holds it.
         "quality_metric.management_review",
         "effectiveness_check.create", "ai_governance.use_case.register", "ai_governance.use_case.assess_risk", "ai_governance.context.build", "ai_governance.advisory.execute", "ai_governance.disposition.record", "ai_governance.evaluation.run", "ai_governance.release_gate.evaluate", "ai_governance.injection.detect", "validation.gate.view", "validation.package.view", "validation.function_risk.approve", "validation.function_risk.view", "validation.traceability.view", "validation.oq.view", "validation.security.view", "validation.performance.view", "validation.exception.view", "validation.periodic_review.decide", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"],
-    "QA Releaser": ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "rules.release", "product.view", "product.release", "product.suspend", "material_spec.view", "material_spec.release", "recipe.view", "recipe.release", "recipe.suspend", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.effectiveness", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
+    "QA Releaser": ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "rules.release", "product.view", "product.release", "product.suspend", "material_spec.view", "material_spec.release", "recipe.view", "recipe.release", "recipe.suspend", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view",
+        # Bug fix (2026-09-29): QA Releaser is the sole designated signer of batch.record_export
+        # (SIGNATURE_POLICY_FLOOR below, "batch"/"record_export") -- the action that creates the batch
+        # record PDF as an evidence object -- but held no evidence.* permission at all, so nobody could
+        # ever retrieve the PDF they had just generated and signed (Admin holds evidence.download but not
+        # the QA Releaser role record_export requires; QA Releaser holds neither). Same evidence.download
+        # code QA Reviewer already holds for the same "view what this role's own actions produce" reason.
+        "evidence.download",
+        "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.plan", "capa.effectiveness", "capa.extend", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "supplier.suspend", "supplier.reinstate", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
     # SG-157 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): closest existing real role to Document
     # 106's "QA Manager/Head of Quality per record class" text for regulatory_report.approve -- QA Releaser
     # is this codebase's actual highest quality-release-authority role (batch/recipe/product release).
@@ -1117,8 +1144,15 @@ SIGNATURE_POLICY_FLOOR = [
     # so independent=False; reason not required per row 16's own Reason column.
     ("batch", "production_complete", "Performed", None, False, True, False),
     ("batch", "review", "Reviewed", "QA Reviewer", True, True, False),
+    # batch/record_export -- SG-137 (2026-09-22, project-owner-directed): the batch-record PDF export
+    # (client requirement #11) is the SG-137 deliverable (final batch record export) and is signed by a
+    # QA Releaser -- no independence requirement, since a batch record export has no single "owner" for
+    # the signer to be independent of (unlike a disposition decision).
+    ("batch", "record_export", "Approved", "QA Releaser", False, True, True),
     ("batch", "release", "Released", "QA Releaser", True, True, False),
-    ("material_lot", "disposition", "Approved", "QC Reviewer", True, True, False),
+    # material_lot/disposition (legacy, QC Reviewer-signed) RETIRED 2026-09-22, SG-075 -- see
+    # material/commands.py's retirement note. Superseded by material_lot/release and material_lot/reject
+    # below (Document 106 rows 44/45, QA Releaser-signed).
     ("supplier_qualification", "approve", "Approved", "QA Releaser", True, True, False),
     ("qc_test_specification", "release", "Released", "QA Releaser", True, True, False),
     ("qc_test_order", "review", "Reviewed", "QA Reviewer", True, True, False),
@@ -1470,6 +1504,13 @@ SIGNATURE_POLICY_FLOOR = [
     # independence shape as close, since it is the same class of decision -- enforced in
     # capa_commands.py::record_effectiveness() only on the `cmd.result is not None` branch.
     ("capa_record", "effectiveness", "Approved", "QA Releaser", True, True, True),
+    # capa_record/plan, capa_record/extend -- SG-065 (2026-09-22, project-owner-directed): Document 27's
+    # own prose (CAPA-FR-021) calls for plan approval and extension to carry a signature, but its API
+    # table previously left both unsigned; the build had been following the table. Same "Approved"/QA
+    # Releaser/independent-of-owner shape as close/effectiveness above, enforced in capa_commands.py's
+    # plan_capa()/extend_capa() before any state mutation.
+    ("capa_record", "plan", "Approved", "QA Releaser", True, True, True),
+    ("capa_record", "extend", "Approved", "QA Releaser", True, True, True),
     # NCR -- verify is "Qualified independent verifier" ("MUST NOT be the performer") -> required_role
     # None, independence enforced in code against `owner_subject_id` (NonconformanceRecord's only stored
     # identity; no separate disposition-performer column -- same honest limitation as qa_review_package/complete).

@@ -12,9 +12,11 @@ from app.modules.policy.service import evaluate_policy
 from app.modules.qms.read_support import iso as _iso
 from app.modules.signature.service import create_challenge
 from app.modules.supplier_quality.commands import (
+    AddSupplierSiteCommand,
     ApproveSupplierQualificationCommand,
     CreateSupplierCommand,
     CreateSupplierQualificationCommand,
+    add_supplier_site,
     approve_supplier_qualification,
     create_supplier,
     create_supplier_qualification,
@@ -44,6 +46,22 @@ async def post_create_supplier(
         # matching material.create's resolution (same session, same decision), Process Engineer + Admin.
         await evaluate_policy(session, actor.user_id, action="supplier.create", site_id=None)
         return await create_supplier(session, cmd, actor.user_id)
+
+
+@router.post("/suppliers/{supplier_id}/sites", response_model=MutationReceipt)
+async def post_add_supplier_site(
+    supplier_id: uuid.UUID,
+    cmd: AddSupplierSiteCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.supplier_id != supplier_id:
+        raise ValidationFailedError("supplier_id in the path and body must match")
+    async with session.begin():
+        # Same permission as create_supplier -- adding a site to an existing supplier is the same class
+        # of master-data-authoring action, not a new authorization decision.
+        await evaluate_policy(session, actor.user_id, action="supplier.create", site_id=None)
+        return await add_supplier_site(session, cmd, actor.user_id)
 
 
 @router.post("/suppliers/{supplier_id}/qualifications", response_model=MutationReceipt)

@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 
 from app.core.security import hash_password
+from app.modules.genealogy import service as genealogy_service
 from app.modules.iam.models import Role, User, UserSiteRole
 from app.modules.material.models import (
     DispensedContainer,
@@ -443,7 +444,10 @@ async def test_cancel_returns_active_reservation(client, db, seeded):
     assert reservation.status == "released"
 
     availability = (
-        await client.get("/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)})
+        await client.get(
+            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)},
+            headers=auth_headers(qa_token),
+        )
     ).json()
     assert availability["items"][0]["available"] == "100.00000000"
 
@@ -455,7 +459,7 @@ async def test_queue_lists_noncompleted_orders(client, db, seeded):
     batch_id = await _create_batch(client, op_token, site_id, "QUEUE")
     order_id = await _create_order(client, op_token, site_id, batch_id, material_id)
 
-    queue = (await client.get("/dispensing/v1/queue")).json()
+    queue = (await client.get("/dispensing/v1/queue", headers=auth_headers(op_token))).json()
     ids = [item["id"] for item in queue["items"]]
     assert order_id in ids
 
@@ -670,3 +674,13 @@ async def test_multi_lot_dispensing_conserves_genealogy_per_source(client, db, s
         await db.execute(select(DispensedContainer).where(DispensedContainer.dispensing_order_id == order_id))
     ).scalar_one()
     assert dispensed.actual_quantity == 30
+
+    # SG-096 DSP-FR-023 (Task 2, 2026-09-23): "Create source lot/container -> dispensed container" is
+    # DERIVED_FROM, not SPLIT_FROM, precisely because (as here) a dispensed container can be derived from
+    # multiple different source lots at once (DSP-FR-017) -- a many-to-one relationship.
+    [dispensed_node] = await genealogy_service.lookup(db, site_id, business_ref="DISP-MULTILOT-CTR")
+    ancestors = await genealogy_service.get_ancestors(db, dispensed_node.id)
+    ancestor_record_ids = {n.authoritative_record_id for n in ancestors["nodes"]}
+    assert ancestor_record_ids == {uuid.UUID(lot1_id), uuid.UUID(lot2_id)}
+    assert all(e.edge_type == "DERIVED_FROM" for e in ancestors["edges"])
+    assert {e.quantity for e in ancestors["edges"]} == {Decimal("15.000000")}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   ApiError,
@@ -8,12 +8,14 @@ import {
   canReleaseDocument,
   formatDate,
   newIdempotencyKey,
+  pagedFetcher,
 } from "@/lib/api";
-import { useMe, useSiteId } from "@/lib/hooks";
+import { useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -25,6 +27,23 @@ import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
+
+// Matches document_router.py's _document_dict (GET /documents/v1) -- one row per controlled document
+// master, distinct from the version rows looked up per-code below.
+interface DocumentSummary {
+  id: string;
+  site_id: string;
+  document_code: string;
+  document_type: string;
+  owner_subject_id: string;
+  is_external: boolean;
+  external_source: string | null;
+  external_revision: string | null;
+  status: string;
+  created_at: string;
+}
+
+const fetchDocuments = pagedFetcher<DocumentSummary>("/documents/v1");
 
 // Matches app/modules/qms/document_router.py's version dict.
 interface DocumentVersion {
@@ -60,13 +79,14 @@ type Action = "submit" | "release" | "make_effective" | "obsolete" | "controlled
 const SIGNATURE_GATED: Action[] = ["release"];
 
 export default function DocumentsPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("document.view");
   const [documentCode, setDocumentCode] = useState("");
   const [versions, setVersions] = useState<DocumentVersion[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draftOpen, setDraftOpen] = useState(false);
   const [pending, setPending] = useState<{ version: DocumentVersion; action: Action } | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   async function lookup(code = documentCode) {
     if (!code.trim()) return;
@@ -81,6 +101,46 @@ export default function DocumentsPage() {
       setLoading(false);
     }
   }
+
+  // Deep link from the Workflow Actions bell (`?document_code=<code>`) -- runs the same lookup a manual
+  // search would, landing straight on that document's version list. Reads window.location directly
+  // rather than next/navigation's useSearchParams(), same as recipe-master's own `?openFamily=` deep
+  // link, to avoid opting this page into a Suspense boundary it has no other reason to need.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linkedCode = params.get("document_code");
+    if (linkedCode) {
+      // One-time hydration from the URL at mount, same precedented shape as
+      // lib/hooks.ts::useApiResource's own initial-load setState.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDocumentCode(linkedCode);
+      lookup(linkedCode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const documentColumns: DataTableColumn<DocumentSummary>[] = [
+    {
+      key: "document_code",
+      header: "Code",
+      sortable: true,
+      render: (d) => <span className="font-semibold tabular">{d.document_code}</span>,
+    },
+    { key: "document_type", header: "Type", sortable: true },
+    { key: "status", header: "Status", sortable: true },
+    {
+      key: "external",
+      header: "External",
+      sortable: false,
+      render: (d) => <span className="fs-2 text-muted">{d.is_external ? d.external_source ?? "Yes" : "No"}</span>,
+    },
+    {
+      key: "created_at",
+      header: "Created",
+      sortable: true,
+      render: (d) => <span className="tabular fs-2">{formatDate(d.created_at)}</span>,
+    },
+  ];
 
   function actionsFor(v: DocumentVersion): Action[] {
     switch (v.state) {
@@ -111,10 +171,25 @@ export default function DocumentsPage() {
         }
       />
 
-      <p className="hint mb-4">
-        Document versions are looked up one at a time by document code, rather than browsed as a site-wide
-        list.
-      </p>
+      <Card className="mb-4">
+        <CardHeader title="All documents" />
+        <DataTable
+          columns={documentColumns}
+          fetchPage={fetchDocuments}
+          rowKey={(d) => d.id}
+          searchPlaceholder="Search by document code…"
+          emptyIcon="file-text"
+          emptyMessage="No documents yet - create a draft to get started."
+          defaultSort={{ by: "created_at", dir: "desc" }}
+          reloadToken={reloadToken}
+          onRowClick={(d) => {
+            setDocumentCode(d.document_code);
+            lookup(d.document_code);
+          }}
+        />
+      </Card>
+
+      <p className="hint mb-4">Or look up a specific document&apos;s versions by code below.</p>
 
       <form
         onSubmit={(e) => {
@@ -219,6 +294,7 @@ export default function DocumentsPage() {
             setDraftOpen(false);
             setDocumentCode(code);
             lookup(code);
+            setReloadToken((n) => n + 1);
           }}
         />
       )}
@@ -231,6 +307,7 @@ export default function DocumentsPage() {
           onDone={() => {
             setPending(null);
             lookup();
+            setReloadToken((n) => n + 1);
           }}
         />
       )}

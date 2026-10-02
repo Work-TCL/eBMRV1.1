@@ -53,7 +53,11 @@ class AsepticProfileVersion(Base):
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
     profile_number: Mapped[str] = mapped_column(String(120), nullable=False)
     version_no: Mapped[int] = mapped_column(nullable=False, default=1)
-    product_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.products.id"))
+    # SG-044/SG-149/SG-173 Phase 4/5 (2026-09-23): the FK to ebmr.products was dropped in migration 0120
+    # (legacy product/recipe/batch trio retirement) -- always NULL in practice, never repointed onto
+    # product_master.gxp_product_version. Left as an unconstrained optional field; deciding what it should
+    # reference is a separate WP-06/equipment-module decision, out of scope here.
+    product_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     required_area_classification: Mapped[str | None] = mapped_column(String(40))
     personnel_qualifications: Mapped[dict | None] = mapped_column(JSONB)
     sterile_input_requirements: Mapped[dict | None] = mapped_column(JSONB)

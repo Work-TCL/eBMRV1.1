@@ -1162,10 +1162,11 @@ function NewLocationModal({
   );
 }
 
-/** No container-detail-by-id GET exists anywhere (verified against `material/router.py` — availability
- * and the lot-containers list both omit `version`), so `expected_version` has to be entered by hand
- * here rather than looked up — same honest "no read exists" shape as OOT/sampling-orders earlier this
- * session. */
+/** `container.material_lot_id` (already on every `AvailabilityRow`) plus the existing
+ * `GET /material-lots/{lot_id}/containers` listing (built for the Transfer/Cycle-count/Adjustment
+ * pickers, and already returns each container's current `version`) is enough to look this container's
+ * own version up directly, instead of asking the operator to hand-type a number they'd otherwise have
+ * to find in the audit ledger. No new endpoint needed. */
 function SplitContainerModal({
   container,
   onClose,
@@ -1176,8 +1177,27 @@ function SplitContainerModal({
   onDone: () => void;
 }) {
   const { busy, error, run } = useCommand(onDone);
-  const [expectedVersion, setExpectedVersion] = useState("1");
+  const [expectedVersion, setExpectedVersion] = useState<number | null>(null);
+  const [versionError, setVersionError] = useState(false);
   const [splitQuantities, setSplitQuantities] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ items: { id: string; version: number }[] }>(`/material-lots/${container.material_lot_id}/containers`)
+      .then((res) => {
+        if (cancelled) return;
+        const match = res.items.find((c) => c.id === container.container_id);
+        if (match) setExpectedVersion(match.version);
+        else setVersionError(true);
+      })
+      .catch(() => {
+        if (!cancelled) setVersionError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [container.material_lot_id, container.container_id]);
 
   const quantities = buildStringList(splitQuantities);
 
@@ -1186,11 +1206,12 @@ function SplitContainerModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (expectedVersion === null) return;
           run(() =>
             api.post(`/inventory/v1/containers/${container.container_id}/split`, {
               idempotency_key: newIdempotencyKey(),
               container_id: container.container_id,
-              expected_version: Number(expectedVersion),
+              expected_version: expectedVersion,
               split_quantities: quantities,
             })
           );
@@ -1200,8 +1221,25 @@ function SplitContainerModal({
           Splits {container.available} {container.uom} across the child quantities below - at least two
           required, and they should sum to the container&apos;s current quantity.
         </p>
-        <Field label="Expected version" required hint="No lookup exists for this - check the audit ledger if unsure.">
-          <Input type="number" value={expectedVersion} onChange={(e) => setExpectedVersion(e.target.value)} required />
+        <Field
+          label="Expected version"
+          required
+          hint={
+            versionError
+              ? "Couldn't look this up automatically - enter the container's current version from the audit ledger."
+              : "Looked up automatically from the container's current record - not editable."
+          }
+        >
+          {versionError ? (
+            <Input
+              type="number"
+              value={expectedVersion ?? ""}
+              onChange={(e) => setExpectedVersion(e.target.value ? Number(e.target.value) : null)}
+              required
+            />
+          ) : (
+            <Input type="number" value={expectedVersion ?? ""} disabled required />
+          )}
         </Field>
         <StringListRows
           label="Split quantities"
@@ -1216,7 +1254,7 @@ function SplitContainerModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || quantities.length < 2}>
+          <Button type="submit" variant="primary" disabled={busy || quantities.length < 2 || expectedVersion === null}>
             {busy ? "Splitting…" : "Split container"}
           </Button>
         </div>

@@ -1,9 +1,11 @@
 """Document 11 (SPEC-EBMR-002) -- the buildable slice: create/issue/start/hold/resume/abort a batch and
 claim/start a batch step, against real released product_master/recipe_master versions. New, additive
 module -- does not touch app/modules/batch (the legacy Batch-facing stub); the full pre-existing suite
-passes unmodified, proving that. Everything gated on gxp_step_result/gxp_step_evidence_link/
-gxp_batch_hold or on absent infrastructure (Temporal, Material Service, Equipment, qualification schema,
-exception/rework/branch entities) is out of scope this pass -- SG-047/SG-048.
+passes unmodified, proving that. Everything gated on gxp_step_evidence_link/gxp_batch_hold's full
+generality or on absent infrastructure (Temporal, qualification schema, exception/rework/branch entities)
+is out of scope this pass -- SG-047/SG-048. Material/equipment step-eligibility (SG-048 #012/#013) are
+both now covered -- see `test_complete_step_blocked_without_required_material_then_succeeds_after_
+consumption` and `test_start_step_blocked_without_required_equipment_then_succeeds_with_eligible_asset`.
 """
 
 import uuid
@@ -16,6 +18,15 @@ from app.modules.batch_execution.models import Batch
 from app.modules.equipment.commands import QUALIFIED_MARKER
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.iam.models import Permission, Qualification, Role, RolePermission, User, UserSiteRole
+from app.modules.material.models import (
+    DispensedContainer,
+    DispensingOrder,
+    InventoryTransaction,
+    Material,
+    MaterialConsumption,
+    MaterialLot,
+)
+from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.signature.models import SignaturePolicy
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 
@@ -37,6 +48,7 @@ async def _make_admin(db, seeded, username="admin.batch"):
 async def _make_released_product_and_recipe(
     client, admin_token, site_id, tag, step_a_role=None, step_a_parameters=None, step_a_evidence=None,
     step_a_qualification_code=None, step_a_equipment_requirements=None, step_a_qc_requirements=None,
+    step_a_material_requirements=None,
 ):
     resp = await client.post(
         "/products/v1/drafts",
@@ -86,6 +98,7 @@ async def _make_released_product_and_recipe(
                     **({"required_qualification_code": step_a_qualification_code} if step_a_qualification_code else {}),
                     **({"equipment_requirements": step_a_equipment_requirements} if step_a_equipment_requirements else {}),
                     **({"qc_requirements": step_a_qc_requirements} if step_a_qc_requirements else {}),
+                    **({"material_requirements": step_a_material_requirements} if step_a_material_requirements else {}),
                 },
                 {"stable_step_code": "STEP-B", "section_code": "SEC-1", "step_type": "instruction", "sequence_hint": 2},
             ],
@@ -114,6 +127,7 @@ async def _make_released_product_and_recipe(
 async def _released_pair(
     db, client, seeded, tag, step_a_role=None, step_a_parameters=None, step_a_evidence=None,
     step_a_qualification_code=None, step_a_equipment_requirements=None, step_a_qc_requirements=None,
+    step_a_material_requirements=None,
 ):
     async with db.begin():
         await _make_admin(db, seeded, f"admin.batch{tag}")
@@ -124,6 +138,7 @@ async def _released_pair(
         client, admin_token, seeded["site_id"], tag, step_a_role=step_a_role, step_a_parameters=step_a_parameters,
         step_a_evidence=step_a_evidence, step_a_qualification_code=step_a_qualification_code,
         step_a_equipment_requirements=step_a_equipment_requirements, step_a_qc_requirements=step_a_qc_requirements,
+        step_a_material_requirements=step_a_material_requirements,
     )
     return admin_token, product_version_id, recipe_version_id
 
@@ -932,6 +947,15 @@ async def test_hold_and_resume_step_blocks_and_restores_progress(client, seeded,
     assert resumed["state"] == "in_progress"
     assert step_id not in view["active_hold_by_step_id"]
 
+    # Read-path completeness fix: released_at/released_by/release_reason are written by resume_step but
+    # were never surfaced anywhere before holds_by_step_id -- only the single active hold was visible.
+    assert len(view["holds_by_step_id"][step_id]) == 1
+    closed_hold = view["holds_by_step_id"][step_id][0]
+    assert closed_hold["reason"] == "waiting on a fresh balance calibration"
+    assert closed_hold["released_at"] is not None
+    assert closed_hold["released_by"] is not None
+    assert closed_hold["release_reason"] == "balance recalibrated, verified"
+
     # Now genuinely completable.
     challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "results")
     resp = await client.post(
@@ -1327,6 +1351,112 @@ async def test_complete_step_blocked_without_required_qc_test_then_succeeds_afte
         db.add(run)
         await db.flush()
         db.add(QcResult(test_order_id=order.id, test_run_id=run.id, result_type="numeric", outcome="pass"))
+
+    # The OOS "Open from result" picker must find this batch_step-sourced sample's result too, not
+    # only samples sourced directly against the batch.
+    resp = await client.get(f"/qc/v1/results?batch_id={batch_id}", headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    assert any("In-process weight check" in r["label"] for r in resp.json()), resp.json()
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": step_version, "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_complete_step_blocked_without_required_material_then_succeeds_after_consumption(client, seeded, db):
+    """SG-045/SG-048 #012 (BAT-FR-012, 2026-09-22): a step declaring a RecipeMaterialRequirement cannot
+    be completed until a matching MaterialConsumption exists for the batch. See
+    `_enforce_step_material`'s own docstring for the deliberate scope (material identity, not step
+    attribution or quantity/UOM tolerance)."""
+    site_id = seeded["site_id"]
+    async with db.begin():
+        material = Material(site_id=site_id, code="RM-BATMAT1", name="Batch Material Test", uom="kg")
+        db.add(material)
+        await db.flush()
+        material_id = material.id
+        spec_version = MaterialSpecificationVersion(
+            material_spec_business_id="SPEC-BATMAT1", version_no=1, material_id=material_id,
+            name="Batch Material Spec", site_id=site_id,
+        )
+        db.add(spec_version)
+        await db.flush()
+        spec_version_id = spec_version.id
+
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "mat1",
+        step_a_material_requirements=[{"material_spec_version_id": str(spec_version_id)}],
+    )
+
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-MAT-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": step_version, "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422, resp.text
+    body = resp.json()
+    assert body["code"] == "VALIDATION_FAILED"
+    assert body["details"]["missing_material_spec_version_ids"] == [str(spec_version_id)]
+
+    async with db.begin():
+        admin_user_id = (await db.execute(select(User.id).where(User.username == "admin.batchmat1"))).scalar_one()
+        lot = MaterialLot(
+            material_id=material_id, site_id=site_id, internal_lot="LOT-BATMAT1",
+            received_quantity="10.000000", available_quantity="10.000000", uom="kg",
+            status="released", received_by_user_id=admin_user_id,
+        )
+        db.add(lot)
+        order = DispensingOrder(
+            site_id=site_id, batch_id=uuid.UUID(batch_id), material_id=material_id,
+            target_qty="1.000000", target_uom="kg", tolerance_low="0.900000", tolerance_high="1.100000",
+            requested_by_user_id=admin_user_id,
+        )
+        db.add(order)
+        await db.flush()
+        container = DispensedContainer(
+            batch_id=uuid.UUID(batch_id), material_id=material_id, dispensing_order_id=order.id,
+            container_code="DC-BATMAT1", actual_quantity="1.000000", uom="kg",
+        )
+        db.add(container)
+        txn = InventoryTransaction(
+            site_id=site_id, material_lot_id=lot.id, transaction_type="CONSUME", quantity="1.000000", uom="kg",
+            actor_type="human", actor_id=str(admin_user_id),
+        )
+        db.add(txn)
+        await db.flush()
+        db.add(
+            MaterialConsumption(
+                site_id=site_id, batch_id=uuid.UUID(batch_id), dispensed_container_id=container.id,
+                material_lot_id=lot.id, quantity="1.000000", uom="kg", source_type="manual",
+                transaction_id=txn.id, recorded_by_user_id=admin_user_id,
+            )
+        )
 
     challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
     resp = await client.post(

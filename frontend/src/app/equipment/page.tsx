@@ -85,6 +85,15 @@ export default function EquipmentPage() {
     siteId ? `/equipment/v1/dashboard?site_id=${siteId}` : null
   );
 
+  // SG-218: equipment-module-native read of the same gxp_equipment_class master recipe-master's own
+  // equipment requirement picker uses (GET /equipment/v1/equipment-classes -- no RBAC gate, matching this
+  // page's other plain read endpoints), so "Equipment Administrator" (this page's own asset-creating role)
+  // doesn't need recipe.view just to see class options here, unlike recipe-master's own
+  // /recipes/v2/equipment-classes route.
+  const { data: equipmentClasses, error: equipmentClassesError } = useApiResource<
+    { id: string; class_code: string; name: string }[]
+  >("/equipment/v1/equipment-classes");
+
   // app/modules/equipment/router.py::list_assets takes `state` alongside the shared page params.
   // DataTable holds fetchPage in a ref rather than an effect dependency, so this inline closure can
   // read current state directly; changing the filter bumps reloadToken to force the refetch.
@@ -267,6 +276,9 @@ export default function EquipmentPage() {
       {createOpen && (
         <CreateAssetModal
           siteId={siteId}
+          areas={areas ?? []}
+          equipmentClasses={equipmentClasses ?? []}
+          equipmentClassesUnavailable={!!equipmentClassesError}
           onClose={() => setCreateOpen(false)}
           onDone={() => {
             setCreateOpen(false);
@@ -312,10 +324,16 @@ function DueCell({ date, status }: { date: string | null; status: string | null 
 
 function CreateAssetModal({
   siteId,
+  areas,
+  equipmentClasses,
+  equipmentClassesUnavailable,
   onClose,
   onDone,
 }: {
   siteId: string | null;
+  areas: EquipmentArea[];
+  equipmentClasses: { id: string; class_code: string; name: string }[];
+  equipmentClassesUnavailable: boolean;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -324,6 +342,8 @@ function CreateAssetModal({
   const [model, setModel] = useState("");
   const [serialNo, setSerialNo] = useState("");
   const [firmwareVersion, setFirmwareVersion] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [equipmentClassId, setEquipmentClassId] = useState("");
   const [dedicated, setDedicated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -342,6 +362,8 @@ function CreateAssetModal({
         model: model || null,
         serial_no: serialNo || null,
         firmware_version: firmwareVersion || null,
+        location_id: locationId || null,
+        equipment_class_id: equipmentClassId,
         dedicated,
       });
       onDone();
@@ -370,6 +392,42 @@ function CreateAssetModal({
         <Field label="Firmware version" hint="Recorded so a firmware change can be tied to change control.">
           <Input value={firmwareVersion} onChange={(e) => setFirmwareVersion(e.target.value)} />
         </Field>
+        <Field
+          label="Equipment class"
+          required
+          hint={
+            equipmentClassesUnavailable
+              ? "Couldn't load the equipment class list for your role — enter the class id directly if you know it."
+              : "Required — a recipe step's equipment requirement (e.g. \"BALANCE\") can only ever match this asset if it has one; without it, batch step start always fails with EQUIPMENT_CLASS_MISMATCH."
+          }
+        >
+          {equipmentClassesUnavailable ? (
+            <Input value={equipmentClassId} onChange={(e) => setEquipmentClassId(e.target.value)} placeholder="Equipment class id" required />
+          ) : (
+            <Select value={equipmentClassId} onChange={(e) => setEquipmentClassId(e.target.value)} required>
+              <option value="">—</option>
+              {equipmentClasses.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.class_code} ({c.name})
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <Field
+          label="Area / location"
+          hint="Optional, unvalidated by the backend (SG-215) — recorded for reference only, not enforced against cleaning/EM/aseptic area state."
+        >
+          <Select value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+            <option value="">—</option>
+            {areas.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.area_code}
+                {a.area_type ? ` (${a.area_type})` : ""}
+              </option>
+            ))}
+          </Select>
+        </Field>
         <label className="flex items-center gap-2 fs-2 mb-3">
           <input type="checkbox" checked={dedicated} onChange={(e) => setDedicated(e.target.checked)} />
           Dedicated to a single product or process
@@ -379,7 +437,7 @@ function CreateAssetModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !siteId}>
+          <Button type="submit" variant="primary" disabled={busy || !siteId || !equipmentClassId}>
             {busy ? "Creating…" : "Create asset"}
           </Button>
         </div>

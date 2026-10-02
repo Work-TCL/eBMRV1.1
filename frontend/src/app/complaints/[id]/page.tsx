@@ -11,6 +11,7 @@ import {
   type Complaint,
 } from "@/lib/api";
 import { useApiResource, useMe } from "@/lib/hooks";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Tabs } from "@/components/ui/Tabs";
@@ -75,7 +76,9 @@ const ALLOWED_FROM: Record<string, Transition[]> = {
   CLOSED: [],
 };
 
-// SG-138: no Document 106 policy rows for complaint_record reportability/close.
+// SG-138 resolved 2026-09-10 (seed.py SIGNATURE_POLICY_FLOOR rows 101-102): reportability is signed by
+// Postmarket Regulatory Affairs, close by QA Releaser. Go through the shared Part 11 ceremony (challenge
+// -> password re-entry -> signed mutation) below.
 const SIGNATURE_GATED: Transition[] = ["reportability", "close"];
 
 const LABEL: Record<Transition, string> = {
@@ -352,16 +355,6 @@ function TransitionModal({
             conclusion,
             reason: reason || null,
           });
-        case "reportability":
-          return api.post(`${path}/reportability`, {
-            ...base,
-            applicable_regimes: regimes,
-            rationale,
-            trigger_date: triggerDate ? new Date(triggerDate).toISOString() : null,
-            due_date: dueDate ? new Date(dueDate).toISOString() : null,
-            capa_required: capaRequired,
-            field_action_required: fieldActionRequired,
-          });
         case "response":
           return api.post(`${path}/response`, {
             ...base,
@@ -371,21 +364,134 @@ function TransitionModal({
             occurred_at: new Date().toISOString(),
             recipient: recipient || null,
           });
-        case "close":
-          return api.post(`${path}/close`, { ...base, conclusion: closeConclusion });
+        default:
+          // reportability/close are signature-gated and never reach this form -- see the early returns
+          // below that render <SignatureCeremony> for them instead.
+          throw new Error(`${transition} does not submit through the plain form`);
       }
     });
   }
 
-  return (
-    <Modal open onClose={onClose} title={`${LABEL[transition]} - ${complaint.complaint_number}`} large={transition === "reportability"}>
-      <form onSubmit={submit}>
-        {SIGNATURE_GATED.includes(transition) && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
-          </Banner>
-        )}
+  // Document 106 section 9 rows 101-102 (SG-138, resolved): reportability is signed by Postmarket
+  // Regulatory Affairs, close by QA Releaser.
+  if (transition === "reportability") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="reportability"
+        title={`Reportability assessment - ${complaint.complaint_number}`}
+        summary="Records the regulatory reportability decision for this complaint. Signer must hold Postmarket Regulatory Affairs authority."
+        submitLabel="Sign & record assessment"
+        submitVariant="success"
+        disabled={regimes.length === 0 || !rationale.trim()}
+        extraFields={
+          <>
+            <Field label="Applicable regimes" required hint="Select every regime assessed as applicable.">
+              <div className="flex flex-wrap gap-3">
+                {REGIMES.map((r) => (
+                  <label key={r} className="flex items-center gap-2 fs-2">
+                    <input
+                      type="checkbox"
+                      checked={regimes.includes(r)}
+                      onChange={(e) =>
+                        setRegimes((prev) => (e.target.checked ? [...prev, r] : prev.filter((x) => x !== r)))
+                      }
+                    />
+                    {r}
+                  </label>
+                ))}
+              </div>
+            </Field>
+            <Field label="Rationale" required>
+              <textarea className="input" rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Trigger date" hint="When awareness started the reporting clock.">
+                <Input type="date" value={triggerDate} onChange={(e) => setTriggerDate(e.target.value)} />
+              </Field>
+              <Field label="Submission due">
+                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              </Field>
+            </div>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 fs-2 mb-3">
+                <input type="checkbox" checked={capaRequired} onChange={(e) => setCapaRequired(e.target.checked)} />
+                CAPA required
+              </label>
+              <label className="flex items-center gap-2 fs-2 mb-3">
+                <input
+                  type="checkbox"
+                  checked={fieldActionRequired}
+                  onChange={(e) => setFieldActionRequired(e.target.checked)}
+                />
+                Field action required
+              </label>
+            </div>
+          </>
+        }
+        onSign={(p) =>
+          api.post(`${path}/reportability`, {
+            idempotency_key: p.idempotency_key,
+            complaint_id: complaint.id,
+            expected_version: complaint.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            applicable_regimes: regimes,
+            rationale,
+            trigger_date: triggerDate ? new Date(triggerDate).toISOString() : null,
+            due_date: dueDate ? new Date(dueDate).toISOString() : null,
+            capa_required: capaRequired,
+            field_action_required: fieldActionRequired,
+          })
+        }
+      />
+    );
+  }
 
+  if (transition === "close") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="close"
+        title={`Close - ${complaint.complaint_number}`}
+        summary="Closes the complaint record permanently. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & close"
+        submitVariant="success"
+        disabled={!closeConclusion.trim()}
+        extraFields={
+          <Field label="Conclusion" required>
+            <textarea
+              className="input"
+              rows={3}
+              value={closeConclusion}
+              onChange={(e) => setCloseConclusion(e.target.value)}
+              required
+            />
+          </Field>
+        }
+        onSign={(p) =>
+          api.post(`${path}/close`, {
+            idempotency_key: p.idempotency_key,
+            complaint_id: complaint.id,
+            expected_version: complaint.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            conclusion: closeConclusion,
+          })
+        }
+      />
+    );
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`${LABEL[transition]} - ${complaint.complaint_number}`}>
+      <form onSubmit={submit}>
         {transition === "triage" && (
           <>
             <div className="grid grid-cols-2 gap-4">
@@ -453,52 +559,6 @@ function TransitionModal({
           </>
         )}
 
-        {transition === "reportability" && (
-          <>
-            <Field label="Applicable regimes" required hint="Select every regime assessed as applicable.">
-              <div className="flex flex-wrap gap-3">
-                {REGIMES.map((r) => (
-                  <label key={r} className="flex items-center gap-2 fs-2">
-                    <input
-                      type="checkbox"
-                      checked={regimes.includes(r)}
-                      onChange={(e) =>
-                        setRegimes((prev) => (e.target.checked ? [...prev, r] : prev.filter((x) => x !== r)))
-                      }
-                    />
-                    {r}
-                  </label>
-                ))}
-              </div>
-            </Field>
-            <Field label="Rationale" required>
-              <textarea className="input" rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
-            </Field>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Trigger date" hint="When awareness started the reporting clock.">
-                <Input type="date" value={triggerDate} onChange={(e) => setTriggerDate(e.target.value)} />
-              </Field>
-              <Field label="Submission due">
-                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              </Field>
-            </div>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 fs-2 mb-3">
-                <input type="checkbox" checked={capaRequired} onChange={(e) => setCapaRequired(e.target.checked)} />
-                CAPA required
-              </label>
-              <label className="flex items-center gap-2 fs-2 mb-3">
-                <input
-                  type="checkbox"
-                  checked={fieldActionRequired}
-                  onChange={(e) => setFieldActionRequired(e.target.checked)}
-                />
-                Field action required
-              </label>
-            </div>
-          </>
-        )}
-
         {transition === "response" && (
           <>
             <div className="grid grid-cols-3 gap-4">
@@ -523,12 +583,6 @@ function TransitionModal({
               <textarea className="input" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} required />
             </Field>
           </>
-        )}
-
-        {transition === "close" && (
-          <Field label="Conclusion" required>
-            <textarea className="input" rows={3} value={closeConclusion} onChange={(e) => setCloseConclusion(e.target.value)} required />
-          </Field>
         )}
 
         {(transition === "triage" || transition === "investigation") && (

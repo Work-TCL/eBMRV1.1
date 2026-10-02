@@ -538,10 +538,10 @@ const SECURITY_ENTRY_CODES = [
 ];
 export const canOperateSecurity = (me: Me | null) => hasAnyPermission(me, SECURITY_ENTRY_CODES);
 
-// material_lot.release / .reject (Document 19 RCV-FR-026/027) -- distinct from the legacy
-// material_lot.disposition path the /material-lots page's "Disposition" button covers.
+// material_lot.release / .reject (Document 19 RCV-FR-026/027, Document 106 rows 44/45) -- SG-075
+// (2026-09-22): the only disposition path now. The legacy material_lot.disposition permission code is
+// left defined/granted (never deleted) but is inert -- no evaluate_policy() call checks it any more.
 export const canReleaseMaterialLotV2 = (me: Me | null) => hasPermission(me, "material_lot.release");
-export const canDispositionMaterialLot = (me: Me | null) => hasPermission(me, "material_lot.disposition");
 
 export const canAuthorRules = (me: Me | null) => hasPermission(me, "rules.author");
 export const canReleaseRules = (me: Me | null) => hasPermission(me, "rules.release");
@@ -581,6 +581,12 @@ export const canReleaseDocument = (me: Me | null) => hasPermission(me, "document
 
 export const canAssignTraining = (me: Me | null) => hasPermission(me, "training.assignment.create");
 export const canQualifyTraining = (me: Me | null) => hasPermission(me, "training.waiver.create");
+// Distinct from canQualifyTraining (training.waiver.create, "Grant waiver"): assessing a training
+// assignment is gated server-side by its own permission (qms/training_router.py's assess endpoint), and
+// granting a qualification outright (POST /training/v1/qualifications) by yet another -- neither implied
+// by holding the waiver-grant permission.
+export const canAssessTraining = (me: Me | null) => hasPermission(me, "training.assignment.assess");
+export const canCreateQualification = (me: Me | null) => hasPermission(me, "training.qualification.create");
 
 // evidence.manifest / .legal_hold / .integrity_check (Document 72) share one grant, narrower than
 // canOperateEvidence (evidence.upload, above).
@@ -588,9 +594,10 @@ export const canManageEvidenceIntegrity = (me: Me | null) => hasPermission(me, "
 
 // --- Equipment, release, QA review, packaging, supplier ------------------------------------------
 
-// list_assets/get_asset (Document 38) carry no evaluate_policy() call at all -- any authenticated user
-// may view equipment, so this is a login check, not a permission check (there is no equipment_asset.view
-// code in the catalogue).
+// list_assets/get_asset (Document 38) carry no evaluate_policy() call -- any authenticated user may view
+// equipment, so this is a login check, not a permission check (there is no equipment_asset.view code in
+// the catalogue). Until the Phase-1 gap-audit fix (2026-09-22) these endpoints had no actor dependency at
+// all -- not even login was required; `me !== null` now genuinely reflects the backend's own floor.
 export const canViewEquipment = (me: Me | null) => me !== null;
 export const canCreateEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.create");
 export const canCalibrateEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.calibrate");
@@ -610,6 +617,34 @@ export const canDispositionOos = (me: Me | null) => hasPermission(me, "oos_recor
 // yield/reconciliation (Document 17).
 export const canEvaluateYield = (me: Me | null) => hasPermission(me, "yield_calculation.evaluate");
 export const canVerifyReconciliation = (me: Me | null) => hasPermission(me, "reconciliation.verify");
+
+// Machine integration (Document 47, SPEC-EDGE-005) bundles several independently-permissioned domains
+// into one console -- same SECURITY_ENTRY_CODES shape as canOperateSecurity above, not one shared role.
+// Each helper maps 1:1 onto the evaluate_policy() action its own endpoint checks
+// (app/modules/machine_integration/router.py), not a role name, for the reason isAdminAnywhere's own doc
+// comment gives. Found 2026-09-28: the page and its Sidebar entry were gated on Admin only, structurally
+// blocking Equipment Administrator (machine_command.submit), QA Releaser (signal_mapping.release),
+// Integration Administrator (machine_replay.create) and QA Reviewer (machine_evidence.review_view) from a
+// console the backend already lets them partly operate -- same bug class as canOperateEvidence/
+// canOperateSecurity above (SG-204).
+export const canOpenBatchContext = (me: Me | null) => hasPermission(me, "batch_context.open");
+export const canReleaseSignalMapping = (me: Me | null) => hasPermission(me, "signal_mapping.release");
+export const canSubmitMachineCommand = (me: Me | null) => hasPermission(me, "machine_command.submit");
+export const canReplayMachineEvidence = (me: Me | null) => hasPermission(me, "machine_replay.create");
+export const canReviewMachineEvidence = (me: Me | null) => hasPermission(me, "machine_evidence.review_view");
+const MACHINE_INTEGRATION_ENTRY_CODES = [
+  "batch_context.open", "signal_mapping.release", "machine_command.submit",
+  "machine_replay.create", "machine_evidence.review_view",
+];
+export const canOperateMachineIntegration = (me: Me | null) => hasAnyPermission(me, MACHINE_INTEGRATION_ENTRY_CODES);
+
+// Edge gateways (Document 43, SPEC-EDGE-001) -- same bug, same fix shape. Document 106 row 119 deliberately
+// splits enroll (Admin) from certificate rotation (QA Releaser, independent of the enrolling actor), so
+// even the literal "Admin" role alone does not hold both -- isAdminAnywhere was never sufficient here.
+export const canEnrollEdgeGateway = (me: Me | null) => hasPermission(me, "edge_gateway.enroll");
+export const canRotateEdgeGatewayCertificate = (me: Me | null) => hasPermission(me, "edge_gateway.certificate_rotation");
+const EDGE_GATEWAY_ENTRY_CODES = ["edge_gateway.enroll", "edge_gateway.certificate_rotation"];
+export const canOperateEdgeGateways = (me: Me | null) => hasAnyPermission(me, EDGE_GATEWAY_ENTRY_CODES);
 
 export const canViewRelease = (me: Me | null) => hasPermission(me, "release.view");
 export const canEvaluateRelease = (me: Me | null) => hasPermission(me, "release.evaluate");
@@ -685,6 +720,30 @@ export interface CapaAction {
   verified_at: string | null;
   version: number;
   created_at: string;
+}
+
+// GET /quality/oos/v1 and /quality/oot/v1 (app/modules/qc/router.py::list_oos_records /
+// list_oot_records) — Document 25, not a QmsRecordBase shape (no quality_event_id/created_at; uses
+// opened_at, and OotRecord has no site_id column at all).
+export interface Oos {
+  id: string;
+  oos_number: string;
+  batch_id: string | null;
+  material_lot_id: string | null;
+  state: string;
+  severity: string | null;
+  final_classification: string | null;
+  opened_at: string;
+  closed_at: string | null;
+}
+
+export interface Oot {
+  id: string;
+  source_result_id: string;
+  state: string;
+  investigation_owner_user_id: string | null;
+  opened_at: string;
+  closed_at: string | null;
 }
 
 export interface Nonconformance extends QmsRecordBase {

@@ -87,7 +87,11 @@ async def post_enrollment_signature_challenge(
 
 
 @router.get("/gateways/{gateway_id}/configuration")
-async def get_configuration(gateway_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_configuration(
+    gateway_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_gateway_configuration(session, gateway_id)
 
@@ -171,7 +175,11 @@ async def post_rotate_certificate(
 
 
 @router.get("/gateways/{gateway_id}")
-async def get_gateway(gateway_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_gateway(
+    gateway_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     gateway = await session.get(EdgeGateway, gateway_id)
     if gateway is None:
         raise NotFoundError("Edge gateway not found")

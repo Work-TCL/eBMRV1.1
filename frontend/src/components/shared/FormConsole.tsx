@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
 import { useEntityOptions, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -64,6 +64,10 @@ export interface FormField {
     // of a free-text quantity-unit field, with the same inline "+ Add new UOM" affordance every other
     // UomSelect usage in the app offers.
     | "uomSelect"
+    // A dispensed-container picker scoped to the sibling "batch_id" field's current value (GET
+    // /dispensing/v1/dispensed-containers?batch_id=...) -- "Record a consumption"/"Record a return" both
+    // took `dispensed_container_id` as a raw pasted UUID with nothing to pick it from.
+    | "dispensedContainerSelect"
     | "repeat"
     | "kv"
     | "stringList";
@@ -348,6 +352,16 @@ export function FormFieldsGrid({
             value={values[f.name] ?? ""}
             onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
           />
+        ) : f.type === "dispensedContainerSelect" ? (
+          <DispensedContainerPicker
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+            batchId={values.batch_id ?? ""}
+          />
         ) : f.type === "fileBase64" ? (
           <FileBase64Field
             key={f.name}
@@ -604,6 +618,90 @@ function BatchStepOwnerPicker({
       )}
       <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManual(true)}>
         Not a batch step? Enter the owner ID manually
+      </button>
+    </Field>
+  );
+}
+
+interface DispensedContainerRow {
+  id: string;
+  container_code: string;
+  remaining_quantity: string;
+  uom: string;
+  status: string;
+}
+
+/** Picks a `DispensedContainer` scoped to the sibling "batch_id" field already on the same form --
+ * `GET /dispensing/v1/dispensed-containers?batch_id=...` (SG-222) is the first list endpoint for this
+ * entity; before it, "Record a consumption"/"Record a return" took a pasted UUID with nothing to copy
+ * it from. */
+function DispensedContainerPicker({
+  label,
+  required,
+  hint,
+  value,
+  onChange,
+  batchId,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  value: string;
+  onChange: (value: string) => void;
+  batchId: string;
+}) {
+  const [manual, setManual] = useState(false);
+  const [containers, setContainers] = useState<DispensedContainerRow[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("empty");
+
+  useEffect(() => {
+    if (!batchId) {
+      setContainers([]);
+      setStatus("empty");
+      return;
+    }
+    let cancelled = false;
+    setStatus("loading");
+    api
+      .get<DispensedContainerRow[]>(`/dispensing/v1/dispensed-containers?batch_id=${encodeURIComponent(batchId)}`)
+      .then((rows) => {
+        if (cancelled) return;
+        setContainers(rows);
+        setStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [batchId]);
+
+  if (manual || !batchId || status === "error") {
+    return (
+      <Field label={label} required={required} hint={hint ?? (!batchId ? "Select a batch above first." : undefined)}>
+        <Input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Dispensed container ID" />
+        {batchId && status !== "error" && (
+          <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManual(false)}>
+            Pick a dispensed container instead
+          </button>
+        )}
+      </Field>
+    );
+  }
+
+  return (
+    <Field label={label} required={required} hint={hint}>
+      <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={status === "loading"}>
+        <option value="">{status === "loading" ? "Loading containers…" : containers.length ? "Select a container…" : "No dispensed containers for this batch"}</option>
+        {containers.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.container_code} - {c.remaining_quantity} {c.uom} ({c.status})
+          </option>
+        ))}
+      </Select>
+      <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManual(true)}>
+        Enter the container ID manually
       </button>
     </Field>
   );

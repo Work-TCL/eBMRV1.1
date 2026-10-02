@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, hasPermission, formatDate, newIdempotencyKey, type InternalAudit } from "@/lib/api";
-import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
+import { useEntityOptions, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
@@ -17,7 +17,7 @@ import { WorkflowStatePill } from "@/components/ui/StatePill";
 const AUDIT_STATES = ["SCHEDULED", "IN_PROGRESS", "FINDINGS_OPEN", "CLOSED"];
 
 export default function AuditsPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("internal_audit.view");
   const [createOpen, setCreateOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 

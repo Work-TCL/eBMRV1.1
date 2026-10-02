@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, hasPermission, newIdempotencyKey, type Nonconformance } from "@/lib/api";
-import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
+import { useEntityOptions, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
@@ -36,7 +36,7 @@ const SCOPE_MANUAL_HINT: Partial<Record<string, string>> = {
 };
 
 export default function NonconformancesPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("ncr.view");
   const [createOpen, setCreateOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 

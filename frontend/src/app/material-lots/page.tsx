@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import {
   api,
   ApiError,
-  canDispositionMaterialLot,
   canReleaseMaterialLotV2,
   formatDateTime,
   listAll,
@@ -42,7 +41,6 @@ export default function MaterialLotsPage() {
   const [reloadToken, setReloadToken] = useState(0);
 
   const [receiveOpen, setReceiveOpen] = useState(false);
-  const [dispositionLot, setDispositionLot] = useState<MaterialLot | null>(null);
   const [releaseLot, setReleaseLot] = useState<MaterialLot | null>(null);
   const [rejectLot, setRejectLot] = useState<MaterialLot | null>(null);
   const [samplingLot, setSamplingLot] = useState<MaterialLot | null>(null);
@@ -50,6 +48,17 @@ export default function MaterialLotsPage() {
   const [qualityStatusLot, setQualityStatusLot] = useState<MaterialLot | null>(null);
   const [retestingLot, setRetestingLot] = useState<MaterialLot | null>(null);
   const canReleaseV2 = canReleaseMaterialLotV2(me);
+
+  // Deep link from the Workflow Actions bell (`?q=<internal_lot>`) -- pre-fills the search box with the
+  // lot number so the reader lands on it directly instead of an empty list. Reads window.location
+  // directly rather than next/navigation's useSearchParams(), same as recipe-master's own `?openFamily=`
+  // deep link, to avoid opting this page into a Suspense boundary it has no other reason to need.
+  const [initialQuery, setInitialQuery] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (q) setInitialQuery(q);
+  }, []);
 
   function fetchLots(query: ListQuery): Promise<Paged<MaterialLot>> {
     const search = new URLSearchParams({
@@ -114,11 +123,6 @@ export default function MaterialLotsPage() {
               <Icon name="refresh" /> Retest
             </Button>
           )}
-          {l.status === "quarantine" && canDispositionMaterialLot(me) && (
-            <Button size="sm" variant="secondary" onClick={() => setDispositionLot(l)}>
-              <Icon name="badge-check" /> Disposition
-            </Button>
-          )}
           {l.status === "quarantine" && canReleaseV2 && (
             <>
               <Button size="sm" variant="secondary" onClick={() => setReleaseLot(l)}>
@@ -175,6 +179,7 @@ export default function MaterialLotsPage() {
           emptyMessage="No material lots yet - receive one to get started."
           defaultSort={{ by: "received_at", dir: "desc" }}
           reloadToken={reloadToken}
+          initialQuery={initialQuery}
         />
       </Card>
 
@@ -183,17 +188,6 @@ export default function MaterialLotsPage() {
           onClose={() => setReceiveOpen(false)}
           onDone={() => {
             setReceiveOpen(false);
-            setReloadToken((n) => n + 1);
-          }}
-        />
-      )}
-
-      {dispositionLot && (
-        <DispositionModal
-          lot={dispositionLot}
-          onClose={() => setDispositionLot(null)}
-          onDone={() => {
-            setDispositionLot(null);
             setReloadToken((n) => n + 1);
           }}
         />
@@ -405,69 +399,14 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
   );
 }
 
-function DispositionModal({
-  lot,
-  onClose,
-  onDone,
-}: {
-  lot: MaterialLot;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [decision, setDecision] = useState<"released" | "rejected">("released");
-  const [reason, setReason] = useState("");
-
-  return (
-    <SignatureCeremony
-      open
-      onClose={onClose}
-      onDone={onDone}
-      challengePath={`/material-lots/${lot.id}/signature-challenges`}
-      action="disposition"
-      title={`QC disposition - lot ${lot.internal_lot}`}
-      summary={
-        <>
-          {lot.material_name} ({lot.material_code}) - {lot.received_quantity} {lot.uom} received{" "}
-          {lot.received_at ? formatDateTime(lot.received_at) : ""}
-          {lot.expiry_date ? `, expires ${lot.expiry_date}` : ""}.
-        </>
-      }
-      submitVariant={decision === "rejected" ? "danger" : "success"}
-      reason="none"
-      extraFields={
-        <>
-          <Field label="Decision" required>
-            <Select value={decision} onChange={(e) => setDecision(e.target.value as "released" | "rejected")}>
-              <option value="released">Release</option>
-              <option value="rejected">Reject</option>
-            </Select>
-          </Field>
-          <Field label="Reason" hint="Required for a reject decision in a real deployment; optional here.">
-            <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
-          </Field>
-        </>
-      }
-      onSign={(p) =>
-        api.post<MutationReceipt>(`/material-lots/${lot.id}/disposition`, {
-          idempotency_key: p.idempotency_key,
-          lot_id: lot.id,
-          expected_version: lot.version,
-          decision,
-          reason: reason || null,
-          challenge_id: p.challenge_id,
-          reauth_password: p.reauth_password,
-        })
-      }
-    />
-  );
-}
-
-/** Document 19 v2 (RCV-FR-026/027) — the formal QA release/reject path, distinct from the legacy
- * `disposition` endpoint `DispositionModal` above uses. Backend (`POST /materials/v1/lots/{id}/release`
+/** Document 19 v2 (RCV-FR-026/027) — the formal QA release/reject path. SG-075 (2026-09-22): this is now
+ * the *only* disposition path — the legacy QC-Reviewer-signed `disposition` endpoint / `DispositionModal`
+ * this comment used to distinguish itself from was retired (two live paths with mismatched signer
+ * authorization on the same quality-status transition). Backend (`POST /materials/v1/lots/{id}/release`
  * or `.../reject`) enforces material_lot.release/.reject (QA Releaser + Admin only) and independence
- * (signer must not be the receiver or sampler of this same lot) — both already built; this modal was the
- * missing piece (2026-09-18), no backend change needed. `container_ids` left blank means the whole lot;
- * the underlying command already supports a partial per-container decision if ever needed here. */
+ * (signer must not be the receiver or sampler of this same lot). `container_ids` left blank means the
+ * whole lot; the underlying command already supports a partial per-container decision if ever needed
+ * here. */
 function ReleaseRejectV2Modal({
   lot,
   decision,

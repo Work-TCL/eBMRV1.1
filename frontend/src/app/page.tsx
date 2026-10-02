@@ -7,7 +7,7 @@ import { isLoggedIn } from "@/lib/api";
 export default function Home() {
   const router = useRouter();
   useEffect(() => {
-    router.replace(isLoggedIn() ? "/batch-execution" : "/login");
+    router.replace(isLoggedIn() ? "/home" : "/login");
   }, [router]);
   return null;
 }

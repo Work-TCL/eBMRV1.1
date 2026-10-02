@@ -246,3 +246,54 @@ async def test_api_backup_health_rbac(api, seeded):
     assert (await api.get("/platform/v1/backups/health")).status_code == 401
     op_tok = await login(api, "operator1")
     assert (await api.get("/platform/v1/backups/health", headers=auth_headers(op_tok))).status_code == 403
+
+
+async def test_list_restore_tests_includes_recorded_run(api, seeded, db):
+    """Backs platform's redesigned Backup & DR tab (2026-09-26) -- the restore_test table already
+    existed (Document 76 #6) but had no GET, only the POST that records a drill."""
+    from app.core.security import hash_password
+    from app.modules.iam.models import User, UserSiteRole
+
+    op_tok = await login(api, "operator1")
+    assert (await api.get("/platform/v1/restore-tests", headers=auth_headers(op_tok))).status_code == 403
+
+    async with db.begin():
+        user = User(
+            username="admin.dr1", email="admin.dr1@example.com", full_name="admin.dr1",
+            password_hash=hash_password("ChangeMe123!"), status="active",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=seeded["roles"]["Admin"].id))
+    admin_tok = await login(api, "admin.dr1")
+    now = datetime.now(timezone.utc)
+
+    actor = seeded["users"]["operator1"].id
+    async with SessionLocal() as s:
+        async with s.begin():
+            backup = await dr.record_backup_execution(
+                s, dr.RecordBackupExecutionCommand(
+                    idempotency_key=idem(), component="postgres_gxp", backup_type="FULL",
+                    started_at=now - timedelta(hours=1), completed_at=now - timedelta(minutes=30),
+                    checksum="c-list-test", status="SUCCESS", reason="nightly",
+                ), actor,
+            )
+    backup_id = str(backup.aggregate_id)
+
+    resp = await api.post(
+        "/platform/v1/restore-tests",
+        json={
+            "idempotency_key": idem(), "backup_id": backup_id, "target_environment": "staging",
+            "started_at": now.isoformat(), "completed_at": now.isoformat(),
+            "integrity_checks": {"checksum_verified": True}, "reason": "quarterly drill",
+        },
+        headers=auth_headers(admin_tok),
+    )
+    assert resp.status_code == 200, resp.text
+    restore_test_id = resp.json()["aggregate_id"]
+
+    listing = await api.get("/platform/v1/restore-tests?page_size=100", headers=auth_headers(admin_tok))
+    assert listing.status_code == 200, listing.text
+    body = listing.json()
+    assert "items" in body and "total" in body
+    assert any(r["id"] == restore_test_id for r in body["items"])

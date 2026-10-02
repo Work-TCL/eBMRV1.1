@@ -422,6 +422,84 @@ const LOSS_REASON_SUBFIELDS: RepeatSubField[] = [
   { name: "quantity", label: "Quantity", type: "number" },
 ];
 
+/** The exact `quantities` key vocabulary `yield_reconciliation/models.py` accepts: `QUANTITY_CATEGORIES`
+ * (issued/consumed/returned/samples/rejected/destroyed/approved_loss) for MATERIAL/PACKAGING/LABEL, plus
+ * `assembled`/`scrapped` (`COMPONENT_QUANTITY_CATEGORIES`) for COMPONENT. `issued` is the only key the
+ * backend actually requires — `_persist_reconciliation` raises on a missing `quantities["issued"]`, while
+ * every other category defaults to "0" server-side when omitted (`quantities.get(k, "0")`), so `build()`
+ * only sends the ones the user filled in. Replaces a raw key-value editor whose hint text told the user
+ * to type these exact key names by hand, with no validation that they had. `item_ref` stays a real
+ * key-value editor below (unlike `quantities`, its shape genuinely varies by what's being reconciled —
+ * e.g. `material_lot_id` vs a device unit's own `serial_number` — and nothing downstream validates its
+ * keys the way `quantities`' categories are validated). */
+function useQuantityFields(includeComponentCategories = false) {
+  const [issued, setIssued] = useState("");
+  const [consumed, setConsumed] = useState("");
+  const [returned, setReturned] = useState("");
+  const [samples, setSamples] = useState("");
+  const [rejected, setRejected] = useState("");
+  const [destroyed, setDestroyed] = useState("");
+  const [approvedLoss, setApprovedLoss] = useState("");
+  const [assembled, setAssembled] = useState("");
+  const [scrapped, setScrapped] = useState("");
+
+  function build(): Record<string, string> {
+    const q: Record<string, string> = { issued: issued.trim() };
+    if (consumed.trim()) q.consumed = consumed.trim();
+    if (returned.trim()) q.returned = returned.trim();
+    if (samples.trim()) q.samples = samples.trim();
+    if (rejected.trim()) q.rejected = rejected.trim();
+    if (destroyed.trim()) q.destroyed = destroyed.trim();
+    if (approvedLoss.trim()) q.approved_loss = approvedLoss.trim();
+    if (includeComponentCategories) {
+      if (assembled.trim()) q.assembled = assembled.trim();
+      if (scrapped.trim()) q.scrapped = scrapped.trim();
+    }
+    return q;
+  }
+
+  const fields = (
+    <div>
+      <label className="label">Quantities</label>
+      <div className="grid grid-cols-3 gap-3 mt-1">
+        <Field label="Issued" required>
+          <Input type="number" step="any" value={issued} onChange={(e) => setIssued(e.target.value)} required />
+        </Field>
+        <Field label="Consumed">
+          <Input type="number" step="any" value={consumed} onChange={(e) => setConsumed(e.target.value)} />
+        </Field>
+        <Field label="Returned">
+          <Input type="number" step="any" value={returned} onChange={(e) => setReturned(e.target.value)} />
+        </Field>
+        <Field label="Samples">
+          <Input type="number" step="any" value={samples} onChange={(e) => setSamples(e.target.value)} />
+        </Field>
+        <Field label="Rejected">
+          <Input type="number" step="any" value={rejected} onChange={(e) => setRejected(e.target.value)} />
+        </Field>
+        <Field label="Destroyed">
+          <Input type="number" step="any" value={destroyed} onChange={(e) => setDestroyed(e.target.value)} />
+        </Field>
+        <Field label="Approved loss" hint="Requires a loss reason below when non-zero.">
+          <Input type="number" step="any" value={approvedLoss} onChange={(e) => setApprovedLoss(e.target.value)} />
+        </Field>
+        {includeComponentCategories && (
+          <>
+            <Field label="Assembled">
+              <Input type="number" step="any" value={assembled} onChange={(e) => setAssembled(e.target.value)} />
+            </Field>
+            <Field label="Scrapped">
+              <Input type="number" step="any" value={scrapped} onChange={(e) => setScrapped(e.target.value)} />
+            </Field>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  return { issued, build, fields };
+}
+
 /** The `{type, value, inclusive}` shape is identical across every reconciliation command
  * (`tolerance_rule: dict`) — structured fields here instead of a raw `kv` editor since the shape is
  * fixed and documented, not genuinely free-form. */
@@ -578,7 +656,7 @@ function ReconciliationCard({
 }) {
   const [batchId, setBatchId] = useState(defaultBatchId);
   const [itemRef, setItemRef] = useState<KvRow[]>([]);
-  const [quantities, setQuantities] = useState<KvRow[]>([]);
+  const quantityFields = useQuantityFields();
   const [uom, setUom] = useState("");
   const [toleranceType, setToleranceType] = useState("percentage");
   const [toleranceValue, setToleranceValue] = useState("");
@@ -600,7 +678,7 @@ function ReconciliationCard({
         batch_id: batchId.trim(),
         reconciliation_type: reconciliationType,
         item_ref: buildKvObject(itemRef),
-        quantities: buildKvObject(quantities),
+        quantities: quantityFields.build(),
         uom: uom.trim(),
         tolerance_rule: { type: toleranceType, value: toleranceValue.trim(), inclusive: toleranceInclusive === "true" },
         loss_reasons: lossReasons.length > 0 ? buildRepeatArray(LOSS_REASON_SUBFIELDS, lossReasons) : null,
@@ -649,12 +727,7 @@ function ReconciliationCard({
       </form>
       <div className="grid grid-cols-2 gap-4 mt-3">
         <KeyValueRows label="Item reference" hint="What is being reconciled, e.g. material_lot_id → a lot ID." value={itemRef} onChange={setItemRef} />
-        <KeyValueRows
-          label="Quantities"
-          hint="e.g. issued, consumed, returned, samples, rejected, destroyed, approved_loss."
-          value={quantities}
-          onChange={setQuantities}
-        />
+        {quantityFields.fields}
       </div>
       <div className="mt-3">
         <RepeatableRows
@@ -673,7 +746,7 @@ function ReconciliationCard({
           type="submit"
           variant="primary"
           onClick={submit}
-          disabled={busy || !batchId.trim() || !uom.trim() || itemRef.length === 0 || quantities.length === 0 || !toleranceValue.trim()}
+          disabled={busy || !batchId.trim() || !uom.trim() || itemRef.length === 0 || !quantityFields.issued.trim() || !toleranceValue.trim()}
         >
           {busy ? "Evaluating…" : "Evaluate reconciliation"}
         </Button>
@@ -819,7 +892,7 @@ function EvaluateComponentReconciliationCard({
   const [batchId, setBatchId] = useState(defaultBatchId);
   const [deviceUnitId, setDeviceUnitId] = useState("");
   const [itemRef, setItemRef] = useState<KvRow[]>([]);
-  const [quantities, setQuantities] = useState<KvRow[]>([]);
+  const quantityFields = useQuantityFields(true);
   const [uom, setUom] = useState("");
   const [toleranceType, setToleranceType] = useState("percentage");
   const [toleranceValue, setToleranceValue] = useState("");
@@ -842,7 +915,7 @@ function EvaluateComponentReconciliationCard({
         reconciliation_type: "COMPONENT",
         device_unit_id: deviceUnitId.trim() || null,
         item_ref: buildKvObject(itemRef),
-        quantities: buildKvObject(quantities),
+        quantities: quantityFields.build(),
         uom: uom.trim(),
         tolerance_rule: { type: toleranceType, value: toleranceValue.trim(), inclusive: toleranceInclusive === "true" },
         loss_reasons: lossReasons.length > 0 ? buildRepeatArray(LOSS_REASON_SUBFIELDS, lossReasons) : null,
@@ -898,12 +971,7 @@ function EvaluateComponentReconciliationCard({
       </form>
       <div className="grid grid-cols-2 gap-4 mt-3">
         <KeyValueRows label="Item reference" value={itemRef} onChange={setItemRef} />
-        <KeyValueRows
-          label="Quantities"
-          hint="e.g. issued, assembled, rejected, scrapped, returned, samples, destroyed, approved_loss."
-          value={quantities}
-          onChange={setQuantities}
-        />
+        {quantityFields.fields}
       </div>
       <div className="mt-3">
         <RepeatableRows
@@ -922,7 +990,7 @@ function EvaluateComponentReconciliationCard({
           type="submit"
           variant="primary"
           onClick={submit}
-          disabled={busy || !batchId.trim() || !uom.trim() || itemRef.length === 0 || quantities.length === 0 || !toleranceValue.trim()}
+          disabled={busy || !batchId.trim() || !uom.trim() || itemRef.length === 0 || !quantityFields.issued.trim() || !toleranceValue.trim()}
         >
           {busy ? "Evaluating…" : "Evaluate component reconciliation"}
         </Button>

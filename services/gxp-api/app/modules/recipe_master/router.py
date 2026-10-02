@@ -2,13 +2,18 @@ import uuid
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.iam.models import Site
+from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import evaluate_policy
+from app.modules.product_master.models import ProductVersion
+from app.modules.qc.models import QcTestSpecification
 from app.modules.recipe_master import service as recipe_master_service
-from app.modules.recipe_master.models import RecipeFamily
+from app.modules.recipe_master.models import EquipmentClass, RecipeFamily
 from app.modules.recipe_master.commands import (
     CreateEquipmentClassCommand,
     CreateRecipeDraftCommand,
@@ -55,15 +60,20 @@ _CHALLENGE_MEANINGS = {
 }
 
 
-def _version_dict(version) -> dict:
+def _version_dict(version, product_version: ProductVersion | None = None, site: Site | None = None) -> dict:
     return {
         "recipe_version_id": str(version.id),
         "recipe_family_id": str(version.recipe_family_id),
         "version_no": version.version_no,
         "product_version_id": str(version.product_version_id),
+        "product_code": product_version.product_code if product_version else None,
+        "product_name": product_version.name if product_version else None,
         "site_id": str(version.site_id),
+        "site_code": site.code if site else None,
+        "site_name": site.name if site else None,
         "batch_size_value": str(version.batch_size_value) if version.batch_size_value is not None else None,
         "batch_size_uom": version.batch_size_uom,
+        "batch_size_uom_id": str(version.batch_size_uom_id) if version.batch_size_uom_id else None,
         "lifecycle_state": version.lifecycle_state,
         "superseded_by_version_id": str(version.superseded_by_version_id) if version.superseded_by_version_id else None,
         "effective_from": version.effective_from.isoformat() if version.effective_from else None,
@@ -81,6 +91,9 @@ def _section_dict(s) -> dict:
         "stable_section_code": s.stable_section_code,
         "name": s.name,
         "sequence": s.sequence,
+        # No backing entity anywhere in the codebase (tracked SPEC_GAP) -- raw technical value only,
+        # never resolved to a name.
+        "area_requirement_id": str(s.area_requirement_id) if s.area_requirement_id else None,
         "parallel_group": s.parallel_group,
         "expected_duration_minutes": s.expected_duration_minutes,
     }
@@ -98,6 +111,11 @@ def _step_dict(s) -> dict:
         "required_qualification_code": s.required_qualification_code,
         "is_critical": s.is_critical,
         "expected_hold_duration_minutes": s.expected_hold_duration_minutes,
+        # No backing entity anywhere in the codebase (tracked SPEC_GAP) -- raw technical values only,
+        # never resolved to a name.
+        "qualification_policy_id": str(s.qualification_policy_id) if s.qualification_policy_id else None,
+        "signature_policy_id": str(s.signature_policy_id) if s.signature_policy_id else None,
+        "exception_policy_id": str(s.exception_policy_id) if s.exception_policy_id else None,
     }
 
 
@@ -118,6 +136,7 @@ def _parameter_dict(p) -> dict:
         "parameter_code": p.parameter_code,
         "data_type": p.data_type,
         "uom": p.uom,
+        "uom_id": str(p.uom_id) if p.uom_id else None,
         "source_type": p.source_type,
         "target_value": str(p.target_value) if p.target_value is not None else None,
         "min_value": str(p.min_value) if p.min_value is not None else None,
@@ -141,15 +160,18 @@ def _evidence_requirement_dict(e) -> dict:
     }
 
 
-def _material_requirement_dict(m) -> dict:
+def _material_requirement_dict(m, material_spec: MaterialSpecificationVersion | None = None) -> dict:
     return {
         "id": str(m.id),
         "step_id": str(m.step_id),
         "material_spec_version_id": str(m.material_spec_version_id),
+        "material_spec_business_id": material_spec.material_spec_business_id if material_spec else None,
+        "material_name": material_spec.name if material_spec else None,
         "target_value": str(m.target_value) if m.target_value is not None else None,
         "min_value": str(m.min_value) if m.min_value is not None else None,
         "max_value": str(m.max_value) if m.max_value is not None else None,
         "uom": m.uom,
+        "uom_id": str(m.uom_id) if m.uom_id else None,
         "alternative_material_spec_version_id": (
             str(m.alternative_material_spec_version_id) if m.alternative_material_spec_version_id else None
         ),
@@ -159,12 +181,13 @@ def _material_requirement_dict(m) -> dict:
     }
 
 
-def _equipment_requirement_dict(e) -> dict:
+def _equipment_requirement_dict(e, equipment_class: EquipmentClass | None = None) -> dict:
     return {
         "id": str(e.id),
         "step_id": str(e.step_id),
         "equipment_class": e.equipment_class,
         "equipment_class_id": str(e.equipment_class_id) if e.equipment_class_id else None,
+        "equipment_class_name": equipment_class.name if equipment_class else None,
         "exact_equipment_optional": e.exact_equipment_optional,
         "require_current_calibration": e.require_current_calibration,
         "require_current_qualification": e.require_current_qualification,
@@ -172,11 +195,13 @@ def _equipment_requirement_dict(e) -> dict:
     }
 
 
-def _qc_requirement_dict(q) -> dict:
+def _qc_requirement_dict(q, spec: QcTestSpecification | None = None) -> dict:
     return {
         "id": str(q.id),
         "step_id": str(q.step_id),
         "qc_test_specification_id": str(q.qc_test_specification_id),
+        "spec_code": spec.spec_code if spec else None,
+        "spec_version_no": spec.version_no if spec else None,
         "required": q.required,
     }
 
@@ -416,15 +441,53 @@ async def get_version_detail(
     version = await recipe_master_service.get_version(session, recipe_version_id)
     await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=version.site_id)
     graph = await recipe_master_service.get_graph(session, recipe_version_id)
-    body = _version_dict(version)
+
+    product_version = await session.get(ProductVersion, version.product_version_id)
+    site = await session.get(Site, version.site_id)
+
+    material_spec_ids = {m.material_spec_version_id for m in graph["material_requirements"]}
+    material_specs_by_id: dict = {}
+    if material_spec_ids:
+        rows = (
+            await session.execute(
+                select(MaterialSpecificationVersion).where(MaterialSpecificationVersion.id.in_(material_spec_ids))
+            )
+        ).scalars().all()
+        material_specs_by_id = {ms.id: ms for ms in rows}
+
+    equipment_class_ids = {e.equipment_class_id for e in graph["equipment_requirements"] if e.equipment_class_id}
+    equipment_classes_by_id: dict = {}
+    if equipment_class_ids:
+        rows = (
+            await session.execute(select(EquipmentClass).where(EquipmentClass.id.in_(equipment_class_ids)))
+        ).scalars().all()
+        equipment_classes_by_id = {k.id: k for k in rows}
+
+    qc_spec_ids = {q.qc_test_specification_id for q in graph["qc_requirements"]}
+    qc_specs_by_id: dict = {}
+    if qc_spec_ids:
+        rows = (
+            await session.execute(select(QcTestSpecification).where(QcTestSpecification.id.in_(qc_spec_ids)))
+        ).scalars().all()
+        qc_specs_by_id = {q.id: q for q in rows}
+
+    body = _version_dict(version, product_version, site)
     body["sections"] = [_section_dict(s) for s in graph["sections"]]
     body["steps"] = [_step_dict(s) for s in graph["steps"]]
     body["dependencies"] = [_dependency_dict(d) for d in graph["dependencies"]]
     body["parameters"] = [_parameter_dict(p) for p in graph["parameters"]]
     body["evidence_requirements"] = [_evidence_requirement_dict(e) for e in graph["evidence"]]
-    body["material_requirements"] = [_material_requirement_dict(m) for m in graph["material_requirements"]]
-    body["equipment_requirements"] = [_equipment_requirement_dict(e) for e in graph["equipment_requirements"]]
-    body["qc_requirements"] = [_qc_requirement_dict(q) for q in graph["qc_requirements"]]
+    body["material_requirements"] = [
+        _material_requirement_dict(m, material_specs_by_id.get(m.material_spec_version_id))
+        for m in graph["material_requirements"]
+    ]
+    body["equipment_requirements"] = [
+        _equipment_requirement_dict(e, equipment_classes_by_id.get(e.equipment_class_id))
+        for e in graph["equipment_requirements"]
+    ]
+    body["qc_requirements"] = [
+        _qc_requirement_dict(q, qc_specs_by_id.get(q.qc_test_specification_id)) for q in graph["qc_requirements"]
+    ]
     return body
 
 

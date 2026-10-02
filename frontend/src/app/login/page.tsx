@@ -22,7 +22,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(username, password);
-      router.push("/batch-execution");
+      router.push("/home");
     } catch {
       setError("Invalid username or password");
     } finally {

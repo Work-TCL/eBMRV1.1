@@ -81,7 +81,11 @@ async def post_create_task(
 
 
 @router.get("/tasks/{sample_id}")
-async def get_task(sample_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_task(
+    sample_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     sample = await session.get(EmSampleOrReading, sample_id)
     if sample is None:
         raise NotFoundError("EM sample/reading not found")
@@ -151,7 +155,11 @@ async def post_record_result(
 
 
 @router.get("/results/{sample_id}")
-async def get_result(sample_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_result(
+    sample_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     sample = await session.get(EmSampleOrReading, sample_id)
     if sample is None:
         raise NotFoundError("EM sample/reading not found")
@@ -193,14 +201,21 @@ async def post_excursion_impact(
 
 
 @router.get("/areas/{area_id}/readiness")
-async def get_readiness(area_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_readiness(
+    area_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_area_readiness(session, area_id)
 
 
 @router.get("/trends")
 async def get_trends_endpoint(
-    location_id: uuid.UUID, monitoring_type: str | None = None, session: AsyncSession = Depends(get_session)
+    location_id: uuid.UUID,
+    monitoring_type: str | None = None,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
         return await get_trends(session, location_id, monitoring_type)

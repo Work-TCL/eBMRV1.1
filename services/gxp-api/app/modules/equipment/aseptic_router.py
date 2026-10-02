@@ -155,7 +155,11 @@ def _profile_dict(profile: AsepticProfileVersion) -> dict:
 
 
 @router.get("/profiles")
-async def list_profiles(site_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> list[dict]:
+async def list_profiles(
+    site_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
     """Full browsable history (RELEASED and SUPERSEDED) for `/aseptic`'s own list section. The narrower
     RELEASED-only picker feed (`GET /products/v1/sterile-profiles` and this module's own
     `list_released_profile_versions`) is a separate function, not this endpoint."""
@@ -205,15 +209,25 @@ async def post_create_operation(
 
 @router.get("/operations")
 async def list_operations(
-    site_id: uuid.UUID, session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params),
+    site_id: uuid.UUID,
+    batch_id: uuid.UUID | None = None,
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     """Browsable list for `/aseptic`'s own "Aseptic operations" section -- the page previously had no way
     to see what operations existed at all, only look one up by an already-known id. Same SG-081 read-side
     precedent as `/profiles`/`/interventions` above and `sterilization_router.list_cycles`'s own
     `/cycles`. Paginated (shared envelope) so the frontend's `DataTable` can page/search/sort it the same
-    as every other list page."""
+    as every other list page.
+
+    `batch_id` is optional (additive) -- built for the Batch Workspace, which needs a batch's aseptic
+    activity without paging through the whole site; `AsepticOperation.batch_id` already existed on the
+    row, this just exposes it as a filter."""
     async with session.begin():
         stmt = select(AsepticOperation).where(AsepticOperation.site_id == site_id)
+        if batch_id is not None:
+            stmt = stmt.where(AsepticOperation.batch_id == batch_id)
         if params.q:
             stmt = stmt.where(AsepticOperation.state.ilike(f"%{params.q}%"))
         rows, envelope = await paginate(session, stmt, params, sortable=OPERATION_SORTABLE, default_sort=AsepticOperation.created_at)
@@ -223,7 +237,11 @@ async def list_operations(
 
 
 @router.get("/operations/{operation_id}")
-async def get_operation(operation_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_operation(
+    operation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     operation = await session.get(AsepticOperation, operation_id)
     if operation is None:
         raise NotFoundError("Aseptic operation not found")
@@ -277,7 +295,11 @@ async def post_start_operation(
 
 
 @router.get("/interventions")
-async def list_interventions(site_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> list[dict]:
+async def list_interventions(
+    site_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
     """Real picker data for any field that references an `AsepticIntervention` by id -- DDCP's "Record an
     aseptic intervention" `source_aseptic_intervention_id` (fill_operation link into the aseptic module,
     ddcp/commands.py) is the first caller, previously free-text UUID entry with no way to discover a real
@@ -357,12 +379,20 @@ async def post_complete_operation(
 
 
 @router.get("/operations/{operation_id}/readiness")
-async def get_operation_readiness(operation_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_operation_readiness(
+    operation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_readiness(session, operation_id)
 
 
 @router.get("/operations/{operation_id}/review-summary")
-async def get_operation_review_summary(operation_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_operation_review_summary(
+    operation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_review_summary(session, operation_id)

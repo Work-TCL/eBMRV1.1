@@ -18,15 +18,16 @@ TEST_ORDER_STATES = (
 )
 RESULT_OUTCOMES = ("pending", "pass", "oos", "oot", "invalid")
 
-# QC-FR-001: scope_type="material" is rejected at the command layer -- see SG-057/SG-063. Only these
-# three are actually accepted this pass.
-BUILDABLE_SCOPE_TYPES = ("product", "in_process", "device")
+# QC-FR-001: scope_type="material" unblocked by SG-076 (MaterialSpecificationVersion now exists, built
+# for SG-057) -- the required-test-blocks-release enforcement half of SG-076 stays open.
+BUILDABLE_SCOPE_TYPES = ("product", "in_process", "device", "material")
 
 
 class QcTestSpecification(Base):
     """Document 23 §6 `qc_test_specification` -- DDL-ready. `scope_version_id` is a polymorphic
-    reference (product/device -> gxp_product_version, in_process -> gxp_recipe_version) validated in
-    application code, not a DB FK -- no single FK target can cover three tables."""
+    reference (product/device -> gxp_product_version, in_process -> gxp_recipe_version, material ->
+    gxp_material_specification_version, SG-076) validated in application code, not a DB FK -- no single
+    FK target can cover four tables."""
 
     __tablename__ = "qc_test_specification"
     __table_args__ = (UniqueConstraint("spec_code", "version_no"), {"schema": "ebmr"})
@@ -365,6 +366,9 @@ class OotRecord(Base):
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     opened_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()
+    # SG-074 Task 3 Part B (2026-09-23, migration 0121) -- same append-only shape as
+    # qms.DeviationRecord.reopen_history/CapaRecord.reopen_history.
+    reopen_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
 
 
 class QcResultCorrection(Base):

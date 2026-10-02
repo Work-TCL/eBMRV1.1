@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, hasPermission, formatDate, isOverdue, newIdempotencyKey, type RiskRecord } from "@/lib/api";
-import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { useApiResource, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { RiskMethodologyPickerField } from "@/components/shared/RiskMethodologyPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
@@ -43,7 +43,7 @@ interface RiskDashboard {
 }
 
 export default function RisksPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("risk.view");
   const { siteId } = useSiteId();
   const [createOpen, setCreateOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);

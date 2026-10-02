@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   canApproveSupplier,
@@ -11,7 +11,7 @@ import {
   pagedFetcher,
   type Supplier,
 } from "@/lib/api";
-import { useApiResource, useMe } from "@/lib/hooks";
+import { useApiResource, useMe, useRequirePermission } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -28,7 +28,7 @@ import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { JsonPanel, summarizeJson } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
-import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
+import { KeyValueRows, RepeatableRows, buildKvObject, buildRepeatArray, type KvRow, type RepeatRow } from "@/components/shared/RepeatableFields";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 
 interface SupplierSite {
@@ -65,10 +65,20 @@ interface SupplierDetail extends Supplier {
 const ROLE_TYPES = ["supplier", "manufacturer", "both"];
 
 export default function SuppliersPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("supplier.view");
   const [reloadToken, setReloadToken] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+
+  // Deep link from the Workflow Actions bell (`?supplier_id=<id>`) -- opens that supplier's detail
+  // modal directly, same modal a row click already opens. Reads window.location directly rather than
+  // next/navigation's useSearchParams(), same as recipe-master's own `?openFamily=` deep link, to avoid
+  // opting this page into a Suspense boundary it has no other reason to need.
+  useEffect(() => {
+    const supplierId = new URLSearchParams(window.location.search).get("supplier_id");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (supplierId) setSelected(supplierId);
+  }, []);
 
   const fetchSuppliers = pagedFetcher<Supplier>("/suppliers/v1");
 
@@ -232,6 +242,7 @@ function SupplierModal({
   const detail = useApiResource<SupplierDetail>(`/suppliers/v1/${supplierId}`);
   const [qualifyOpen, setQualifyOpen] = useState(false);
   const [approving, setApproving] = useState<Qualification | null>(null);
+  const [addSiteOpen, setAddSiteOpen] = useState(false);
 
   const s = detail.data;
   if (!s) {
@@ -268,7 +279,14 @@ function SupplierModal({
         <JsonPanel title="External system mappings" value={s.external_mappings} />
       </div>
 
-      <p className="fact-k mb-2 mt-4">Sites</p>
+      <div className="flex justify-between items-center mt-4 mb-2">
+        <p className="fact-k">Sites</p>
+        {canCreateSupplier(me) && (
+          <Button size="sm" variant="secondary" onClick={() => setAddSiteOpen(true)}>
+            <Icon name="plus" /> Add site
+          </Button>
+        )}
+      </div>
       {s.sites.length === 0 ? (
         <p className="hint">No sites registered for this supplier.</p>
       ) : (
@@ -357,6 +375,17 @@ function SupplierModal({
         </Button>
       </div>
 
+      {addSiteOpen && (
+        <AddSiteModal
+          supplierId={s.id}
+          onClose={() => setAddSiteOpen(false)}
+          onDone={() => {
+            setAddSiteOpen(false);
+            detail.reload();
+            onChanged();
+          }}
+        />
+      )}
       {qualifyOpen && (
         <QualificationModal
           supplier={s}
@@ -383,6 +412,73 @@ function SupplierModal({
   );
 }
 
+function AddSiteModal({
+  supplierId,
+  onClose,
+  onDone,
+}: {
+  supplierId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { busy, error, run } = useCommand(onDone);
+  const [siteName, setSiteName] = useState("");
+  const [city, setCity] = useState("");
+  const [country, setCountry] = useState("");
+  const [manufacturerFlag, setManufacturerFlag] = useState(false);
+
+  return (
+    <Modal open onClose={onClose} title="Add a site">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(() =>
+            api.post(`/suppliers/${supplierId}/sites`, {
+              idempotency_key: newIdempotencyKey(),
+              supplier_id: supplierId,
+              site: {
+                site_name: siteName,
+                city: city || null,
+                country: country || null,
+                manufacturer_flag: manufacturerFlag,
+              },
+            })
+          );
+        }}
+      >
+        <Field label="Site name" required>
+          <Input value={siteName} onChange={(e) => setSiteName(e.target.value)} required autoFocus />
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="City">
+            <Input value={city} onChange={(e) => setCity(e.target.value)} />
+          </Field>
+          <Field label="Country">
+            <Input value={country} onChange={(e) => setCountry(e.target.value)} />
+          </Field>
+        </div>
+        <label className="flex items-center gap-2 fs-2 mb-3">
+          <input
+            type="checkbox"
+            checked={manufacturerFlag}
+            onChange={(e) => setManufacturerFlag(e.target.checked)}
+          />
+          This site manufactures (rather than only distributing)
+        </label>
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !siteName.trim()}>
+            {busy ? "Adding…" : "Add site"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function QualificationModal({
   supplier,
   onClose,
@@ -398,6 +494,13 @@ function QualificationModal({
   const [scope, setScope] = useState<KvRow[]>([{ key: "description", value: "" }]);
   const [effectiveFrom, setEffectiveFrom] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
+  const [qualityAgreementVaultId, setQualityAgreementVaultId] = useState("");
+  const [evidence, setEvidence] = useState<RepeatRow[]>([]);
+
+  const EVIDENCE_SUBFIELDS = [
+    { name: "vault_object_id", label: "Vault object ID", required: true },
+    { name: "evidence_category", label: "Evidence category", required: true, placeholder: "e.g. audit_report" },
+  ];
 
   return (
     <Modal open onClose={onClose} title="Request supplier qualification">
@@ -414,6 +517,8 @@ function QualificationModal({
               scope: Object.keys(scopeObj).length ? scopeObj : null,
               effective_from: effectiveFrom ? new Date(effectiveFrom).toISOString() : null,
               expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+              quality_agreement_vault_id: qualityAgreementVaultId || null,
+              evidence: buildRepeatArray(EVIDENCE_SUBFIELDS, evidence),
             });
           });
         }}
@@ -448,6 +553,17 @@ function QualificationModal({
             <Input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
           </Field>
         </div>
+        <Field label="Quality agreement (Vault object ID)" hint="Optional - the Vault object ID for the signed quality agreement, if one exists.">
+          <Input value={qualityAgreementVaultId} onChange={(e) => setQualityAgreementVaultId(e.target.value)} />
+        </Field>
+        <RepeatableRows
+          label="Supporting evidence"
+          hint="Vault object IDs for any supporting qualification evidence (audit reports, certificates, etc.)."
+          itemLabel="Evidence item"
+          subFields={EVIDENCE_SUBFIELDS}
+          value={evidence}
+          onChange={setEvidence}
+        />
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-3">
           <Button type="button" variant="secondary" onClick={onClose}>

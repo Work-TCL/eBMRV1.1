@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import { useSiteId } from "@/lib/hooks";
+import { useRequirePermission, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -39,6 +39,7 @@ type Mode = "lookup" | "serial" | "material_lot";
 const NODE_TYPES = ["", "batch", "material_lot", "device_unit", "package", "shipment"];
 
 export default function GenealogyPage() {
+  useRequirePermission("genealogy.view");
   const { siteId } = useSiteId();
   const [mode, setMode] = useState<Mode>("lookup");
   const [nodeType, setNodeType] = useState("");

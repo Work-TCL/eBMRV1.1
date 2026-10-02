@@ -82,7 +82,11 @@ async def post_create_execution(
 
 
 @router.get("/executions/{execution_id}")
-async def get_execution(execution_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_execution(
+    execution_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     execution = await session.get(CleaningExecution, execution_id)
     if execution is None:
         raise NotFoundError("Cleaning execution not found")
@@ -169,7 +173,11 @@ async def post_verify_cleaning(
 
 
 @router.get("/equipment/{equipment_id}/status")
-async def get_status(equipment_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_status(
+    equipment_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_equipment_cleaning_status(session, equipment_id)
 
@@ -245,7 +253,10 @@ LINE_CLEARANCE_SORTABLE = {
 
 @line_clearance_router.get("")
 async def list_line_clearances(
-    site_id: uuid.UUID, session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params),
+    site_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     """Browsable list for `/line-clearance`'s own page -- previously reachable only by already knowing a
     clearance's id (same SG-081 read-side precedent as sterilization's `/cycles` list)."""
@@ -271,7 +282,11 @@ async def post_create_line_clearance(
 
 
 @line_clearance_router.get("/{clearance_id}")
-async def get_line_clearance(clearance_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_line_clearance(
+    clearance_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     clearance = await session.get(LineClearance, clearance_id)
     if clearance is None:
         raise NotFoundError("Line clearance not found")

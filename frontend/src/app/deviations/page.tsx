@@ -10,7 +10,7 @@ import {
   newIdempotencyKey,
   type Deviation,
 } from "@/lib/api";
-import { useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
+import { useEntityOptions, useMe, useRequirePermission, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
@@ -54,7 +54,7 @@ const SOURCE_MANUAL_HINT: Partial<Record<string, string>> = {
 };
 
 export default function DeviationsPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("qms_deviation.view");
   const [createOpen, setCreateOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 

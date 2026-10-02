@@ -9,8 +9,9 @@ from app.core.security import verify_password
 from app.modules.batch_execution.models import Batch, BatchStep
 from app.modules.device.models import DeviceUnit
 from app.modules.equipment.cleaning_models import CleaningExecution
-from app.modules.iam.models import User
+from app.modules.iam.models import Qualification, User
 from app.modules.material.models import MaterialLot
+from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import evaluate_policy
 from app.modules.product_master.models import ProductVersion
 from app.modules.qc.models import (
@@ -45,6 +46,8 @@ from app.mutation.errors import (
     OotRuleNotReleasedError,
     OriginalResultRequiredError,
     QaApprovalRequiredError,
+    QualificationExpiredError,
+    QualificationMissingError,
     RawDataRequiredError,
     ResampleNotAuthorizedError,
     RetestNotAuthorizedError,
@@ -74,6 +77,7 @@ SCOPE_TABLE_BY_TYPE = {
     "product": ProductVersion,
     "device": ProductVersion,
     "in_process": RecipeVersion,
+    "material": MaterialSpecificationVersion,
 }
 
 
@@ -120,7 +124,7 @@ def _receipt_from_existing(existing) -> MutationReceipt:
 
 # ---------------------------------------------------------------------------
 # CreateTestSpecificationDraft -- QC-FR-001/002: POST /qc/v1/specifications/drafts. scope_type=="material"
-# is rejected -- SG-057/SG-063, no material-specification-version entity exists anywhere in this codebase.
+# unblocked by SG-076 (MaterialSpecificationVersion now exists, built for SG-057).
 # ---------------------------------------------------------------------------
 
 
@@ -154,12 +158,6 @@ async def create_test_specification_draft(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    if cmd.scope_type == "material":
-        raise ValidationFailedError(
-            "scope_type='material' is not supported: no material-specification-version entity exists "
-            "yet in this codebase (SG-057/SG-063)",
-            scope_type=cmd.scope_type,
-        )
     if cmd.scope_type not in BUILDABLE_SCOPE_TYPES:
         raise ValidationFailedError("Unknown scope_type", scope_type=cmd.scope_type)
 
@@ -785,6 +783,36 @@ class StartTestOrderCommand(CommandEnvelope):
     analyst_id: uuid.UUID | None = None
 
 
+async def _check_qc_analyst_qualification(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """QC-FR-011 (Task 4, 2026-09-23, SG-066): "Assign qualified analyst/team; qualification/training...
+    checked at execution." Neither `qc_test_definition` nor `qc_method_version` declares a per-test/per-
+    method `required_qualification_code` field (unlike a recipe step's own explicit field) -- Document 23
+    describes a role-level qualification to perform QC testing at all, not a per-test-configurable one, so
+    this reuses `material/commands.py::_check_dispensing_qualification`'s exact shape: a single fixed
+    `iam.Qualification.qualification_code` gate, not a field-driven one like batch_execution's step-level
+    check. Deliberately called only from the router (`post_start_test_order`), not from this function body
+    -- `start_test_order` is also called internally by `lims_integration/commands.py`'s already-authorized
+    LIMS ingestion flow using a non-human service identity (MUT-FR-023), which cannot hold a human
+    `iam.Qualification` record; the router already draws exactly this same line for the RBAC permission
+    check (`qc_test_order.start`, router-only, per its own 2026-09-18 comment)."""
+    now = datetime.now(timezone.utc)
+    result = await session.execute(
+        select(Qualification)
+        .where(Qualification.user_id == user_id, Qualification.qualification_code == "qc_analyst")
+        .order_by(Qualification.granted_at.desc())
+        .limit(1)
+    )
+    qualification = result.scalar_one_or_none()
+    if qualification is None:
+        raise QualificationMissingError(
+            "Actor has no qc_analyst qualification record", qualification_code="qc_analyst"
+        )
+    if qualification.expires_at is not None and qualification.expires_at.replace(tzinfo=timezone.utc) < now:
+        raise QualificationExpiredError(
+            "Actor's qc_analyst qualification has expired", qualification_code="qc_analyst"
+        )
+
+
 async def start_test_order(session: AsyncSession, cmd: StartTestOrderCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
     payload_hash = sha256_hex(cmd.model_dump(mode="json"))
     existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
@@ -1388,7 +1416,15 @@ async def open_oos_from_result(session: AsyncSession, cmd: OpenOosFromResultComm
 
     order = await session.get(QcTestOrder, source_result.test_order_id)
     sample = await session.get(QcSample, order.sample_id) if order else None
-    batch_id = sample.source_id if sample and sample.source_type == "batch" else None
+    batch_id: uuid.UUID | None = None
+    if sample and sample.source_type == "batch":
+        batch_id = sample.source_id
+    elif sample and sample.source_type == "batch_step":
+        # A step-level in-process sample's source_id points at its gxp_batch_step row, not the batch
+        # directly -- resolve it so OosRecord.batch_id is populated (release/service.py's open-OOS
+        # release-blocker check reads this column directly, not through QcSample).
+        step = await session.get(BatchStep, sample.source_id)
+        batch_id = step.batch_id if step else None
     material_lot_id = sample.source_id if sample and sample.source_type == "material_lot" else None
 
     oos = OosRecord(
@@ -2122,4 +2158,73 @@ async def close_oot(session: AsyncSession, cmd: CloseOotCommand, actor_user_id: 
     return MutationReceipt(
         command_id=receipt.id, aggregate_id=oot.id, resulting_version=oot.version,
         audit_event_id=audit_event.id, signature_id=signature_id, correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# ReopenOot -- SG-074 Task 3 Part B. Same shape as qms.commands.reopen_deviation()/reopen_capa(): reason +
+# new_evidence required, permission-gated, unsigned. OOS reopen is not built here -- see SG-074's register
+# entry (oos_record's DDL-frozen 17-column schema has no reopen_history column to add, and OOS's richer
+# multi-stage investigation state machine has no Document-25-defined landing state after "closed", unlike
+# OOT's flat open/closed model where "open" is the only, unambiguous target).
+# ---------------------------------------------------------------------------
+
+
+class ReopenOotCommand(CommandEnvelope):
+    oot_record_id: uuid.UUID
+    expected_version: int
+    reason: str
+    new_evidence: str
+
+
+async def reopen_oot(session: AsyncSession, cmd: ReopenOotCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(select(OotRecord).where(OotRecord.id == cmd.oot_record_id).with_for_update())
+    oot = result.scalar_one_or_none()
+    if oot is None:
+        raise NotFoundError("OOT record not found")
+    if oot.version != cmd.expected_version:
+        raise StaleVersionError("OOT record was modified since it was read", expected_version=cmd.expected_version, current_version=oot.version)
+    if oot.state != "closed":
+        raise InvalidTransitionError("Only a closed OOT record can be reopened", current_status=oot.state)
+    if not cmd.reason.strip() or not cmd.new_evidence.strip():
+        raise ValidationFailedError("reason and new_evidence are required to reopen a closed OOT record")
+
+    await evaluate_policy(session, actor_user_id, action="oot_record.reopen", site_id=None)
+
+    old_state = oot.state
+    oot.reopen_history = [
+        *oot.reopen_history,
+        {
+            "previous_closed_at": oot.closed_at.isoformat() if oot.closed_at else None,
+            "reason": cmd.reason, "new_evidence": cmd.new_evidence, "reopened_by": str(actor_user_id),
+            "reopened_at": datetime.now(timezone.utc).isoformat(),
+        },
+    ]
+    oot.state = "open"
+    oot.closed_at = None
+    oot.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=None, aggregate_type="oot_record", aggregate_id=oot.id, aggregate_version=oot.version,
+        action="Changed", actor_id=actor_user_id, correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"state": old_state}, new_value={"state": oot.state},
+    )
+    await write_outbox_event(
+        session, event_type="OOTReopened", aggregate_type="oot_record", aggregate_id=oot.id,
+        aggregate_version=oot.version, payload={"id": str(oot.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=None, command_type="ReopenOot", aggregate_type="oot_record", aggregate_id=oot.id,
+        expected_version=cmd.expected_version, resulting_version=oot.version, idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash, actor_user_id=actor_user_id, payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=oot.id, resulting_version=oot.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
     )

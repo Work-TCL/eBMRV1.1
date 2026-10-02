@@ -226,6 +226,25 @@ def _correction_dict(c, original_result, requested_user: User | None, approved_u
     }
 
 
+def _hold_dict(h, held_by_user: User | None, released_by_user: User | None) -> dict:
+    """Full StepHold shape, active or released -- released_at/released_by/release_reason/
+    release_signature_id are written by resume_step but were never read back anywhere before this
+    (only the single currently-open hold was ever surfaced, via active_hold_by_step_id below)."""
+    return {
+        "id": str(h.id),
+        "reason": h.reason,
+        "held_at": h.held_at.isoformat() if h.held_at else None,
+        "held_by": str(h.held_by),
+        "held_by_username": held_by_user.username if held_by_user else None,
+        "hold_signature_id": str(h.hold_signature_id) if h.hold_signature_id else None,
+        "released_at": h.released_at.isoformat() if h.released_at else None,
+        "released_by": str(h.released_by) if h.released_by else None,
+        "released_by_username": released_by_user.username if released_by_user else None,
+        "release_reason": h.release_reason,
+        "release_signature_id": str(h.release_signature_id) if h.release_signature_id else None,
+    }
+
+
 def _equipment_requirement_dict(eq) -> dict:
     return {
         "equipment_class": eq.equipment_class,
@@ -711,6 +730,10 @@ async def get_execution_view(
         c.approved_by_user_id for cs in view["corrections_by_step_id"].values() for c in cs if c.approved_by_user_id
     }
     correction_users = await _users_by_id(session, correction_user_ids)
+    hold_user_ids = {h.held_by for hs in view["holds_by_step_id"].values() for h in hs} | {
+        h.released_by for hs in view["holds_by_step_id"].values() for h in hs if h.released_by
+    }
+    hold_users = await _users_by_id(session, hold_user_ids)
     return {
         "batch": _batch_dict(view["batch"], product_version, recipe_contexts.get(view["batch"].recipe_version_id)),
         "steps": [
@@ -756,6 +779,11 @@ async def get_execution_view(
                 "held_by": str(h.held_by), "hold_signature_id": str(h.hold_signature_id) if h.hold_signature_id else None,
             }
             for step_id, h in view["active_hold_by_step_id"].items()
+        },
+        # Full hold history (active and released), read-path completeness fix -- see _hold_dict.
+        "holds_by_step_id": {
+            str(step_id): [_hold_dict(h, hold_users.get(h.held_by), hold_users.get(h.released_by)) for h in holds]
+            for step_id, holds in view["holds_by_step_id"].items()
         },
         # BAT-FR-034, SG-048 #034 partial resolution.
         "comments_by_step_id": {

@@ -664,6 +664,91 @@ async def test_material_and_equipment_requirements_round_trip(client, seeded, db
     assert ereq["require_current_cleaning"] is False
 
 
+async def test_version_detail_resolves_referenced_names_and_surfaces_raw_ids(client, seeded, db):
+    """GET /recipes/v2/versions/{id} serializer completeness fix: material/equipment/QC references
+    resolve to human-readable names (mirroring batch_execution's own precedent for the same join), and
+    previously-dropped fields (product/site names, batch_size_uom_id, the no-backing-entity policy ids
+    on RecipeStep/RecipeSection) round-trip as raw values without inventing any resolution for them."""
+    import uuid as uuid_mod
+
+    from app.modules.qc.models import QcTestSpecification
+
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.recipe.names")
+        spec = QcTestSpecification(
+            spec_code="SPEC-RCPNAMES", version_no=2, scope_type="in_process",
+            scope_version_id=uuid_mod.uuid4(), status="released",
+        )
+        db.add(spec)
+        await db.flush()
+        spec_id = spec.id
+    admin_token = await login(client, "admin.recipe.names")
+    product_version_id = await _make_product_version(client, admin_token, seeded["site_id"], "RCPPRD-NAMES")
+
+    async with db.begin():
+        material = Material(site_id=seeded["site_id"], code="MAT-RCP-NAMES-1", name="Recipe Names Material", uom="kg")
+        db.add(material)
+    material_id = material.id
+    mat_spec_resp = await client.post(
+        "/material-specifications/v1/drafts",
+        json={
+            "idempotency_key": idem(), "material_spec_business_id": "RCPMAT-NAMES-1", "version_no": 1,
+            "material_id": str(material_id), "name": "Recipe Names Material Spec", "site_id": str(seeded["site_id"]),
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert mat_spec_resp.status_code == 200, mat_spec_resp.text
+    material_spec_version_id = mat_spec_resp.json()["aggregate_id"]
+
+    eq_class_code = f"MIXER-NAMES-{uuid_mod.uuid4().hex[:8]}"
+    eq_class_resp = await client.post(
+        "/recipes/v2/equipment-classes",
+        json={"idempotency_key": idem(), "class_code": eq_class_code, "name": "Mixer (Names Test)"},
+        headers=auth_headers(admin_token),
+    )
+    assert eq_class_resp.status_code == 200, eq_class_resp.text
+    equipment_class_id = eq_class_resp.json()["aggregate_id"]
+
+    body = _two_step_body(product_version_id, seeded["site_id"], "RCP-NAMES")
+    body["product_business_id"] = "RCPPRD-NAMES"
+    body["steps"][0]["material_requirements"] = [
+        {"material_spec_version_id": material_spec_version_id, "uom": "kg", "genealogy_required": True}
+    ]
+    body["steps"][0]["equipment_requirements"] = [
+        {"equipment_class": "mixer", "equipment_class_id": equipment_class_id, "exact_equipment_optional": True}
+    ]
+    body["steps"][0]["qc_requirements"] = [{"qc_test_specification_id": str(spec_id), "required": True}]
+
+    resp = await client.post("/recipes/v2/drafts", json=body, headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    version_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/recipes/v2/versions/{version_id}", headers=auth_headers(admin_token))).json()
+
+    assert detail["product_name"] == "Recipe Test Product"
+    assert detail["product_code"] == "RCPPRD-NAMES"
+    assert detail["site_name"] == "Test Site"
+
+    mreq = detail["material_requirements"][0]
+    assert mreq["material_spec_business_id"] == "RCPMAT-NAMES-1"
+    assert mreq["material_name"] == "Recipe Names Material Spec"
+
+    ereq = detail["equipment_requirements"][0]
+    assert ereq["equipment_class_id"] == equipment_class_id
+    assert ereq["equipment_class_name"] == "Mixer (Names Test)"
+
+    qreq = detail["qc_requirements"][0]
+    assert qreq["spec_code"] == "SPEC-RCPNAMES"
+    assert qreq["spec_version_no"] == 2
+
+    # No-backing-entity fields (tracked SPEC_GAPs) round-trip as raw ids only, never resolved.
+    assert "qualification_policy_id" in detail["steps"][0]
+    assert "signature_policy_id" in detail["steps"][0]
+    assert "exception_policy_id" in detail["steps"][0]
+    assert "area_requirement_id" in detail["sections"][0]
+    assert detail["batch_size_uom_id"] is None or isinstance(detail["batch_size_uom_id"], str)
+
+
 async def test_material_requirement_rejects_unknown_material_spec_version_id(client, seeded, db):
     async with db.begin():
         await _make_admin(db, seeded, "admin.recipe.reqs2")

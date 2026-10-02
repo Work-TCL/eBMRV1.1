@@ -59,11 +59,17 @@ const STEP_LABEL: Record<Step, string> = {
 };
 
 // Which steps the order's state admits, mirroring the command guards in app/modules/material/commands.py.
+// Two real bugs fixed here: (1) the backend only ever sets state to "started" after Start
+// (select_dispensing_source/start_dispensing/record_manual_reading/verify_dispensing/complete_dispensing
+// all grep-verified) -- "weighing"/"weighed" never occur, so ALLOWED_FROM[o.state] silently returned []
+// for every order past "source_selected", hiding every action (readings/manual reading/verify/complete)
+// from the UI entirely. (2) DSP-FR-017 multi-lot dispensing lets select_source be called again while
+// "source_selected" (a container short of the full target quantity is expected, not an error) --
+// select_dispensing_source's own docstring says so, but the UI only ever offered it from "created".
 const ALLOWED_FROM: Record<string, Step[]> = {
   created: ["select_source", "cancel"],
-  source_selected: ["start", "cancel"],
-  weighing: ["readings", "manual_reading", "verify", "cancel"],
-  weighed: ["verify", "complete", "cancel"],
+  source_selected: ["select_source", "start", "cancel"],
+  started: ["readings", "manual_reading", "verify", "complete", "cancel"],
   verified: ["complete", "cancel"],
 };
 
@@ -101,7 +107,7 @@ export default function DispensingPage() {
       header: "Tolerance",
       render: (o) => (
         <span className="tabular fs-2">
-          −{o.tolerance_low} / +{o.tolerance_high}
+          {o.tolerance_low}–{o.tolerance_high}
         </span>
       ),
     },
@@ -153,7 +159,7 @@ export default function DispensingPage() {
             fields: [
               { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
               { name: "step_id", label: "Step ID", hint: "Optional - the batch step this consumption belongs to." },
-              { name: "dispensed_container_id", label: "Dispensed container ID", required: true },
+              { name: "dispensed_container_id", label: "Dispensed container ID", type: "dispensedContainerSelect", required: true },
               { name: "material_lot_id", label: "Material lot ID", hint: "Optional, if not derivable from the container." },
               { name: "quantity", label: "Quantity", required: true },
               { name: "uom", label: "Unit of measure", type: "uomSelect", required: true },
@@ -166,7 +172,7 @@ export default function DispensingPage() {
             label: "Record a return",
             fields: [
               { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
-              { name: "dispensed_container_id", label: "Dispensed container ID", required: true },
+              { name: "dispensed_container_id", label: "Dispensed container ID", type: "dispensedContainerSelect", required: true },
               { name: "material_lot_id", label: "Material lot ID", hint: "Optional, if not derivable from the container." },
               { name: "quantity", label: "Quantity", required: true },
               { name: "uom", label: "Unit of measure", type: "uomSelect", required: true },
@@ -182,7 +188,7 @@ export default function DispensingPage() {
             about: "One command covers sample, reject, spill and approved-loss transaction types.",
             fields: [
               { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
-              { name: "dispensed_container_id", label: "Dispensed container ID", required: true },
+              { name: "dispensed_container_id", label: "Dispensed container ID", type: "dispensedContainerSelect", required: true },
               { name: "loss_type", label: "Loss type", required: true, placeholder: "e.g. SAMPLE, REJECT, SPILL, APPROVED_LOSS" },
               { name: "quantity", label: "Quantity", required: true },
               { name: "uom", label: "Unit of measure", type: "uomSelect", required: true },
@@ -267,8 +273,13 @@ function CreateOrderModal({
   const [materialId, setMaterialId] = useState("");
   const [targetQty, setTargetQty] = useState("");
   const [targetUom, setTargetUom] = useState("kg");
-  const [toleranceLow, setToleranceLow] = useState("0.01");
-  const [toleranceHigh, setToleranceHigh] = useState("0.01");
+  // Absolute acceptable min/max total weight -- NOT a delta from target (services/gxp-api's
+  // complete_dispensing checks `tolerance_low <= total_taken <= tolerance_high` directly against these
+  // stored values, confirmed by test_dispensing_flow.py's own fixtures: target 30 / low 28 / high 32,
+  // target 1.0 / low 0.9 / high 1.1). Left blank rather than defaulted -- SG-089: there is no tolerance-
+  // calculation mode anywhere in this codebase, the caller supplies the real captured bounds.
+  const [toleranceLow, setToleranceLow] = useState("");
+  const [toleranceHigh, setToleranceHigh] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -342,19 +353,28 @@ function CreateOrderModal({
             <Input type="number" step="any" value={targetQty} onChange={(e) => setTargetQty(e.target.value)} required />
           </Field>
           <UomSelect label="UOM" value={targetUom} onChange={setTargetUom} required />
-          <Field label="Tolerance −" required>
+          <Field label="Tolerance low" required hint="Absolute minimum acceptable total weight - not a delta from target.">
             <Input type="number" step="any" value={toleranceLow} onChange={(e) => setToleranceLow(e.target.value)} required />
           </Field>
-          <Field label="Tolerance +" required>
+          <Field label="Tolerance high" required hint="Absolute maximum acceptable total weight - not a delta from target.">
             <Input type="number" step="any" value={toleranceHigh} onChange={(e) => setToleranceHigh(e.target.value)} required />
           </Field>
         </div>
+        <p className="hint mb-3">
+          Tolerance low/high are the absolute acceptable range for the total weighed quantity (e.g. target{" "}
+          {targetQty || "40"} with a ±0.5 tolerance means low {targetQty ? (Number(targetQty) - 0.5).toString() : "39.5"}, high{" "}
+          {targetQty ? (Number(targetQty) + 0.5).toString() : "40.5"}) - completion is rejected outside this exact range.
+        </p>
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !batchId.trim() || !materialId || !siteId}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={busy || !batchId.trim() || !materialId || !siteId || !toleranceLow.trim() || !toleranceHigh.trim()}
+          >
             {busy ? "Creating…" : "Create order"}
           </Button>
         </div>
@@ -413,7 +433,7 @@ function OrderModal({
         </Fact>
         <Fact label="Tolerance">
           <span className="tabular">
-            −{o.tolerance_low} / +{o.tolerance_high}
+            {o.tolerance_low}–{o.tolerance_high}
           </span>
         </Fact>
         <Fact label="Record version">{o.version}</Fact>
@@ -470,6 +490,12 @@ function StepModal({
   const entities = useEntityOptions();
   const [lotId, setLotId] = useState("");
   const [containerId, setContainerId] = useState("");
+  // GET /material-lots/{lot_id}/containers -- same lot-scoped container list Inventory's own Transfer
+  // modal already reads; "Container ID" here was a raw text field with nothing to pick from.
+  const { data: lotContainers, loading: lotContainersLoading } = useApiResource<{
+    items: { id: string; container_code: string; current_quantity: string; uom: string }[];
+  }>(lotId ? `/material-lots/${encodeURIComponent(lotId)}/containers` : null);
+  const lotContainerOptions = lotContainers?.items ?? [];
   const [quantity, setQuantity] = useState("");
   const [tareValue, setTareValue] = useState("");
   const [readingValue, setReadingValue] = useState("");
@@ -477,21 +503,34 @@ function StepModal({
   const [deviceId, setDeviceId] = useState("");
   const [manualReason, setManualReason] = useState("");
   const [containerCode, setContainerCode] = useState("");
-  const [takenQuantity, setTakenQuantity] = useState("");
-  const [sourceId, setSourceId] = useState("");
+  const [takenQuantities, setTakenQuantities] = useState<Record<string, string>>({});
   const [reason, setReason] = useState("");
+
+  // SG-223: complete_dispensing needs a positive actual_taken_quantities entry for every DispensingSource
+  // this order has (DSP-FR-017 multi-lot dispensing can mean more than one) -- fetch them by their real
+  // ids rather than asking the operator to type a source UUID with nothing to copy it from.
+  const { data: orderDetail } = useApiResource<{
+    sources: { id: string; internal_lot: string; container_code: string | null; reserved_quantity: string }[];
+  }>(step === "complete" ? `/dispensing/v1/orders/${order.id}` : null);
+  const orderSources = orderDetail?.sources ?? [];
 
   const missingRequired =
     (step === "select_source" && !quantity) ||
     (step === "readings" && !readingValue) ||
     (step === "manual_reading" && (!readingValue || !manualReason)) ||
-    (step === "complete" && (!sourceId || !takenQuantity || !containerCode)) ||
+    (step === "complete" &&
+      (!containerCode ||
+        orderSources.length === 0 ||
+        orderSources.some((s) => !(Number(takenQuantities[s.id] ?? "") > 0)))) ||
     (step === "cancel" && !reason);
 
+  // tolerance_low/tolerance_high are the absolute acceptable min/max total weight (see the CreateOrderModal
+  // note above), not a delta from target_qty -- matches complete_dispensing's own
+  // `tolerance_low <= total_taken <= tolerance_high` check exactly.
   const withinTolerance =
     readingValue &&
-    Number(readingValue) >= Number(order.target_qty) - Number(order.tolerance_low) &&
-    Number(readingValue) <= Number(order.target_qty) + Number(order.tolerance_high);
+    Number(readingValue) >= Number(order.tolerance_low) &&
+    Number(readingValue) <= Number(order.tolerance_high);
 
   const extraFields = (
     <>
@@ -501,13 +540,25 @@ function StepModal({
             <EntityPickerField
               label="Material lot ID"
               value={lotId}
-              onChange={setLotId}
+              onChange={(v) => {
+                setLotId(v);
+                setContainerId("");
+              }}
               options={entities.materialLots}
               status={entities.materialLotsStatus}
               kind="material lot"
             />
-            <Field label="Container ID">
-              <Input value={containerId} onChange={(e) => setContainerId(e.target.value)} autoFocus />
+            <Field label="Container" hint={!lotId ? "Pick a material lot first." : undefined}>
+              <Select value={containerId} onChange={(e) => setContainerId(e.target.value)} disabled={!lotId || lotContainersLoading}>
+                <option value="">
+                  {!lotId ? "—" : lotContainersLoading ? "Loading containers…" : lotContainerOptions.length ? "Select a container…" : "No containers for this lot"}
+                </option>
+                {lotContainerOptions.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.container_code} - {c.current_quantity} {c.uom}
+                  </option>
+                ))}
+              </Select>
             </Field>
           </div>
           <Field label="Quantity to take" required>
@@ -527,7 +578,7 @@ function StepModal({
           <Field
             label={`Reading (${order.target_uom})`}
             required
-            hint={`Target ${order.target_qty} −${order.tolerance_low} / +${order.tolerance_high}`}
+            hint={`Target ${order.target_qty} - acceptable range ${order.tolerance_low} to ${order.tolerance_high}`}
           >
             <Input type="number" step="any" value={readingValue} onChange={(e) => setReadingValue(e.target.value)} required autoFocus />
           </Field>
@@ -569,7 +620,7 @@ function StepModal({
           <Field
             label={`Reading (${order.target_uom})`}
             required
-            hint={`Target ${order.target_qty} −${order.tolerance_low} / +${order.tolerance_high}`}
+            hint={`Target ${order.target_qty} - acceptable range ${order.tolerance_low} to ${order.tolerance_high}`}
           >
             <Input
               type="number"
@@ -618,19 +669,32 @@ function StepModal({
 
       {step === "complete" && (
         <>
-          <Field label="Dispensing source ID" required hint="The source selected earlier for this order.">
-            <Input value={sourceId} onChange={(e) => setSourceId(e.target.value)} required autoFocus />
-          </Field>
-          <Field label="Quantity actually taken" required>
-            <Input
-              type="number"
-              step="any"
-              value={takenQuantity}
-              onChange={(e) => setTakenQuantity(e.target.value)}
-              required
-            />
-          </Field>
-          <Field label="Dispensed container code" required hint="The label applied to the dispensed container.">
+          <p className="fs-2 text-muted mb-2">
+            Quantity actually taken from each source selected for this order (DSP-FR-017 - multiple sources
+            when one container didn&rsquo;t cover the full target).
+          </p>
+          {orderSources.length === 0 ? (
+            <p className="hint mb-2">Loading sources…</p>
+          ) : (
+            orderSources.map((s) => (
+              <div key={s.id} className="grid grid-cols-2 gap-4 mb-2">
+                <Field label={s.container_code ? `${s.internal_lot} - ${s.container_code}` : s.internal_lot} hint={`Selected: ${s.reserved_quantity}`}>
+                  <span className="fs-2 text-muted">source id: {s.id}</span>
+                </Field>
+                <Field label="Quantity actually taken" required>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={takenQuantities[s.id] ?? ""}
+                    onChange={(e) => setTakenQuantities((c) => ({ ...c, [s.id]: e.target.value }))}
+                    required
+                    autoFocus
+                  />
+                </Field>
+              </div>
+            ))
+          )}
+          <Field label="Dispensed container code" required hint="The label applied to the dispensed container - free text you choose, not a reference to an existing record.">
             <Input value={containerCode} onChange={(e) => setContainerCode(e.target.value)} required />
           </Field>
         </>
@@ -705,7 +769,7 @@ function StepModal({
           case "complete":
             return api.post(`${path}/complete`, {
               ...base,
-              actual_taken_quantities: { [sourceId]: takenQuantity },
+              actual_taken_quantities: Object.fromEntries(orderSources.map((s) => [s.id, takenQuantities[s.id]])),
               container_code: containerCode,
             });
           case "cancel":

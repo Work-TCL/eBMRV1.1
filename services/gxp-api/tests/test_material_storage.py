@@ -19,7 +19,7 @@ async def test_create_material_with_storage_defaults(client, seeded):
     )
     assert resp.status_code == 200, resp.text
 
-    listing = (await client.get("/materials")).json()
+    listing = (await client.get("/materials", headers=auth_headers(pe_token))).json()
     item = next(i for i in listing["items"] if i["id"] == resp.json()["aggregate_id"])
     assert item["is_in_house"] is True
     assert item["default_storage_condition"] == "cold_storage"
@@ -46,14 +46,15 @@ async def test_update_material_storage_fields(client, seeded):
     resp = await client.patch(
         f"/materials/{material_id}",
         json={
-            "idempotency_key": idem(), "material_id": material_id, "name": "Storage Test Material 3",
-            "status": "active", "is_in_house": True, "default_storage_condition": "freezer",
+            "idempotency_key": idem(), "material_id": material_id, "expected_version": 1,
+            "name": "Storage Test Material 3", "status": "active", "is_in_house": True,
+            "default_storage_condition": "freezer",
         },
         headers=auth_headers(pe_token),
     )
     assert resp.status_code == 200, resp.text
 
-    listing = (await client.get("/materials")).json()
+    listing = (await client.get("/materials", headers=auth_headers(pe_token))).json()
     item = next(i for i in listing["items"] if i["id"] == material_id)
     assert item["is_in_house"] is True
     assert item["default_storage_condition"] == "freezer"
@@ -76,7 +77,7 @@ async def test_receive_lot_with_storage_location_and_condition(client, seeded):
     assert resp.status_code == 200, resp.text
     lot_id = resp.json()["aggregate_id"]
 
-    detail = (await client.get(f"/material-lots/{lot_id}")).json()
+    detail = (await client.get(f"/material-lots/{lot_id}", headers=auth_headers(op_token))).json()
     assert detail["storage_location_id"] == location_id
     assert detail["storage_condition"] == "ambient"
 
@@ -132,7 +133,7 @@ async def test_examine_receipt_sets_lot_storage_fields(client, seeded):
     )
     assert resp.status_code == 200, resp.text
 
-    listing = (await client.get("/material-lots")).json()
+    listing = (await client.get("/material-lots", headers=auth_headers(op_token))).json()
     lot = next(i for i in listing["items"] if i["internal_lot"] == "LOT-STORAGE-7")
     assert lot["storage_location_id"] == location_id
     assert lot["storage_condition"] == "controlled_temperature"

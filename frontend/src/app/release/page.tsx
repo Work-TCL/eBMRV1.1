@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   ApiError,
@@ -9,7 +9,7 @@ import {
   formatDateTime,
   newIdempotencyKey,
 } from "@/lib/api";
-import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { useApiResource, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -72,7 +72,7 @@ interface BatchOption {
 }
 
 export default function ReleasePage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("release.view");
   const { siteId } = useSiteId();
   const [scopeType, setScopeType] = useState(SCOPE_TYPES[0]);
   const [targetId, setTargetId] = useState("");
@@ -80,6 +80,19 @@ export default function ReleasePage() {
   const [evaluating, setEvaluating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [decision, setDecision] = useState<"release" | "hold" | "reject" | null>(null);
+
+  // Deep link from the Workflow Actions bell (`?scope_id=<uuid>`) -- jumps straight to that scope's
+  // eligibility/package view instead of the batch picker. Reads window.location directly rather than
+  // next/navigation's useSearchParams(), same as recipe-master's own `?openFamily=` deep link, to avoid
+  // opting this page into a Suspense boundary it has no other reason to need.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linkedScopeId = params.get("scope_id");
+    // One-time hydration from the URL at mount, same precedented shape as lib/hooks.ts::useApiResource's
+    // own initial-load setState.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (linkedScopeId) setScopeId(linkedScopeId);
+  }, []);
 
   const { data: batchList, loading: batchesLoading, error: batchesError } = useApiResource<{ batches: BatchOption[] }>(
     scopeType === "batch" && siteId ? `/batches/v1?site_id=${siteId}` : null
@@ -108,14 +121,24 @@ export default function ReleasePage() {
         `/release/v1/scopes/${scopeType}/${targetId}`
       );
       if (existing && (existing.state === "released" || existing.state === "rejected")) {
+        // setScopeId is a no-op re-render when re-viewing an already-loaded scope (same id) — reload
+        // explicitly so a stale eligibility/package view can never linger.
         setScopeId(existing.scope_id);
+        eligibility.reload();
+        packageView.reload();
         return;
       }
       const receipt = await api.post<{ aggregate_id: string }>(
         `/release/v1/scopes/${scopeType}/${targetId}/evaluate`,
         { idempotency_key: newIdempotencyKey(), scope_type: scopeType, scope_id: targetId }
       );
+      // Same reason as above: evaluate_release_scope() bumps scope.version on the server every time,
+      // including re-evaluating an already-loaded scope — setScopeId alone won't refetch when the id is
+      // unchanged, which would leave the UI holding a stale version and every subsequent release/hold/
+      // reject decision failing with STALE_VERSION even though nothing else touched the scope.
       setScopeId(receipt.aggregate_id);
+      eligibility.reload();
+      packageView.reload();
     } catch (err) {
       setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Evaluation failed");
     } finally {

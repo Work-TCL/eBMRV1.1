@@ -31,6 +31,7 @@ from app.modules.equipment.commands import (
 )
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.policy.service import evaluate_policy
+from app.modules.recipe_master.service import list_equipment_classes
 from app.modules.signature.service import create_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
@@ -87,7 +88,10 @@ async def post_create_asset(
 
 @router.get("/assets")
 async def list_assets(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params), state: str | None = None
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    state: str | None = None,
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     stmt = select(EquipmentAsset)
     if params.q:
@@ -99,7 +103,11 @@ async def list_assets(
 
 
 @router.get("/assets/{asset_id}")
-async def get_asset(asset_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_asset(
+    asset_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     asset = await session.get(EquipmentAsset, asset_id)
     if asset is None:
         raise NotFoundError("Equipment asset not found")
@@ -150,7 +158,11 @@ async def post_create_area(
 
 
 @router.get("/areas")
-async def list_areas(session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)) -> dict:
+async def list_areas(
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     stmt = select(EquipmentArea)
     if params.q:
         stmt = stmt.where(EquipmentArea.area_code.ilike(f"%{params.q}%"))
@@ -159,11 +171,35 @@ async def list_areas(session: AsyncSession = Depends(get_session), params: PageP
 
 
 @router.get("/areas/{area_id}")
-async def get_area(area_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_area(
+    area_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     area = await session.get(EquipmentArea, area_id)
     if area is None:
         raise NotFoundError("Equipment area not found")
     return _area_dict(area)
+
+
+@router.get("/equipment-classes")
+async def list_equipment_classes_for_assets(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """SG-218: equipment-module-native read of `gxp_equipment_class` (owned by recipe_master, read via its
+    own service function per AG-02 -- never this module's tables reached into directly) so "New equipment
+    asset" can offer a class picker without requiring the recipe.view permission recipe_master's own
+    `/recipes/v2/equipment-classes` endpoint requires. Equipment Administrator (this module's own
+    asset-creating role, seed.py) never held recipe.view and has no reason to need visibility into
+    unrelated recipe/product data just to classify an asset. No RBAC gate here, matching this router's own
+    other plain read endpoints (list_assets/list_areas/get_dashboard) -- additive, non-regulated read
+    data, same precedent."""
+    classes = await list_equipment_classes(session)
+    return [
+        {"id": str(c.id), "class_code": c.class_code, "name": c.name, "description": c.description, "status": c.status}
+        for c in classes
+    ]
 
 
 @router.post("/{asset_id}/qualifications", response_model=MutationReceipt)
@@ -284,18 +320,30 @@ async def post_return_to_service(
 
 
 @router.get("/{asset_id}/eligibility")
-async def get_asset_eligibility(asset_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_asset_eligibility(
+    asset_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_eligibility(session, asset_id)
 
 
 @router.get("/{asset_id}/history")
-async def get_asset_history(asset_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_asset_history(
+    asset_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_equipment_history(session, asset_id)
 
 
 @router.get("/dashboard")
-async def get_equipment_dashboard(site_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_equipment_dashboard(
+    site_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_dashboard(session, site_id)

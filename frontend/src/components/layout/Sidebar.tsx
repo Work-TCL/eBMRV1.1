@@ -5,8 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import {
   canAuthorRules,
+  canOperateEdgeGateways,
   canOperateEvidence,
+  canOperateMachineIntegration,
   canOperateSecurity,
+  canReleaseRules,
   canReviewAudit,
   canReviewVault,
   canViewProduct,
@@ -60,6 +63,11 @@ const signedIn = (me: Me | null) => me !== null;
 /** The navigation model. Each section and item can gate itself on the signed-in user's roles.
  * Order top-to-bottom is render order. */
 const SECTIONS: NavSection[] = [
+  {
+    label: "Overview",
+    show: signedIn,
+    items: [{ href: "/home", label: "Home", icon: "home" }],
+  },
   {
     label: "Production",
     show: signedIn,
@@ -157,19 +165,27 @@ const SECTIONS: NavSection[] = [
     ],
   },
   {
+    // rules.author (draft/validate/simulate) and rules.release (release a validated rule/UOM/UOM
+    // conversion) are different grants — Admin + Process Engineer author, Admin + QA Releaser release
+    // — so gating on canAuthorRules alone hid this section from QA Releaser (found 2026-09-28, same
+    // SG-204 bug class as the Admin section below).
     label: "Engineering",
-    show: canAuthorRules,
+    show: (me) => canAuthorRules(me) || canReleaseRules(me),
     items: [{ href: "/rules", label: "Rules", icon: "gauge" }],
   },
   {
     // Section gate is broadened beyond Admin so "Platform ops" (whose Evidence operations panel is
-    // really gated on evidence.upload/evidence.download, not Admin — see canOperateEvidence) and
+    // really gated on evidence.upload/evidence.download, not Admin — see canOperateEvidence),
     // "Security" (gated on the 5 dedicated WP-10 security roles, not Admin — see canOperateSecurity,
-    // 2026-09-18 fix, same SG-204 bug class) show up for anyone who actually holds those permissions;
-    // every other item pins its own show back to Admin-only since those really are Admin-only
-    // server-side (platform.administer etc).
+    // 2026-09-18 fix, same SG-204 bug class) and "Edge gateways"/"Machine integration" (each bundles
+    // several independently-permissioned domains — Equipment Administrator, QA Releaser, Integration
+    // Administrator, QA Reviewer — found 2026-09-28, same SG-204 bug class again) show up for anyone
+    // who actually holds those permissions; every other item pins its own show back to Admin-only
+    // since those really are Admin-only server-side (platform.administer etc).
     label: "Admin",
-    show: (me) => isAdminAnywhere(me) || canOperateEvidence(me) || canOperateSecurity(me),
+    show: (me) =>
+      isAdminAnywhere(me) || canOperateEvidence(me) || canOperateSecurity(me) ||
+      canOperateEdgeGateways(me) || canOperateMachineIntegration(me),
     items: [
       { href: "/admin/company", label: "Company", icon: "building", show: isAdminAnywhere },
       { href: "/admin/sites", label: "Sites", icon: "building", show: isAdminAnywhere },
@@ -178,8 +194,8 @@ const SECTIONS: NavSection[] = [
       { href: "/admin/access-review", label: "Access review", icon: "shield-check", show: isAdminAnywhere },
       { href: "/security", label: "Security", icon: "lock", show: canOperateSecurity },
       { href: "/platform", label: "Platform ops", icon: "database" },
-      { href: "/edge", label: "Edge gateways", icon: "scan", show: isAdminAnywhere },
-      { href: "/machine-integration", label: "Machine integration", icon: "scan", show: isAdminAnywhere },
+      { href: "/edge", label: "Edge gateways", icon: "scan", show: canOperateEdgeGateways },
+      { href: "/machine-integration", label: "Machine integration", icon: "scan", show: canOperateMachineIntegration },
     ],
   },
 ];

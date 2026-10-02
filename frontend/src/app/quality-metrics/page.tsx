@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, hasPermission, formatDate, newIdempotencyKey } from "@/lib/api";
-import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { useApiResource, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -41,7 +41,7 @@ interface MetricsDashboard {
 const FREQUENCIES = ["monthly", "quarterly", "annual"];
 
 export default function QualityMetricsPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("quality_metric.dashboard.view");
   const { siteId } = useSiteId();
   const [reloadToken, setReloadToken] = useState(0);
   const [defineOpen, setDefineOpen] = useState(false);

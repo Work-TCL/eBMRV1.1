@@ -11,6 +11,7 @@ import {
   type RiskRecord,
 } from "@/lib/api";
 import { useApiResource, useMe } from "@/lib/hooks";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
 import { RiskMethodologyPickerField } from "@/components/shared/RiskMethodologyPicker";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
@@ -61,7 +62,9 @@ const ALLOWED_FROM: Record<string, Transition[]> = {
   NEW_VERSION: ["assessment"],
 };
 
-// SG-138: no Document 106 policy row for risk_record.review.
+// SG-138 resolved 2026-09-10 (seed.py SIGNATURE_POLICY_FLOOR row 97): risk_record.review is QA
+// Reviewer-signed, independent of the record owner. Goes through the shared Part 11 ceremony (challenge
+// -> password re-entry -> signed mutation) below.
 const SIGNATURE_GATED: Transition[] = ["review"];
 
 const LABEL: Record<Transition, string> = {
@@ -276,27 +279,73 @@ function TransitionModal({
             rationale,
             next_review_due_at: nextReview ? new Date(nextReview).toISOString() : null,
           });
-        case "review":
-          return api.post(`${path}/review`, {
-            ...base,
+        default:
+          // review is signature-gated and never reaches this form -- see the early return below that
+          // renders <SignatureCeremony> for it instead.
+          throw new Error(`${transition} does not submit through the plain form`);
+      }
+    });
+  }
+
+  // Document 106 section 9 row 97 (SG-138, resolved): risk_record.review is QA Reviewer-signed,
+  // independent of the record owner.
+  if (transition === "review") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="review"
+        title={`Periodic review - ${risk.risk_number}`}
+        summary="Records the periodic/triggered review outcome for this accepted risk. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & record review"
+        submitVariant="success"
+        disabled={!rationale.trim()}
+        extraFields={
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Trigger" required>
+                <Select value={triggerType} onChange={(e) => setTriggerType(e.target.value)}>
+                  <option value="periodic">periodic</option>
+                  <option value="triggered">triggered</option>
+                </Select>
+              </Field>
+              <Field label="Outcome" required>
+                <Select value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+                  <option value="still_current">still current</option>
+                  <option value="reassessment_required">reassessment required</option>
+                </Select>
+              </Field>
+            </div>
+            <Field label="Rationale" required>
+              <textarea className="input" rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
+            </Field>
+            <Field label="Next review due">
+              <Input type="date" value={nextReview} onChange={(e) => setNextReview(e.target.value)} />
+            </Field>
+          </>
+        }
+        onSign={(p) =>
+          api.post(`${path}/review`, {
+            idempotency_key: p.idempotency_key,
+            risk_id: risk.id,
+            expected_version: risk.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
             trigger_type: triggerType,
             outcome,
             rationale,
             next_review_due_at: nextReview ? new Date(nextReview).toISOString() : null,
-          });
-      }
-    });
+          })
+        }
+      />
+    );
   }
 
   return (
     <Modal open onClose={onClose} title={`${LABEL[transition]} - ${risk.risk_number}`}>
       <form onSubmit={submit}>
-        {SIGNATURE_GATED.includes(transition) && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
-          </Banner>
-        )}
-
         {transition === "assessment" && (
           <>
             <RiskMethodologyPickerField
@@ -365,31 +414,6 @@ function TransitionModal({
               <textarea className="input" rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
             </Field>
             <Field label="Next review due" hint="An accepted risk without a review date never comes back for review.">
-              <Input type="date" value={nextReview} onChange={(e) => setNextReview(e.target.value)} />
-            </Field>
-          </>
-        )}
-
-        {transition === "review" && (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Trigger" required>
-                <Select value={triggerType} onChange={(e) => setTriggerType(e.target.value)}>
-                  <option value="periodic">periodic</option>
-                  <option value="triggered">triggered</option>
-                </Select>
-              </Field>
-              <Field label="Outcome" required>
-                <Select value={outcome} onChange={(e) => setOutcome(e.target.value)}>
-                  <option value="still_current">still current</option>
-                  <option value="reassessment_required">reassessment required</option>
-                </Select>
-              </Field>
-            </div>
-            <Field label="Rationale" required>
-              <textarea className="input" rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
-            </Field>
-            <Field label="Next review due">
               <Input type="date" value={nextReview} onChange={(e) => setNextReview(e.target.value)} />
             </Field>
           </>

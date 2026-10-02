@@ -259,7 +259,7 @@ async def test_submit_and_finalize_machine_command(client, seeded, db):
     )
     assert finalize_resp.status_code == 200, finalize_resp.text
 
-    detail = (await client.get(f"/machine-integration/v1/machine-commands/{request_id}")).json()
+    detail = (await client.get(f"/machine-integration/v1/machine-commands/{request_id}", headers=auth_headers(equip_token))).json()
     assert detail["status"] == "COMPLETED"
 
 

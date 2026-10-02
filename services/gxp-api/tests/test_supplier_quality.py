@@ -89,6 +89,50 @@ async def test_create_supplier_and_site(client, seeded, db):
     assert supplier.role_type == "supplier"
 
 
+async def test_add_site_to_existing_supplier(client, seeded, db):
+    # Bug fix: Document 18 §7 only ever declared site creation embedded in CreateSupplier's own command,
+    # so there was previously no way to add a site to a supplier that already existed.
+    pe_token = await login(client, "process.engineer")
+    supplier_id = await _create_supplier(client, pe_token)
+
+    resp = await client.post(
+        f"/suppliers/{supplier_id}/sites",
+        json={
+            "idempotency_key": idem(),
+            "supplier_id": supplier_id,
+            "site": {"site_name": "Second Site", "city": "Boston", "country": "US", "manufacturer_flag": True},
+        },
+        headers=auth_headers(pe_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    sites = (
+        await db.execute(select(SupplierSite).where(SupplierSite.supplier_id == supplier_id))
+    ).scalars().all()
+    assert len(sites) == 2
+    new_site = next(s for s in sites if s.site_name == "Second Site")
+    assert new_site.city == "Boston"
+    assert new_site.manufacturer_flag is True
+    assert new_site.status == "active"
+
+
+async def test_add_site_requires_role(client, seeded):
+    op_token = await login(client, "operator1")
+    pe_token = await login(client, "process.engineer")
+    supplier_id = await _create_supplier(client, pe_token)
+
+    resp = await client.post(
+        f"/suppliers/{supplier_id}/sites",
+        json={
+            "idempotency_key": idem(), "supplier_id": supplier_id,
+            "site": {"site_name": "Unauthorized Site"},
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+
 async def test_create_manufacturer_supplier(client, seeded, db):
     """SUP-FR-002: role_type distinguishes a manufacturer identity from a commercial supplier."""
     pe_token = await login(client, "process.engineer")

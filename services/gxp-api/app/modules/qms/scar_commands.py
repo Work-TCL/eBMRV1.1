@@ -18,6 +18,7 @@ from app.modules.qms.scar_models import (
 )
 from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service
+from app.modules.supplier_quality import commands as supplier_quality_commands
 from app.mutation.errors import (
     EffectivenessRequiredError,
     InvalidTransitionError,
@@ -545,5 +546,29 @@ async def close_scar(session: AsyncSession, cmd: CloseScarCommand, actor_user_id
             session, event_type="SupplierSourceSuspended", aggregate_type="supplier_quality_case", aggregate_id=case.id,
             aggregate_version=case.version, payload={"case_id": str(case.id), "supplier_id": str(case.supplier_id)},
             correlation_id=receipt.correlation_id,
+        )
+    # SG-097: propagate the decision to the owning supplier_quality module's own Supplier.status, so the
+    # existing RCV-FR-005 receipt-examination check (material/commands.py) actually gates a subsequent
+    # receipt from this source -- same cross-module owning-command call precedent as
+    # material/commands.py's call into qms_commands.create_deviation() (AG-06).
+    if cmd.source_status_decision in ("suspend", "reinstate"):
+        suspend_fn = (
+            supplier_quality_commands.suspend_supplier
+            if cmd.source_status_decision == "suspend"
+            else supplier_quality_commands.reinstate_supplier
+        )
+        suspend_cmd_cls = (
+            supplier_quality_commands.SuspendSupplierCommand
+            if cmd.source_status_decision == "suspend"
+            else supplier_quality_commands.ReinstateSupplierCommand
+        )
+        await suspend_fn(
+            session,
+            suspend_cmd_cls(
+                idempotency_key=f"{cmd.idempotency_key}:supplier-status",
+                supplier_id=case.supplier_id,
+                reason=f"SCAR {scar.scar_number} closed ({cmd.source_status_decision}): {cmd.conclusion}",
+            ),
+            actor_user_id,
         )
     return receipt

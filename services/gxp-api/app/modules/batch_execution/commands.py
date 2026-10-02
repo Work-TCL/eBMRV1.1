@@ -4,10 +4,15 @@ results/complete (SG-047 partial resolution), step-scoped hold/resume, and produ
 2026-09-09, project-owner-directed, SG-047/SG-048 further partial resolution). `app/modules/batch` (the
 legacy Batch-facing stub) is untouched -- this module is net-new and additive (see migration
 f264272f2f0b's docstring). Still deferred: gxp_step_evidence_link (SG-047), and everything else needing
-infrastructure this codebase does not have yet (Temporal, Material Service consumption/reservation,
-Equipment eligibility wiring -- both blocked on SG-045's still-open recipe_material_requirement/
-recipe_equipment_requirement schema decision, IAM qualification schema, exception/rework/branch entities)
--- SG-048.
+infrastructure this codebase does not have yet (Temporal, IAM qualification schema, exception/rework/
+branch entities) -- SG-048.
+
+SG-048 #012/#013 (2026-09-22): equipment eligibility (`_enforce_step_equipment`, at `start_step`) and
+material eligibility (`_enforce_step_material`, at `complete_step`) are both now wired, once SG-045's
+`recipe_material_requirement`/`recipe_equipment_requirement` schema question resolved (2026-09-11). See
+each function's own docstring for scope -- material eligibility is deliberately narrower than a full
+Material Service eligibility/reservation/dispensing/consumption gate (existence + material identity only,
+not step-exact attribution or quantity/UOM tolerance).
 """
 
 import base64
@@ -33,7 +38,7 @@ from app.modules.batch_execution.models import (
     StepResult,
     StepResultCorrection,
 )
-from app.modules.batch_execution.record_service import build_batch_record
+from app.modules.batch_execution.record_service import build_batch_record, build_full_batch_record
 from app.modules.equipment import commands as equipment_commands
 from app.modules.equipment.models import EquipmentAsset, EquipmentUseLog
 from app.modules.evidence.commands import (
@@ -44,6 +49,8 @@ from app.modules.evidence.commands import (
 )
 from app.modules.genealogy import service as genealogy_service
 from app.modules.iam.models import Qualification, User
+from app.modules.material.models import MaterialConsumption, MaterialLot
+from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.qms import commands as qms_commands
 from app.modules.policy.service import effective_role_names, evaluate_policy
 from app.modules.product_master.models import ProductVersion
@@ -51,6 +58,7 @@ from app.modules.recipe_master import service as recipe_master_service
 from app.modules.recipe_master.models import (
     RecipeEquipmentRequirement,
     RecipeEvidenceRequirement,
+    RecipeMaterialRequirement,
     RecipeParameter,
     RecipeStepQcRequirement,
 )
@@ -852,6 +860,99 @@ async def _required_qc_specs_for_step(
     return [r for r in graph["qc_requirements"] if r.step_id == recipe_step_id and r.required]
 
 
+async def _recipe_material_requirements_for_step(
+    session: AsyncSession, batch: Batch, step: BatchStep
+) -> list[RecipeMaterialRequirement]:
+    """SG-045/SG-048 #012 (BAT-FR-012). Same lookup shape as `_recipe_parameters_for_step`/
+    `_recipe_evidence_requirements_for_step`, against the recipe's declared
+    `gxp_recipe_material_requirement` rows instead. Unlike equipment (`BatchStepEquipmentRequirement`,
+    frozen at `issue_batch`), this reads live via `batch.recipe_version_id` -- the recipe VERSION is
+    itself an immutable released aggregate (VLT-FR-001), so there is nothing to freeze against; this
+    matches the parameters/evidence/QC precedent, not the equipment one."""
+    graph = await recipe_master_service.get_graph(session, batch.recipe_version_id)
+    code_by_step_id = {s.id: s.stable_step_code for s in graph["steps"]}
+    step_id_by_code = {code: sid for sid, code in code_by_step_id.items()}
+    recipe_step_id = step_id_by_code.get(step.recipe_step_code)
+    return [m for m in graph["material_requirements"] if m.step_id == recipe_step_id]
+
+
+async def _enforce_step_material(session: AsyncSession, *, batch: Batch, step: BatchStep) -> None:
+    """SG-045/SG-048 #012 (BAT-FR-012, "Material Service eligibility... commands"), the material half of
+    the equipment fix at `_enforce_step_equipment` -- deferred together with it until SG-045's schema
+    question resolved (2026-09-11, `RecipeMaterialRequirement` DDL-ready) and SG-097 clarified the
+    supplier-eligibility half is a separate, narrower concern (RCV-FR-005, already enforced at receipt).
+
+    Scope, deliberately narrower than a full eligibility/reservation/dispensing/consumption gate:
+    - **Existence, not step attribution.** `MaterialConsumption.step_id` is optional and, as of this
+      change, not set by any existing caller (dispensing UI, tests, demo data) -- requiring an exact
+      match here would fail every batch in this codebase today. This checks that a matching consumption
+      exists anywhere on the *batch*, not attributed to this exact step; a known, documented limitation,
+      not a silent gap (same class of narrowing SG-097's own resolution note used for its receipt-gate
+      half).
+    - **Identity, not quantity/tolerance.** Matches on the underlying `Material` (via the requirement's
+      `material_spec_version_id` -> `MaterialSpecificationVersion.material_id`, with the alternative
+      spec's material when `substitution_allowed`), not `target_value`/`min_value`/`max_value`/`uom`.
+      Verifying quantity would require cross-UOM conversion this codebase does not have yet (SG-077) --
+      inventing one here would be exactly the kind of guessed regulated-calculation behaviour CLAUDE.md
+      §4 forbids, not an ordinary engineering decision.
+    - **Required only.** `RecipeMaterialRequirement` has no `required` flag of its own (unlike
+      `RecipeStepQcRequirement`) -- every declared row is required, same as parameters/evidence already
+      treat their own requirement rows here.
+
+    Raises `ValidationFailedError`, the same generic reuse `_recipe_evidence_requirements_for_step`'s own
+    caller uses -- Document 11 Section 7's named error vocabulary has no dedicated material-completeness
+    code.
+    """
+    requirements = await _recipe_material_requirements_for_step(session, batch, step)
+    if not requirements:
+        return
+
+    spec_version_ids = {r.material_spec_version_id for r in requirements}
+    spec_version_ids |= {
+        r.alternative_material_spec_version_id
+        for r in requirements
+        if r.substitution_allowed and r.alternative_material_spec_version_id is not None
+    }
+    spec_versions = (
+        await session.execute(
+            select(MaterialSpecificationVersion).where(MaterialSpecificationVersion.id.in_(spec_version_ids))
+        )
+    ).scalars().all()
+    material_id_by_spec_version_id = {sv.id: sv.material_id for sv in spec_versions}
+
+    consumed_lot_ids = {
+        row[0]
+        for row in (
+            await session.execute(
+                select(MaterialConsumption.material_lot_id).where(MaterialConsumption.batch_id == batch.id)
+            )
+        ).all()
+        if row[0] is not None
+    }
+    consumed_material_ids: set[uuid.UUID] = set()
+    if consumed_lot_ids:
+        consumed_material_ids = set(
+            (
+                await session.execute(select(MaterialLot.material_id).where(MaterialLot.id.in_(consumed_lot_ids)))
+            ).scalars().all()
+        )
+
+    missing: list[str] = []
+    for req in requirements:
+        allowed_material_ids = {material_id_by_spec_version_id.get(req.material_spec_version_id)}
+        if req.substitution_allowed and req.alternative_material_spec_version_id is not None:
+            allowed_material_ids.add(material_id_by_spec_version_id.get(req.alternative_material_spec_version_id))
+        allowed_material_ids.discard(None)
+        if not allowed_material_ids or not (allowed_material_ids & consumed_material_ids):
+            missing.append(str(req.material_spec_version_id))
+
+    if missing:
+        raise ValidationFailedError(
+            "Required material has not been consumed for this batch",
+            missing_material_spec_version_ids=sorted(missing),
+        )
+
+
 # BAT-FR-011, SG-048 #011 partial resolution: a human may tag a result 'device_transcribed' -- they read
 # it off a device/instrument and are keying it in, distinct from their own direct observation ('manual').
 # Both are still human-entered; true automated device/edge ingestion (registered source identity,
@@ -1228,6 +1329,12 @@ async def complete_step(session: AsyncSession, cmd: CompleteStepCommand, actor_u
                 "Required in-process QC test(s) have not reached a passing result",
                 missing_qc_test_specification_ids=missing_qc,
             )
+
+    # SG-045/SG-048 #012 (BAT-FR-012): every material the recipe declares required for this step must
+    # already have a matching consumption recorded for the batch. See _enforce_step_material's own
+    # docstring for the deliberate scope narrowing (existence/identity, not step-attribution or
+    # quantity/UOM tolerance).
+    await _enforce_step_material(session, batch=batch, step=step)
 
     signature_id = await _require_step_signature(
         session, step=step, action="complete", challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
@@ -2033,6 +2140,13 @@ class GenerateBatchRecordPdfCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
     idempotency_key: str
     batch_id: uuid.UUID
+    # SG-137 (2026-09-22, project-owner-directed): the batch-record PDF export is the SG-137 deliverable
+    # (final batch record export) and is signed accordingly -- QA Releaser, RBAC-enforced at the signature
+    # layer via enforce_signer_policy (no independence requirement: unlike a disposition decision, there is
+    # no "owner" of a batch record for the signer to be independent of).
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+    reason: str | None = None
 
 
 def _batch_record_pdf_bytes(batch_id: uuid.UUID, record: dict) -> bytes:
@@ -2055,7 +2169,7 @@ def _batch_record_pdf_bytes(batch_id: uuid.UUID, record: dict) -> bytes:
         (
             "Materials consumed",
             ["Internal lot", "Quantity", "UOM", "Issued at"],
-            [[m["internal_lot"], m["quantity"], m["uom"], m["issued_at"]] for m in record["materials_consumed"]],
+            [[m["internal_lot"] or "", m["quantity"], m["uom"], m["issued_at"]] for m in record["materials_consumed"]],
         ),
         (
             "Equipment used",
@@ -2084,9 +2198,70 @@ def _batch_record_pdf_bytes(batch_id: uuid.UUID, record: dict) -> bytes:
             ],
         ),
     ]
+    # Full-parity sections (SG-137 rebuild) -- present only when build_full_batch_record() supplied them;
+    # falls back to empty tables if ever called with build_batch_record()'s narrower dict instead.
+    sections += [
+        (
+            "Step instructions",
+            ["Step code", "Section", "Instruction", "Critical"],
+            [
+                [s["recipe_step_code"], s["section_name"] or "", s["instruction_text"] or "", "Yes" if s["is_critical"] else "No"]
+                for s in record.get("step_instructions", [])
+            ],
+        ),
+        (
+            "Evidence links",
+            ["Step code", "Requirement", "SHA-256", "Linked by", "Linked at"],
+            [
+                [e["recipe_step_code"], e["requirement_code"] or "", e["evidence_sha256"], e["linked_by_username"] or "", e["created_at"] or ""]
+                for e in record.get("evidence_links", [])
+            ],
+        ),
+        (
+            "Comments",
+            ["Step code", "Comment", "By", "At"],
+            [
+                [c["recipe_step_code"], c["comment_text"], c["created_by_username"] or "", c["created_at"] or ""]
+                for c in record.get("comments", [])
+            ],
+        ),
+        (
+            "Handover history",
+            ["Step code", "From", "To", "Reason", "At"],
+            [
+                [h["recipe_step_code"], h["from_username"] or "", h["to_username"] or "", h["reason"] or "", h["created_at"] or ""]
+                for h in record.get("handovers", [])
+            ],
+        ),
+        (
+            "Step holds (all)",
+            ["Step code", "Held at", "Held by", "Released at", "Released by", "Release reason"],
+            [
+                [
+                    h["recipe_step_code"], h["held_at"] or "", h["held_by_username"] or "",
+                    h["released_at"] or "still on hold", h["released_by_username"] or "", h["release_reason"] or "",
+                ]
+                for h in record.get("holds", [])
+            ],
+        ),
+        (
+            "Result corrections",
+            ["Step code", "Parameter", "Requested by", "Reason", "Status", "Approved by"],
+            [
+                [
+                    c["recipe_step_code"], c["parameter_code"] or "", c["requested_by_username"] or "",
+                    c["reason_text"], c["status"], c["approved_by_username"] or "",
+                ]
+                for c in record.get("corrections", [])
+            ],
+        ),
+    ]
     return render_pdf_report(
         title=f"Batch Record — {batch['batch_number']}",
-        subtitle=f"Batch {batch_id} — state: {batch['state']} — target {batch['target_qty']} {batch['target_uom']}",
+        subtitle=(
+            f"Batch {batch_id} — state: {batch['state']} — target {batch['target_qty']} {batch['target_uom']}"
+            + (f" — {batch['product_name']} / {batch['recipe_code']} v{batch['recipe_version_no']}" if batch.get("product_name") else "")
+        ),
         sections=sections,
     )
 
@@ -2103,7 +2278,27 @@ async def generate_batch_record_pdf(
     if batch is None:
         raise NotFoundError("Batch not found")
 
-    record = await build_batch_record(session, cmd.batch_id)
+    # SG-137: resolved before any work is done so a rejected/missing signature produces no PDF/evidence.
+    policy = await signature_service.resolve_signature_requirement(session, record_type="batch", action="record_export")
+    signature_id = None
+    if policy.signature_required:
+        await signature_service.enforce_signer_policy(
+            session, policy=policy, actor_user_id=actor_user_id, site_id=batch.site_id,
+            action_label="batch.record_export",
+        )
+        if cmd.challenge_id is None or not cmd.reauth_password:
+            raise MissingSignatureError("Batch record export requires a signature", required_meaning=policy.meaning)
+        actor = await session.get(User, actor_user_id)
+        if actor is None or not verify_password(cmd.reauth_password, actor.password_hash):
+            raise MissingSignatureError("Fresh step-up authentication failed")
+        challenge = await signature_service.consume_challenge(
+            session, challenge_id=cmd.challenge_id, user_id=actor_user_id,
+            record_version=batch.version, record_hash=_batch_record_hash(batch),
+        )
+        signature = await signature_service.sign(session, challenge=challenge, auth_context={"method": "password_reauth"})
+        signature_id = signature.id
+
+    record = await build_full_batch_record(session, cmd.batch_id)
     pdf_bytes = _batch_record_pdf_bytes(cmd.batch_id, record)
 
     staged = await stage_evidence_upload(
@@ -2126,6 +2321,18 @@ async def generate_batch_record_pdf(
         actor_user_id,
     )
 
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=batch.site_id, aggregate_type="batch", aggregate_id=batch.id,
+        aggregate_version=batch.version, action="Approved", actor_id=actor_user_id, correlation_id=correlation_id,
+        reason=cmd.reason, old_value=None, new_value={"batch_record_evidence_id": str(finalized.aggregate_id)},
+        signature_id=signature_id,
+    )
+    await write_outbox_event(
+        session, event_type="BatchRecordExported", aggregate_type="batch", aggregate_id=batch.id,
+        aggregate_version=batch.version, payload={"id": str(batch.id), "evidence_id": str(finalized.aggregate_id)},
+        correlation_id=correlation_id,
+    )
     receipt = await record_command_receipt(
         session, site_id=batch.site_id, command_type="GenerateBatchRecordPdf", aggregate_type="batch",
         aggregate_id=batch.id, expected_version=batch.version, resulting_version=batch.version,
@@ -2134,5 +2341,5 @@ async def generate_batch_record_pdf(
     )
     return MutationReceipt(
         command_id=receipt.id, aggregate_id=finalized.aggregate_id, resulting_version=finalized.resulting_version,
-        audit_event_id=finalized.audit_event_id, correlation_id=finalized.correlation_id,
+        audit_event_id=audit_event.id, signature_id=signature_id, correlation_id=correlation_id,
     )

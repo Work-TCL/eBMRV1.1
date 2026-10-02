@@ -76,6 +76,11 @@ export interface RecipeStep {
   // SG-048 #018, visibility-only slice — optional; unset means no "overdue hold" flag is ever computed
   // for this step at execution time.
   expected_hold_duration_minutes: number | null;
+  // No backing entity anywhere in the codebase (tracked SPEC_GAP) — raw technical values only, never
+  // resolved to a name. Display as a technical id, not a picker/label.
+  qualification_policy_id: string | null;
+  signature_policy_id: string | null;
+  exception_policy_id: string | null;
 }
 
 export interface RecipeSection {
@@ -85,6 +90,8 @@ export interface RecipeSection {
   sequence: number;
   parallel_group: string | null;
   expected_duration_minutes: number | null;
+  // No backing entity anywhere in the codebase (tracked SPEC_GAP) — raw technical value only.
+  area_requirement_id: string | null;
 }
 
 export interface RecipeDependency {
@@ -101,6 +108,7 @@ export interface RecipeParameter {
   parameter_code: string;
   data_type: string;
   uom: string | null;
+  uom_id: string | null;
   source_type: string;
   target_value: string | null;
   min_value: string | null;
@@ -145,6 +153,7 @@ export interface RecipeEquipmentRequirement {
   step_id: string;
   equipment_class: string;
   equipment_class_id: string | null;
+  equipment_class_name: string | null;
   exact_equipment_optional: boolean;
   require_current_calibration: boolean;
   require_current_qualification: boolean;
@@ -155,10 +164,13 @@ export interface RecipeMaterialRequirement {
   id: string;
   step_id: string;
   material_spec_version_id: string;
+  material_spec_business_id: string | null;
+  material_name: string | null;
   target_value: string | null;
   min_value: string | null;
   max_value: string | null;
   uom: string | null;
+  uom_id: string | null;
   alternative_material_spec_version_id: string | null;
   substitution_allowed: boolean;
   consume_mode: string | null;
@@ -170,6 +182,8 @@ export interface RecipeStepQcRequirement {
   id: string;
   step_id: string;
   qc_test_specification_id: string;
+  spec_code: string | null;
+  spec_version_no: number | null;
   required: boolean;
 }
 
@@ -178,10 +192,16 @@ export interface RecipeVersion {
   recipe_family_id: string;
   version_no: number;
   product_version_id: string;
+  product_code: string | null;
+  product_name: string | null;
+  site_id: string;
+  site_code: string | null;
+  site_name: string | null;
   lifecycle_state: string;
   superseded_by_version_id: string | null;
   batch_size_value: string | null;
   batch_size_uom: string | null;
+  batch_size_uom_id: string | null;
   released_vault_object_id: string | null;
   version_hash: string | null;
   version: number;
@@ -617,8 +637,10 @@ export function useRoleAndRuleOptions() {
   // recipe_master/router.py::get_equipment_classes / _equipment_class_dict.
   const { data: equipmentClassOptions } = useApiResource<EquipmentClassOption[]>("/recipes/v2/equipment-classes");
   // Client requirement #12: released in-process QC test specifications, for the step editor's
-  // "required in-process QC test" picker.
-  const { data: qcSpecs } = useApiResource<{ items: QcSpecOption[] }>("/qc/v1/specifications?page_size=200");
+  // "required in-process QC test" picker. page_size capped at 100 by the shared PageParams dependency
+  // (app/core/pagination.py) -- 200 silently 400'd every call (VALIDATION_FAILED), leaving this dropdown
+  // permanently empty regardless of how many specs existed.
+  const { data: qcSpecs } = useApiResource<{ items: QcSpecOption[] }>("/qc/v1/specifications?page_size=100");
   const qcSpecOptions = useMemo(
     () => (qcSpecs?.items ?? []).filter((s) => s.scope_type === "in_process" && s.status === "released"),
     [qcSpecs]

@@ -4,17 +4,17 @@ and the router.
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.batch_execution.models import Batch
+from app.modules.batch_execution.models import Batch, BatchStep
 from app.modules.equipment import commands as equipment_commands
 from app.modules.equipment.em_models import EmSampleOrReading
 from app.modules.equipment.models import EquipmentUseLog
-from app.modules.material.models import MaterialIssue, MaterialLot
+from app.modules.material.models import MaterialConsumption, MaterialLot
 from app.modules.packaging.models import PackagingRun
 from app.modules.qa_review import service as qa_review_service
-from app.modules.qc.models import OosRecord, QcResult, QcSample, QcTestOrder
+from app.modules.qc.models import OosRecord, OotRecord, QcResult, QcSample, QcTestOrder
 from app.modules.qms.capa_models import CapaRecord
 from app.modules.qms.models import DeviationRecord
 from app.modules.release.models import ReleaseDecision, ReleaseEvaluation, ReleaseScope
@@ -100,8 +100,12 @@ def _warning(code: str, source_type: str, source_id: str | None, message_key: st
 
 
 async def _qc_signals(session: AsyncSession, batch_id: uuid.UUID) -> tuple[list[dict], list[dict]]:
-    """QC results attributed to this batch via `QcSample.source_type="batch"` (the same 4-source_type
-    polymorphic pattern `DeviationRecord.source_type`/`source_id` below already uses), restricted to
+    """QC results attributed to this batch via `QcSample.source_type in ("batch", "batch_step")` -- a
+    step-level sample's `source_id` points at its `gxp_batch_step` row, not the batch directly, so a
+    blocking order/OOT sourced that way (the normal in-process-testing path) must also be joined through
+    `BatchStep.batch_id` or it is invisible here even though step completion already gated on it once;
+    a later signed correction/retest (`approve_result_correction`) can still flip a step-level result to
+    a failure after its step is long complete, and that must still block release. Restricted to
     `QcTestOrder.blocking` orders (dual-written from `QcTestDefinition.release_blocking` at order-creation
     time -- app/modules/qc/commands.py:744 -- so reading the order's own flag avoids a second join). Only
     the most recently recorded result per test order counts, since `qc_result` is append-only (AG-08) and
@@ -118,7 +122,17 @@ async def _qc_signals(session: AsyncSession, batch_id: uuid.UUID) -> tuple[list[
         await session.execute(
             select(QcTestOrder.id)
             .join(QcSample, QcSample.id == QcTestOrder.sample_id)
-            .where(QcSample.source_type == "batch", QcSample.source_id == batch_id, QcTestOrder.blocking.is_(True))
+            .outerjoin(
+                BatchStep,
+                and_(QcSample.source_type == "batch_step", QcSample.source_id == BatchStep.id),
+            )
+            .where(
+                or_(
+                    and_(QcSample.source_type == "batch", QcSample.source_id == batch_id),
+                    and_(QcSample.source_type == "batch_step", BatchStep.batch_id == batch_id),
+                ),
+                QcTestOrder.blocking.is_(True),
+            )
         )
     ).scalars().all()
     if not order_ids:
@@ -170,21 +184,54 @@ async def _qc_signals(session: AsyncSession, batch_id: uuid.UUID) -> tuple[list[
         blockers.append(
             _blocker("OPEN_OOS", "CRITICAL", "oos_record", str(oos.id), "release.blocker.open_oos", "RESOLVE_OOS")
         )
+
+    # SG-074 Task 3 Part A (2026-09-23): OotRecord has no batch_id column of its own (unlike OosRecord) --
+    # join source_result_id -> qc_result -> test_order_id -> qc_test_order -> sample_id -> qc_sample where
+    # source_type in ("batch", "batch_step"), the same attribution chain used for order_ids above
+    # (step-level sampling also needs BatchStep.batch_id to reach the batch). OotRecord only ever has two
+    # states ("open"/"closed" -- app/modules/qc/commands.py's close_oot()), so "not closed" is the complete
+    # non-terminal set, mirroring OOS's own `state != "closed"` check exactly.
+    open_oot = (
+        await session.execute(
+            select(OotRecord)
+            .join(QcResult, QcResult.id == OotRecord.source_result_id)
+            .join(QcTestOrder, QcTestOrder.id == QcResult.test_order_id)
+            .join(QcSample, QcSample.id == QcTestOrder.sample_id)
+            .outerjoin(
+                BatchStep,
+                and_(QcSample.source_type == "batch_step", QcSample.source_id == BatchStep.id),
+            )
+            .where(
+                or_(
+                    and_(QcSample.source_type == "batch", QcSample.source_id == batch_id),
+                    and_(QcSample.source_type == "batch_step", BatchStep.batch_id == batch_id),
+                ),
+                OotRecord.state != "closed",
+            )
+        )
+    ).scalars().all()
+    for oot in open_oot:
+        blockers.append(
+            _blocker("OPEN_OOT", "CRITICAL", "oot_record", str(oot.id), "release.blocker.open_oot", "RESOLVE_OOT")
+        )
     return blockers, warnings
 
 
 async def _material_signals(session: AsyncSession, batch_id: uuid.UUID) -> list[dict]:
-    """Materials consumed by this batch (`MaterialIssue.batch_id`, "the batch's material genealogy trace
-    for Phase 1" per material/models.py:145) whose lot is not in a released-for-use state
-    (`MaterialLot.status`) block -- `quarantine`/`sampling`/`testing`/`qc_disposition_pending`/
-    `retest_due`/`rejected`/`expired` all mean the lot was never cleared, or was cleared and then
-    withdrawn; only `released`/`consumed` mean it legitimately went into this batch (2026-09-19,
-    project-owner-directed)."""
+    """Materials consumed by this batch whose lot is not in a released-for-use state (`MaterialLot.status`)
+    block -- `quarantine`/`sampling`/`testing`/`qc_disposition_pending`/`retest_due`/`rejected`/`expired`
+    all mean the lot was never cleared, or was cleared and then withdrawn; only `released`/`consumed` mean
+    it legitimately went into this batch (2026-09-19, project-owner-directed).
+
+    2026-09-22: repointed from the retired `MaterialIssue` (`issue_material_to_batch`, never called by any
+    frontend page and superseded by the real Dispensing -> Consumption flow) to `MaterialConsumption`,
+    the table that flow actually writes -- this check would otherwise have gone silently blind the moment
+    `issue_material_to_batch` stopped being the thing that recorded batch material use."""
     lots = (
         await session.execute(
             select(MaterialLot)
-            .join(MaterialIssue, MaterialIssue.material_lot_id == MaterialLot.id)
-            .where(MaterialIssue.batch_id == batch_id, MaterialLot.status.notin_(("released", "consumed")))
+            .join(MaterialConsumption, MaterialConsumption.material_lot_id == MaterialLot.id)
+            .where(MaterialConsumption.batch_id == batch_id, MaterialLot.status.notin_(("released", "consumed")))
             .distinct()
         )
     ).scalars().all()

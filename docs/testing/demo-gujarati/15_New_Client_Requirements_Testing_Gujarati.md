@@ -283,6 +283,10 @@ result **pass** ના આવે.
 
 ## ૧૫.૧૦ — Batch Record View + PDF (Requirement #૧૧)
 
+> ⚠️ **Update (2026-09-22):** નીચે ના steps ૪-૭ હવે જૂના છે — "Generate PDF" હવે સીધું PDF નથી
+> બનાવતું, હવે **QA Releaser signature જરૂરી** છે (SG-137). સાચા updated steps માટે જુઓ
+> [doc #૧૬, section ૧૬.૪](16_Gap_Audit_Fixes_Testing_Gujarati.md#૧૬૪--batch-record-pdf-હવે-qa-releaser-sign-કરે-છે-પહેલાં-unsigned-હતું).
+
 **શું બદલાયું:** દરેક batch ના execution modal માં નવું **"Batch record"** button ઉમેરાયું છે — જે
 Steps/Results, Material consumption, Equipment used, Deviations, QC results અને Signature/Status
 history — બધું એક જ જગ્યાએ બતાવે છે, અને **"Generate PDF"** થી controlled PDF બનાવીને evidence તરીકે

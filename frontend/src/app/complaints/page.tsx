@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, hasPermission, formatDate, newIdempotencyKey, type Complaint } from "@/lib/api";
-import { useMe, useSiteId } from "@/lib/hooks";
+import { useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { ProductVersionPickerField } from "@/components/shared/ProductVersionPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
@@ -27,7 +27,7 @@ const COMPLAINT_STATES = [
 const SOURCE_CHANNELS = ["oral", "written", "electronic"];
 
 export default function ComplaintsPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("complaint.view");
   const [createOpen, setCreateOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 

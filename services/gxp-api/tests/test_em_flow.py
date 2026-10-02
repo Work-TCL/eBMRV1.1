@@ -3,7 +3,21 @@
 cross-module payoff). Mirrors tests/test_cleaning_flow.py's discipline.
 """
 
+import uuid
+
 from tests.conftest import auth_headers, idem, login
+
+
+async def _create_equipment_class(client):
+    # equipment_class_id is now required/validated at creation (bug fix) -- a real class row is needed.
+    pe_token = await login(client, "process.engineer")
+    resp = await client.post(
+        "/recipes/v2/equipment-classes",
+        json={"idempotency_key": idem(), "class_code": f"CLASS-{uuid.uuid4().hex[:12]}", "name": "Test class"},
+        headers=auth_headers(pe_token),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["aggregate_id"]
 
 
 async def _create_task(client, token, site_id, program_id, location_id):
@@ -86,13 +100,13 @@ async def test_full_sample_collect_result_review_flow(client, seeded):
 
     resp = await _record_result(client, em_token, sample_id, expected_version=2, alert_action_status="normal")
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/em/v1/results/{sample_id}")).json()
+    detail = (await client.get(f"/em/v1/results/{sample_id}", headers=auth_headers(qa_token))).json()
     assert detail["state"] == "RESULT_PENDING"
     assert detail["alert_action_status"] == "normal"
 
     resp = await _review(client, qa_token, sample_id, expected_version=3)
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/em/v1/results/{sample_id}")).json()
+    detail = (await client.get(f"/em/v1/results/{sample_id}", headers=auth_headers(qa_token))).json()
     assert detail["state"] == "REVIEWED"
 
 
@@ -117,17 +131,17 @@ async def test_action_excursion_auto_creates_excursion_and_blocks_area_readiness
     location = seeded["em_locations"]["EM-LOC-GRADE-A-01"]
     area_id = str(seeded["areas"]["AREA-GRADE-A"].id)
 
-    readiness = (await client.get(f"/em/v1/areas/{area_id}/readiness")).json()
+    readiness = (await client.get(f"/em/v1/areas/{area_id}/readiness", headers=auth_headers(em_token))).json()
     assert readiness["status"] == "READY"
 
     sample_id = await _create_task(client, em_token, site_id, program_id, str(location.id))
     await _collect(client, em_token, sample_id, expected_version=1)
     resp = await _record_result(client, em_token, sample_id, expected_version=2, alert_action_status="action_excursion", result={"cfu": 999})
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/em/v1/results/{sample_id}")).json()
+    detail = (await client.get(f"/em/v1/results/{sample_id}", headers=auth_headers(em_token))).json()
     assert detail["requires_deviation"] is True
 
-    readiness = (await client.get(f"/em/v1/areas/{area_id}/readiness")).json()
+    readiness = (await client.get(f"/em/v1/areas/{area_id}/readiness", headers=auth_headers(em_token))).json()
     assert readiness["status"] == "HOLD"
     assert readiness["ready"] is False
     assert readiness["open_excursion_count"] == 1
@@ -185,9 +199,13 @@ async def test_collect_rejects_ineligible_instrument(client, seeded):
     program_id = str(seeded["em_program"].id)
     location_id = str(seeded["em_locations"]["EM-LOC-GRADE-A-01"].id)
 
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": idem(), "site_id": str(site_id), "equipment_code": "EQP-EM-UNQUAL"},
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "equipment_code": "EQP-EM-UNQUAL",
+        },
         headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
@@ -214,9 +232,13 @@ async def test_collect_accepts_eligible_instrument_and_captures_media_reagent(cl
     program_id = str(seeded["em_program"].id)
     location_id = str(seeded["em_locations"]["EM-LOC-GRADE-A-01"].id)
 
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": idem(), "site_id": str(site_id), "equipment_code": "EQP-EM-QUAL"},
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "equipment_code": "EQP-EM-QUAL",
+        },
         headers=auth_headers(admin_token),
     )
     instrument_id = resp.json()["aggregate_id"]
@@ -250,7 +272,7 @@ async def test_collect_accepts_eligible_instrument_and_captures_media_reagent(cl
         headers=auth_headers(em_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/em/v1/results/{sample_id}")).json()
+    detail = (await client.get(f"/em/v1/results/{sample_id}", headers=auth_headers(cal_token))).json()
     assert detail["media_reagent_ref"] == media_reagent_ref
 
 
@@ -274,7 +296,7 @@ async def test_incubation_conditions_captured_on_result(client, seeded):
         headers=auth_headers(em_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/em/v1/results/{sample_id}")).json()
+    detail = (await client.get(f"/em/v1/results/{sample_id}", headers=auth_headers(em_token))).json()
     assert detail["incubation_conditions"] == incubation_conditions
 
 

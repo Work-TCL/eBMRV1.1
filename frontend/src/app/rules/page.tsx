@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, newIdempotencyKey } from "@/lib/api";
-import { useApiResource } from "@/lib/hooks";
+import { useApiResource, useRequirePermission } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -50,6 +50,12 @@ const exprBoxStyle: React.CSSProperties = {
 };
 
 export default function RulesPage() {
+  // rules.author (draft/validate/simulate) and rules.release (release a validated rule/UOM/UOM
+  // conversion) are held by different roles (Admin + Process Engineer author; Admin + QA Releaser
+  // release) -- gating on rules.author alone structurally blocked QA Releaser from ever reaching this
+  // page to use the Release buttons it already has a backend grant for (found 2026-09-28, same
+  // structural-RBAC-block class as canOperateMachineIntegration/canOperateEdgeGateways in lib/api.ts).
+  useRequirePermission(["rules.author", "rules.release"]);
   const [draftOpen, setDraftOpen] = useState(false);
   const [selected, setSelected] = useState<RuleDefinition | null>(null);
   const { data, loading, error, reload } = useApiResource<RuleDefinition[]>("/rules/v1/all");

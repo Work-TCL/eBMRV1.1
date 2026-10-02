@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { api } from "@/lib/api";
-import { useRequireAdmin, useSiteId } from "@/lib/hooks";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { api, canEnrollEdgeGateway, canRotateEdgeGatewayCertificate } from "@/lib/api";
+import { useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Banner } from "@/components/ui/Banner";
@@ -13,10 +14,24 @@ import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 
+/** Document 106 row 119 deliberately splits enroll (Admin) from certificate rotation (QA Releaser,
+ * independent of the enrolling actor) — gating this whole page on Admin alone (found 2026-09-28) meant
+ * QA Releaser, who genuinely holds edge_gateway.certificate_rotation, could never reach it. Gate is now
+ * "either write permission", then each write section below shows only for the specific holder — same
+ * shape as platform/page.tsx's isAdmin/canEvidence split (2026-09-17 fix, same SG-204 bug class). */
 export default function EdgePage() {
-  const { isAdmin } = useRequireAdmin();
+  const { me, loading } = useMe();
+  const router = useRouter();
   const { siteId } = useSiteId();
-  if (!isAdmin) return null;
+  const canEnroll = canEnrollEdgeGateway(me);
+  const canRotate = canRotateEdgeGatewayCertificate(me);
+  const canOperate = canEnroll || canRotate;
+
+  useEffect(() => {
+    if (!loading && !canOperate) router.replace("/batch-execution");
+  }, [me, loading, canOperate, router]);
+
+  if (!canOperate) return null;
 
   return (
     <div>
@@ -43,6 +58,7 @@ export default function EdgePage() {
         ]}
       />
 
+      {canEnroll && (
       <SignedJsonForm
         title="Enroll a gateway"
         subtitle="Consumes a one-time bootstrap token issued out-of-band and issues the gateway's service credential - shown exactly once in the response below."
@@ -65,7 +81,9 @@ export default function EdgePage() {
           },
         ]}
       />
+      )}
 
+      {canRotate && (
       <SignedJsonForm
         title="Rotate a gateway's certificate"
         subtitle="The signer must be independent of whoever originally enrolled this gateway."
@@ -85,6 +103,7 @@ export default function EdgePage() {
           },
         ]}
       />
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, type ListQuery, type Paged, type Site } from "@/lib/api";
-import { useEntityOptions, useSites } from "@/lib/hooks";
+import { useEntityOptions, useRequirePermission, useSites } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -46,6 +46,7 @@ const HAS_SIGNATURE_OPTIONS = [
 ];
 
 export default function AuditLedgerPage() {
+  useRequirePermission("audit.review");
   const { sites } = useSites();
   const entities = useEntityOptions();
   const [aggregateType, setAggregateType] = useState("");
@@ -149,7 +150,13 @@ export default function AuditLedgerPage() {
         subtitle="Search and review every regulated audit event - append-only, hash-chained, never editable."
       />
 
-      <div className="flex items-end gap-4 mb-4" style={{ flexWrap: "wrap" }}>
+      {/* items-start, not items-end: several fields here carry a hint (and Actor ID's EntityPickerField
+       * also appends a "Can't find it? Enter ID manually" link line), so their total height is taller
+       * than the plain fields. items-end bottom-aligns every field to the row's tallest child, which
+       * shoves the plain fields' inputs down to the bottom while the hint-bearing fields' inputs stay
+       * higher up above their hint/link text - visibly misaligned. Top-aligning lines every label up
+       * instead, so every control sits directly under its own label regardless of what follows it. */}
+      <div className="flex items-start gap-4 mb-4" style={{ flexWrap: "wrap" }}>
         <Field label="Record ID" hint="One record's full timeline.">
           <Input
             value={aggregateId}

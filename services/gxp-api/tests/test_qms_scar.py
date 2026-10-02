@@ -6,11 +6,15 @@ SCAR-FR-017/018 are out of scope this pass -- see docs/generated/18_SPEC_GAPS.md
 
 import uuid
 
+from sqlalchemy import select
+
 from app.core.security import hash_password
-from app.modules.iam.models import User, UserSiteRole
+from app.modules.iam.models import Permission, Role, RolePermission, User, UserSiteRole
 from app.modules.qms.scar_models import ScarRecord, SupplierQualityCase
 from app.modules.signature.models import SignaturePolicy
+from app.modules.supplier_quality.models import Supplier
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
+from tests.test_material_receipt_flow import _create_material, _create_receipt, _examine_clean
 
 
 async def _make_admin(db, seeded, username):
@@ -452,3 +456,137 @@ async def test_signature_challenge_round_trip_signs_review(client, seeded, db):
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["signature_id"] is not None
+
+
+async def _walk_to_close_ready(client, token, scar_id):
+    """create() + _respond() already called; scar.version == 1. Walks review(accepted) ->
+    effectiveness(pass), returning the expected_version close() should use (4)."""
+    resp = await client.post(
+        f"/qms/v1/scars/{scar_id}/review",
+        json={"idempotency_key": idem(), "scar_id": scar_id, "expected_version": 2, "decision": "accepted", "rationale": "ok"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text  # 2 -> 3
+    resp = await client.post(
+        f"/qms/v1/scars/{scar_id}/effectiveness",
+        json={"idempotency_key": idem(), "scar_id": scar_id, "expected_version": 3, "result": "pass"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text  # 3 -> 4
+    return 4
+
+
+async def test_close_with_suspend_sets_supplier_status_and_blocks_a_later_receipt(client, seeded, db):
+    """SG-097 (2026-09-22): closing a SCAR with source_status_decision="suspend" now actually writes
+    Supplier.status, and the existing RCV-FR-005 receipt-examination check (unchanged) picks it up."""
+    owner = await _setup(db, seeded, "23", signed=False)
+    token = await login(client, "admin.scar23")
+    supplier_id = await _create_supplier(client, token, "SUP-SCAR-23")
+    async with db.begin():
+        supplier = await db.get(Supplier, uuid.UUID(supplier_id))
+        supplier.status = "approved"
+
+    case_id = await _create_case(client, token, seeded["site_id"], supplier_id, owner.id)
+    scar_id = await _issue_scar(client, token, case_id)
+    await _respond(client, token, scar_id, 1)
+    expected_version = await _walk_to_close_ready(client, token, scar_id)
+
+    resp = await client.post(
+        f"/qms/v1/scars/{scar_id}/close",
+        json={
+            "idempotency_key": idem(), "scar_id": scar_id, "expected_version": expected_version,
+            "source_status_decision": "suspend", "conclusion": "Recurrent failure -- source suspended pending resolution.",
+        },
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    async with db.begin():
+        supplier = await db.get(Supplier, uuid.UUID(supplier_id))
+        await db.refresh(supplier)
+        assert supplier.status == "suspended"
+
+    # RCV-FR-005: the existing receipt-examination check (material/commands.py, unchanged by this fix)
+    # already rejects any supplier.status != "approved" -- confirming this was purely a missing status
+    # write, not a missing check.
+    material_id = await _create_material(client, seeded["site_id"], code="RM-SCAR23")
+    receipt_id = await _create_receipt(client, token, seeded["site_id"], material_id, receipt_number="RCPT-SCAR23", supplier_id=supplier_id)
+    receipt = await _examine_clean(client, token, receipt_id, internal_lot="LOT-SCAR23")
+    assert receipt["resulting_version"] == 2
+
+    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}", headers=auth_headers(token))).json()
+    assert receipt_detail["state"] == "discrepancy_hold"
+    assert receipt_detail["discrepancy_type"] == "source_not_approved"
+
+
+async def test_close_with_reinstate_restores_supplier_status(client, seeded, db):
+    """SG-097: reinstate reverses a suspension -- and is a no-op if the supplier was never suspended."""
+    owner = await _setup(db, seeded, "24", signed=False)
+    token = await login(client, "admin.scar24")
+    supplier_id = await _create_supplier(client, token, "SUP-SCAR-24")
+    async with db.begin():
+        supplier = await db.get(Supplier, uuid.UUID(supplier_id))
+        supplier.status = "suspended"
+
+    case_id = await _create_case(client, token, seeded["site_id"], supplier_id, owner.id)
+    scar_id = await _issue_scar(client, token, case_id)
+    await _respond(client, token, scar_id, 1)
+    expected_version = await _walk_to_close_ready(client, token, scar_id)
+
+    resp = await client.post(
+        f"/qms/v1/scars/{scar_id}/close",
+        json={
+            "idempotency_key": idem(), "scar_id": scar_id, "expected_version": expected_version,
+            "source_status_decision": "reinstate", "conclusion": "Corrective action verified effective; source reinstated.",
+        },
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    async with db.begin():
+        supplier = await db.get(Supplier, uuid.UUID(supplier_id))
+        await db.refresh(supplier)
+        assert supplier.status == "approved"
+
+
+async def test_supplier_suspend_reinstate_require_their_own_permission(client, seeded, db):
+    """SG-097: the owning suspend_supplier()/reinstate_supplier() commands are RBAC-gated on their own
+    supplier.suspend/.reinstate codes -- an actor closing a SCAR without them (RBAC alone gets them
+    through create/issue/response/review/effectiveness/close, all separate permission codes) is rejected
+    at the point the cross-module call happens."""
+    owner = await _setup(db, seeded, "25", signed=False)
+    async with db.begin():
+        # A user who can do everything up to close_scar's own RBAC gate ("scar.close") but was never
+        # granted supplier.suspend/.reinstate -- same shape as Supervisor before SG-097 (holds
+        # capa.plan/extend but not the target permission a cross-module call needs).
+        role = Role(name="ScarOnlyRole25")
+        db.add(role)
+        await db.flush()
+        for code in ("scar.case.create", "scar.issue", "scar.response", "scar.review", "scar.effectiveness", "scar.close"):
+            perm = (await db.execute(select(Permission).where(Permission.code == code))).scalar_one()
+            db.add(RolePermission(role_id=role.id, permission_id=perm.id))
+        user = User(
+            username="scaronly.25", email="scaronly.25@example.com", full_name="Scar Only",
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=user.id, site_id=seeded["site_id"], role_id=role.id))
+    admin_token = await login(client, "admin.scar25")
+    supplier_id = await _create_supplier(client, admin_token, "SUP-SCAR-25")
+    token = await login(client, "scaronly.25")
+    case_id = await _create_case(client, token, seeded["site_id"], supplier_id, owner.id)
+    scar_id = await _issue_scar(client, token, case_id)
+    await _respond(client, token, scar_id, 1)
+    expected_version = await _walk_to_close_ready(client, token, scar_id)
+
+    resp = await client.post(
+        f"/qms/v1/scars/{scar_id}/close",
+        json={
+            "idempotency_key": idem(), "scar_id": scar_id, "expected_version": expected_version,
+            "source_status_decision": "suspend", "conclusion": "Suspending without the owning permission.",
+        },
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["code"] == "ROLE_MISSING"

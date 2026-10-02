@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, newIdempotencyKey, pagedFetcher, STORAGE_CONDITIONS, type Material, type MutationReceipt } from "@/lib/api";
-import { useSites } from "@/lib/hooks";
+import { api, ApiError, canCreateMaterial, isAdminAnywhere, newIdempotencyKey, pagedFetcher, STORAGE_CONDITIONS, type Material, type MutationReceipt } from "@/lib/api";
+import { useMe, useSites } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -19,6 +19,7 @@ import { Icon } from "@/components/ui/Icon";
 const fetchMaterials = pagedFetcher<Material>("/materials");
 
 export default function MaterialsPage() {
+  const { me } = useMe();
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -88,6 +89,7 @@ export default function MaterialsPage() {
       await api.patch<MutationReceipt>(`/materials/${editing.id}`, {
         idempotency_key: newIdempotencyKey(),
         material_id: editing.id,
+        expected_version: editing.version,
         name: editName,
         status: editStatus,
         is_in_house: editIsInHouse,
@@ -144,16 +146,29 @@ export default function MaterialsPage() {
     {
       key: "actions",
       header: "",
-      render: (m) => (
-        <div className="flex gap-2 justify-end">
-          <Button size="sm" variant="secondary" onClick={() => openEdit(m)}>
-            Edit
-          </Button>
-          <Button size="sm" variant="danger" onClick={() => setDeleting(m)}>
-            Delete
-          </Button>
-        </div>
-      ),
+      render: (m) => {
+        // DELETE /materials/{id} is platform.administer-gated server-side (Admin only) -- this button
+        // used to show enabled to every viewer regardless of role, so a non-Admin's click always failed
+        // with no explanation. Kept visible-but-disabled with a tooltip rather than hidden, matching the
+        // inventory adjustment-request approve/reject "explained disable" pattern (inventory/page.tsx).
+        const canDelete = isAdminAnywhere(me);
+        return (
+          <div className="flex gap-2 justify-end">
+            <Button size="sm" variant="secondary" onClick={() => openEdit(m)}>
+              Edit
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={!canDelete}
+              title={canDelete ? undefined : "Only an Admin can delete a material master"}
+              onClick={() => setDeleting(m)}
+            >
+              Delete
+            </Button>
+          </div>
+        );
+      },
     },
   ];
 
@@ -163,9 +178,11 @@ export default function MaterialsPage() {
         title="Materials"
         subtitle="Raw material and component masters this site receives against."
         action={
-          <Button variant="primary" onClick={() => setOpen(true)}>
-            <Icon name="plus" /> New material
-          </Button>
+          canCreateMaterial(me) && (
+            <Button variant="primary" onClick={() => setOpen(true)}>
+              <Icon name="plus" /> New material
+            </Button>
+          )
         }
       />
 

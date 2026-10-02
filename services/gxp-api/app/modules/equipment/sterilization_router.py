@@ -202,15 +202,25 @@ CYCLE_SORTABLE = {
 
 @router.get("/cycles")
 async def list_cycles(
-    site_id: uuid.UUID, session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params),
+    site_id: uuid.UUID,
+    batch_id: uuid.UUID | None = None,
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     """Browsable list for `/sterilization`'s own "Sterilization cycles" section -- the page previously had
     no way to see what cycles existed at all, only look one up by an already-known id. Same SG-081
     read-side precedent as `/items/eligible` and `/profiles` above; a plain listing here doesn't conflict
     with any future write/CRUD contract. Paginated (shared envelope) so the frontend's `DataTable` can
-    page/search/sort it the same as every other list page."""
+    page/search/sort it the same as every other list page.
+
+    `batch_id` is optional (additive) -- built for the Batch Workspace, which needs a batch's
+    sterilization activity without paging through the whole site; `ProcessCycle.batch_id` already
+    existed on the row, this just exposes it as a filter."""
     async with session.begin():
         stmt = select(ProcessCycle).where(ProcessCycle.site_id == site_id)
+        if batch_id is not None:
+            stmt = stmt.where(ProcessCycle.batch_id == batch_id)
         if params.q:
             stmt = stmt.where(ProcessCycle.process_type.ilike(f"%{params.q}%"))
         rows, envelope = await paginate(session, stmt, params, sortable=CYCLE_SORTABLE, default_sort=ProcessCycle.created_at)
@@ -238,7 +248,10 @@ def _profile_summary_dict(profile: ProcessCycleProfileVersion) -> dict:
 
 @router.get("/profiles")
 async def list_profiles(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params), state: str | None = "RELEASED",
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    state: str | None = "RELEASED",
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     """Real picker data for `CreateProcessCycleCommand.profile_version_id` -- previously free-text UUID
     entry with no way to discover a valid id, same SG-081 read-side precedent as `/items/eligible` above.
@@ -293,7 +306,11 @@ async def post_create_cip_sip_cycle(
 
 
 @router.get("/cycles/{cycle_id}")
-async def get_cycle(cycle_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_cycle(
+    cycle_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     cycle = await session.get(ProcessCycle, cycle_id)
     if cycle is None:
         raise NotFoundError("Process cycle not found")
@@ -455,7 +472,11 @@ async def get_eligible_items(
 
 
 @router.get("/items/{item_id}/status")
-async def get_status(item_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_status(
+    item_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_item_status(session, item_id)
 
@@ -501,7 +522,11 @@ async def post_install_filter(
 
 
 @filtration_router.get("/filters/{use_id}")
-async def get_filter_use(use_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_filter_use(
+    use_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     use = await session.get(SterileFilterUse, use_id)
     if use is None:
         raise NotFoundError("Sterile filter use not found")

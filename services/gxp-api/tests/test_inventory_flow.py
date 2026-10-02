@@ -10,8 +10,12 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 
+from app.modules.genealogy import service as genealogy_service
 from app.modules.material.models import InventoryTransaction, MaterialContainer, MaterialLot
+from app.modules.supplier_quality.models import Supplier
 from tests.conftest import auth_headers, idem, login
+from tests.test_material_receipt_flow import _create_receipt, _examine_clean
+from tests.test_qms_scar import _create_supplier, _make_admin
 
 
 async def _create_material(client, site_id, code="RM-D20", name="Raw Material D20", uom="kg"):
@@ -176,7 +180,7 @@ async def test_put_away_creates_receipt_transaction_and_balance(client, db, seed
 
     await _put_away(client, op_token, lot_id, containers[0], released_location_id, "100.000000")
 
-    ledger = (await client.get(f"/inventory/v1/lots/{lot_id}/ledger")).json()
+    ledger = (await client.get(f"/inventory/v1/lots/{lot_id}/ledger", headers=auth_headers(qa_token))).json()
     assert ledger["items"][0]["transaction_type"] == "RECEIPT"
     assert ledger["items"][0]["quantity"] == "100.00000000"
 
@@ -270,7 +274,8 @@ async def test_reservation_create_and_signed_release(client, db, seeded):
 
     availability = (
         await client.get(
-            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)}
+            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)},
+            headers=auth_headers(op_token),
         )
     ).json()
     assert availability["items"][0]["available"] == "70.00000000"
@@ -301,7 +306,8 @@ async def test_reservation_create_and_signed_release(client, db, seeded):
 
     availability_after = (
         await client.get(
-            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)}
+            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)},
+            headers=auth_headers(op_token),
         )
     ).json()
     assert availability_after["items"][0]["available"] == "100.00000000"
@@ -466,7 +472,8 @@ async def test_simultaneous_reservations_do_not_over_reserve(client, db, seeded)
 
     availability = (
         await client.get(
-            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)}
+            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)},
+            headers=auth_headers(op_token),
         )
     ).json()
     assert availability["items"][0]["available"] == "40.00000000"
@@ -488,7 +495,8 @@ async def test_reservation_excludes_expired_lot(client, db, seeded):
 
     availability = (
         await client.get(
-            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)}
+            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)},
+            headers=auth_headers(op_token),
         )
     ).json()
     assert availability["items"] == []
@@ -545,6 +553,46 @@ async def test_split_container_conserves_quantity(client, db, seeded):
     assert len(children) == 3
     assert sum(c.current_quantity for c in children) == Decimal("90.000000")
     assert all(c.parent_container_id == original.id for c in children)
+
+
+async def test_split_container_wires_split_from_genealogy_edge(client, db, seeded):
+    """SG-085 Task 2 (2026-09-23): split_container now writes a SPLIT_FROM edge per child, the direct
+    catalogue match for GEN-FR-015 ("one lot split into many")."""
+    op_token = await login(client, "operator1")
+    site_id = seeded["site_id"]
+
+    material_id, lot_id, containers = await _receive_and_examine(
+        client, db, op_token, site_id, "MAT-SPLIT-GEN", "LOT-SPLIT-GEN", quantity="60.000000"
+    )
+    container_id = containers[0]
+
+    resp = await client.post(
+        f"/inventory/v1/containers/{container_id}/split",
+        json={
+            "idempotency_key": idem(),
+            "container_id": container_id,
+            "expected_version": 1,
+            "split_quantities": ["20.000000", "20.000000", "20.000000"],
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    remaining = (
+        (await db.execute(select(MaterialContainer).where(MaterialContainer.material_lot_id == lot_id)))
+        .scalars()
+        .all()
+    )
+    original = next(c for c in remaining if str(c.id) == container_id)
+    children = [c for c in remaining if str(c.id) != container_id]
+    assert len(children) == 3
+
+    [parent_node] = await genealogy_service.lookup(db, site_id, business_ref=original.container_code)
+    descendants = await genealogy_service.get_descendants(db, parent_node.id)
+    descendant_record_ids = {n.authoritative_record_id for n in descendants["nodes"]}
+    assert {c.id for c in children} == descendant_record_ids
+    assert all(e.edge_type == "SPLIT_FROM" for e in descendants["edges"])
+    assert {e.quantity for e in descendants["edges"]} == {Decimal("20.000000")}
 
 
 async def test_split_quantity_mismatch_rejected(client, db, seeded):
@@ -675,7 +723,7 @@ async def test_cycle_count_records_discrepancy_and_preserves_history(client, db,
     )
     assert resp.status_code == 200, resp.text
 
-    ledger = (await client.get(f"/inventory/v1/lots/{lot_id}/ledger")).json()
+    ledger = (await client.get(f"/inventory/v1/lots/{lot_id}/ledger", headers=auth_headers(qa_token))).json()
     types = [row["transaction_type"] for row in ledger["items"]]
     assert "RECEIPT" in types
     assert "ADJUST_NEGATIVE" in types
@@ -752,7 +800,7 @@ async def test_erp_reconciliation_never_fabricates_erp_side(client, db, seeded):
         client, db, op_token, site_id, "MAT-ERP", "LOT-ERP"
     )
 
-    resp = await client.get("/inventory/v1/reconciliation/erp", params={"lot_id": lot_id})
+    resp = await client.get("/inventory/v1/reconciliation/erp", params={"lot_id": lot_id}, headers=auth_headers(op_token))
     assert resp.status_code == 200
     body = resp.json()
     assert body["erp_source_configured"] is False
@@ -886,6 +934,78 @@ async def test_reservation_release_without_signature_rejected(client, db, seeded
     )
     assert resp.status_code == 409
     assert resp.json()["code"] == "SIGNATURE_CHALLENGE_INVALID"
+
+
+async def test_reservation_excludes_suspended_supplier_lot(client, db, seeded):
+    """SG-097 (MAT-013 half, 2026-09-22): a released, put-away, non-expired lot from a supplier that is
+    later suspended stops being reservable -- distinct from RCV-FR-005's own receipt-time check (which
+    only ever runs once, at examine), and from the receipt-gate half of SG-097 (which only blocks a *new*
+    receipt from a suspended source). Reuses `_is_eligible`'s existing `supplier_status != "approved"`
+    check, the exact inequality RCV-FR-005 already established for this same field."""
+    import uuid as _uuid
+
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.invsusp")
+    admin_token = await login(client, "admin.invsusp")
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    site_id = seeded["site_id"]
+    released_location_id = str(seeded["locations"]["RELEASED-01"].id)
+
+    supplier_id = await _create_supplier(client, admin_token, "SUP-INV-SUSP")
+    async with db.begin():
+        supplier = await db.get(Supplier, _uuid.UUID(supplier_id))
+        supplier.status = "approved"
+
+    material_id = await _create_material(client, site_id, code="MAT-INV-SUSP")
+    receipt_id = await _create_receipt(
+        client, op_token, site_id, material_id, receipt_number="RCPT-INV-SUSP", supplier_id=supplier_id
+    )
+    await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-INV-SUSP", container_count=1)
+    async with db.begin():
+        lot = (await db.execute(select(MaterialLot).where(MaterialLot.internal_lot == "LOT-INV-SUSP"))).scalar_one()
+        container = (
+            await db.execute(select(MaterialContainer).where(MaterialContainer.material_lot_id == lot.id))
+        ).scalar_one()
+    await _release_lot(client, qa_token, str(lot.id))
+    await _put_away(client, op_token, str(lot.id), str(container.id), released_location_id, "100.000000")
+    batch_id = await _create_batch(client, op_token, site_id, "INVSUSP")
+
+    # While the supplier is still approved, the lot is a normal reservation candidate.
+    availability = (
+        await client.get(
+            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)},
+            headers=auth_headers(op_token),
+        )
+    ).json()
+    assert len(availability["items"]) == 1
+
+    async with db.begin():
+        supplier = await db.get(Supplier, _uuid.UUID(supplier_id))
+        supplier.status = "suspended"
+
+    availability = (
+        await client.get(
+            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)},
+            headers=auth_headers(op_token),
+        )
+    ).json()
+    assert availability["items"] == []
+
+    resp = await client.post(
+        "/inventory/v1/reservations",
+        json={
+            "idempotency_key": idem(),
+            "batch_id": batch_id,
+            "material_id": material_id,
+            "site_id": str(site_id),
+            "quantity": "1.000000",
+            "uom": "kg",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "VALIDATION_FAILED"
 
 
 async def test_unauthenticated_reservation_request_rejected(client):

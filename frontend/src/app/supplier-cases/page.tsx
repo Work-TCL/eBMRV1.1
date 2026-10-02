@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, hasPermission, formatDate, newIdempotencyKey, type SupplierCase } from "@/lib/api";
-import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
+import { useEntityOptions, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
 import type { DataTableColumn } from "@/components/ui/DataTable";
@@ -19,7 +19,7 @@ const CASE_STATES = ["OPEN", "CONTAINMENT", "SCAR_ISSUED", "CLOSED"];
 const SEVERITIES = ["critical", "major", "minor"];
 
 export default function SupplierCasesPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("scar.view");
   const [createOpen, setCreateOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 

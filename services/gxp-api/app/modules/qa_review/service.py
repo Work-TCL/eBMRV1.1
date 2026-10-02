@@ -4,17 +4,17 @@ read views shared by commands.py and the router.
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.batch_execution.models import Batch
+from app.modules.batch_execution.models import Batch, BatchStep
 from app.modules.equipment import commands as equipment_commands
 from app.modules.equipment.em_models import EmSampleOrReading
 from app.modules.equipment.models import EquipmentUseLog
-from app.modules.material.models import MaterialIssue, MaterialLot
+from app.modules.material.models import MaterialConsumption, MaterialLot
 from app.modules.packaging.models import PackagingRun
 from app.modules.qa_review.models import QaReviewPackage
-from app.modules.qc.models import OosRecord, QcResult, QcSample, QcTestOrder
+from app.modules.qc.models import OosRecord, OotRecord, QcResult, QcSample, QcTestOrder
 from app.modules.vault import service as vault_service
 from app.modules.yield_reconciliation.models import ManufacturingCalculation, ReconciliationRecord
 from app.mutation.errors import NotFoundError
@@ -91,17 +91,28 @@ async def get_batch_corrections(session: AsyncSession, batch_id: uuid.UUID) -> l
 
 async def _qc_signals(session: AsyncSession, batch_id: uuid.UUID) -> tuple[list[str], list[str]]:
     """Same QC attribution/severity reasoning as `release/service.py::_qc_signals` (2026-09-19,
-    project-owner-directed) -- `QcSample.source_type="batch"`, `QcTestOrder.blocking` orders only, most
-    recent `qc_result` per order (append-only, AG-08, so a corrected/retested row naturally supersedes by
-    being later). `oos`/`invalid` block; `oot` is a non-blocking warning. Client requirement #10: a
-    blocking order that hasn't reached a terminal state yet (see `release.service.TERMINAL_ORDER_STATES`)
-    blocks too -- an ordered-but-never-finished required test is incomplete QC testing, not merely absent
-    QC signal."""
+    project-owner-directed) -- `QcSample.source_type in ("batch", "batch_step")` (a step-level sample's
+    `source_id` points at its `gxp_batch_step` row, so that case joins through `BatchStep.batch_id`),
+    `QcTestOrder.blocking` orders only, most recent `qc_result` per order (append-only, AG-08, so a
+    corrected/retested row naturally supersedes by being later). `oos`/`invalid` block; `oot` is a
+    non-blocking warning. Client requirement #10: a blocking order that hasn't reached a terminal state
+    yet (see `release.service.TERMINAL_ORDER_STATES`) blocks too -- an ordered-but-never-finished
+    required test is incomplete QC testing, not merely absent QC signal."""
     order_ids = (
         await session.execute(
             select(QcTestOrder.id)
             .join(QcSample, QcSample.id == QcTestOrder.sample_id)
-            .where(QcSample.source_type == "batch", QcSample.source_id == batch_id, QcTestOrder.blocking.is_(True))
+            .outerjoin(
+                BatchStep,
+                and_(QcSample.source_type == "batch_step", QcSample.source_id == BatchStep.id),
+            )
+            .where(
+                or_(
+                    and_(QcSample.source_type == "batch", QcSample.source_id == batch_id),
+                    and_(QcSample.source_type == "batch_step", BatchStep.batch_id == batch_id),
+                ),
+                QcTestOrder.blocking.is_(True),
+            )
         )
     ).scalars().all()
     blockers: list[str] = []
@@ -136,16 +147,43 @@ async def _qc_signals(session: AsyncSession, batch_id: uuid.UUID) -> tuple[list[
     ).scalars().all()
     for oos in open_oos:
         blockers.append(f"OOS record {oos.oos_number} is open for this batch")
+
+    # SG-074 Task 3 Part A (2026-09-23): same join as release/service.py::_qc_signals -- OotRecord has no
+    # batch_id column, so attribution goes through source_result_id -> qc_result -> qc_test_order ->
+    # qc_sample where source_type in ("batch", "batch_step"). OotRecord only has "open"/"closed" states.
+    open_oot = (
+        await session.execute(
+            select(OotRecord)
+            .join(QcResult, QcResult.id == OotRecord.source_result_id)
+            .join(QcTestOrder, QcTestOrder.id == QcResult.test_order_id)
+            .join(QcSample, QcSample.id == QcTestOrder.sample_id)
+            .outerjoin(
+                BatchStep,
+                and_(QcSample.source_type == "batch_step", QcSample.source_id == BatchStep.id),
+            )
+            .where(
+                or_(
+                    and_(QcSample.source_type == "batch", QcSample.source_id == batch_id),
+                    and_(QcSample.source_type == "batch_step", BatchStep.batch_id == batch_id),
+                ),
+                OotRecord.state != "closed",
+            )
+        )
+    ).scalars().all()
+    for oot in open_oot:
+        blockers.append(f"OOT record {oot.id} is open for this batch")
     return blockers, warnings
 
 
 async def _material_signals(session: AsyncSession, batch_id: uuid.UUID) -> list[str]:
-    """Same reasoning as `release/service.py::_material_signals` (2026-09-19, project-owner-directed)."""
+    """Same reasoning as `release/service.py::_material_signals` (2026-09-19, project-owner-directed).
+    2026-09-22: repointed from the retired `MaterialIssue` to `MaterialConsumption` alongside that
+    function -- see its docstring for why."""
     lots = (
         await session.execute(
             select(MaterialLot)
-            .join(MaterialIssue, MaterialIssue.material_lot_id == MaterialLot.id)
-            .where(MaterialIssue.batch_id == batch_id, MaterialLot.status.notin_(("released", "consumed")))
+            .join(MaterialConsumption, MaterialConsumption.material_lot_id == MaterialLot.id)
+            .where(MaterialConsumption.batch_id == batch_id, MaterialLot.status.notin_(("released", "consumed")))
             .distinct()
         )
     ).scalars().all()

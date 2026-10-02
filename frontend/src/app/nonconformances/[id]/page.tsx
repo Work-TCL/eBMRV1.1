@@ -10,6 +10,7 @@ import {
   type Nonconformance,
 } from "@/lib/api";
 import { useApiResource, useMe } from "@/lib/hooks";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Tabs } from "@/components/ui/Tabs";
@@ -67,7 +68,9 @@ const ALLOWED_FROM: Record<string, Transition[]> = {
   CLOSED: [],
 };
 
-// SG-138: no Document 106 policy rows for nonconformance_record disposition/verify/close.
+// SG-138 resolved 2026-09-10 (seed.py SIGNATURE_POLICY_FLOOR rows 83-85): disposition/close are QA
+// Releaser-signed, independent of the record owner; verify is a qualified independent verifier. Go
+// through the shared Part 11 ceremony (challenge -> password re-entry -> signed mutation) below.
 const SIGNATURE_GATED: Transition[] = ["disposition", "verify", "close"];
 
 const LABEL: Record<Transition, string> = {
@@ -289,51 +292,30 @@ function TransitionModal({
             evaluation: { conclusion: evaluation },
             reason: reason || null,
           });
-        case "disposition":
-          return api.post(`${path}/disposition`, {
-            ...base,
-            disposition_type: dispositionType,
-            affected_scope: ncr.scope_records,
-            justification,
-            quantity: quantity ? Number(quantity) : null,
-            capa_required: capaRequired,
-            capa_rationale: capaRationale || null,
-            use_as_is_authorized_by: dispositionType === "USE_AS_IS" ? (me?.user_id ?? null) : null,
-          });
-        case "verify":
-          return api.post(`${path}/verify`, {
-            ...base,
-            reinspection_evidence: { result: reinspection },
-            reason: reason || null,
-          });
-        case "close":
-          return api.post(`${path}/close`, { ...base, conclusion });
+        default:
+          // disposition/verify/close are signature-gated and never reach this form -- see the early
+          // returns below that render <SignatureCeremony> for them instead.
+          throw new Error(`${transition} does not submit through the plain form`);
       }
     });
   }
 
-  return (
-    <Modal open onClose={onClose} title={`${LABEL[transition]} - ${ncr.ncr_number}`}>
-      <form onSubmit={submit}>
-        {SIGNATURE_GATED.includes(transition) && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
-          </Banner>
-        )}
-
-        {transition === "segregate" && (
-          <Field label="Segregation location" required hint="Where the nonconforming material is being held.">
-            <Input value={location} onChange={(e) => setLocation(e.target.value)} required autoFocus />
-          </Field>
-        )}
-
-        {transition === "evaluate" && (
-          <Field label="Evaluation conclusion" required>
-            <textarea className="input" rows={3} value={evaluation} onChange={(e) => setEvaluation(e.target.value)} required />
-          </Field>
-        )}
-
-        {transition === "disposition" && (
+  // Document 106 section 9 rows 83-85 (SG-138, resolved): disposition/close are QA Releaser-signed,
+  // independent of the record owner; verify is a qualified independent verifier.
+  if (transition === "disposition") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="disposition"
+        title={`Disposition - ${ncr.ncr_number}`}
+        summary="Records the disposition of this nonconformance. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & record disposition"
+        submitVariant="success"
+        disabled={!justification.trim() || (capaRequired && !capaRationale.trim())}
+        extraFields={
           <>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Disposition type" required>
@@ -368,21 +350,107 @@ function TransitionModal({
               </Field>
             )}
           </>
-        )}
+        }
+        onSign={(p) =>
+          api.post(`${path}/disposition`, {
+            idempotency_key: p.idempotency_key,
+            ncr_id: ncr.id,
+            expected_version: ncr.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            disposition_type: dispositionType,
+            affected_scope: ncr.scope_records,
+            justification,
+            quantity: quantity ? Number(quantity) : null,
+            capa_required: capaRequired,
+            capa_rationale: capaRationale || null,
+            use_as_is_authorized_by: dispositionType === "USE_AS_IS" ? (me?.user_id ?? null) : null,
+          })
+        }
+      />
+    );
+  }
 
-        {transition === "verify" && (
+  if (transition === "verify") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="verify"
+        title={`Verify - ${ncr.ncr_number}`}
+        summary="Records verification of the disposition. Signer must be a qualified independent verifier, not the performer."
+        submitLabel="Sign & verify"
+        submitVariant="success"
+        disabled={!reinspection.trim()}
+        extraFields={
           <Field label="Reinspection result" required hint="Evidence that the rework or repair achieved conformance.">
             <textarea className="input" rows={3} value={reinspection} onChange={(e) => setReinspection(e.target.value)} required />
           </Field>
-        )}
+        }
+        onSign={(p) =>
+          api.post(`${path}/verify`, {
+            idempotency_key: p.idempotency_key,
+            ncr_id: ncr.id,
+            expected_version: ncr.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            reinspection_evidence: { result: reinspection },
+          })
+        }
+      />
+    );
+  }
 
-        {transition === "close" && (
+  if (transition === "close") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="close"
+        title={`Close - ${ncr.ncr_number}`}
+        summary="Closes the nonconformance record permanently. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & close"
+        submitVariant="success"
+        disabled={!conclusion.trim()}
+        extraFields={
           <Field label="Conclusion" required>
             <textarea className="input" rows={3} value={conclusion} onChange={(e) => setConclusion(e.target.value)} required />
           </Field>
+        }
+        onSign={(p) =>
+          api.post(`${path}/close`, {
+            idempotency_key: p.idempotency_key,
+            ncr_id: ncr.id,
+            expected_version: ncr.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            conclusion,
+          })
+        }
+      />
+    );
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`${LABEL[transition]} - ${ncr.ncr_number}`}>
+      <form onSubmit={submit}>
+        {transition === "segregate" && (
+          <Field label="Segregation location" required hint="Where the nonconforming material is being held.">
+            <Input value={location} onChange={(e) => setLocation(e.target.value)} required autoFocus />
+          </Field>
         )}
 
-        {(transition === "segregate" || transition === "evaluate" || transition === "verify") && (
+        {transition === "evaluate" && (
+          <Field label="Evaluation conclusion" required>
+            <textarea className="input" rows={3} value={evaluation} onChange={(e) => setEvaluation(e.target.value)} required />
+          </Field>
+        )}
+
+        {(transition === "segregate" || transition === "evaluate") && (
           <Field label="Reason" hint="Optional. Recorded in the audit trail.">
             <Input value={reason} onChange={(e) => setReason(e.target.value)} />
           </Field>

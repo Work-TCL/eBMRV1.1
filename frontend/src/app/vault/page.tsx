@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, ApiError, canCorrectVault, newIdempotencyKey } from "@/lib/api";
-import { useMe } from "@/lib/hooks";
+import { api, ApiError, canCorrectVault, clientPagedFetcher, newIdempotencyKey } from "@/lib/api";
+import { useMe, useRequirePermission } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { Table, EmptyState } from "@/components/ui/Table";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
-import { Field } from "@/components/ui/Field";
+import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
@@ -54,36 +54,73 @@ interface Correction {
 const OBJECT_TYPES = ["batch", "material_lot", "rule"];
 
 export default function VaultPage() {
+  useRequirePermission("vault.review");
   const [objectType, setObjectType] = useState(OBJECT_TYPES[0]);
   const [businessId, setBusinessId] = useState("");
-  const [versions, setVersions] = useState<VaultObject[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [committed, setCommitted] = useState<{ objectType: string; businessId: string } | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [selected, setSelected] = useState<VaultObject | null>(null);
   const [openCorrectionId, setOpenCorrectionId] = useState<string | null>(null);
   const [correctionLookup, setCorrectionLookup] = useState("");
 
-  async function performLookup() {
+  function performLookup() {
     if (!businessId.trim()) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.get<VaultObject[]>(
-        `/vault/v1/business/${encodeURIComponent(objectType)}/${encodeURIComponent(businessId.trim())}/versions`
-      );
-      setVersions(result);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Lookup failed");
-      setVersions(null);
-    } finally {
-      setLoading(false);
-    }
+    setCommitted({ objectType, businessId: businessId.trim() });
+    setReloadToken((n) => n + 1);
   }
 
   function onSubmitLookup(e: React.FormEvent) {
     e.preventDefault();
     performLookup();
   }
+
+  // clientPagedFetcher adapts the plain (non-paginated) versions-by-business-id endpoint to
+  // DataTable's page/sort/search contract; it's recreated every render so it always closes over the
+  // latest `committed` lookup rather than the one active when DataTable first mounted.
+  const fetchVersions = clientPagedFetcher<VaultObject>(
+    async () => {
+      if (!committed) return [];
+      return api.get<VaultObject[]>(
+        `/vault/v1/business/${encodeURIComponent(committed.objectType)}/${encodeURIComponent(committed.businessId)}/versions`
+      );
+    },
+    {
+      searchText: (v) => `${v.status} v${v.internal_version} ${v.business_version_label ?? ""}`,
+      sortValue: (v, sortBy) =>
+        sortBy === "internal_version" ? v.internal_version : sortBy === "released_at" ? v.released_at : null,
+    }
+  );
+
+  const versionColumns: DataTableColumn<VaultObject>[] = [
+    {
+      key: "internal_version",
+      header: "Version",
+      sortable: true,
+      render: (v) => <span className="font-semibold tabular">v{v.internal_version}</span>,
+    },
+    { key: "status", header: "Status" },
+    {
+      key: "released_at",
+      header: "Released at",
+      sortable: true,
+      render: (v) => <span className="tabular fs-2">{new Date(v.released_at).toLocaleString()}</span>,
+    },
+    {
+      key: "supersedes_object_id",
+      header: "Supersedes",
+      render: (v) => <span className="tabular fs-1">{v.supersedes_object_id ? v.supersedes_object_id.slice(0, 8) : "—"}</span>,
+    },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      render: (v) => (
+        <Button size="sm" variant="secondary" onClick={() => setSelected(v)}>
+          View
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <div>
@@ -92,7 +129,7 @@ export default function VaultPage() {
         subtitle="Immutable release history - every batch release and material-lot disposition gets a hash-verified snapshot here."
       />
 
-      <form onSubmit={onSubmitLookup} className="flex items-end gap-4 mb-4" style={{ flexWrap: "wrap" }}>
+      <form onSubmit={onSubmitLookup} className="flex items-start gap-4 mb-4" style={{ flexWrap: "wrap" }}>
         <Field label="Record type">
           <Select value={objectType} onChange={(e) => setObjectType(e.target.value)} style={{ maxWidth: 180 }}>
             {OBJECT_TYPES.map((t) => (
@@ -110,54 +147,26 @@ export default function VaultPage() {
             style={{ minWidth: 220 }}
           />
         </Field>
-        <Button type="submit" variant="primary" disabled={loading || !businessId.trim()}>
-          <Icon name="search" /> {loading ? "Looking up…" : "Look up"}
-        </Button>
+        <RowButtonSlot>
+          <Button type="submit" variant="primary" disabled={!businessId.trim()}>
+            <Icon name="search" /> Look up
+          </Button>
+        </RowButtonSlot>
       </form>
 
-      {error && (
-        <Card>
-          <p className="error-text" style={{ padding: "var(--space-4, 16px)" }}>
-            {error}
-          </p>
-        </Card>
-      )}
-
-      {versions && !error && (
-        <Card>
-          <CardHeader title={`${objectType} / ${businessId}`} />
-          {versions.length === 0 ? (
-            <EmptyState icon="lock">No released version exists for this record yet.</EmptyState>
-          ) : (
-            <Table>
-              <thead>
-                <tr>
-                  <th>Version</th>
-                  <th>Status</th>
-                  <th>Released at</th>
-                  <th>Supersedes</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {versions.map((v) => (
-                  <tr key={v.object_id}>
-                    <td className="font-semibold tabular">v{v.internal_version}</td>
-                    <td>{v.status}</td>
-                    <td className="tabular fs-2">{new Date(v.released_at).toLocaleString()}</td>
-                    <td className="tabular fs-1">{v.supersedes_object_id ? v.supersedes_object_id.slice(0, 8) : "—"}</td>
-                    <td style={{ textAlign: "right" }}>
-                      <Button size="sm" variant="secondary" onClick={() => setSelected(v)}>
-                        View
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          )}
-        </Card>
-      )}
+      <Card>
+        <CardHeader title={committed ? `${committed.objectType} / ${committed.businessId}` : "Version history"} />
+        <DataTable
+          columns={versionColumns}
+          fetchPage={fetchVersions}
+          rowKey={(v) => v.object_id}
+          searchPlaceholder="Search by status or version label…"
+          emptyIcon="lock"
+          emptyMessage={committed ? "No released version exists for this record yet." : "Enter a business ID above and look it up."}
+          defaultSort={{ by: "internal_version", dir: "desc" }}
+          reloadToken={reloadToken}
+        />
+      </Card>
 
       {selected && (
         <ObjectDetailModal

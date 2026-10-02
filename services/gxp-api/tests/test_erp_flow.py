@@ -77,8 +77,9 @@ async def test_register_instance_unauthorized_without_permission(client, seeded)
 
 
 async def test_get_capabilities_reports_declared_operations(client, seeded, monkeypatch):
+    token = await login(client, "operator1")
     _patch_adapter(monkeypatch, lambda request: httpx.Response(200, json={"message": "demo"}))
-    resp = await client.get(f"/integration/v1/instances/{seeded['erp_instance'].id}/capabilities")
+    resp = await client.get(f"/integration/v1/instances/{seeded['erp_instance'].id}/capabilities", headers=auth_headers(token))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["vendor"] == "ERPNEXT"
@@ -1086,7 +1087,7 @@ async def test_generic_instance_validation_requires_read_path_for_write_capable_
     )
     assert validated.status_code == 200, validated.text
 
-    get_resp = await client.get(f"/integration/v1/instances/{instance_id}")
+    get_resp = await client.get(f"/integration/v1/instances/{instance_id}", headers=auth_headers(token))
     assert get_resp.json()["validated"] is True
 
 
@@ -1163,8 +1164,9 @@ async def test_embedded_evidence_payload_allowed_when_instance_opts_in(client, s
 
 
 async def test_provider_outage_reported_via_capabilities_probe(client, seeded, monkeypatch):
+    token = await login(client, "operator1")
     _patch_adapter(monkeypatch, lambda request: httpx.Response(503))
-    resp = await client.get(f"/integration/v1/instances/{seeded['erp_instance'].id}/capabilities")
+    resp = await client.get(f"/integration/v1/instances/{seeded['erp_instance'].id}/capabilities", headers=auth_headers(token))
     assert resp.status_code == 200, resp.text
     assert resp.json()["reachable"] is False
 

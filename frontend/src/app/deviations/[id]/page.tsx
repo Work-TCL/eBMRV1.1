@@ -19,7 +19,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Card } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
 import { Banner } from "@/components/ui/Banner";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
@@ -168,17 +168,30 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
       backLabel="Deviations"
       loading={loading}
       error={error}
-      actions={(Object.keys(TRANSITION_LABEL) as Transition[])
-        .filter(canDo)
-        .map((t) => (
-          <Button
-            key={t}
-            variant={t === "close" || t === "disposition" ? "primary" : "secondary"}
-            onClick={() => setPending(t)}
-          >
-            {SIGNATURE_GATED.includes(t) && <Icon name="pen" />} {TRANSITION_LABEL[t]}
-          </Button>
-        ))}
+      actions={[
+        ...(Object.keys(TRANSITION_LABEL) as Transition[])
+          .filter(canDo)
+          .map((t) => (
+            <Button
+              key={t}
+              variant={t === "close" || t === "disposition" ? "primary" : "secondary"}
+              onClick={() => setPending(t)}
+            >
+              {SIGNATURE_GATED.includes(t) && <Icon name="pen" />} {TRANSITION_LABEL[t]}
+            </Button>
+          )),
+        ...(data?.capa_required
+          ? [
+              <LinkButton
+                key="create-linked-capa"
+                variant="secondary"
+                href={`/capa?source_type=deviation&source_id=${id}`}
+              >
+                <Icon name="plus" /> Create linked CAPA
+              </LinkButton>,
+            ]
+          : []),
+      ]}
       facts={
         data && (
           <>

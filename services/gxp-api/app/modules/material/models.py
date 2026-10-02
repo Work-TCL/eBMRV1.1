@@ -110,7 +110,11 @@ class MaterialLot(Base):
     available_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     uom: Mapped[str] = mapped_column(String(20), nullable=False)
     uom_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.gxp_uom.uom_id"))  # SG-146 (remainder)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="quarantine")
+    # String(20) -> String(40) (migration 0124): LOT_STATES itself already names "qc_disposition_pending"
+    # (22 chars) as a valid value -- VARCHAR(20) could never actually hold it, so any real write of that
+    # state would have failed closed with a DB error. Found incidentally while building Workflow Handoff
+    # Notifications (app/modules/notifications), not otherwise related to that feature.
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="quarantine")
     expiry_date: Mapped[date | None] = mapped_column()
     retest_date: Mapped[date | None] = mapped_column()
     received_by_user_id: Mapped[uuid.UUID] = mapped_column(

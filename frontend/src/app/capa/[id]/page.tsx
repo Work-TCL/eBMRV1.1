@@ -458,13 +458,6 @@ function TransitionModal({
     e.preventDefault();
     run(() => {
       switch (transition) {
-        case "plan":
-          return api.post(`${path}/plan`, {
-            ...base,
-            corrective_action: { description: corrective },
-            preventive_action: preventive ? { description: preventive } : null,
-            effectiveness_plan: effectivenessPlan ? { description: effectivenessPlan } : null,
-          });
         case "add_action":
           return api.post(`${path}/actions`, {
             ...base,
@@ -484,21 +477,106 @@ function TransitionModal({
             observation_end: new Date(observationEnd).toISOString(),
             due_date: new Date(effectivenessDueDate).toISOString(),
           });
-        case "extend":
-          return api.post(`${path}/extend`, {
-            ...base,
-            new_target_date: new Date(newTargetDate).toISOString(),
-            reason,
-            risk_review: riskReview,
-          });
         case "reopen":
           return api.post(`${path}/reopen`, { ...base, reason, new_evidence: newEvidence });
         default:
-          // close/cancel/record_effectiveness_result are signature-gated and never reach this form —
-          // see the early returns below that render <SignatureCeremony> for them instead.
+          // close/cancel/plan/extend/record_effectiveness_result are signature-gated and never reach
+          // this form — see the early returns below that render <SignatureCeremony> for them instead.
           throw new Error(`${transition} does not submit through the plain form`);
       }
     });
+  }
+
+  // SG-065 (2026-09-22, project-owner-directed): CAPA-FR-021's own prose names plan approval and
+  // extension as signed actions alongside effectiveness/close — same "Approved"/QA Releaser/
+  // independent-of-owner shape as close()/record_effectiveness() below.
+  if (transition === "plan") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="plan"
+        title={`Plan approval - ${capa.capa_number}`}
+        summary="Approves the CAPA's corrective/preventive plan. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & approve plan"
+        submitVariant="success"
+        disabled={!corrective.trim()}
+        extraFields={
+          <>
+            <Field label="Corrective action" required hint="What fixes the problem that occurred.">
+              <textarea className="input" rows={3} value={corrective} onChange={(e) => setCorrective(e.target.value)} required />
+            </Field>
+            <Field label="Preventive action" hint="What stops it recurring elsewhere.">
+              <textarea className="input" rows={2} value={preventive} onChange={(e) => setPreventive(e.target.value)} />
+            </Field>
+            <Field label="Effectiveness plan" hint="How effectiveness will be demonstrated later.">
+              <textarea
+                className="input"
+                rows={2}
+                value={effectivenessPlan}
+                onChange={(e) => setEffectivenessPlan(e.target.value)}
+              />
+            </Field>
+          </>
+        }
+        onSign={(p) =>
+          api.post(`${path}/plan`, {
+            idempotency_key: p.idempotency_key,
+            capa_id: capa.id,
+            expected_version: capa.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            corrective_action: { description: corrective },
+            preventive_action: preventive ? { description: preventive } : null,
+            effectiveness_plan: effectivenessPlan ? { description: effectivenessPlan } : null,
+          })
+        }
+      />
+    );
+  }
+
+  if (transition === "extend") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="extend"
+        title={`Extend target date - ${capa.capa_number}`}
+        summary="Extends the CAPA's target date. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & extend"
+        submitVariant="success"
+        disabled={!newTargetDate || !reason.trim() || !riskReview.trim()}
+        extraFields={
+          <>
+            <Field label="New target date" required>
+              <Input type="date" value={newTargetDate} onChange={(e) => setNewTargetDate(e.target.value)} required />
+            </Field>
+            <Field label="Reason" required>
+              <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} required />
+            </Field>
+            <Field label="Risk review" required>
+              <textarea className="input" rows={2} value={riskReview} onChange={(e) => setRiskReview(e.target.value)} required />
+            </Field>
+          </>
+        }
+        onSign={(p) =>
+          api.post(`${path}/extend`, {
+            idempotency_key: p.idempotency_key,
+            capa_id: capa.id,
+            expected_version: capa.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            new_target_date: new Date(newTargetDate).toISOString(),
+            reason,
+            risk_review: riskReview,
+          })
+        }
+      />
+    );
   }
 
   // Document 106 row 80 (capa_record/close, resolved seed.py:1339): "Approved" by an independent QA
@@ -653,27 +731,8 @@ function TransitionModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={`${LABEL[transition]} - ${capa.capa_number}`} large={transition === "plan"}>
+    <Modal open onClose={onClose} title={`${LABEL[transition]} - ${capa.capa_number}`}>
       <form onSubmit={submit}>
-        {transition === "plan" && (
-          <>
-            <Field label="Corrective action" required hint="What fixes the problem that occurred.">
-              <textarea className="input" rows={3} value={corrective} onChange={(e) => setCorrective(e.target.value)} required />
-            </Field>
-            <Field label="Preventive action" hint="What stops it recurring elsewhere.">
-              <textarea className="input" rows={2} value={preventive} onChange={(e) => setPreventive(e.target.value)} />
-            </Field>
-            <Field label="Effectiveness plan" hint="How effectiveness will be demonstrated later.">
-              <textarea
-                className="input"
-                rows={2}
-                value={effectivenessPlan}
-                onChange={(e) => setEffectivenessPlan(e.target.value)}
-              />
-            </Field>
-          </>
-        )}
-
         {transition === "add_action" && (
           <>
             <div className="grid grid-cols-2 gap-4">
@@ -726,20 +785,6 @@ function TransitionModal({
                 onChange={(e) => setEffectivenessDueDate(e.target.value)}
                 required
               />
-            </Field>
-          </>
-        )}
-
-        {transition === "extend" && (
-          <>
-            <Field label="New target date" required>
-              <Input type="date" value={newTargetDate} onChange={(e) => setNewTargetDate(e.target.value)} required />
-            </Field>
-            <Field label="Reason" required>
-              <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} required />
-            </Field>
-            <Field label="Risk review" required>
-              <textarea className="input" rows={2} value={riskReview} onChange={(e) => setRiskReview(e.target.value)} required />
             </Field>
           </>
         )}

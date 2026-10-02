@@ -13,12 +13,29 @@ from app.modules.equipment.models import EquipmentUseLog
 from tests.conftest import auth_headers, idem, login
 
 
+async def _create_equipment_class(client):
+    # Bug fix (equipment_class_id now required/validated at creation, see commands.py) needs a real,
+    # existing EquipmentClass row to reference. This table has its own create endpoint under
+    # recipe_master (`/recipes/v2/equipment-classes`, `recipe.author` permission, Admin holds it) — a
+    # fresh class per call avoids class_code collisions across the many _create_asset() call sites in
+    # this file.
+    pe_token = await login(client, "process.engineer")
+    resp = await client.post(
+        "/recipes/v2/equipment-classes",
+        json={"idempotency_key": idem(), "class_code": f"CLASS-{uuid.uuid4().hex[:12]}", "name": "Test class"},
+        headers=auth_headers(pe_token),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["aggregate_id"]
+
+
 async def _create_asset(client, token, site_id, equipment_code="EQP-1"):
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
         "/equipment/v1/assets",
         json={
             "idempotency_key": idem(), "site_id": str(site_id), "equipment_code": equipment_code,
-            "manufacturer": "Acme", "model": "M1", "serial_no": "SN-1",
+            "equipment_class_id": equipment_class_id, "manufacturer": "Acme", "model": "M1", "serial_no": "SN-1",
         },
         headers=auth_headers(token),
     )
@@ -76,7 +93,7 @@ async def test_create_asset_enters_installed(client, seeded):
     site_id = seeded["site_id"]
     asset_id = await _create_asset(client, admin_token, site_id)
 
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(admin_token))).json()
     assert detail["state"] == "INSTALLED"
     assert detail["version"] == 1
 
@@ -84,31 +101,45 @@ async def test_create_asset_enters_installed(client, seeded):
 async def test_create_asset_without_code_auto_generates(client, seeded):
     admin_token = await login(client, "equipment.admin")
     site_id = seeded["site_id"]
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": idem(), "site_id": str(site_id), "manufacturer": "Acme", "model": "M1"},
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "manufacturer": "Acme", "model": "M1",
+        },
         headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
     asset_id = resp.json()["aggregate_id"]
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(admin_token))).json()
     assert detail["equipment_code"].startswith("EQP-")
 
     resp2 = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": idem(), "site_id": str(site_id), "manufacturer": "Acme", "model": "M2"},
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "manufacturer": "Acme", "model": "M2",
+        },
         headers=auth_headers(admin_token),
     )
     assert resp2.status_code == 200, resp2.text
-    detail2 = (await client.get(f"/equipment/v1/assets/{resp2.json()['aggregate_id']}")).json()
+    detail2 = (await client.get(f"/equipment/v1/assets/{resp2.json()['aggregate_id']}", headers=auth_headers(admin_token))).json()
     assert detail2["equipment_code"] != detail["equipment_code"]
 
 
 async def test_create_asset_requires_equipment_administrator_role(client, seeded):
     op_token = await login(client, "operator1")
+    # A real equipment_class_id so the request reaches the RBAC check this test is actually about
+    # (equipment_class_id is a required field -- an invalid/missing one would 422 before ever reaching
+    # evaluate_policy, proving nothing about the role gate).
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": idem(), "site_id": str(seeded["site_id"]), "equipment_code": "EQP-X"},
+        json={
+            "idempotency_key": idem(), "site_id": str(seeded["site_id"]), "equipment_class_id": equipment_class_id,
+            "equipment_code": "EQP-X",
+        },
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 403
@@ -125,22 +156,22 @@ async def test_full_qualify_calibrate_return_to_service_flow(client, seeded):
     receipt = await _qualify(client, admin_token, asset_id, expected_version=1, qualified=True)
     assert receipt["resulting_version"] == 2
 
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(eng_token))).json()
     assert detail["state"] == "VERIFICATION"
     assert detail["qualification_status"] == "QUALIFIED"
 
     receipt = await _calibrate(client, cal_token, asset_id, expected_version=2, result="pass")
     assert receipt["resulting_version"] == 3
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(eng_token))).json()
     assert detail["calibration_status"] == "current"
 
-    eligibility = (await client.get(f"/equipment/v1/{asset_id}/eligibility")).json()
+    eligibility = (await client.get(f"/equipment/v1/{asset_id}/eligibility", headers=auth_headers(eng_token))).json()
     assert eligibility["eligible"] is True
     assert eligibility["reasons"] == []
 
     resp = await _return_to_service(client, eng_token, asset_id, expected_version=3)
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(eng_token))).json()
     assert detail["state"] == "QUALIFIED_AVAILABLE"
 
 
@@ -166,15 +197,15 @@ async def test_oot_calibration_holds_equipment_and_blocks_return(client, seeded)
 
     receipt = await _calibrate(client, cal_token, asset_id, expected_version=2, result="oot")
     assert receipt["resulting_version"] == 3
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(eng_token))).json()
     assert detail["state"] == "OUT_OF_SERVICE"
     assert detail["hold_flag"] is True
     assert detail["calibration_status"] == "oot"
 
-    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    history = (await client.get(f"/equipment/v1/{asset_id}/history", headers=auth_headers(eng_token))).json()
     assert history["calibrations"][0]["impact_assessment_required"] is True
 
-    eligibility = (await client.get(f"/equipment/v1/{asset_id}/eligibility")).json()
+    eligibility = (await client.get(f"/equipment/v1/{asset_id}/eligibility", headers=auth_headers(eng_token))).json()
     assert eligibility["eligible"] is False
     assert any(r["code"] == "CALIBRATION_OOT_IMPACT_REQUIRED" for r in eligibility["reasons"])
 
@@ -210,7 +241,7 @@ async def test_hold_requires_signature_and_reason(client, seeded):
     # Correct password + valid challenge succeeds and holds the asset.
     resp = await _hold(client, op_token, asset_id, expected_version=1, challenge_id=challenge["challenge_id"])
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(op_token))).json()
     assert detail["state"] == "SUSPENDED"
     assert detail["hold_flag"] is True
     assert detail["hold_reason"] == "Investigating"
@@ -270,11 +301,11 @@ async def test_breakdown_maintenance_holds_then_verification_returns_to_service(
         headers=auth_headers(maint_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(eng_token))).json()
     assert detail["state"] == "OUT_OF_SERVICE"
     assert detail["hold_flag"] is True
 
-    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    history = (await client.get(f"/equipment/v1/{asset_id}/history", headers=auth_headers(eng_token))).json()
     wo_id = history["maintenance_work_orders"][0]["id"]
 
     resp = await client.post(
@@ -286,13 +317,13 @@ async def test_breakdown_maintenance_holds_then_verification_returns_to_service(
         headers=auth_headers(maint_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(eng_token))).json()
     assert detail["state"] == "VERIFICATION"
     assert detail["maintenance_status"] == "complete"
 
     resp = await _return_to_service(client, eng_token, asset_id, expected_version=6)
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(eng_token))).json()
     assert detail["state"] == "QUALIFIED_AVAILABLE"
 
 
@@ -319,11 +350,11 @@ async def test_breakdown_maintenance_type_holds_equipment(client, seeded):
         headers=auth_headers(maint_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(eng_token))).json()
     assert detail["state"] == "OUT_OF_SERVICE"
     assert detail["hold_flag"] is True
 
-    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    history = (await client.get(f"/equipment/v1/{asset_id}/history", headers=auth_headers(eng_token))).json()
     work_order = history["maintenance_work_orders"][0]
     assert work_order["type"] == "breakdown"
 
@@ -338,7 +369,7 @@ async def test_breakdown_maintenance_type_holds_equipment(client, seeded):
     )
     assert resp.status_code == 200, resp.text
 
-    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    history = (await client.get(f"/equipment/v1/{asset_id}/history", headers=auth_headers(eng_token))).json()
     assert history["maintenance_work_orders"][0]["actual_downtime_hours"] == "6.50"
 
 
@@ -351,7 +382,7 @@ async def test_record_calibration_internal_default(client, seeded):
 
     await _calibrate(client, cal_token, asset_id, expected_version=2, result="pass")
 
-    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    history = (await client.get(f"/equipment/v1/{asset_id}/history", headers=auth_headers(cal_token))).json()
     assert history["calibrations"][0]["calibration_type"] == "internal"
     assert history["calibrations"][0]["provider_name"] is None
 
@@ -395,7 +426,7 @@ async def test_record_calibration_external_with_provider_persists_fields(client,
     )
     assert resp.status_code == 200, resp.text
 
-    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    history = (await client.get(f"/equipment/v1/{asset_id}/history", headers=auth_headers(cal_token))).json()
     calibration = history["calibrations"][0]
     assert calibration["calibration_type"] == "external"
     assert calibration["provider_name"] == "Acme Calibration Services"
@@ -422,7 +453,7 @@ async def test_record_calibration_with_frequency_computes_next_due_date(client, 
     )
     assert resp.status_code == 200, resp.text
 
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(cal_token))).json()
     # 2026-08-25 + 90 days = 2026-11-23, not the caller's own (much later) due_date.
     assert detail["next_calibration_due_date"] == "2026-11-23"
 
@@ -448,7 +479,7 @@ async def test_calibration_history_captures_standard_and_evidence_fields(client,
     )
     assert resp.status_code == 200, resp.text
 
-    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    history = (await client.get(f"/equipment/v1/{asset_id}/history", headers=auth_headers(cal_token))).json()
     cal = history["calibrations"][0]
     assert cal["standard_reference"] == "STD-REF-001"
     assert cal["standard_calibration_status"] == "current"
@@ -485,11 +516,11 @@ async def test_critical_modification_links_change_control(client, seeded):
     )
     assert resp.status_code == 200, resp.text
 
-    detail = (await client.get(f"/equipment/v1/assets/{asset_id}")).json()
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(maint_token))).json()
     assert detail["change_control_id"] is not None
     assert detail["next_maintenance_due_date"] == "2027-02-01"
 
-    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    history = (await client.get(f"/equipment/v1/{asset_id}/history", headers=auth_headers(maint_token))).json()
     wo = history["maintenance_work_orders"][0]
     assert wo["parts_used"] == {"parts": [{"part_number": "PN-100", "serial": "SN-9"}]}
     assert wo["procedure_version"] == "PM-PROC-1"
@@ -505,7 +536,7 @@ async def test_equipment_use_log_rejects_direct_update(client, db, seeded):
     asset_id = await _create_asset(client, admin_token, site_id)
     await _qualify(client, admin_token, asset_id, expected_version=1, qualified=True)
 
-    history = (await client.get(f"/equipment/v1/{asset_id}/history")).json()
+    history = (await client.get(f"/equipment/v1/{asset_id}/history", headers=auth_headers(admin_token))).json()
     log_id = history["use_log"][0]["id"]
 
     with pytest.raises(DBAPIError):
@@ -539,8 +570,12 @@ async def test_qualify_missing_expected_version_rejected(client, seeded):
 async def test_duplicate_idempotency_key_returns_same_receipt(client, seeded):
     admin_token = await login(client, "equipment.admin")
     site_id = seeded["site_id"]
+    equipment_class_id = await _create_equipment_class(client)
     key = idem()
-    payload = {"idempotency_key": key, "site_id": str(site_id), "equipment_code": "EQP-IDEM"}
+    payload = {
+        "idempotency_key": key, "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+        "equipment_code": "EQP-IDEM",
+    }
 
     first = await client.post("/equipment/v1/assets", json=payload, headers=auth_headers(admin_token))
     second = await client.post("/equipment/v1/assets", json=payload, headers=auth_headers(admin_token))
@@ -552,17 +587,24 @@ async def test_duplicate_idempotency_key_returns_same_receipt(client, seeded):
 async def test_duplicate_idempotency_key_different_payload_rejected(client, seeded):
     admin_token = await login(client, "equipment.admin")
     site_id = seeded["site_id"]
+    equipment_class_id = await _create_equipment_class(client)
     key = idem()
 
     resp1 = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": key, "site_id": str(site_id), "equipment_code": "EQP-IDEM-A"},
+        json={
+            "idempotency_key": key, "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "equipment_code": "EQP-IDEM-A",
+        },
         headers=auth_headers(admin_token),
     )
     assert resp1.status_code == 200
     resp2 = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": key, "site_id": str(site_id), "equipment_code": "EQP-IDEM-B"},
+        json={
+            "idempotency_key": key, "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "equipment_code": "EQP-IDEM-B",
+        },
         headers=auth_headers(admin_token),
     )
     assert resp2.status_code == 409
@@ -582,7 +624,7 @@ async def test_dashboard_lists_out_of_service_assets(client, seeded):
     ).json()
     await _hold(client, op_token, asset_id, expected_version=1, challenge_id=challenge["challenge_id"])
 
-    dashboard = (await client.get("/equipment/v1/dashboard", params={"site_id": str(site_id)})).json()
+    dashboard = (await client.get("/equipment/v1/dashboard", params={"site_id": str(site_id)}, headers=auth_headers(op_token))).json()
     assert any(a["id"] == asset_id for a in dashboard["out_of_service"])
 
 
@@ -601,7 +643,7 @@ async def test_return_to_service_rejected_while_dirty(client, seeded):
     await _qualify(client, admin_token, asset_id, expected_version=1, qualified=True)
     await _calibrate(client, cal_token, asset_id, expected_version=2, result="pass")
 
-    eligibility = (await client.get(f"/equipment/v1/{asset_id}/eligibility")).json()
+    eligibility = (await client.get(f"/equipment/v1/{asset_id}/eligibility", headers=auth_headers(op_token))).json()
     assert eligibility["eligible"] is True
 
     # Starting a cleaning execution against this asset mirrors cleanliness_status to "CLEANING".
@@ -615,7 +657,7 @@ async def test_return_to_service_rejected_while_dirty(client, seeded):
     )
     assert resp.status_code == 200, resp.text
 
-    eligibility = (await client.get(f"/equipment/v1/{asset_id}/eligibility")).json()
+    eligibility = (await client.get(f"/equipment/v1/{asset_id}/eligibility", headers=auth_headers(op_token))).json()
     assert eligibility["eligible"] is False
     assert any(r["code"] == "CLEANING_REQUIRED" for r in eligibility["reasons"])
 
@@ -657,12 +699,12 @@ async def test_equipment_administrator_can_create_area_and_it_is_listed(client, 
     assert resp.status_code == 200, resp.text
     area_id = resp.json()["aggregate_id"]
 
-    detail = (await client.get(f"/equipment/v1/areas/{area_id}")).json()
+    detail = (await client.get(f"/equipment/v1/areas/{area_id}", headers=auth_headers(admin_token))).json()
     assert detail["area_code"] == "AREA-TEST-001"
     assert detail["classification"] == "ISO_7"
     assert detail["status"] == "active"
 
-    listing = (await client.get(f"/equipment/v1/areas?q=AREA-TEST-001")).json()
+    listing = (await client.get(f"/equipment/v1/areas?q=AREA-TEST-001", headers=auth_headers(admin_token))).json()
     assert any(a["id"] == area_id for a in listing["items"])
 
 

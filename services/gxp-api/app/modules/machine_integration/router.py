@@ -195,7 +195,11 @@ async def post_finalize_machine_command(
 
 
 @router.get("/machine-commands/{request_id}")
-async def get_machine_command(request_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_machine_command(
+    request_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     request = await session.get(MachineCommandRequest, request_id)
     if request is None:
         raise NotFoundError("Machine command request not found")

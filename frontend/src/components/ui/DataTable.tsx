@@ -29,6 +29,10 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   /** Bumping this forces a refetch of the current page (e.g. after a create action elsewhere). */
   reloadToken?: number;
+  /** Set (or change) the search box's value programmatically — e.g. a caller hydrating a `?q=` deep
+   * link from window.location in its own effect after mount. Also picks up a later change (not just the
+   * first one), so the caller doesn't need to worry about DataTable already having mounted first. */
+  initialQuery?: string;
 }
 
 const DEFAULT_PAGE_SIZES = [10, 20, 50, 100];
@@ -44,10 +48,16 @@ export function DataTable<T>({
   defaultSort,
   onRowClick,
   reloadToken = 0,
+  initialQuery,
 }: DataTableProps<T>) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(pageSizeOptions[1] ?? pageSizeOptions[0]);
-  const [qInput, setQInput] = useState("");
+  const [qInput, setQInput] = useState(initialQuery ?? "");
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (initialQuery) setQInput(initialQuery);
+  }, [initialQuery]);
   const [sortBy, setSortBy] = useState<string | null>(defaultSort?.by ?? null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">(defaultSort?.dir ?? "asc");
   const [data, setData] = useState<Paged<T> | null>(null);

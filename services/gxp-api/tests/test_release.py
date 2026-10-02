@@ -322,7 +322,14 @@ async def test_evaluate_blocked_by_qc_material_em_signals(client, seeded, db):
     from sqlalchemy import select
 
     from app.modules.equipment.em_models import EmSampleOrReading
-    from app.modules.material.models import Material, MaterialIssue, MaterialLot
+    from app.modules.material.models import (
+        DispensedContainer,
+        DispensingOrder,
+        InventoryTransaction,
+        Material,
+        MaterialConsumption,
+        MaterialLot,
+    )
     from app.modules.qc.models import QcResult, QcSample, QcTestDefinition, QcTestOrder, QcTestRun, QcTestSpecification
 
     admin_token, batch_id = await _setup(db, client, seeded, "8")
@@ -360,7 +367,40 @@ async def test_evaluate_blocked_by_qc_material_em_signals(client, seeded, db):
         )
         db.add(lot)
         await db.flush()
-        db.add(MaterialIssue(material_lot_id=lot.id, batch_id=uuid_mod.UUID(batch_id), quantity=Decimal("1"), uom="kg", issued_by_user_id=admin_user.id))
+        # 2026-09-22: a real `MaterialConsumption` row, not the retired `MaterialIssue` -- built directly
+        # (rather than through the real Dispensing flow) the same way this fixture already builds its QC/
+        # EM rows: the flow that *creates* a MaterialConsumption is exercised by its own suite
+        # (test_material_consumption_flow.py); this test only proves release/service.py reads what it
+        # produces. A lot that's simultaneously "consumed" and "quarantine" can't happen through the real
+        # dispensing API (which requires `released` at selection time) -- it models the real-world case
+        # this blocker exists for: the lot was released, consumed, then reverted after the fact.
+        order = DispensingOrder(
+            site_id=seeded["site_id"], batch_id=uuid_mod.UUID(batch_id), material_id=material.id,
+            target_qty=Decimal("1"), target_uom="kg", tolerance_low=Decimal("0"), tolerance_high=Decimal("2"),
+            requested_by_user_id=admin_user.id,
+        )
+        db.add(order)
+        await db.flush()
+        dispensed = DispensedContainer(
+            batch_id=uuid_mod.UUID(batch_id), material_id=material.id, dispensing_order_id=order.id,
+            container_code=f"DC-REL8-{uuid_mod.uuid4().hex[:6]}", actual_quantity=Decimal("1"), uom="kg",
+        )
+        db.add(dispensed)
+        await db.flush()
+        txn = InventoryTransaction(
+            site_id=seeded["site_id"], material_lot_id=lot.id, transaction_type="CONSUME",
+            quantity=Decimal("1"), uom="kg", reference_type="dispensed_container", reference_id=dispensed.id,
+            actor_id=str(admin_user.id),
+        )
+        db.add(txn)
+        await db.flush()
+        db.add(
+            MaterialConsumption(
+                site_id=seeded["site_id"], batch_id=uuid_mod.UUID(batch_id), dispensed_container_id=dispensed.id,
+                material_lot_id=lot.id, quantity=Decimal("1"), uom="kg", transaction_id=txn.id,
+                recorded_by_user_id=admin_user.id,
+            )
+        )
         lot_id = lot.id
 
         em_location_id = next(iter(seeded["em_locations"].values())).id
@@ -404,6 +444,55 @@ async def test_evaluate_blocked_by_qc_material_em_signals(client, seeded, db):
     assert "MATERIAL_LOT_NOT_RELEASED" not in codes
     assert "QC_RESULT_FAILED" in codes
     assert "EM_ACTION_EXCURSION" in codes
+
+
+async def test_evaluate_blocked_by_batch_step_sourced_qc_result(client, seeded, db):
+    """A blocking QC test order sourced from a `batch_step` sample (the normal in-process-testing path --
+    step completion itself already gates on it once) must still block release if a later signed
+    correction/retest flips its result to a failure after the step is long complete. `_qc_signals()`
+    only had a `source_type="batch"` join until this test was added; without the `batch_step` join added
+    alongside it, this QC_RESULT_FAILED would be silently invisible to release eligibility."""
+    import uuid as uuid_mod
+
+    from app.modules.qc.models import QcResult, QcSample, QcTestDefinition, QcTestOrder, QcTestRun, QcTestSpecification
+
+    admin_token, batch_id = await _setup(db, client, seeded, "11")
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    step_id = view["steps"][0]["step_id"]
+
+    async with db.begin():
+        spec = QcTestSpecification(spec_code="SPEC-REL11", version_no=1, scope_type="in_process", scope_version_id=uuid_mod.uuid4(), status="released")
+        db.add(spec)
+        await db.flush()
+        definition = QcTestDefinition(specification_id=spec.id, test_code="IPC-REL11", test_name="In-process check", result_data_type="numeric", required=True, release_blocking=True)
+        db.add(definition)
+        await db.flush()
+        sample = QcSample(sample_number=f"SMP-REL11-{uuid_mod.uuid4().hex[:6]}", sample_type="in_process", source_type="batch_step", source_id=uuid_mod.UUID(step_id), state="testing_complete")
+        db.add(sample)
+        await db.flush()
+        order = QcTestOrder(sample_id=sample.id, test_definition_id=definition.id, state="reviewed", blocking=True)
+        db.add(order)
+        await db.flush()
+        run = QcTestRun(test_order_id=order.id)
+        db.add(run)
+        await db.flush()
+        qc_result = QcResult(test_order_id=order.id, test_run_id=run.id, result_type="numeric", outcome="oos")
+        db.add(qc_result)
+        await db.flush()
+        qc_result_id = qc_result.id
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    scope_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert detail["evaluation"]["eligible"] is False
+    blockers_by_code = {b["code"]: b for b in detail["evaluation"]["blockers"]}
+    assert blockers_by_code["QC_RESULT_FAILED"]["source_id"] == str(qc_result_id)
 
 
 async def test_evaluate_blocked_by_incomplete_qc_testing(client, seeded, db):

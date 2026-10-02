@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, hasPermission } from "@/lib/api";
-import { useMe } from "@/lib/hooks";
+import { useMe, useRequirePermission } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Banner } from "@/components/ui/Banner";
@@ -31,7 +31,7 @@ const READS = [
 ];
 
 export default function ValidationPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission(["validation.gate.view", "validation.package.view", "validation.traceability.view"]);
   // Entry permission for the validation platform console -- held broadly (Admin/Operator/QA Reviewer/
   // QA Releaser) per scripts/seed.py. The old role list excluded Operator despite it holding almost
   // every validation.* code directly -- a hidden-feature gap (audit finding 2026-09-18).

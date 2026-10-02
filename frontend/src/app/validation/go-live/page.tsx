@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, hasPermission } from "@/lib/api";
-import { useMe } from "@/lib/hooks";
+import { useMe, useRequirePermission } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Banner } from "@/components/ui/Banner";
@@ -294,7 +294,7 @@ const READS = [
 ];
 
 export default function GoLivePage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission(["validation.gate.view", "validation.package.view", "validation.traceability.view"]);
   const canWork = hasPermission(me, "validation.gate.view");
 
   return (

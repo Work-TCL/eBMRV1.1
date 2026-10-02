@@ -1,0 +1,117 @@
+================================================================================
+ TOPIC 1: WORKFLOW HANDOFF NOTIFICATIONS - WHAT ELSE SHOULD THEY COVER
+================================================================================
+
+BACKGROUND
+The system now nudges the right person when a record is sitting there waiting
+for their decision - for example, telling a QA Releaser a batch is ready to
+release, or telling someone a deviation needs a disposition decision. This is
+built and working for: Batch Release, Deviations, CAPAs, Documents, Nonconformances,
+Complaints, Change Controls, Supplier Corrective Actions (SCARs), Field Actions,
+Internal Audits, Risk Records, Out-of-Spec/Out-of-Trend lab results, Material
+Lot release, and Supplier Qualification.
+
+It does NOT yet cover: Validation records, device assembly (DDCP), post-market
+safety reporting, or security incidents - these each have their own "waiting
+for someone's decision" moments the system already tracks internally, but
+nobody gets nudged about them yet.
+
+QUESTION 1
+Which, if any, of those uncovered areas should get the same kind of nudge
+next? (Naming specific ones helps prioritize the work; "all of them
+eventually" is also a valid answer.)
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: Those areas keep working exactly as they do
+today - staff can still see and act on them by checking the relevant page
+themselves, they just don't get proactively nudged.
+
+
+================================================================================
+ TOPIC 2: HOW LONG SHOULD OLD NOTIFICATIONS BE KEPT
+================================================================================
+
+BACKGROUND
+Once someone acts on a notification (or the record moves past the point
+where it needed action), the notification is marked resolved but the record
+of it stays in the system - it isn't automatically deleted.
+
+QUESTION 2
+Is there a required length of time to keep this notification history for
+audit purposes, and after that, should old resolved notifications be
+automatically cleared out, or kept indefinitely?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: Resolved notifications are kept indefinitely.
+This is safe (nothing is lost) but the table will keep growing with no
+cleanup.
+
+
+================================================================================
+ TOPIC 3: SHOULD AN IGNORED NOTIFICATION EVER ESCALATE
+================================================================================
+
+BACKGROUND
+Right now a notification sits there, marked "unread," for as long as nobody
+acts on it - there is no time limit and nothing else happens if it's ignored.
+
+QUESTION 3
+If a record sits waiting for a decision too long (for example, a batch
+ready for release with nobody looking at it for 24 hours), should the
+system escalate - for example, by also notifying that person's supervisor,
+or a QA manager? If yes, how long is "too long," and who should it escalate
+to?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: No escalation happens. The only way to know
+something is stuck is to check the relevant list page directly or use the
+existing due-date Reminders (a separate, date-based feature) where
+applicable.
+
+
+================================================================================
+ TOPIC 4: SHOULD PEOPLE GET NOTIFIED BY EMAIL, OR ONLY INSIDE THE APP
+================================================================================
+
+BACKGROUND
+Today the "waiting for you" nudge only shows up as a bell icon inside the
+application itself - someone has to be logged in and looking at the screen
+to see it. There is no email, text message, or other outside notification.
+
+QUESTION 4
+Should notifications also go out by email (or another channel) for some or
+all of these situations, so someone doesn't have to be logged in to find
+out something needs their attention?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: Notifications stay inside the application only.
+Someone who doesn't log in won't know something is waiting for them until
+they do.
+
+
+================================================================================
+ TOPIC 5: MATERIAL LOT - SHOULD EARLIER STAGES ALSO NOTIFY SOMEONE
+================================================================================
+
+BACKGROUND
+A received material lot moves through a few stages before it's ready for a
+release decision (quarantined -> sampled -> tested -> ready for release
+decision). Right now, only the LAST stage - "ready for a release decision" -
+sends a notification (to QA). The earlier stages (a lot sitting in
+quarantine waiting to be sampled, or sitting there waiting for testing to
+start) do not notify anyone.
+
+QUESTION 5
+Should someone also be notified when a lot is sitting in an earlier stage
+waiting for the next step (for example, notifying a QC analyst that a lot
+is ready to be sampled)? If yes, who should be notified at each stage?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: Only the final "ready for release decision"
+stage notifies anyone. Earlier stages are still fully visible on the
+Material Lots page, just not proactively nudged.

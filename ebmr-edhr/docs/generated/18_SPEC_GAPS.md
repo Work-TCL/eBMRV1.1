@@ -1,7 +1,7 @@
 # 18 — SPEC_GAP Register
 
 **Package:** eBMR / eDHR Claude Code Construction Package  
-**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open); SG-167 added 2026-09-01 (Document 105 signature policy backfill, consolidating the code-only "SG-168" reference — dependent content_challenge_hash() defect fixed + 5 signature-challenge endpoints added; policy-data half open); SG-169 added 2026-09-01, RESOLVED (WP-12/14 PDF export dependency — ReportLab approved, re-pinned after a lost pin, live SCA/license scan complete: 0 vulnerabilities, all licenses permissive); SG-170 added 2026-09-01 (Document 106 row 168 unresolvable VSR-generation signer class; implemented unsigned per the function catalogue); SG-171 added 2026-09-01, RESOLVED (ai_governance router built and wired into main.py — Document 105's 13 functions were previously unreachable via HTTP); SG-172 added 2026-09-01 (validation platform router was never wired into main.py — lost in the 2026-09-01 git-filter-repo incident — now fixed; 24 signature-challenge endpoints added for its 26 signed pairs; policy-data half open); SG-173 added 2026-09-01 (product/recipe/batch have two independent, both-live authoritative stores each — AG-05 violation found while scoping WP-02's SG-013 event-schema slice; not fixed, migration/cutover plan reserved for the project owner); SG-013 event half re-baselined 2026-09-01 (284/484 events now committed — WP-09/10/11/13/14 landed since the last note plus a new WP-03 slice, 24/38; WP-04/06/12 still fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued — SG-013 remains blocking); SG-174 added 2026-09-01 (cross-module event-name collisions — LineClearanceCompleted and, found in the WP-04 slice the same day, MaterialReconciliationCalculated — each emitted by two unrelated modules with no consumer-visible distinction; both found by tooling/events/validate.py itself, left failing/documented rather than silently renamed); SG-013 event half at 371/484 after the WP-04 slice (54/72, Documents 18-25 — material/QC; WP-12 62 events fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued); SG-013 event half reaches 431/484 (89%) after the WP-12 slice (60/62, Documents 79-96) — every catalogue-backed work package now done; SG-013 event half CLOSED except WP-02 after deriving events directly from code for every previously-uncatalogued module (WP-01/07/08 + WP-06's edge/OT half, Documents 43/47) — 542 entries / 537 distinct across 81 files, every module in app/modules/ with real events now contracted except the SG-173 scaffold (product/recipe/batch), left uncontracted by design; SG-013 stays OPEN/blocking on SG-173 alone — all others open; SG-175 added 2026-09-03 (Product Master's `manufacturing_profile_code`/`sterile_profile_id`/`combination_product_type` on `gxp_product_version` and DDCP's own `ddcp_profile_version` are two unwired halves of the same combination-product concept — found while answering whether the DDCP page's "Product family" picker is data-driven from Product Master; not fixed, FK design/migration reserved for the project owner); SG-081 PARTIALLY RESOLVED 2026-09-07 for its read side only (project-owner-directed: GET /inventory/v1/warehouse-locations + GET /material-lots/{lot_id}/containers added, read-only, so the Inventory Transfer/Cycle-count/Adjustment forms can offer real dropdowns instead of hand-typed UUIDs; write-side CRUD for warehouse_location remains unresolved and not attempted); SG-081 write-create ALSO RESOLVED 2026-09-07 later same day (project-owner-directed, asked explicitly before building): POST /inventory/v1/warehouse-locations added with a dedicated warehouse_location.create permission code (Admin/Supervisor only) plus a "New location" UI -- update/delete/rename still unbuilt; SG-175 PARTIALLY RESOLVED 2026-09-07 for `sterile_profile_id` only (client-demo-flagged: field took any raw UUID with no existence check -- now FK-checked against Document 40's `equipment.aseptic_profile_versions`, existing RELEASED sterile/aseptic profile master data, at product_master draft create/update, plus a real GET /products/v1/sterile-profiles picker replacing the free-text Input in the frontend; `manufacturing_profile_code`/`product_family_id`/`combination_product_type` <-> `ddcp.ddcp_profile_version` linkage/authority question remains open, reserved for the project owner as originally written); SG-176 added and RESOLVED for create/list 2026-09-07, project-owner-directed (asked directly, chose the real-endpoint option): `aseptic_profile_version` had no create/release operation in Document 40's own 7-op API list either -- `POST`/`GET /aseptic/v1/profiles` added, gated by a new `aseptic_profile_version.create` permission code (Admin + Aseptic Supervisor), plus a "New sterile process profile" modal on `/aseptic` and an additive `headerAction` prop on the shared `OpsRecordPage` component; SG-176 update/delete ALSO RESOLVED 2026-09-07 later same day (project-owner-directed, asked explicitly: chose supersede-only over "supersede + retire" or "true hard delete"): migration 0085 adds `supersedes_profile_version_id`, `POST /aseptic/v1/profiles/{id}/supersede` creates a new version and marks the previous one SUPERSEDED (excluded from the RELEASED-only picker, kept forever in a new all-states `list_profile_versions`/`GET /aseptic/v1/profiles` listing that also answers the separate "where is show list?" gap by rendering as a browsable table on `/aseptic`) -- no true delete exists, by deliberate project-owner choice matching every other versioned regulated master-data record in this codebase; SG-177 added and RESOLVED for create/list 2026-09-07, project-owner-directed (asked directly: "develop the frontend for area"): `equipment_area` (shared master referenced by Documents 38/39/40/41/42's area_id/line_id fields) had no create operation in any of their declared API lists either -- `POST /equipment/v1/areas` added, gated by a new `equipment_area.create` permission code (Admin + Equipment Administrator), plus a "New area" button and an areas list table on `/equipment`; update/delete not built or offered as a choice (no established per-document ownership answer for this cross-document shared table); SG-035 `(product_version, release)` PARTIALLY RESOLVED 2026-09-07, project-owner-directed (hit live while demoing -- release failed `SIGNATURE_POLICY_UNRESOLVED` for every actor including Admin; asked directly which of self-signed/no-signature/leave-unresolved to take, chose self-signed): added a considered floor row (Admin signer, no independence check, since `product.release` is Admin-only with no reviewer-role split), a new `POST /products/v1/{id}/signature-challenges` endpoint (Product Master had none), a new re-runnable `scripts/sync_signature_policies.py` (mirroring `sync_permissions.py`, since `scripts.seed`'s own upsert only runs inside a destructive full reseed), and wired the frontend Release button to the shared `SignatureCeremony` component instead of posting unsigned; `vault_object/release`, `record_correction/complete`, `rule/release`, and `product_version/{suspend,reinstate}` all remain open/unresolved, deliberately not extended by this change; SG-178 added 2026-09-07 (recipe step `required_role_code` stored/shown but never enforced at step start, in either batch store) and RESOLVED 2026-09-08 project-owner-directed (Option A + documented override): migration 0086 adds `ebmr.gxp_batch_step.required_role_code`, `issue_batch` freezes it into the snapshot, and `start_step` on the regulated `/batch-execution` path fails closed with `STEP_ROLE_MISMATCH` unless the actor holds the role or supplies `override_reason` + the new `batch_step.role_override` permission (Admin/Supervisor); legacy `app/modules/batch` left unenforced per SG-173; authoring-SoD half also done — new `Process Engineer` role holds `recipe.author` (not `recipe.release`), `recipe.release` also granted to `QA Releaser`, standing-role-pair SoD rule left to the project owner; SG-035 further-partial 2026-09-08 (project-owner-directed) — `recipe_version/release` now has a signature policy (`required_role='QA Releaser'`, `requires_independent_signer=True`), both flags enforced in `release_recipe_version()` against the recipe's `Created` audit event (`SOD_CONFLICT` when author==releaser), new `POST /recipes/v2/drafts/{id}/signature-challenges` endpoint, frontend Release wired to `SignatureCeremony`; Decisions 1 & 2 added 2026-09-08 (project-owner-directed) — Decision 2: Product Master gets the same author≠releaser split (`product.author` -> Process Engineer + Admin, `product.release` -> QA Releaser + Admin, `product_version/release` signature upgraded to independent QA Releaser, `release_product_version()` enforces it against the `Created` audit event, new Document 107 rule IND-021); Decision 1 (defer standing-role-pair to the customer, long-term): new re-runnable `scripts/sync_sod_rules.py` + platform-floor row SOD-021 `(Process Engineer, QA Releaser)` REPORT_ONLY (person-level independence already enforced by IND-011/IND-021; PROHIBITED would break the all-roles `admin`, so the customer Quality org raises it at PQ); plus controlled repair migrations 0087/0088 removing the verification-only `RCP-SMOKE*`/`RCP-PICKER*`/`PRD-SMOKE*` families left in the live demo DB (audit/vault untouched, AG-08); SG-138 `deviation_record`/disposition+close PARTIALLY RESOLVED 2026-09-09, project-owner-directed (hit live while a user was testing the DDCP demo flow -- disposition failed `SIGNATURE_POLICY_UNRESOLVED`; asked directly, told to follow Document 106/107 as written): seeded from Document 106 rows 71/73 (QA Releaser, independent of investigator/owner per Document 107 IND-005, same mapping as `oos_record.disposition/close`), enforced in `qms/commands.py::_resolve_signature()`, frontend wired to the shared `SignatureCeremony` component; verified with `test_qms_deviation.py` 24/24 passed plus a live challenge-sign-close round trip against the demo DB (and a same-actor-as-owner attempt correctly refused with `SOD_INDEPENDENCE_REQUIRED`) -- the other 24 (record_type, action) pairs remain fully open, SG-138 stays blocking; SG-047 PARTIALLY RESOLVED 2026-09-09, project-owner-directed (a live demo batch got permanently stuck with no way to ever complete a step): `gxp_step_result` built (migration db47f27cf18b_0092), typed by reusing `gxp_recipe_parameter`'s own already-DDL-ready data_type/precision rather than inventing a new Document 110 policy; new signed `POST /batches/v1/{id}/steps/{id}/results`/`/complete` (Document 106 rows 19/21) plus a runtime half for BAT-FR-006's readiness computation (a 'pending' successor becomes 'ready' once every predecessor is 'complete') -- `gxp_step_evidence_link`/`gxp_batch_hold` remain open, SG-047 stays open for those two only; SG-047/SG-048 FURTHER PARTIALLY RESOLVED same day, project-owner-directed (asked which of six remaining demo gaps to build: chose step-level hold, Production Complete state, and material/equipment linkage -- built the first two, explicitly deferred the third once it turned out to be blocked on SG-045's own still-open schema question rather than guessing it): step-scoped `gxp_batch_hold` slice (`StepHold`, migration a6d525b2d585_0093, signed hold/resume) resolves SG-048 #020; `gxp_batch.state` gains `production_complete` (steps-completeness sub-clause only) resolves SG-048 #026; #012/#013 (material/equipment at step start) not attempted -- SG-045 (`recipe_material_requirement`/`recipe_equipment_requirement`) must resolve first; SG-180 added 2026-09-09 (found answering a client question for the Gujarati demo guide: `gxp_batch_step`'s generic recipe-step chain and DDCP's own 9-table execution record set both point at the same `ebmr.gxp_batch` row but neither reads nor writes the other — completing one does not complete/unblock the other, and the batch `/release` eligibility check, SG-056, reads neither; not fixed, three options recorded, project-owner decision needed); SG-181 added and RESOLVED 2026-09-09, project-owner-directed (hit live: a user clicked "Complete review" on `/qa-review` and got `SIGNATURE_POLICY_UNRESOLVED` — same SG-138 defect class, different work package, Documents 14/15 not the 12 QMS modules SG-138 covered): seeded Document 106 rows 29/32/33/34 (`qa_review_package.complete` → QA Reviewer; `release_scope.release/hold/reject` → QA Releaser, all `Released` per Document 106's own literal meaning column), added `signature-challenges` endpoints to both routers (neither had one), enforced required-role in both commands and Document 107 IND-002/003's QA-Reviewer-independence half in `release/commands.py` (via a new `_batch_qa_reviewer()` audit-event lookup — the package has no reviewer-identity column of its own), wired both frontend pages to `SignatureCeremony`; the "every PERFORMER on the batch" half of IND-002/003 has no data source anywhere in this codebase and stays deliberately unenforced (documented, not guessed) — SG-181 stays open for that piece only, not blocking; **Phase 0 architecture decisions recorded 2026-09-09 (project owner)**: ADR-0010 (Next.js `frontend/` is the operator UI of record, supersedes ADR-0008) closes SG-021 and opens SG-182 (Document 71 rework/descope); ADR-0011 (build NATS/JetStream + Temporal, current stand-ins interim) opens SG-183; ADR-0012 (first qualified release = narrow core-eBMR: WP-01/02/03/04 + WP-10 baseline); ADR-0013 (single authoritative store for Product/Recipe/Batch — retire the `product`/`recipe`/`batch` scaffolds, cut over to `_master`/`_execution`) RESOLVES SG-173, partially resolves SG-149 (architectural half) and decides the direction of SG-162; SG-035/SG-138/SG-167 fully RESOLVED 2026-09-11 on branch `wp15-phase3-deferred-decisions`, project-owner-directed via `PHASE_3_DEFERRED_DECISIONS.md` (items A/B/C: `training_assignment` x3, `product_version/reinstate`, all 5 SPEC-AI-001 pairs — values authored from the closest Document 106 section 8 families since section 9 either defers or has no row; item D: `record_correction/complete` given a real 2-signature ordered chain, migration `34927659a971`/0095 adds `signature.signature_policies.signature_order`) — verified: 76 passed / 0 failed across the four affected suites; migration + `scripts/sync_signature_policies.py` applied to both `ebmr_new_gxp_test` and the live demo DB `ebmr_new_gxp` (10 rows created)
+**Status:** Resolutions APPROVED 2026-08-21 for gaps SG-001–SG-020; SG-021 added 2026-08-22 (REMEDIATION_R1 FIX 4); SG-022–SG-028 added 2026-08-22 (WP-01 Document 07 partial build); SG-029–SG-034 added 2026-08-22 (WP-01 Document 05 partial build); SG-035–SG-037 added 2026-08-22 (WP-01 Documents 06+08 partial build); SG-038–SG-042 added 2026-08-22 (WP-01 Documents 03+04 bookkeeping backfill); SG-043–SG-044 added 2026-08-22 (WP-02 Document 09 partial build); SG-045–SG-046 added 2026-08-22 (WP-02 Document 10 partial build); SG-047–SG-048 added 2026-08-24 (WP-02 Document 11 partial build); SG-049–SG-050 added 2026-08-24 (WP-02 Document 12 partial build); SG-051–SG-052 added 2026-08-24 (WP-03 Document 13 partial build); SG-053–SG-054 added 2026-08-24 (WP-03 Document 14 partial build); SG-055 added 2026-08-24 (WP-03 Document 15 partial build); SG-056 added 2026-08-24 (WP-03 Document 16 partial build); SG-057–SG-058 added 2026-08-24 (WP-04 Document 18 partial build); SG-059–SG-062 added 2026-08-24 (WP-05 Document 26 partial build); SG-063–SG-065 added 2026-08-24 (WP-05 Document 27 partial build); SG-066 added 2026-08-24 (WP-04 Document 23 partial build); SG-067–SG-069 added 2026-08-24 (WP-05 Document 28 partial build); SG-070 added 2026-08-24 (WP-04 Document 24 partial build); SG-071–SG-073 added 2026-08-24 (WP-05 Document 29 partial build); SG-074 added 2026-08-24 (WP-04 Document 25 partial build); SG-075–SG-077 added 2026-08-24 (WP-04 Document 19 partial build); SG-078–SG-080 added 2026-08-24 (WP-05 Document 30 partial build); SG-081–SG-085 added 2026-08-24 (WP-04 Document 20 partial build); SG-086–SG-090 added 2026-08-25 (WP-05 Document 31 partial build); SG-091–SG-096 added 2026-08-25 (WP-04 Document 21 partial build); SG-097 added 2026-08-25 (WP-05 Document 32 partial build); SG-098 added 2026-08-25 (WP-04 Document 22 partial build); SG-099–SG-100 added 2026-08-25 (WP-05 Document 33 partial build); SG-101–SG-102 added 2026-08-25 (WP-05 Document 34 partial build); SG-103–SG-104 added 2026-08-25 (WP-05 Document 35 partial build); SG-105–SG-106 added 2026-08-25 (WP-05 Document 36 partial build); SG-107–SG-108 added 2026-08-25 (WP-05 Document 37 partial build, WP-05 complete); SG-132–SG-133 added 2026-08-26 (WP-03 Document 17 partial build); SG-132 PARTIALLY RESOLVED 2026-08-27 (5 of 6 built — packaging label-count query interface, DeviceUnit foreign key, per-unit aggregation, documented approved-loss + QMS deviation linkage, ERP/WMS comparison into Document 53's difference ledger); SG-134–SG-137 added 2026-08-27 (YLD-FR-012 waiver/profile rule, YLD-FR-021 loss-category catalogue, YLD-FR-027 QA-hold policy, YLD-FR-030 export ownership — the last promoted out of SG-132); SG-139–SG-144 added 2026-08-27 (WP-00 Document 101 / SPEC-ENG-005 WP-01 contract slice: Doc 03/04 exposure boundary, error-envelope three-way conflict, unapproved `Disposition` signature meaning, unconstrained audit action vocabulary, unenforced rule precision policy, unclosed simulate payload); SG-012/SG-013/SG-014/SG-018 PARTIALLY RESOLVED 2026-08-27 (five WP-01 OpenAPI 3.1 contracts committed under contracts/openapi/ plus the tooling/contracts/validate.py conformance gate; SG-013 remains blocking); SG-013 API-operation half CLOSED 2026-08-29 (WP-05 QMS contract slice, 452/453 operations committed, 0 backlog); SG-013 event half FIRST SLICE 2026-08-29 (WP-05 QMS, 84/484 events, contracts/events/ + tooling/events/validate.py, 0 violations — 400/484 events still open, SG-013 remains blocking); SG-138 engineering-half CLOSED 2026-08-29 (all 14 signature-challenge endpoints + the training_assignment/create ordering fix; policy-data half remains open); SG-167 added 2026-09-01 (Document 105 signature policy backfill, consolidating the code-only "SG-168" reference — dependent content_challenge_hash() defect fixed + 5 signature-challenge endpoints added; policy-data half open); SG-169 added 2026-09-01, RESOLVED (WP-12/14 PDF export dependency — ReportLab approved, re-pinned after a lost pin, live SCA/license scan complete: 0 vulnerabilities, all licenses permissive); SG-170 added 2026-09-01 (Document 106 row 168 unresolvable VSR-generation signer class; implemented unsigned per the function catalogue); SG-171 added 2026-09-01, RESOLVED (ai_governance router built and wired into main.py — Document 105's 13 functions were previously unreachable via HTTP); SG-172 added 2026-09-01 (validation platform router was never wired into main.py — lost in the 2026-09-01 git-filter-repo incident — now fixed; 24 signature-challenge endpoints added for its 26 signed pairs; policy-data half open); SG-173 added 2026-09-01 (product/recipe/batch have two independent, both-live authoritative stores each — AG-05 violation found while scoping WP-02's SG-013 event-schema slice; not fixed, migration/cutover plan reserved for the project owner); SG-013 event half re-baselined 2026-09-01 (284/484 events now committed — WP-09/10/11/13/14 landed since the last note plus a new WP-03 slice, 24/38; WP-04/06/12 still fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued — SG-013 remains blocking); SG-174 added 2026-09-01 (cross-module event-name collisions — LineClearanceCompleted and, found in the WP-04 slice the same day, MaterialReconciliationCalculated — each emitted by two unrelated modules with no consumer-visible distinction; both found by tooling/events/validate.py itself, left failing/documented rather than silently renamed); SG-013 event half at 371/484 after the WP-04 slice (54/72, Documents 18-25 — material/QC; WP-12 62 events fully open, WP-02 blocked on SG-173, WP-01/07/08 uncatalogued); SG-013 event half reaches 431/484 (89%) after the WP-12 slice (60/62, Documents 79-96) — every catalogue-backed work package now done; SG-013 event half CLOSED except WP-02 after deriving events directly from code for every previously-uncatalogued module (WP-01/07/08 + WP-06's edge/OT half, Documents 43/47) — 542 entries / 537 distinct across 81 files, every module in app/modules/ with real events now contracted except the SG-173 scaffold (product/recipe/batch), left uncontracted by design; SG-013 stays OPEN/blocking on SG-173 alone — all others open; SG-175 added 2026-09-03 (Product Master's `manufacturing_profile_code`/`sterile_profile_id`/`combination_product_type` on `gxp_product_version` and DDCP's own `ddcp_profile_version` are two unwired halves of the same combination-product concept — found while answering whether the DDCP page's "Product family" picker is data-driven from Product Master; not fixed, FK design/migration reserved for the project owner); SG-081 PARTIALLY RESOLVED 2026-09-07 for its read side only (project-owner-directed: GET /inventory/v1/warehouse-locations + GET /material-lots/{lot_id}/containers added, read-only, so the Inventory Transfer/Cycle-count/Adjustment forms can offer real dropdowns instead of hand-typed UUIDs; write-side CRUD for warehouse_location remains unresolved and not attempted); SG-081 write-create ALSO RESOLVED 2026-09-07 later same day (project-owner-directed, asked explicitly before building): POST /inventory/v1/warehouse-locations added with a dedicated warehouse_location.create permission code (Admin/Supervisor only) plus a "New location" UI -- update/delete/rename still unbuilt; SG-175 PARTIALLY RESOLVED 2026-09-07 for `sterile_profile_id` only (client-demo-flagged: field took any raw UUID with no existence check -- now FK-checked against Document 40's `equipment.aseptic_profile_versions`, existing RELEASED sterile/aseptic profile master data, at product_master draft create/update, plus a real GET /products/v1/sterile-profiles picker replacing the free-text Input in the frontend; `manufacturing_profile_code`/`product_family_id`/`combination_product_type` <-> `ddcp.ddcp_profile_version` linkage/authority question remains open, reserved for the project owner as originally written); SG-176 added and RESOLVED for create/list 2026-09-07, project-owner-directed (asked directly, chose the real-endpoint option): `aseptic_profile_version` had no create/release operation in Document 40's own 7-op API list either -- `POST`/`GET /aseptic/v1/profiles` added, gated by a new `aseptic_profile_version.create` permission code (Admin + Aseptic Supervisor), plus a "New sterile process profile" modal on `/aseptic` and an additive `headerAction` prop on the shared `OpsRecordPage` component; SG-176 update/delete ALSO RESOLVED 2026-09-07 later same day (project-owner-directed, asked explicitly: chose supersede-only over "supersede + retire" or "true hard delete"): migration 0085 adds `supersedes_profile_version_id`, `POST /aseptic/v1/profiles/{id}/supersede` creates a new version and marks the previous one SUPERSEDED (excluded from the RELEASED-only picker, kept forever in a new all-states `list_profile_versions`/`GET /aseptic/v1/profiles` listing that also answers the separate "where is show list?" gap by rendering as a browsable table on `/aseptic`) -- no true delete exists, by deliberate project-owner choice matching every other versioned regulated master-data record in this codebase; SG-177 added and RESOLVED for create/list 2026-09-07, project-owner-directed (asked directly: "develop the frontend for area"): `equipment_area` (shared master referenced by Documents 38/39/40/41/42's area_id/line_id fields) had no create operation in any of their declared API lists either -- `POST /equipment/v1/areas` added, gated by a new `equipment_area.create` permission code (Admin + Equipment Administrator), plus a "New area" button and an areas list table on `/equipment`; update/delete not built or offered as a choice (no established per-document ownership answer for this cross-document shared table); SG-035 `(product_version, release)` PARTIALLY RESOLVED 2026-09-07, project-owner-directed (hit live while demoing -- release failed `SIGNATURE_POLICY_UNRESOLVED` for every actor including Admin; asked directly which of self-signed/no-signature/leave-unresolved to take, chose self-signed): added a considered floor row (Admin signer, no independence check, since `product.release` is Admin-only with no reviewer-role split), a new `POST /products/v1/{id}/signature-challenges` endpoint (Product Master had none), a new re-runnable `scripts/sync_signature_policies.py` (mirroring `sync_permissions.py`, since `scripts.seed`'s own upsert only runs inside a destructive full reseed), and wired the frontend Release button to the shared `SignatureCeremony` component instead of posting unsigned; `vault_object/release`, `record_correction/complete`, `rule/release`, and `product_version/{suspend,reinstate}` all remain open/unresolved, deliberately not extended by this change; SG-178 added 2026-09-07 (recipe step `required_role_code` stored/shown but never enforced at step start, in either batch store) and RESOLVED 2026-09-08 project-owner-directed (Option A + documented override): migration 0086 adds `ebmr.gxp_batch_step.required_role_code`, `issue_batch` freezes it into the snapshot, and `start_step` on the regulated `/batch-execution` path fails closed with `STEP_ROLE_MISMATCH` unless the actor holds the role or supplies `override_reason` + the new `batch_step.role_override` permission (Admin/Supervisor); legacy `app/modules/batch` left unenforced per SG-173; authoring-SoD half also done — new `Process Engineer` role holds `recipe.author` (not `recipe.release`), `recipe.release` also granted to `QA Releaser`, standing-role-pair SoD rule left to the project owner; SG-035 further-partial 2026-09-08 (project-owner-directed) — `recipe_version/release` now has a signature policy (`required_role='QA Releaser'`, `requires_independent_signer=True`), both flags enforced in `release_recipe_version()` against the recipe's `Created` audit event (`SOD_CONFLICT` when author==releaser), new `POST /recipes/v2/drafts/{id}/signature-challenges` endpoint, frontend Release wired to `SignatureCeremony`; Decisions 1 & 2 added 2026-09-08 (project-owner-directed) — Decision 2: Product Master gets the same author≠releaser split (`product.author` -> Process Engineer + Admin, `product.release` -> QA Releaser + Admin, `product_version/release` signature upgraded to independent QA Releaser, `release_product_version()` enforces it against the `Created` audit event, new Document 107 rule IND-021); Decision 1 (defer standing-role-pair to the customer, long-term): new re-runnable `scripts/sync_sod_rules.py` + platform-floor row SOD-021 `(Process Engineer, QA Releaser)` REPORT_ONLY (person-level independence already enforced by IND-011/IND-021; PROHIBITED would break the all-roles `admin`, so the customer Quality org raises it at PQ); plus controlled repair migrations 0087/0088 removing the verification-only `RCP-SMOKE*`/`RCP-PICKER*`/`PRD-SMOKE*` families left in the live demo DB (audit/vault untouched, AG-08); SG-138 `deviation_record`/disposition+close PARTIALLY RESOLVED 2026-09-09, project-owner-directed (hit live while a user was testing the DDCP demo flow -- disposition failed `SIGNATURE_POLICY_UNRESOLVED`; asked directly, told to follow Document 106/107 as written): seeded from Document 106 rows 71/73 (QA Releaser, independent of investigator/owner per Document 107 IND-005, same mapping as `oos_record.disposition/close`), enforced in `qms/commands.py::_resolve_signature()`, frontend wired to the shared `SignatureCeremony` component; verified with `test_qms_deviation.py` 24/24 passed plus a live challenge-sign-close round trip against the demo DB (and a same-actor-as-owner attempt correctly refused with `SOD_INDEPENDENCE_REQUIRED`) -- the other 24 (record_type, action) pairs remain fully open, SG-138 stays blocking; SG-047 PARTIALLY RESOLVED 2026-09-09, project-owner-directed (a live demo batch got permanently stuck with no way to ever complete a step): `gxp_step_result` built (migration db47f27cf18b_0092), typed by reusing `gxp_recipe_parameter`'s own already-DDL-ready data_type/precision rather than inventing a new Document 110 policy; new signed `POST /batches/v1/{id}/steps/{id}/results`/`/complete` (Document 106 rows 19/21) plus a runtime half for BAT-FR-006's readiness computation (a 'pending' successor becomes 'ready' once every predecessor is 'complete') -- `gxp_step_evidence_link`/`gxp_batch_hold` remain open, SG-047 stays open for those two only; SG-047/SG-048 FURTHER PARTIALLY RESOLVED same day, project-owner-directed (asked which of six remaining demo gaps to build: chose step-level hold, Production Complete state, and material/equipment linkage -- built the first two, explicitly deferred the third once it turned out to be blocked on SG-045's own still-open schema question rather than guessing it): step-scoped `gxp_batch_hold` slice (`StepHold`, migration a6d525b2d585_0093, signed hold/resume) resolves SG-048 #020; `gxp_batch.state` gains `production_complete` (steps-completeness sub-clause only) resolves SG-048 #026; #012/#013 (material/equipment at step start) not attempted -- SG-045 (`recipe_material_requirement`/`recipe_equipment_requirement`) must resolve first; SG-180 added 2026-09-09 (found answering a client question for the Gujarati demo guide: `gxp_batch_step`'s generic recipe-step chain and DDCP's own 9-table execution record set both point at the same `ebmr.gxp_batch` row but neither reads nor writes the other — completing one does not complete/unblock the other, and the batch `/release` eligibility check, SG-056, reads neither; not fixed, three options recorded, project-owner decision needed); SG-181 added and RESOLVED 2026-09-09, project-owner-directed (hit live: a user clicked "Complete review" on `/qa-review` and got `SIGNATURE_POLICY_UNRESOLVED` — same SG-138 defect class, different work package, Documents 14/15 not the 12 QMS modules SG-138 covered): seeded Document 106 rows 29/32/33/34 (`qa_review_package.complete` → QA Reviewer; `release_scope.release/hold/reject` → QA Releaser, all `Released` per Document 106's own literal meaning column), added `signature-challenges` endpoints to both routers (neither had one), enforced required-role in both commands and Document 107 IND-002/003's QA-Reviewer-independence half in `release/commands.py` (via a new `_batch_qa_reviewer()` audit-event lookup — the package has no reviewer-identity column of its own), wired both frontend pages to `SignatureCeremony`; the "every PERFORMER on the batch" half of IND-002/003 has no data source anywhere in this codebase and stays deliberately unenforced (documented, not guessed) — SG-181 stays open for that piece only, not blocking; **Phase 0 architecture decisions recorded 2026-09-09 (project owner)**: ADR-0010 (Next.js `frontend/` is the operator UI of record, supersedes ADR-0008) closes SG-021 and opens SG-182 (Document 71 rework/descope); ADR-0011 (build NATS/JetStream + Temporal, current stand-ins interim) opens SG-183; ADR-0012 (first qualified release = narrow core-eBMR: WP-01/02/03/04 + WP-10 baseline); ADR-0013 (single authoritative store for Product/Recipe/Batch — retire the `product`/`recipe`/`batch` scaffolds, cut over to `_master`/`_execution`) RESOLVES SG-173, partially resolves SG-149 (architectural half) and decides the direction of SG-162; SG-035/SG-138/SG-167 fully RESOLVED 2026-09-11 on branch `wp15-phase3-deferred-decisions`, project-owner-directed via `PHASE_3_DEFERRED_DECISIONS.md` (items A/B/C: `training_assignment` x3, `product_version/reinstate`, all 5 SPEC-AI-001 pairs — values authored from the closest Document 106 section 8 families since section 9 either defers or has no row; item D: `record_correction/complete` given a real 2-signature ordered chain, migration `34927659a971`/0095 adds `signature.signature_policies.signature_order`) — verified: 76 passed / 0 failed across the four affected suites; migration + `scripts/sync_signature_policies.py` applied to both `ebmr_new_gxp_test` and the live demo DB `ebmr_new_gxp` (10 rows created); SG-149/SG-173/SG-054/SG-055 documentation corrected 2026-09-22 (no new code — a Materials/Recipe/Batch Execution/QC/Release/Review gap-triage pass found these four entries materially understated already-existing code: SG-149/SG-173 never cited migration `e5f7a9c1b3d6_0090` for the Batch FK-repoint + demo-data disposition that was in fact already done, and wrongly implied `app/modules/batch`'s legacy routes were retired when they are still live in `app/main.py`; SG-054/SG-055 still said Document 16/17 and QC/material/equipment/environment/yield review "don't exist yet" when `release/service.py` and `qa_review/service.py` had already wired 6-8 of those signals, docstring-dated 2026-09-19 project-owner-directed, matching commits `bb0a09a`/`c894dea` — the underlying work predates this correction, only the register was stale); SG-045 #012/SG-048 #012 RESOLVED and SG-097 MAT-013 half RESOLVED 2026-09-22 (later the same day, project-owner-directed "proceed with both"): `_enforce_step_material()` gates `batch_execution`'s `complete_step` on `RecipeMaterialRequirement` (material identity via `MaterialConsumption`, deliberately not step-attribution or quantity/UOM tolerance — SG-077); `_is_eligible()` in `material/commands.py` gained a `supplier_status` parameter blocking `Supplier.status != "approved"` at all four choke points (availability listing, reservation, dispensing source selection, dispensing completion) — also surfaced and corrected that SG-045/SG-048's BAT-FR-013 (equipment) enforcement was already built in an earlier, undated pass and TC-011-013-01/TR-00267 were stale BLOCKED/NOT_STARTED; TEST_CASE_LIBRARY.csv (TC-011-012-01, TC-011-013-01 → PASS; TC-010-009-02 note corrected) and TRACEABILITY_MASTER.csv (TR-00227/228/266/267/556) updated, `rollup.py` re-run (100 started, 852/2965 requirements verified, 2663 test cases executed). Verified: 2 new tests plus a 205-passed/0-failed regression sweep across all 10 touched suites.; SG-212 added 2026-09-22 (client question "what happens when a lot's status is Discrepancy hold?" traced end-to-end: MaterialReceipt's discrepancy_hold has exactly 3 states, no resolution command anywhere, no lot ever created, no Deviation auto-linked -- Document 19's own RCV-FR-004/031 name a "hold/deviation" and "discrepancy workflow" but never define disposition options, signer role, or whether an accepted discrepancy creates a lot; not fixed, 5 explicit decisions listed for the project owner, class R); SG-078 DOC-FR-023 PARTIALLY RESOLVED 2026-09-24 (found building the `/documents` list-view UI: `GET /documents/v1` added, browsable/code-searchable/paginated/sortable, same shared `paginate()`/`filtered()` contract as every other QMS list endpoint; also fixed `get_versions` returning a shape its own declared frontend consumer never matched -- wrapped object instead of a flat array, several fields missing -- corrected plus the one test asserting the old shape; title/owner/site/effective-date search, DOC-FR-011, DOC-FR-024 remain open)
 **Specification baseline:** Documents 01–105, baseline date 2026-08-20  
 **Purpose:** Every missing or conflicting decision found in Documents 01–105, with impact, options and the document that resolves it.
 
@@ -59,7 +59,7 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-041 | E | no | SIG-FR-003: signature `meaning` is free text, not constrained to the controlled catalogue at the DB level | — (open) | Data Architect + IAM module owner |
 | SG-042 | E | no | SIG-FR-002: no identity-verification-evidence field exists on the User model | — (open) | Data Architect + IAM module owner |
 | SG-043 | E | no | `product_site_admission`/`product_external_mapping` (Document 09) are prose-only, not DDL-ready | — (open) | Data Architect + Product module owner |
-| SG-044 | D | no | Repointing `Batch`/`Recipe` at `gxp_product_version` (Document 09) is deferred until Document 10 exists | — (open, Document 10 dependency) | Platform Architect |
+| SG-044 | D | no | Repointing `Batch`/`Recipe` at `gxp_product_version` -- RESOLVED BY OBSOLESCENCE 2026-09-23 (ADR-0013 retired the legacy trio outright instead) | Superseded by ADR-0013 + migration a1b2c3d4e5f6_0120 | Platform Architect |
 | SG-045 | E | no | `recipe_material_requirement`/`recipe_equipment_requirement` (Document 10) are ambiguous policy prose, not DDL-ready | — (open) | Data Architect + Recipe module owner |
 | SG-046 | D | no | 16 Document 10 requirements depend on modules/infrastructure that don't exist yet (QC orders, live batch execution, sterile/device/packaging masters, exception-policy engine, WP-05/16/17) | — (open) | Platform Architect |
 | SG-047 | E | no | `gxp_step_result`/`gxp_step_evidence_link`/`gxp_batch_hold` (Document 11) are prose-only field-name lists, not DDL-ready | — (open) | Data Architect + Batch Execution module owner |
@@ -91,16 +91,16 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-073 | D | no | CHG-FR-015/024 (Document 29): no operation to update/complete an existing change_task, and no export operation, in Document 29's own 8-op API list | — (open) | Data Architect + QMS module owner |
 | SG-074 | D | no | 7 Document 25 gaps: no CAPA/Change Control link schema, no /reopen/dashboard/export endpoints, no QA-review-package or release-engine wiring, and no numeric retest-count policy value | — (open) | Platform Architect + QC module owner |
 | SG-075 | R | no | `material_lot`'s existing `disposition` signature policy row does not match Document 106 rows 44/45 for the same aggregate | — (open) | Data Architect + Materials module owner |
-| SG-076 | D | no | Document 19's RCV-FR-023/024/025 need a material-scoped QC test specification that does not exist (same root cause as SG-057/SG-063) | — (open) | Data Architect + Materials module owner + QC module owner |
+| SG-076 | D | no | Document 19's RCV-FR-023/024/025 need a material-scoped QC test specification -- PARTIALLY RESOLVED 2026-09-23: scope_type="material" now buildable; required-test-blocks-release enforcement stays open | qc/models.py, qc/commands.py, tests/test_qc.py | Data Architect + Materials module owner + QC module owner |
 | SG-077 | D | no | Document 19 requirements needing infrastructure this codebase does not have yet: UOM conversion, edge/equipment integration, a warehouse/location master, and ERP reconciliation | — (open) | Platform Architect + Materials module owner |
-| SG-078 | D | no | DOC-FR-011/023/024 (Document 30): uncontrolled-copy marking, general search and export have no operation in Document 30's own 7-op API list | — (open) | Data Architect + QMS module owner |
+| SG-078 | D | no | DOC-FR-011/023/024 (Document 30): uncontrolled-copy marking, general search and export have no operation in Document 30's own 7-op API list | DOC-FR-023 PARTIALLY RESOLVED 2026-09-24 (code search + pagination) | Data Architect + QMS module owner |
 | SG-079 | D | no | DOC-FR-013/014 (Document 30): training assignment wiring and per-user acknowledgment capture are not performed this pass | — (open) | Data Architect + QMS module owner + Training module owner |
 | SG-080 | D | no | DOC-FR-022 (Document 30): no historical-document migration pathway exists distinct from the normal signed-release flow | — (open) | Data Architect + QMS module owner |
 | SG-081 | D | no | `warehouse_location` (INV-FR-001/002, Document 20) has no CRUD operation anywhere in Document 20's own 8-op API list | 2026-09-07 partial (read + create live; update/delete/rename still open) | Data Architect + Materials module owner |
 | SG-082 | D | no | Document 20 requirements needing infrastructure this codebase does not have yet: barcode/scanner integration, storage-condition excursion/monitoring integration, label-reprint infrastructure, and ERP reconciliation | — (open) | Platform Architect + Materials module owner |
 | SG-083 | D | no | Document 20's FEFO/FIFO deviation-override path and material-spec-version-scoped eligibility, and alternative-material recipe/deviation compatibility, all need a deviation/change-approval entity and a material-specification-version entity that don't exist (SG-057 family) | — (open) | Data Architect + Materials module owner |
 | SG-084 | D | no | Document 20's cycle-count adjustment (INV-FR-020) has no Document 106 signature-policy row despite spec prose implying approval; physical-count freeze (INV-FR-021) has no entity/operation in Document 20's own API list | — (open) | Data Architect + Materials module owner |
-| SG-085 | D | no | Document 20's container split/merge/transfer provenance (INV-FR-030) is not wired into genealogy_node/genealogy_edge this pass, and true cross-site inter-site transfer with destination-site container re-identification is not built (same-site transfer only) | — (open) | Platform Architect + Materials module owner + Genealogy module owner |
+| SG-085 | D | no | Document 20's container split/merge/transfer provenance (INV-FR-030) -- PARTIALLY RESOLVED 2026-09-23: SPLIT_FROM wired; merge has no confirmed edge type (still open); transfer confirmed out of scope for genealogy. True cross-site inter-site transfer (INV-FR-009) still not built | split: material/commands.py split_container(); merge/transfer: investigation only | Platform Architect + Materials module owner + Genealogy module owner |
 | SG-086 | R | no | `qms.qualification_record` (Document 31) and pre-existing `iam.qualifications` (Document 07) are two stores for what looks like the same real-world concept; authority/reconciliation unresolved | — (open) | Data Architect + IAM module owner + QMS module owner |
 | SG-087 | D | no | Document 31's TRN-FR-007 "attempt rules" has no numeric max-attempt or backoff policy anywhere in the baseline | — (open) | Quality/Training process owner |
 | SG-088 | D | no | Document 31's TRN-FR-016/010 platform-wide training/qualification execution gate is not wired into any other module's Mutation Gateway calls | — (open) | Platform Architect + every module owner |
@@ -112,7 +112,7 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-094 | D | no | Document 21's target-quantity/tolerance authority and `material_requirement` entity don't exist anywhere in this codebase; values are caller-supplied captured input, not derived | — (open) | Data Architect + Materials module owner |
 | SG-095 | D | no | Document 21's DSP-FR-018 conditional independence ("required where material or step is flagged critical") can't be expressed by `signature_policies.requires_independent_signer`'s flat boolean, and the actually-used batch/recipe path has no step-critical data source | — (open) | Data Architect + Materials module owner + Batch/Recipe module owner |
 | SG-096 | D | no | Document 21's label printing/reprint, line/booth clearance and genealogy wiring have no real implementation this pass | — (open) | Platform Architect + Materials module owner + Genealogy module owner |
-| SG-097 | D | no | SCAR-FR-011's source-suspension procurement gate is enforced only within the SCAR module's own new-case check; it does not write ebmr.supplier.status and does not gate materials-module receipt/use | — (open) | Platform Architect + Supplier Quality module owner + Materials module owner + QMS module owner |
+| SG-097 | D | no | SCAR-FR-011's source-suspension procurement gate is enforced only within the SCAR module's own new-case check; it does not write ebmr.supplier.status and does not gate materials-module receipt/use | RESOLVED 2026-09-22 (suspend_supplier/reinstate_supplier + RCV-FR-005 receipt-gate + MAT-013 inventory-eligibility, both halves) | Platform Architect + Supplier Quality module owner + Materials module owner + QMS module owner |
 | SG-098 | D | no | Document 22 requirements needing infrastructure this codebase does not have yet: automatic-consumption integration, released reconciliation-tolerance rule, batch-completion gate, and ERP posting | — (open) | Platform Architect + Materials module owner + Batch module owner + Rules Engine owner |
 | SG-099 | D | no | RSK-FR-007's risk-level-tiered acceptance-authority escalation matrix is not defined anywhere in the baseline | — (open) | Platform Architect + QMS module owner + Head of Quality |
 | SG-100 | D | no | RSK-FR-009/010/014's cross-module automatic risk-review triggering (Deviation/OOS/Complaint/Audit/Change Control) has no owning command to call yet | — (open) | Platform Architect + QMS module owner |
@@ -2439,6 +2439,21 @@ resolution_document: "— (open, Document 10 dependency)"
 status: OPEN
 ```
 
+**UPDATE 2026-09-23 (RESOLVED BY OBSOLESCENCE, not by repointing).** ADR-0013 (2026-09-09) superseded this
+gap's whole premise: rather than ever repointing `app/modules/batch`/`app/modules/recipe`'s FKs at
+`gxp_product_version`, the project owner decided `product_master`/`recipe_master`/`batch_execution` are
+the sole authoritative stores and the legacy `batch`/`recipe`/`product` trio is retired outright. That
+retirement's Phase 4/contract executed 2026-09-23 (see SG-149/SG-173's matching updates): `app/modules/
+batch/models.py` (`Batch.product_id`, `Batch.recipe_id`) and `app/modules/recipe/models.py`
+(`Recipe.product_id`) — the exact fields this gap was about — no longer exist. There is nothing left to
+repoint; Document 10's real `recipe_material_requirement`/`recipe_equipment_requirement` question (a
+separate, still-open gap) is tracked under SG-045, not here.
+
+```yaml
+resolution_document: "Superseded by ADR-0013 + migration a1b2c3d4e5f6_0120 (2026-09-23) -- app/modules/batch and app/modules/recipe, and the FK fields this gap named, are deleted, not repointed"
+status: RESOLVED  # by obsolescence, 2026-09-23
+```
+
 ### SG-045 — `recipe_material_requirement`/`recipe_equipment_requirement` (Document 10) are ambiguous policy prose, not DDL-ready
 
 Of Document 10's 9 owned entities, `recipe_family`, `recipe_section`, `recipe_step_dependency`,
@@ -2510,9 +2525,33 @@ resolution_document: "2026-09-11, project-owner-directed (Phase 4 / wp16-phase4-
   tables wired into recipe_master's create_draft/update_draft _replace_graph() (app/modules/recipe_master/
   commands.py) and exposed on GET /recipes/v2/versions/{id}. Verified: tests/test_recipe_master.py
   (21/21 passed, 4 new), tests/test_material_specification.py (7/7 passed, new file)."
-status: PARTIALLY RESOLVED (schema + recipe-draft authoring built; BAT-FR-012/013 runtime enforcement at
-  batch step start deliberately not attempted — separate build, now unblocked)
+status: RESOLVED  # schema, recipe-draft authoring, and both BAT-FR-012/013 runtime gates now built
 ```
+
+**UPDATE 2026-09-22, project-owner-directed ("proceed with both" -- this gap's BAT-FR-012/013 residual and
+SG-097's MAT-013 half, agreed after the same day's register-cleanup pass).** This entry's own "still
+deferred"/"not enforced" language for BAT-FR-012/013 was already stale before today for the equipment half
+-- confirmed by reading `app/modules/batch_execution/commands.py::_enforce_step_equipment()` directly: it
+was built in an undated-in-this-entry known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 3,
+referenced from `RecipeEquipmentRequirement`'s own docstring) and gates `start_step` on the frozen
+`BatchStepEquipmentRequirement` rows via `equipment.commands.get_eligibility()`, persisting the asset used
+in `EquipmentUseLog` (2026-09-19 follow-up). **BAT-FR-012 (material) is new today:** a new
+`_enforce_step_material()` gates `complete_step` on `RecipeMaterialRequirement`, reusing the recipe-version
+-live-read pattern `_recipe_parameters_for_step`/`_recipe_evidence_requirements_for_step`/
+`_required_qc_specs_for_step` already established (not the equipment module's frozen-at-issue table --
+the recipe *version* is itself immutable once released, so there is nothing to freeze against). Scope
+deliberately narrower than a full eligibility/reservation/dispensing/consumption gate, and stated as such
+in the function's own docstring: **existence, not step attribution** (`MaterialConsumption.step_id` is
+optional and not set by any existing caller in this codebase; checks the batch, not the exact step) and
+**material identity, not quantity/tolerance** (matches on the underlying `Material` via
+`material_spec_version_id`/`alternative_material_spec_version_id`, not `target_value`/`min_value`/
+`max_value`/`uom` -- verifying quantity would require cross-UOM conversion this codebase does not have,
+SG-077, which would be a guessed regulated calculation, not an engineering wiring choice). Verified:
+`tests/test_batch_execution.py` (new `test_complete_step_blocked_without_required_material_then_succeeds_
+after_consumption`) plus the full `test_material_flow.py`/`test_material_consumption_flow.py`/
+`test_material_receipt_flow.py`/`test_dispensing_flow.py`/`test_inventory_flow.py`/`test_qms_scar.py`/
+`test_recipe_master.py`/`test_release_gate.py`/`test_qa_review.py`/`test_batch_execution.py` regression
+sweep run together with SG-097's MAT-013 fix -- 205 passed, 0 failed.
 
 ### SG-046 — 16 Document 10 requirements depend on modules/infrastructure that don't exist yet
 
@@ -3316,6 +3355,46 @@ resolution_document: "— (open)"
 status: OPEN
 ```
 
+**UPDATE 2026-09-22 (documentation backfill, no new code this pass — found while triaging this register
+against current code; the underlying work is genuinely older, project-owner-directed, and was already
+cited in the code's own docstrings but never written back to this entry).** `app/modules/qa_review/
+service.py` now wires six of the sixteen listed requirements to real signals, confirmed by direct read of
+the file today:
+
+- **RBE-FR-001's Production-Complete trigger is now enforced**, not merely allowed from any state as this
+  entry originally recorded: `compute_completeness()` blocks with `"batch is not production_complete"`
+  when `batch.state != "production_complete"`. The docstring dates this "reopened 2026-09-17,
+  project-owner-directed after the matching `release/service.py` gap was hit live" — SG-048 (the
+  dependency this entry's own reasoning named) resolved in the interim, closing this half.
+- **RBE-FR-010 (QC review) and RBE-FR-011 (material review)** — `_qc_signals()`/`_material_signals()`,
+  same attribution/severity pattern as `release/service.py`'s copies (see SG-055's matching update).
+- **RBE-FR-012 (equipment review)** — `_equipment_signals()`.
+- **RBE-FR-013 (environment/sterile review)** — `_em_signals()`.
+- **RBE-FR-016 (yield/reconciliation review)** — `_yield_signals()`; Document 17 (`yield_reconciliation`
+  module) is in fact built and was simply never called from this module before — this entry's premise
+  ("Document 17, not built") was already wrong by the time of this correction.
+
+All six are wired into `compute_completeness()`/`get_exceptions_view()` via a shared `_extra_signals()`
+helper, docstring-dated 2026-09-19 project-owner-directed, matching commits `bb0a09a` ("Block
+release/review on incomplete QC testing, not just failed results (req #10)") and `c894dea` ("Fix
+signature-ceremony gaps in evidence/CAPA/release flows...") on this branch's history.
+
+**Genuinely still open, unchanged:** RBE-FR-004 (severity classification), RBE-FR-007 (manual override
+review), RBE-FR-009 (signature review detail), RBE-FR-014 (genealogy completeness — still no rule for
+"required" relationships, still correctly deferred as a regulated-completeness-criteria decision this
+pass has no authority to invent), RBE-FR-015 (packaging/label review — Document 16 is now built, but
+`_packaging_signals()`'s own docstring records it as *deliberately* non-blocking, a 2026-09-19
+project-owner-directed design choice, not a missing dependency — so RBE-FR-015's "review" framing is only
+partially answered), RBE-FR-017 (reviewer comment), RBE-FR-018 (return for controlled action), RBE-FR-019
+(checklist entity), RBE-FR-021 (multi-reviewer), RBE-FR-025 (risk-based routing), RBE-FR-027 (export) —
+all still depend on SG-053's still-open `qa_review_item`/`qa_review_comment` entities or infrastructure
+this codebase doesn't have.
+
+```yaml
+resolution_document: "app/modules/qa_review/service.py _qc_signals/_material_signals/_em_signals/_equipment_signals/_yield_signals/_extra_signals + compute_completeness's production_complete gate (RBE-FR-001/010/011/012/013/016 resolved); RBE-FR-004/007/009/014/015/017/018/019/021/025/027 remain open, several blocked on SG-053"
+status: PARTIALLY_RESOLVED  # corrected 2026-09-22; 6 of 16 requirements now have a real wired signal
+```
+
 ### SG-055 — 15 Document 15 requirements depend on modules/infrastructure that don't exist yet; non-batch scope types are not supported
 
 Unlike every module since Document 10, all 3 of Document 15's owned entities got typed this pass:
@@ -3390,6 +3469,46 @@ blocking: false
 owner: Platform Architect
 resolution_document: "— (open)"
 status: OPEN
+```
+
+**UPDATE 2026-09-22 (documentation backfill, no new code this pass — found while triaging this register
+against current code; the work itself is older and project-owner-directed, already cited in the code's
+own docstrings, docstring-dated 2026-09-19, but never written back to this entry).** `app/modules/release/
+service.py::evaluate_eligibility()` now has a real, wired data source for six more of REL-FR-003's nine
+named eligibility categories, confirmed by direct read of the file today — its own docstring states
+"eight of the nine named eligibility categories now have a real, wired data source":
+
+- **QC** — `_qc_signals()`: a blocking open/failed QC order or result, matching commit `bb0a09a`
+  ("Block release/review on incomplete QC testing, not just failed results (req #10)").
+- **Materials** — `_material_signals()`: an unreleased material lot consumed into the batch blocks
+  release.
+- **Environment** — `_em_signals()`: an environmental-monitoring excursion blocks; a calculated-but-
+  unverified reading is a non-blocking warning.
+- **Equipment** — `_equipment_signals()`: calibration/qualification/cleaning-state ineligibility blocks.
+- **QMS (CAPA)** — `_capa_signals()`: an open CAPA sourced from a batch-attributed deviation/OOS blocks —
+  the docstring is explicit this was done "NOT by adding batch to `CAPA_SOURCE_TYPES`", i.e. a deliberate
+  narrower scope than a naive reading of REL-FR-021 might suggest.
+- **Yield/reconciliation** — `_yield_signals()`: this entry's own premise ("Document 17... not built") was
+  already wrong by the time of this correction — `yield_reconciliation` is built and now wired; an
+  unresolved `ManufacturingCalculation`/`ReconciliationRecord` blocks.
+- **Packaging** — `_packaging_signals()` exists but is a *deliberate* non-blocking warning only
+  (2026-09-19, project-owner-directed: "batch release is the bulk/production disposition; packaging/
+  labeling is tracked independently... matching Document 16's own post-batch framing"), so REL-FR-019
+  (packaging eligibility) is answered by design, not left open.
+
+That leaves QA review currency/completeness and Vault execution-snapshot integrity (already real before
+this pass) plus these six newly-wired categories — 8 of 9. **Genealogy is the only named category with
+no signal at all**, correctly still deferred (no rule exists for what relationships are "required").
+
+**Genuinely still open, unchanged:** REL-FR-002 (DDCP constituent tracking — blocked on SG-149/SG-173's
+DDCP behavioural cutover, still not done, see SG-149's 2026-09-22 update), REL-FR-013/014 (rework/
+reprocess/destruction routes), REL-FR-016 (device-serial release), REL-FR-027 (ERP/WMS distribution),
+REL-FR-032 (SLA/cycle-time analytics), and `release_scope.scope_type="batch"`-only (device/serial/
+combination-product scope unsupported).
+
+```yaml
+resolution_document: "app/modules/release/service.py _qc_signals/_material_signals/_em_signals/_equipment_signals/_capa_signals/_yield_signals/_packaging_signals, wired into evaluate_eligibility() (8 of 9 REL-FR-003 categories now real); REL-FR-002/013/014/016/027/032 and non-batch scope_type remain open"
+status: PARTIALLY_RESOLVED  # corrected 2026-09-22; 8 of 9 eligibility categories now have a real signal, up from 2
 ```
 
 ### SG-056 — 20 Document 16 requirements depend on entities/infrastructure that don't exist anywhere in this codebase; the API list itself is incomplete
@@ -4034,9 +4153,31 @@ options:
     action (rejected -- still a guess about which section is wrong, not a resolution).
 blocking: false
 owner: Document 27 author + Platform Architect + QMS module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "app/modules/qms/capa_commands.py, capa_router.py, scripts/seed.py SIGNATURE_POLICY_FLOOR, tests/conftest.py, tests/test_qms_capa.py, frontend/src/app/capa/[id]/page.tsx"
+status: RESOLVED
 ```
+
+**SG-065 RESOLVED 2026-09-22, project-owner-directed (asked directly via AskUserQuestion among options —
+chose to follow CAPA-FR-021's prose over section 6's API table for the two remaining unsigned actions).**
+`plan` and `extend` now carry the identical "Approved"/QA Releaser/independent-of-`owner_subject_id`
+signature shape `close`/`effectiveness` (SG-210) already use — two new `SIGNATURE_POLICY_FLOOR` rows
+(`("capa_record", "plan", "Approved", "QA Releaser", True, True, True)` and the same for `"extend"`),
+resolved via the existing `_resolve_signature()` helper in `capa_commands.py`, enforced in `plan_capa()`
+and `extend_capa()` before any state mutation. `PlanCapaCommand`/`ExtendCapaCommand` gained
+`challenge_id`/`reauth_password` fields; `capa_router.py`'s `CAPA_SIGNATURE_ACTIONS` gained `"plan"` and
+`"extend"`. QA Releaser's RBAC grant gained `capa.plan`/`capa.extend` (`scripts/seed.py` and
+`tests/conftest.py`) alongside its existing `capa.effectiveness`/`capa.close`/`capa.reopen`, so an
+independent QA Releaser can actually invoke and sign the two newly-gated endpoints; Supervisor keeps its
+own pre-existing `capa.plan`/`capa.extend` grant for unsigned deployments. Frontend's Plan-approval and
+Extend actions on `/capa/[id]` now render the shared `SignatureCeremony` component. Document 27's own
+internal contradiction between CAPA-FR-021 (four actions) and its section 6 API table (only `close`) is
+now fully resolved in the prose's favor — all four named actions (plan, extend, effectiveness, close) are
+signed. Verified: `tests/test_qms_capa.py`, 26/26 passed, including 5 new tests
+(`test_plan_requires_signature_when_policy_requires_it`,
+`test_plan_by_the_capa_owner_is_refused_as_not_independent`,
+`test_extend_requires_signature_when_policy_requires_it`,
+`test_extend_signature_round_trip_succeeds_for_independent_signer`, plus `_advance_to_effectiveness_review`
+gaining a `plan_signer_token` parameter exercised by the 3 existing `signed=True` tests).
 
 ### SG-066 — 9 Document 23 requirements depend on entities/modules that don't exist yet: material-scope test specifications (same root cause as SG-057), Document 25's OOS/OOT records, WP-06 Equipment, and a Method-master entity Document 23 never defines
 
@@ -4139,6 +4280,48 @@ resolution_document: "2026-09-12, Phase 4 (wp17-phase4-wp04-qc-method-master): Q
 status: PARTIALLY RESOLVED (Method-master / QC-FR-004 built; scope_type='material' wiring, WP-06
   instrument eligibility, QC-FR-011 qualification-expiry, and QC-FR-036/037 dashboard/export remain open;
   the OOS/OOT sub-item was already resolved elsewhere, this entry just hadn't been updated to say so)
+```
+
+**UPDATE 2026-09-23 (Task 4, narrowly scoped to the QC module's own actions per this pass's own
+correction: QC-FR-011's original text called the qualification-expiry gap "platform-wide," but this pass
+deliberately does not attempt a platform-wide fix -- only QC's own call sites).**
+
+**QC-FR-011 (qualification-expiry) RESOLVED for the one QC action Document 23's own text actually names.**
+Re-read QC-FR-011 in full ("Assign qualified analyst/team; qualification/training and method authorization
+checked at execution") and the Test Catalogue's own "analyst qualification expired" scenario (§18). Neither
+`qc_test_definition` nor `qc_method_version` declares a per-test/per-method qualification-code field the
+way a recipe step declares `required_qualification_code` -- Document 23 describes a role-level "qualified
+to perform QC testing" gate, not a per-test-configurable one. Reused `material/commands.py::
+_check_dispensing_qualification`'s exact shape instead of `batch_execution`'s field-driven one: a new
+`_check_qc_analyst_qualification()` (`app/modules/qc/commands.py`) checks a fixed `iam.Qualification.
+qualification_code="qc_analyst"`. Wired at exactly one call site, `start_test_order`'s router
+(`post_start_test_order` in `app/modules/qc/router.py`) -- "checked at execution" means the point work
+begins, matching `_check_dispensing_qualification`'s own placement at dispense-start, not completion.
+Deliberately **not** placed inside `start_test_order()` itself: that function is also called internally by
+`lims_integration/commands.py`'s already-authorized LIMS ingestion flow using a non-human service identity
+(MUT-FR-023), which cannot hold a human `iam.Qualification` record -- the router already draws exactly
+this line for the RBAC permission check (`qc_test_order.start`, router-only, per its own pre-existing
+2026-09-18 comment), so the qualification gate follows the same precedent rather than breaking LIMS
+ingestion. `operator1`'s fixture qualification seeded in `tests/conftest.py` (same pattern as
+`dispensing_operator`) so the rest of the existing QC test suite is unaffected. **QC-FR-012 (WP-06
+instrument eligibility) and record_result are explicitly untouched**, as instructed.
+
+**QC-FR-036/037 (dashboard/export) RESOLVED.** `GET /qc/v1/dashboard` (test orders by state, open OOS/OOT
+counts) and `GET /qc/v1/export` (flat JSON row dump) added, same shape as SG-074 Task 3 Part B's OOS/OOT
+dashboard/export, unauthenticated-permission-check precedent already set by this router's own pre-existing
+read endpoints.
+
+**Confirmed already resolved by an earlier, unrelated pass (Task 1, SG-076, same day):**
+`qc_test_specification.scope_type='material'` now works -- not part of this update's own scope, noted here
+only so this entry stops looking stale on that point.
+
+**Still open, unchanged:** QC-FR-012 (WP-06 instrument/calibration eligibility -- WP-06 Equipment's
+`instrument_ref` wiring), the platform-wide (non-QC) half of the qualification-expiry question this entry's
+older text raised (other modules' own call sites are out of scope for this QC-only pass).
+
+```yaml
+resolution_document: "QC-FR-011: app/modules/qc/commands.py (_check_qc_analyst_qualification), app/modules/qc/router.py (post_start_test_order), tests/conftest.py (operator1 qc_analyst qualification), tests/test_qc.py (2 new tests). QC-FR-036/037: app/modules/qc/router.py (dashboard/export). Still open: QC-FR-012 (WP-06), platform-wide qualification-expiry coverage outside QC."
+status: PARTIALLY_RESOLVED  # QC-FR-011 (QC-only) + QC-FR-036/037 done 2026-09-23; QC-FR-012/WP-06 and platform-wide qualification coverage remain open
 ```
 
 ### SG-069 — NCR-FR-016: reopen has no operation in Document 28's own 6-op API list
@@ -4621,6 +4804,61 @@ resolution_document: "— (open)"
 status: OPEN
 ```
 
+**UPDATE 2026-09-23 (Task 3, partial resolution -- OOT-FR-006's release-blocking half + reopen/dashboard/
+export, narrower than OOS-FR-023/029/030's original framing).** Scope correction from this pass's own
+prompt, honored: `oos_record`'s DDL-ready 17-column schema is untouched (no CAPA/Change-Control link
+column added -- that piece, and OOS-FR-020/021 generally, stay exactly as OPEN as recorded above, pending
+a Document 113-style addendum).
+
+**OOT-FR-006 (release-blocking) RESOLVED.** `_qc_signals()` in both `release/service.py` and
+`qa_review/service.py` already blocked on open `OosRecord` rows (built earlier this session, commit
+`bb0a09a`) but had no `OotRecord` equivalent. Added: `OotRecord` has no `batch_id` column of its own
+(unlike `OosRecord`), so attribution joins `source_result_id -> qc_result -> test_order_id -> qc_test_order
+-> sample_id -> qc_sample` where `source_type="batch"` -- the same chain `_qc_signals()` already used to
+resolve `order_ids`. Any non-`closed` `OotRecord` attributed to the batch now blocks
+(`OPEN_OOT`/`release.blocker.open_oot` in `release/service.py`; a plain message in `qa_review/service.py`,
+matching that file's existing string-list shape). `RETEST_LIMIT_REACHED` remains explicitly untouched, as
+instructed (still OOS-FR-020/021-class, still open).
+
+**Reopen/dashboard/export: OOT built, OOS investigated and found genuinely harder, not mechanically
+symmetric.** `POST /quality/oot/v1/{id}/reopen` now exists, mirroring `qms.commands.reopen_deviation()`/
+`reopen_capa()`'s exact shape (`reason`/`new_evidence` required, permission-gated via a new
+`oot_record.reopen` code, unsigned) -- `oot_record` gained a `reopen_history` JSONB column (migration
+`b7c9d1e3f5a7`/0121; `oot_record` is prose-only/ordinary-engineering-decision-typed, not DDL-frozen like
+`oos_record`, so this is additive, not a schema violation of the OOS-FR-020/021 guardrail above). Closed ->
+open is the only sensible landing state for OOT's flat two-state model (`close_oot()`'s own precondition is
+already `state == "open"`).
+
+**OOS reopen was investigated and deliberately not built this pass, differently from what OOS-FR-023's
+original framing above assumed would be a simple missing-endpoint gap:** two independent blockers, not
+one. (1) `oos_record` is DDL-ready/exact-17-column -- there is no column to hold a `reopen_history` array
+the way `oot_record` now does, and adding one would repeat exactly the OOS-FR-020/021 schema-freeze mistake
+this entry already warns against. (2) Unlike OOT's flat open/closed model, OOS has a rich multi-stage
+investigation state machine (`lab_investigation` -> `qa_review`/`no_assignable_lab_cause` ->
+`extended_investigation` -> `final_disposition` -> `qa_approval` -> `closed`, each stage with its own
+signer/precondition rules) with no `OOS_STATES` catalogue and no Document-25-defined landing state after
+`closed` -- reopening could plausibly mean "redo QA approval," "redo extended investigation," or something
+else depending on why it's being reopened, and Document 25's own §10 API list (already cited above as
+missing `/reopen` entirely) gives no answer. Guessing one landing state would be inventing the exact class
+of regulated investigation-workflow behavior this entry's own `why_material`/`risk_if_guessed` already
+warns against -- left open, not guessed, tracked as its own sub-item below rather than assumed solved by
+OOT's precedent.
+
+**Dashboard/export: both OOS and OOT built**, since these are read-only, no regulated decision (`GET
+/quality/oos/v1/dashboard`, `GET /quality/oos/v1/export`, `GET /quality/oot/v1/dashboard`, `GET
+/quality/oot/v1/export`) -- counts by state (OOS also by severity) and a flat JSON row dump, unauthenticated-
+permission-check precedent already set by this router's own pre-existing `GET /oos/v1/{oos_id}` (no
+`evaluate_policy` call there either).
+
+**Still open, unchanged:** OOS-FR-020/021 (CAPA/Change-Control link schema, needs a Document 113-style
+addendum), OOS-FR-023 (OOS reopen specifically -- see the two blockers above), OOS-FR-027 (QA-review-package
+wiring for OOS/OOT), `RETEST_LIMIT_REACHED` (no numeric policy value exists to enforce).
+
+```yaml
+resolution_document: "OOT-FR-006 release-blocking: services/gxp-api/app/modules/release/service.py, app/modules/qa_review/service.py. Reopen/dashboard/export: app/modules/qc/models.py (OotRecord.reopen_history), app/modules/qc/commands.py (reopen_oot), app/modules/qc/router.py (reopen/dashboard/export x4), migrations/versions/b7c9d1e3f5a7_0121_oot_record_reopen_history.py, scripts/seed.py + tests/conftest.py (oot_record.reopen permission). OOS reopen NOT built (schema-frozen + ambiguous landing state, see update). Still open: OOS-FR-020/021 (CAPA/Change-Control link), OOS-FR-023 (OOS reopen), OOS-FR-027 (QA-review wiring), RETEST_LIMIT_REACHED."
+status: PARTIALLY_RESOLVED  # OOT blocking + OOT reopen/dashboard/export + OOS dashboard/export done 2026-09-23; OOS reopen, CAPA/Change-Control link, QA-review wiring, retest limit remain open
+```
+
 ### SG-075 — `material_lot`'s existing `disposition` signature policy row does not match Document 106 rows 44/45 for the same aggregate
 
 Document 19 (SPEC-MAT-002A, Material Receipt/Quarantine/Quality Status) was built this pass extending the
@@ -4680,11 +4918,50 @@ options:
     unresolved policy mismatch).
 blocking: false
 owner: Materials module owner + Head of Quality (signature policy approver)
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "app/modules/material/commands.py, material/router.py, scripts/seed.py, scripts/seed_demo_data.py, tests/conftest.py, tests/test_material_flow.py, tests/test_release_gate.py, frontend/src/app/material-lots/page.tsx"
+status: RESOLVED
 ```
 
+**SG-075 RESOLVED 2026-09-22, project-owner-directed (asked directly via AskUserQuestion among options —
+chose option (A), retire the legacy path).** `disposition_material_lot()`/`DispositionMaterialLotCommand`
+and `POST /material-lots/{id}/disposition` are removed entirely from `material/commands.py`/`router.py`;
+`release_material_lot()`/`reject_material_lot()` (Document 106 rows 44/45, QA Releaser, independent of the
+lot's receiver/sampler) are now the only disposition path, confirmed a strict superset of the legacy
+behavior (same quarantine-state guard, same release-gate rule hook, same signature ceremony, same vault
+snapshot, plus the independence check and `container_ids` support the legacy path never had). The legacy
+`material_lot`/`disposition` `SignaturePolicy` row is removed from `SIGNATURE_POLICY_FLOOR` and
+`tests/conftest.py`; the `material_lot.disposition` RBAC permission code is left defined/granted (never
+deleted, matching `sync_permissions.py`'s own upsert-only contract) but is now inert. `scripts/seed_demo_data.py`
+(a dev-only demo script, not part of the live pipeline) was repointed at `release_material_lot` so it still
+imports cleanly. Frontend's `DispositionModal` and its "Disposition" action button are removed from
+`/material-lots`; `ReleaseRejectV2Modal` is the only disposition UI. `tests/test_material_flow.py`
+(repointed `_release_lot` helper + renamed `test_release_requires_qa_releaser_role`) and
+`tests/test_release_gate.py` (repointed at `/release`, signed by `qa.releaser` instead of `qc.reviewer`)
+updated to match. Verified: both files pass cleanly alongside the rest of the session's Phase 1 (§1)
+unauthenticated-endpoint fix, which independently affected several unrelated pre-existing test call sites
+in these same files (521/524 passed across the full 35-file targeted run; the 3 failures were unrelated
+to SG-075 -- see that session's own completion report for the full breakdown).
+
 ### SG-076 — Document 19's RCV-FR-023/024/025 need a material-scoped QC test specification that does not exist (same root cause as SG-057/SG-063)
+
+**UPDATE 2026-09-23 (partial resolution):** the root-cause blocker -- no material-specification-version
+entity existed -- was closed by SG-057 (`MaterialSpecificationVersion`,
+`app/modules/material_specification/models.py`). This pass unblocks `qc_test_specification` itself:
+`scope_type="material"` is now accepted (`BUILDABLE_SCOPE_TYPES` in `app/modules/qc/models.py:23`,
+`SCOPE_TABLE_BY_TYPE` in `app/modules/qc/commands.py:76`), with the same generic
+`scope_version_id`-existence check as every other scope type. A `qc_test_specification` can now be
+authored and released against a real `MaterialSpecificationVersion`. Tested in
+`services/gxp-api/tests/test_qc.py::test_material_scope_accepted_and_round_trips` (create + GET round-trip)
+and `::test_material_scope_unknown_scope_version_id_not_found` (404 for a bad reference); the generic
+unknown-scope_type rejection is proven separately in `::test_unknown_scope_type_rejected`. 17/17 in
+`tests/test_qc.py` + `tests/test_material_specification.py` pass.
+
+**Still open:** the acceptance-criteria half of RCV-FR-023/024/025 -- actually *enforcing* that a specific
+required material test (identity testing) ran and passed before `release_material_lot`, and that
+supplier-COA reliance is permitted only under a configured per-material-spec rule -- is a separate,
+still-undecided regulated-behavior question (which test(s) are release-blocking, how COA-reliance is
+authorized) and was explicitly out of scope for this pass. `release_material_lot`/`reject_material_lot`
+still only surface linked `qc_sample` ids as advisory information via `get_release_readiness`.
 
 Document 19's incoming-QC requirements (RCV-FR-023 identity test, RCV-FR-024 supplier-COA reliance,
 RCV-FR-025 linking required tests/specification to QC/LIMS results) all depend on a QC test specification
@@ -4709,10 +4986,12 @@ class: D
 description: >
   RCV-FR-023 (identity test required before release), RCV-FR-024 (supplier COA reliance permitted only
   under a configured rule) and RCV-FR-025 (link required tests/specification to QC/LIMS results) all need
-  a QC test specification scoped to a material, which qc.models.BUILDABLE_SCOPE_TYPES explicitly excludes
-  today (SG-057/SG-063's root cause). release_material_lot/reject_material_lot surface linked qc_sample
-  ids as advisory information only (via get_release_readiness) and cannot enforce a specific required test
-  or a per-material COA-reliance rule.
+  a QC test specification scoped to a material. As of 2026-09-23 qc.models.BUILDABLE_SCOPE_TYPES accepts
+  "material" (SG-057's MaterialSpecificationVersion resolved the root cause) -- a material-scoped
+  qc_test_specification can now be authored/released. release_material_lot/reject_material_lot still only
+  surface linked qc_sample ids as advisory information (via get_release_readiness) and cannot yet enforce
+  a specific required test or a per-material COA-reliance rule -- that acceptance-criteria question stays
+  open.
 source_documents:
   - Document 19 (SPEC-MAT-002A)
   - Document 23 (SPEC-QC-001)
@@ -4726,25 +5005,25 @@ affected_modules:
   - SPEC-QC-001
 affected_functions:
   - app/modules/material/commands.py _disposition_material_lot_v2/get_release_readiness (advisory QC evidence only, no required-test enforcement)
-  - app/modules/qc/models.py BUILDABLE_SCOPE_TYPES (material excluded)
+  - app/modules/qc/models.py BUILDABLE_SCOPE_TYPES (material now accepted, 2026-09-23)
+  - app/modules/qc/commands.py create_test_specification_draft (SCOPE_TABLE_BY_TYPE now includes material -> MaterialSpecificationVersion)
 why_material: >
-  Same class as SG-057/SG-063: inventing a material-specification-version schema or a required-test
-  enforcement rule now risks mismatching whatever schema Document 18/23's own eventual resolution defines,
-  and would present a guessed acceptance rule as though it were approved regulated policy.
+  Same class as SG-057/SG-063 for the remaining half: inventing a required-test enforcement rule or a
+  COA-reliance authorization rule now risks presenting a guessed acceptance rule as though it were approved
+  regulated policy.
 risk_if_guessed: >
   A guessed required-test rule could either fail to block a release that should be blocked (identity
   testing bypassed by a supplier COA, exactly what RCV-FR-023 exists to prevent) or block valid releases
   on a fabricated rule.
 options:
-  - (A) Resolve SG-057/SG-063 first (material-specification-version entity + qc scope_type="material"
-    support), then extend release_material_lot's rules-engine hook
+  - (A) Now that scope_type="material" is buildable, extend release_material_lot's rules-engine hook
     (material-lot-release-eligibility:{material_id}) to consult required-test outcomes -- recommended,
-    same remediation path already proposed for SG-057/SG-063.
+    same remediation path already proposed.
   - (B) Guess a required-test/COA-reliance rule now (rejected -- the risk above).
 blocking: false
 owner: Data Architect + Materials module owner + QC module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "SG-076 partial resolution 2026-09-23: services/gxp-api/app/modules/qc/models.py, app/modules/qc/commands.py, services/gxp-api/tests/test_qc.py"
+status: PARTIALLY_RESOLVED
 ```
 
 ### SG-077 — Document 19 requirements needing infrastructure this codebase does not have yet: UOM conversion, edge/equipment integration, a warehouse/location master, and ERP reconciliation
@@ -4861,6 +5140,23 @@ owner: Data Architect + QMS module owner
 resolution_document: "— (open)"
 status: OPEN
 ```
+
+DOC-FR-023 PARTIALLY RESOLVED 2026-09-24 (found building the `/documents` list-view UI): added
+`GET /documents/v1`, a browsable, document-code-searchable (`q` substring match, `ilike`), paginated,
+sortable (`document_code`/`document_type`/`status`/`created_at`) list of `controlled_document` rows, using
+the exact same `paginate()`/`filtered()` shared contract every other QMS list endpoint in this codebase
+already uses (`complaint_router.py` etc) -- not a guessed contract, an application of the one already
+approved project-wide. `get_versions` (`GET /documents/v1/{code}/versions`) was also found broken for its
+own declared frontend consumer while wiring this up: it returned a wrapped
+`{document_code, document_type, status, versions: [...]}` object instead of the flat array
+`frontend/src/app/documents/page.tsx` has always expected, and the version rows it did return were
+missing `site_id`/`document_code`/`document_type`/`owner_subject_id`/`is_external`/`external_source`/
+`external_revision`/`acknowledgment_required`/`training_impact`/`created_at` -- fixed to a flat array of
+version rows merged with their owning document's identity fields; `tests/test_qms_document_control.py`'s
+own `test_get_versions_lists_all_versions_for_code` was asserting against the old broken shape and is
+corrected. Search remains code-only -- title/type/owner/site/effective-date filters (the rest of
+DOC-FR-023), DOC-FR-011 (watermark/uncontrolled marking) and DOC-FR-024 (export) are still open; SG-078
+stays open for those.
 
 ### SG-079 — DOC-FR-013/014: training assignment wiring and per-user acknowledgment capture are not performed this pass
 
@@ -5043,11 +5339,29 @@ options:
   - (D) Add a create-only endpoint with this project's own considered contract (not (A)'s addendum, not a
     blind guess -- a scoped, RBAC-gated, audited create) -- done 2026-09-07 (second pass, same day),
     explicitly project-owner-directed after being asked. Update/delete/rename remain unbuilt.
+  - (E) Add rename (location_code/zone_type/environment_profile_id) and a soft-retire (status="retired",
+    not a hard delete) with the same considered-contract approach as (D) -- done 2026-09-22, see
+    resolution below.
 blocking: false
 owner: Data Architect + Materials module owner
-resolution_document: "2026-09-07: read listing + create endpoint both live (GET + POST /inventory/v1/warehouse-locations); update/delete/rename still open"
-status: PARTIALLY RESOLVED (read + create only; update/delete/rename still OPEN)
+resolution_document: "2026-09-07: read listing + create endpoint both live (GET + POST /inventory/v1/warehouse-locations). 2026-09-22: PATCH .../{id} (update_warehouse_location) + POST .../{id}/retire (retire_warehouse_location) added -- see app/modules/material/{commands,router}.py, tests/test_warehouse_location.py."
+status: RESOLVED
 ```
+
+**SG-081 update/retire RESOLVED 2026-09-22, project-owner-directed (asked directly as part of the
+2026-09-22 gap-audit fix pass -- chose option (E), soft-retire over a hard delete).** `PATCH
+/inventory/v1/warehouse-locations/{id}` (`update_warehouse_location()`) renames `location_code`/
+`zone_type`/`environment_profile_id` with a duplicate-code check and optimistic-concurrency (`version`);
+`POST .../{id}/retire` (`retire_warehouse_location()`) soft-deletes via `status="retired"` rather than a
+hard delete, since `MaterialLot.storage_location_id` (client req #4, 2026-09-21) can reference a location
+and a hard delete would orphan it — retire is blocked while any non-rejected `MaterialLot` still points at
+the location. Both gated by new `warehouse_location.update`/`.retire` permission codes, granted to the
+same Admin/Supervisor pair as `.create`. `_warehouse_location_dict()` also gained `version`/`site_id`/
+`environment_profile_id` in its GET response — these were silently missing before (same GET-serializer-
+drops-field bug class documented elsewhere in this project's own session notes), needed for the frontend
+to actually send a correct `expected_version` on update/retire. Verified: `tests/test_warehouse_location.py`,
+8/8 passed (create reports version/site_id, rename, duplicate-code rejection, stale-version rejection,
+RBAC rejection, retire hides from active list, retire requires a reason, retire blocked while occupied).
 
 ### SG-082 — Document 20 requirements needing infrastructure this codebase does not have yet: barcode/scanner, storage-condition monitoring, label reprint, ERP reconciliation
 
@@ -5262,6 +5576,51 @@ blocking: false
 owner: Platform Architect + Materials module owner + Genealogy module owner
 resolution_document: "— (open)"
 status: OPEN
+```
+
+**UPDATE 2026-09-23 (split RESOLVED; merge/transfer investigated, still open, not guessed).**
+`split_container()` (`app/modules/material/commands.py`) now writes a `SPLIT_FROM` edge (Document 13 §5's
+own controlled catalogue) from the parent `material_container` genealogy node to each child's node, quantity/
+UOM-tagged, using the exact `get_or_create_node`/`create_edge` shape `record_consumption()` already
+established. This is a direct, unambiguous match: GEN-FR-015 literally says "one lot split into many," and
+`SPLIT_FROM` is the only catalogue entry describing a one-to-many origin relationship. Tested in
+`services/gxp-api/tests/test_inventory_flow.py::test_split_container_wires_split_from_genealogy_edge`
+(queries `genealogy_service.get_descendants` on the parent node and confirms all three children/edges).
+
+**Merge investigated, not built.** Re-read Document 13 §5 in full and GEN-FR-015's exact requirement text
+("Support one lot split into many, **many materials into one batch**, subassemblies merged into final
+unit"). Neither of GEN-FR-015's two "merge-shaped" clauses is actually `merge_containers()`'s scenario
+(same-lot, same-material-identity, N containers -> 1 new container, no cross-material transformation):
+"many materials into one batch" already means the ordinary multi-lot-consumed-into-one-batch case, which
+is exactly what the existing `CONSUMED_IN` edges (one per lot, via `record_consumption()`) already cover —
+there is no separate "merge" concept here at all, just several ordinary consumption edges. "Subassemblies
+merged into final unit" is a device-assembly concept (matching `ASSEMBLED_INTO`, whose own write-path
+event is literally `DeviceComponentAssembled` — Document 13 §8), not a bulk-material container merge.
+`AGGREGATED_INTO` — the candidate this pass was asked to specifically check — is corroborated as reserved
+for the *packaging-hierarchy* concept instead: GEN-FR-012 ("Package hierarchy: Represent unit → carton →
+shipper/pallet/package aggregation") is the only place "aggregat-" appears in the requirement registry, and
+it names serialized-unit node types (`device_unit`/`package`/`carton`/`pallet`) that have nothing to do with
+a same-lot bulk-material container merge. **No catalogue entry cleanly describes "N same-lot containers
+combined into one container"** -- `SPLIT_FROM` is directionally backward (one-to-many, not many-to-one),
+`DERIVED_FROM` was not offered as a candidate for this specific case and picking it here would be exactly
+the "which existing type is closest enough" guess this pass was told not to make for merge. Left unbuilt
+and undecided, per instruction -- not guessed.
+
+**Transfer investigated, confirmed genuinely out of scope for genealogy (not a gap).** Read
+`create_inventory_transfer()` (`app/modules/material/commands.py`) in full: a location transfer operates on
+the *same* `container_id` throughout (`from_location_id` -> `to_location_id`), creates no new
+`MaterialContainer` row, and changes no material identity, lot, or quantity -- only the
+`InventoryBalanceProjection`'s location. Genealogy tracks transformation/consumption/lineage relationships
+between distinct nodes (Document 13 §2/§8's own event list: `MaterialConsumed`, `DrugBatchProduced`,
+`DeviceComponentAssembled`, ...) -- a same-node location change has no "from" and "to" node to connect, so
+there is nothing for a genealogy edge to represent. This confirms the framing offered this pass: **transfer
+does not belong in genealogy at all.** This is a resolution of the transfer sub-question (moved from "not
+built" to "confirmed out of scope"), not a resolution of merge (still open) or of INV-FR-009's separate
+true-cross-site-transfer gap (still open, unrelated to genealogy).
+
+```yaml
+resolution_document: "SPLIT_FROM built: services/gxp-api/app/modules/material/commands.py split_container(), services/gxp-api/tests/test_inventory_flow.py::test_split_container_wires_split_from_genealogy_edge. Merge: investigated (AGGREGATED_INTO ruled out via GEN-FR-012 cross-check), no confirmed edge type, not built. Transfer: investigated and confirmed out of scope for genealogy (same-container location change, no new node)."
+status: PARTIALLY_RESOLVED  # split done 2026-09-23; merge still open (no confirmed edge type); transfer confirmed out of scope, not a gap
 ```
 
 ### SG-086 — TRN-FR-009: `qms.qualification_record` and pre-existing `iam.qualifications` (Document 07) are two stores for what looks like the same real-world concept
@@ -5869,6 +6228,30 @@ resolution_document: "— (open)"
 status: OPEN
 ```
 
+**UPDATE 2026-09-23 (DSP-FR-023's genealogy half PARTIALLY RESOLVED; label printing/clearance still
+open).** Re-read Document 21's DSP-FR-023 text in full: "Create source lot/container → dispensed container
+→ batch relationship." `complete_dispensing()` (`app/modules/material/commands.py`) now writes the first
+hop: a `DERIVED_FROM` edge from each source `material_lot` node to the new `dispensed_container`'s
+genealogy node (node_type `material_container`, `authoritative_record_type="dispensed_container"` -- the
+closed `NODE_TYPES` catalogue has no dedicated "dispensed_container" entry, so this reuses the generic
+`material_container` bucket the same way `drug_batch` node_type is reused for both legacy and
+`batch_execution` `Batch` records elsewhere in this codebase). `DERIVED_FROM` was chosen over `SPLIT_FROM`
+because a dispensed container can draw from multiple, possibly different, source lots at once (DSP-FR-017
+"Multi-lot dispensing... genealogy records each exact quantity") -- a many-to-one derivation, not a
+single-parent split. The second hop (dispensed container → batch) is deliberately **not** duplicated here:
+it already exists as a `CONSUMED_IN` edge written directly from the source `material_lot` to the `drug_batch`
+node by the pre-existing `record_consumption()` (2026-09-22, project-owner-directed) whenever that
+dispensed container is later consumed into a batch step -- changing that established, already-tested
+behavior was out of this task's narrower scope ("dispensing lot→container", not "container→batch").
+Tested in `services/gxp-api/tests/test_dispensing_flow.py::test_complete_dispensing_wires_derived_from_
+genealogy_edge`. Label printing (DSP-FR-020/021) and line/booth clearance (DSP-FR-027) remain untouched and
+open, as originally recorded.
+
+```yaml
+resolution_document: "DERIVED_FROM (lot->dispensed-container) built: services/gxp-api/app/modules/material/commands.py complete_dispensing(), services/gxp-api/tests/test_dispensing_flow.py::test_complete_dispensing_wires_derived_from_genealogy_edge. Label printing (DSP-FR-020/021) and line/booth clearance (DSP-FR-027) still open."
+status: PARTIALLY_RESOLVED  # DSP-FR-023 genealogy half done 2026-09-23; DSP-FR-020/021/027 still open
+```
+
 ```yaml
 spec_gap_id: SG-097
 title: "SCAR-FR-011's source-suspension procurement gate is enforced only within the SCAR module's own new-case check; it does not write ebmr.supplier.status and does not gate materials-module receipt/use"
@@ -5915,13 +6298,68 @@ options:
   - (A) Add an owning `suspend_supplier`/`reinstate_supplier` command to `app/modules/supplier_quality/commands.py`
     and have `close_scar()` call it through the Mutation Gateway (not a direct table write), then extend
     materials-module eligibility checks (MAT-013 FEFO/eligibility) to consult `ebmr.supplier.status` --
-    recommended, same remediation path as SG-059/SG-085.
+    recommended, same remediation path as SG-059/SG-085. Done 2026-09-22 for the receipt-gate half; see
+    resolution below for what was and wasn't built.
   - (B) Guess the cross-module blocking rule now (rejected -- the risk above).
 blocking: false
 owner: Platform Architect + Supplier Quality module owner + Materials module owner + QMS module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "app/modules/supplier_quality/commands.py (suspend_supplier/reinstate_supplier), app/modules/qms/scar_commands.py close_scar(); app/modules/material/commands.py _is_eligible()/_supplier_status_for_lot() (MAT-013 half, 2026-09-22)"
+status: RESOLVED  # both halves done 2026-09-22
 ```
+
+**SG-097 receipt-gate half RESOLVED 2026-09-22, project-owner-directed (asked directly as part of the
+2026-09-22 gap-audit fix pass -- confirmed option (A)'s architecture, scoped to the receipt-gate half
+only).** Added `suspend_supplier()`/`reinstate_supplier()` — real owning commands in
+`app/modules/supplier_quality/commands.py` (their own `SignaturePolicy`-free, RBAC-gated via new
+`supplier.suspend`/`supplier.reinstate` permission codes, audit/outbox event each) — and `close_scar()`
+now calls them directly when `source_status_decision` is `"suspend"`/`"reinstate"`, the same
+cross-module owning-command-call precedent `material/commands.py` already established calling
+`qms_commands.create_deviation()` (AG-06). This closes the AG-05 violation the original gap named
+(`close_scar()` writing `Supplier.status` itself would have reached into another module's table) — the
+write now genuinely happens inside `supplier_quality`'s own command. Once `Supplier.status` actually
+changes, the **already-built** RCV-FR-005 receipt-examination check (`material/commands.py`, `supplier
+is None or supplier.status != "approved"` → `source_not_approved` discrepancy hold) needed no changes at
+all to start enforcing it — confirming the receipt-side half of this gap was purely a missing status
+write, not a missing check. **Not attempted:** the MAT-013 FEFO/inventory-eligibility half (blocking
+*use* of material already received from a now-suspended source) — a separate, larger scope option (A)
+also names; left open, not guessed. Also not attempted: a dedicated SCAR `reinstate` UI/workflow action
+beyond the existing `source_status_decision` field on close — `reinstate` was already a valid decision
+value (`SOURCE_STATUS_DECISIONS`) but had no effect before this fix; it now correctly reverses a
+suspension when the supplier's status is still `"suspended"` (a no-op otherwise, documented in
+`reinstate_supplier()`'s own comment). Fixing this also surfaced and closed a real pre-existing gap in
+`ROLE_PERMISSIONS["Admin"]`, which held `supplier_qualification.approve` but had never been granted the
+two new `supplier.suspend`/`.reinstate` codes (`scripts/seed.py`, `tests/conftest.py`) — without it, the
+existing `test_source_suspended_blocks_new_case` test (predates this fix) would itself have started
+failing. Verified: `tests/test_qms_scar.py`, 19/19 passed, including 4 new tests
+(`test_close_with_suspend_sets_supplier_status_and_blocks_a_later_receipt`,
+`test_close_with_reinstate_restores_supplier_status`,
+`test_supplier_suspend_reinstate_require_their_own_permission`, and confirming the pre-existing
+`test_source_suspended_blocks_new_case` still passes).
+
+**SG-097 MAT-013 half RESOLVED 2026-09-22 (later the same day), project-owner-directed (agreed scope after
+the register-cleanup pass: "proceed with both" SG-045 and this half).** `material/commands.py::_is_eligible()`
+(the single choke-point already used by `create_inventory_reservation`, `get_inventory_availability`,
+`select_dispensing_source` and `complete_dispensing` — every place that selects or re-checks a lot for
+use) gained an optional `supplier_status` parameter: `supplier_status is not None and supplier_status !=
+"approved"` now blocks, reusing the exact inequality RCV-FR-005's own `examine_receipt()` check already
+established for this field (rather than special-casing only `"suspended"`, a narrower rule this codebase
+has no other precedent for). All four call sites updated: the two joined-query callers
+(`get_inventory_availability`, `create_inventory_reservation`) gained an `outerjoin(Supplier, ...)` and
+now select `Supplier.status` alongside the lot; the two single-lot callers (`select_dispensing_source`,
+`complete_dispensing`) use a new `_supplier_status_for_lot()` helper. A lot with no `supplier_id`, or a
+caller that has not been updated to pass a status, is treated as "no info, don't block" — the default
+stays backward compatible. **Scope, deliberately no broader:** this blocks *selecting/using* material
+already in inventory from a suspended source once it is checked (reservation, dispensing source
+selection, dispensing completion, the availability listing); it does not retroactively unwind a
+reservation or dispensing order that already selected a lot *before* the supplier was suspended — the
+recheck at `complete_dispensing` (DSP-FR-025) is what catches that case, matching the existing
+expiry/retest-date re-check the same line already performed. Verified: `tests/test_inventory_flow.py`
+(new `test_reservation_excludes_suspended_supplier_lot`, confirming both the availability listing and the
+reservation-create path exclude a lot once its supplier is suspended, having shown it as eligible
+beforehand) plus the full `test_material_flow.py`/`test_material_consumption_flow.py`/
+`test_material_receipt_flow.py`/`test_dispensing_flow.py`/`test_inventory_flow.py`/`test_qms_scar.py`/
+`test_recipe_master.py`/`test_release_gate.py`/`test_qa_review.py`/`test_batch_execution.py` regression
+sweep, run together with SG-045's BAT-FR-012 fix -- 205 passed, 0 failed.
 
 ### SG-098 — Document 22 requirements needing infrastructure this codebase does not have yet: automatic-consumption integration, released reconciliation-tolerance rule, batch-completion gate, and ERP posting
 
@@ -6014,6 +6452,44 @@ owner: Platform Architect + Materials module owner + Batch module owner + Rules 
 resolution_document: "WP-11 Stage 4 (2026-09-14): app/modules/erp/consumer.py -- real durable NATS JetStream consumer, MaterialConsumed -> queue_erp_command(POST_CONSUMPTION), ERPNext only (SAP/Oracle/Dynamics need their own verified payload mapping, not attempted); migration 0103 adds ErpInstance.service_actor_user_id (mirrors lims_instance's own SG-070 stand-in -- lims_instance.py's own docstring wrongly cites this as SG-067, an unrelated NCR gap; SG-070 is correct) for the audit actor a background consumer otherwise has none of. Tests: tests/test_erp_consumer.py, 3 real tests against the live broker + real Postgres through the real dispense-to-consume REST flow, 3/3 passed, none mocked. Resolves CON-FR-025's required-behaviour clause only -- CON-FR-025-02/03, CON-FR-026, and CON-FR-003/021/022/028 remain fully open, see SG-183's own Stage 4 update for the full write-up."
 status: PARTIALLY_RESOLVED_2026-09-14
 ```
+
+**Defect found and fixed, 2026-09-22, user-directed** (asked to fix materials/batch-execution/inventory
+gaps; investigating "does inventory decrement when material is used in a batch" surfaced this): the answer
+was that a real, permission-gated, frontend-wired consumption path existed (Dispensing -> `/dispensing`
+"Record a consumption" -> `record_consumption`, decrementing the real `InventoryBalanceProjection` ledger)
+but three other things silently never saw its output, all because they were still wired to a second,
+disconnected, unauthorized code path instead:
+
+  - `MaterialLot.available_quantity` (the number the Material Lots page displays) was written only by
+    `issue_material_to_batch` (`POST /batches/{id}/material-issues`, `app/modules/batch` router) -- an
+    endpoint no frontend page ever called and which had **no `evaluate_policy()` call at all** (any
+    authenticated user, any role, could issue any lot to any batch). Once dispensing/consumption became
+    the real path, `available_quantity` simply never changed again after receipt -- a lot showed as 100%
+    available forever, no matter how much of it had actually been dispensed and consumed.
+  - `record_consumption` never wrote the MAT-021 genealogy `CONSUMED_IN` edge (material_lot -> batch) that
+    `issue_material_to_batch` used to -- the real consumption path had no material-genealogy trace at all.
+  - `release/service.py::_material_signals` and `qa_review/service.py::_material_signals` (the
+    `MATERIAL_LOT_NOT_RELEASED` release/QA-review blocker -- a genuine GMP control against releasing a
+    batch that consumed an unreleased lot) both queried `MaterialIssue`, so once dispensing/consumption
+    became the real write path, these blockers would have gone silently blind the moment
+    `issue_material_to_batch` was retired, had that been done without checking every reader first.
+
+Fixed: `complete_dispensing` now also decrements the source lot's `available_quantity` (with its own
+locked-row over-quantity guard and a `material_lot`/`Consumed` audit event), mirroring what
+`issue_material_to_batch` used to do but through the real dispensing transaction; `record_consumption` now
+writes the `CONSUMED_IN` genealogy edge; `release/service.py` and `qa_review/service.py` are repointed at
+`MaterialConsumption`; `batch_execution/record_service.py`'s Batch Record "materials consumed" section
+(previously always empty -- it also read the dead `MaterialIssue` table) now reads `MaterialConsumption`
+too. `issue_material_to_batch` and its two endpoints are retired (historical `materials.material_issues`
+rows, if any, left in place, no migration). This is an ordinary engineering defect fix (reconnecting a
+ledger and an audit trail to the write path that superseded them, and closing an RBAC gap) -- no new
+regulated behaviour was invented; CON-FR-003/021/022/028 above remain exactly as open as before.
+Verified: `tests/test_material_flow.py` (rewritten off the retired endpoint onto the real dispensing flow,
+7/7), `tests/test_material_consumption_flow.py` (38/38, new `consume_material_into_existing_batch` helper
+added), `tests/test_batch_record.py` (4/4), `tests/test_release.py`/`tests/test_qa_review.py` (fixtures
+rebuilt on a real `MaterialConsumption` row instead of a hand-inserted `MaterialIssue` row -- both suites
+pass), `tests/test_dispensing_flow.py`/`tests/test_inventory_flow.py` as an untouched-module regression
+control -- full six-file sweep: see `status/BUILD_STATUS.md` update for the consolidated pass/fail count.
 
 ```yaml
 spec_gap_id: SG-099
@@ -8446,16 +8922,55 @@ risk_if_guessed: >
 options:
   - (A) Leave unbuilt; get_batch_summary() remains an explicitly live, non-authoritative read until an
     export is scoped with an owning document, Vault semantics, signature policy and retention class —
-    current behaviour, recommended.
+    former default, superseded (see resolution).
   - (B) Build an export in SPEC-EBMR-008 now (rejected — Document 17 declares no export operation, and
     yield/reconciliation is one input to a batch record, not its owner).
   - (C) Extend Document 13's POST /genealogy/v1/exports to cover the whole batch record (rejected —
     changes another document's declared contract scope without its owner's approval).
+  - (D) Build the export under `batch_execution` (Document 11), the `batch` aggregate's own authoritative
+    module (AG-05-compliant single owner), signed by QA Releaser and stored as an immutable, hash-digested
+    EvidenceObject (AG-08/AG-12) — chosen (see resolution).
 blocking: false
 owner: Product Owner + Head of Quality + Platform Architect
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "app/modules/batch_execution/commands.py, batch_execution/router.py, scripts/seed.py SIGNATURE_POLICY_FLOOR, tests/conftest.py, tests/test_batch_record.py, frontend/src/app/batch-execution/page.tsx"
+status: RESOLVED
 ```
+
+**SG-137 RESOLVED 2026-09-22, project-owner-directed (asked directly via AskUserQuestion — chose to make
+the existing client-requirement-#11 batch-record PDF export, added 2026-09-21 unsigned, the SG-137
+deliverable and sign it).** Took option (D), not (B)/(C): the export lives in `batch_execution`
+(`generate_batch_record_pdf()`), the `batch` aggregate's own authoritative module — not
+`yield_reconciliation`, which was correctly rejected as "one input, not the owner." It renders
+`build_batch_record()`'s existing aggregation (steps/results, material consumption, equipment used,
+deviations, QC results, status history — including yield/reconciliation content) to PDF and stores it as
+an immutable `EvidenceObject` via the existing stage→finalize evidence commands (content-addressed,
+digested — satisfies AG-12; the PDF itself is a rendered view of live data at export time, not a second
+authoritative copy of the batch — AG-05 preserved). New `SIGNATURE_POLICY_FLOOR` row
+`("batch", "record_export", "Approved", "QA Releaser", False, True, True)` — no independence requirement,
+since a batch-record export (unlike a disposition) has no single "owner" to be independent of — resolved
+via `signature_service.resolve_signature_requirement()` + `enforce_signer_policy()`, enforced before any
+work is done (a rejected/missing signature produces no PDF/evidence). `GenerateBatchRecordPdfCommand`
+gained `challenge_id`/`reauth_password`/`reason` fields; a proper `write_audit_event`/`write_outbox_event`
+pair (`BatchRecordExported`) now records the export itself, superseding the previous receipt built solely
+from the evidence-finalize step. Frontend's "Generate PDF" action on `/batch-execution` now renders the
+shared `SignatureCeremony` component. **Retention class (Document 108) is still not explicitly assigned**
+to this evidence type, and no "final" precondition (e.g. batch must be `production_complete`) is enforced
+before generation — neither was asked for by the project owner's decision, so neither is guessed here;
+flagged as a known limitation rather than invented. **Found and fixed while verifying:** the shared
+`POST /batches/v1/{id}/signature-challenges` endpoint (also used by `production_complete`) gated the
+*challenge request itself* on `batch_execution.execute` — a permission only Operator/Supervisor hold, not
+QA Releaser, so no QA Releaser could even request the `record_export` challenge this signature depends on.
+Loosened to `batch_execution.view` (which QA Releaser does hold) for the shared challenge endpoint only —
+the real authority check (QA Releaser role, per the new `SIGNATURE_POLICY_FLOOR` row) still happens at
+signature-consumption time via `enforce_signer_policy`, so this doesn't weaken `production_complete`'s own
+authorization, only widens who may *ask for* a challenge. **Also found and fixed:** the frontend
+`/capa/[id]` page for SG-065 (§ above) was still submitting Plan/Extend through the old unsigned plain
+form — moved both to the shared `SignatureCeremony` component before any manual testing could exercise
+them. Verified: `tests/test_batch_record.py`, 4/4 passed (2 new tests —
+`test_generate_pdf_rejects_actor_without_qa_releaser_role`,
+`test_generate_pdf_requires_a_signature_from_the_qa_releaser` — plus the existing end-to-end test updated
+to sign as a QA Releaser); `tests/test_batch_execution.py`, 65/65 passed (combined run) confirming the
+challenge-endpoint permission change didn't affect `production_complete`.
 
 ---
 
@@ -8623,6 +9138,39 @@ collide with its own local ones. **SG-138 is now RESOLVED for all 27 pairs.** `b
 Code and the two new `assess`-independence tests (self-assessment rejected, independent assessor
 succeeds) were written 2026-09-11; not yet executed against `pytest` — see `status/build-status.json` for
 the current evidence status before treating this as validated.
+
+**FRONTEND WIRING GAP found and RESOLVED 2026-09-28** — a real, separate live defect discovered while
+investigating a user report ("Approve/Verify/Close/Disposition fail every time they're clicked" on 7-8
+QMS record-detail pages). All backend policy-data and engineering halves above were genuinely resolved by
+2026-09-11 (confirmed by re-grepping `SIGNATURE_POLICY_FLOOR`/`SIGNATURE_POLICY_CHAIN_FLOOR` in
+`scripts/seed.py` before touching anything, per this task's own instruction not to trust the note
+uncritically) — but the frontend pages for `changes/[id]`, `nonconformances/[id]`, `complaints/[id]`,
+`field-actions/[id]`, `risks/[id]`, `audits/[id]`, `training` and `supplier-cases/[id]` were never updated
+to match: each still carried a `SIGNATURE_GATED` list, a static "no signature policy configured yet"
+warning banner, and a plain unsigned `POST` with no `challenge_id`/`reauth_password` for exactly the
+actions Document 106 §9 had already resolved — the same defect class `deviations/[id]` and `capa/[id]` had
+already been fixed for on 2026-09-09/22, just never propagated to these eight pages. `scar_record`
+review/close (the one pair this task was told to treat as a possibly-still-open gap and ask about before
+touching) turned out to already have seeded rows too (`SIGNATURE_POLICY_FLOOR` rows for
+`("scar_record", "review", ...)` / `("scar_record", "close", ...)`) — not a new gap, so no question was
+needed. Also found and fixed in the same pass: `training_assignment`'s `create` action (Document 106 §9
+row 91) was *also* still posting unsigned from the "Assign training" modal — the task's own bug list named
+only `complete`/`assess`, but `create` shares the identical defect and the same signed-CREATE endpoint
+(`POST /training/v1/assignments/signature-challenges`) this fix's own SG-138 history section already
+documents was built for exactly this purpose. All nine gated actions across the eight pages (plus the
+training create/complete/assess trio, twelve gated actions total) now go through the shared
+`SignatureCeremony` component. Verified: `pytest tests/test_qms_change_control.py tests/test_qms_ncr.py
+tests/test_qms_complaint.py tests/test_qms_field_action.py tests/test_qms_risk.py
+tests/test_qms_internal_audit.py tests/test_qms_training_qualification.py tests/test_qms_scar.py
+tests/test_supplier_quality.py` — **177/177 passed** (backend was already correct; this pass touched no
+backend code) — plus three independent live end-to-end round trips against the demo DB (`ebmr_new_gxp`)
+using the exact request shapes the fixed pages now send (challenge → password re-entry → signed mutation):
+`internal_audit/start` (real `signature_id` returned), the `training_assignment` signed-CREATE flow
+(pre-generated `assignment_id` round-tripped through `POST /training/v1/assignments/signature-challenges`
+→ `POST /training/v1/assignments`, real `signature_id` returned), and `complaint_record/reportability`
+signed by the Postmarket Regulatory Affairs role (real `signature_id` returned). `blocking` remains
+`false` — this update closes the one piece of SG-138 that was still live-broken (the UI never reaching the
+already-resolved backend), not a new signature-policy decision.
 
 ```yaml
 spec_gap_id: SG-138
@@ -9950,6 +10498,103 @@ path moving onto `qa_review` + `release/v1`) and the open Document 54/15 questio
 PFS-FR-020 are out of the M1 qualified-release scope (ADR-0012), so this stays open but off the critical
 path.
 
+**UPDATE 2026-09-22 (documentation correction only, no new code — found while triaging this register
+against current code for a Materials/Recipe/Batch gap-resolution pass; verified directly against
+`services/gxp-api`, not inferred from this entry's own prose).** The previous update's wording ("is
+retired", "are repointed") reads as already-executed but cited no migration; confirmed today it is in
+fact done and traceable to a real controlled migration that this entry never cited:
+`migrations/versions/e5f7a9c1b3d6_0090_retarget_batch_dependents_to_gxp_batch.py` (all 32 FK columns
+across `ddcp`/`materials`/`equipment`/`machine_integration` retargeted from `ebmr.batches`/
+`ebmr.batch_steps` to `ebmr.gxp_batch`/`ebmr.gxp_batch_step`, plus the paired `.status`->`.state` rename
+in `ddcp/commands.py::get_readiness()`), landed in commit `54ed4f3` (2026-09-09). Phase 1 (data
+disposition — the 2/3/6 demo rows) is also done, inside the same migration. **"Retired" overstates it,
+though: `ebmr.batches` the table and `app/modules/batch` the module are still live** —
+`app/main.py` still imports and mounts `batch_router` (`app/modules/batch/router.py`, prefix `/batches`)
+alongside `batch_execution_router` (`/batches/v1`); only the *FK dependents* were retargeted, not the
+legacy module itself. The contract phase (dropping `app/modules/batch`'s routes/tables) was never
+scheduled and remains open. Confirmed unchanged since 2026-09-09: DDCP's disposition path still calls
+neither `qa_review` nor `release` (`app/modules/ddcp/commands.py` imports neither), so the behavioural
+cutover this entry's own PFS-FR-020 blocker depends on has not started, and PFS-FR-020 itself is still not
+implemented (no `PackagingRun`/`LabelIssue`/`LabelReconciliation`/`PackageNode` reference anywhere in
+`app/modules/ddcp/`).
+
+```yaml
+resolution_document: "docs/adr/ADR-0013-single-authoritative-store-product-recipe-batch.md (architectural half); migrations/versions/e5f7a9c1b3d6_0090_retarget_batch_dependents_to_gxp_batch.py (FK-repoint + demo-data disposition, verified 2026-09-22); legacy app/modules/batch routes/tables still live in app/main.py, not yet contracted; PFS-FR-020 still not implemented"
+status: PARTIALLY_RESOLVED  # unchanged; scope of what remains corrected 2026-09-22
+```
+
+**UPDATE 2026-09-23 (Phase 4/contract executed, project-owner-directed gap-resolution pass).** Re-ran the
+"nothing outside `app/modules/{product,recipe,batch}` imports them" grep from the 2026-09-22 update first
+(state can drift) -- still confirmed zero external Python references. Removed `product_router`/
+`recipe_router`/`batch_router` from `app/main.py` and their model imports from `app/all_models.py`;
+deleted `app/modules/product/`, `app/modules/recipe/`, `app/modules/batch/` (routers/commands/models),
+`tests/test_batch_flow.py` (superseded -- the mandatory negative/failure set it existed to prove
+(unauthorized/stale-version/duplicate-idempotency-key/missing-signature/invalid-transition/independent-
+reviewer) is already covered against the authoritative `batch_execution` module in `tests/
+test_batch_execution.py`, and same-key-different-payload `IDEMPOTENCY_CONFLICT` is proven generically
+across a dozen other modules' own tests), and two now-orphaned scripts that depended solely on the legacy
+trio and were referenced nowhere else (`scripts/seed_demo_data.py`, `scripts/backfill_batch_uom.py`).
+Ported `tests/test_tenancy.py::test_cross_organization_access_denied` (the one MUT-FR-003/AG-05
+cross-organization-isolation test in the whole suite, previously exercised only via the legacy `/products`/
+`/recipes`/`/batches` endpoints) onto `product_master`/`recipe_master`/`batch_execution` instead of
+deleting the coverage.
+
+Migration `a1b2c3d4e5f6_0120_drop_legacy_product_recipe_batch_trio` drops `ebmr.batches`, `ebmr.batch_steps`,
+`ebmr.batch_reviews`, `ebmr.batch_releases`, `ebmr.recipe_steps`, `ebmr.recipes`, `ebmr.products` (all
+re-confirmed empty in the live `ebmr_new_gxp` database immediately before writing the migration --
+consistent with this entry's 2026-09-08 note that the only prior rows were demo/smoke-test artifacts,
+already deleted in migration `e5f7a9c1b3d6_0090`'s Phase 1). `audit.audit_events`/`vault.*` untouched
+(AG-08). **One additional external FK was found that the 2026-09-08 inventory missed** (that inventory's
+own `information_schema` query joined `constraint_column_usage` on matching schema, which silently drops
+cross-schema references): `equipment.aseptic_profile_versions.product_id -> ebmr.products.id`, nullable,
+optional on its owning command, unpopulated on both live rows (0 of 2). This migration drops that FK
+constraint (`DROP CONSTRAINT IF EXISTS`) so `ebmr.products` can be dropped; the column itself is left in
+place, now simply unconstrained, since deciding what it should reference (`product_master.gxp_product_
+version`, or removal) is a WP-06/equipment-module decision outside this pass's scope -- logged here as a
+known limitation, not silently fixed.
+
+**Explicitly still open, unchanged, out of scope for this pass:** Phase 2 (DDCP's disposition path moving
+off `batch.review`/`batch.release` onto `qa_review`/`release/v1`) has not started -- `app/modules/ddcp/
+commands.py` still imports neither. PFS-FR-020 (label/packaging reconciliation) remains not implemented
+and still depends on that behavioural cutover. Frontend `/products`, `/recipes`, `/batches`,
+`/batches/new` were already dead client-side redirect stubs (retired 2026-09-08, pointing at
+`/product-master`/`/recipe-master`/`/batch-execution`) -- confirmed, no server calls to the dropped
+endpoints existed to update.
+
+**Full-suite regression caught 6 more test files with plain `"/products"`/`"/recipes"`/`"/batches"` HTTP
+string literals that the initial grep (Python import statements only) missed entirely.** Running the whole
+project's test suite after the above changes surfaced `tests/test_master_data_crud.py`, `tests/
+test_pagination.py`, `tests/test_policy_engine.py` and `tests/test_audit_review.py` failing with 404s/
+KeyErrors against the now-removed endpoints -- a real, if narrowly-scoped, regression this pass's original
+grep-for-Python-imports search strategy could not catch (these files called the legacy routes as bare HTTP
+path strings, never importing `app.modules.product`/`recipe`/`batch` directly). Fixed, not just discovered:
+- `test_master_data_crud.py`: `test_product_edit_and_delete_guard`/`test_recipe_edit_and_delete_locked_
+  once_batch_uses_it` **removed, not ported** -- they exercised the legacy modules' free-form PATCH/DELETE,
+  a mutability model `product_master`/`recipe_master` deliberately do not offer (immutable
+  draft->release->supersede lifecycle, no PATCH/DELETE on any version -- the same "no true delete for a
+  versioned regulated master" precedent as `aseptic_profile_version`, SG-176). `test_site_create_edit_and_
+  delete_guard` ported: the site-delete guard itself (`find_all_blocking_references`, schema-driven) was
+  never affected -- only its "create some site-referencing row" step needed a `ProductVersion` inserted
+  directly instead of the retired `/products` call.
+- `test_pagination.py`: ported from `/products` onto `/materials` -- exercises the identical shared
+  `page_params`/`paginate()` helper (`app/core/pagination.py`), unrelated to which resource proves it.
+- `test_policy_engine.py`: ported from the legacy `batch_step.start` permission code onto `batch_execution.
+  execute` (batch_execution's own coarse RBAC gate) -- an equally direct, arguably better fit, since
+  batch_execution's fine-grained per-step gate (`required_role_code`) is a separate, role-name-based
+  mechanism, not a permission grant, and was never what this test was proving.
+- `test_audit_review.py::test_verify_chain_detects_tampering`: ported onto `batch_execution` -- `create_
+  batch`/`issue_batch` write the identical `aggregate_type="batch"` audit events (`Created`@v1, `Changed`@v2)
+  the legacy module did, so the tamper-detection assertion is unchanged.
+
+All 4 files (18 tests total) pass after porting; the full suite was re-run afterward to confirm no further
+fallout. This is now believed to be the complete set -- a repo-wide search for bare `"/products"`/
+`"/recipes"`/`"/batches"` string literals (not just Python imports) across `tests/` returns zero remaining
+matches.
+
+```yaml
+resolution_document: "services/gxp-api/app/main.py, app/all_models.py, migrations/versions/a1b2c3d4e5f6_0120_drop_legacy_product_recipe_batch_trio.py, app/modules/equipment/aseptic_models.py (orphaned FK), tests/test_tenancy.py, tests/test_master_data_crud.py, tests/test_pagination.py, tests/test_policy_engine.py, tests/test_audit_review.py (all ported), tests/conftest.py (APP_TABLES) -- Phase 4/contract complete for Batch/Recipe/Product; PFS-FR-020 / DDCP Phase 2 behavioural cutover still not implemented, out of scope"
+status: PARTIALLY_RESOLVED  # Phase 4/contract done 2026-09-23; PFS-FR-020 / Phase 2 behavioural cutover remains open
+```
 
 ### SG-150 — Documents 55/56/57 (SPEC-DDCP-002/003/004) have no Document 112 approved schema; built as a provisional schema reusing Document 54's "common engine" tables per the DDCP Platform Rule
 
@@ -11801,6 +12446,26 @@ fix → Phase 1 FK repoint → Phase 2 DDCP disposition-path behavioural cutover
 contract/drop). SG-162 is resolved in the same direction (fold the Edge credential store into the
 Document 62 `security.service_identity` registry). Execution is a WP-02 task with its own migration IDs;
 DDCP's Phase 2 behavioural cutover and PFS-FR-020 (SG-149) are out of the M1 scope (ADR-0012).
+
+**EXECUTION STATUS UPDATE 2026-09-22 (documentation correction only, no new code — verified directly
+against `services/gxp-api`, see SG-149's matching 2026-09-22 update for full evidence).** The Batch half
+of this resolution's Phase 0 (`delete_site()` guard, done more broadly than scoped — now schema-driven
+across all 112 `iam.sites` FK dependents, see `app/modules/iam/commands.py::delete_site()`) and Phase 1
+(FK repoint) are both done, via migration `e5f7a9c1b3d6_0090` (commit `54ed4f3`, 2026-09-09). Phase 2
+(DDCP behavioural cutover onto `qa_review`/`release`) and Phase 4 (dropping `app/modules/{product,recipe,
+batch}`'s own routes/tables) have **not** started — all three legacy modules are still imported and
+mounted in `app/main.py` today, table contents empty but routes live. "Retired" in the paragraph above
+describes the *decision and FK-level cutover*, not a completed removal; Product/Recipe were never
+FK-entangled the way Batch was (SG-173's own 2026-09-01 update already noted this), so it is unconfirmed
+whether their own tables/routes were ever addressed at all — not investigated this pass, flagged for a
+future one if `app/modules/{product,recipe}` retirement is prioritized.
+
+**EXECUTION STATUS UPDATE 2026-09-23 (Phase 4/contract executed).** `app/modules/{product,recipe,batch}`
+and their seven tables are now actually removed, not just decided -- see SG-149's matching 2026-09-23
+update for the full evidence (files changed, migration id, the one previously-missed external FK on
+`equipment.aseptic_profile_versions.product_id`, and the regression evidence). Phase 2 (DDCP behavioural
+cutover) remains the only open piece of this resolution, explicitly out of the M1 scope (ADR-0012) and
+out of scope for this pass.
 
 ### SG-174 — Cross-module event-name collisions: `LineClearanceCompleted` and `MaterialReconciliationCalculated` each emitted by two different modules with no way for a consumer to tell them apart
 
@@ -14644,3 +15309,736 @@ appears in `GET /rules/v1/uom`) — 19/19 passed in `test_rules.py`; regression 
 `test_injector_flow.py`/`test_inhalation_flow.py`/`test_qc.py`/`test_machine_integration_flow.py` — 95
 passed, 2 failed, both the same pre-existing `test_release_gate.py` `_create_material()` signature defect
 already on record before this change (confirmed unrelated).
+
+### SG-212 — Material Receipt `discrepancy_hold` has no controlled resolution workflow: no disposition, no mandatory Deviation link, no way to ever create a lot from a held receipt
+
+Investigated end-to-end 2026-09-22 (client question: "when a lot's status is Discrepancy hold then what
+happens?" — traced the full state machine, not guessed). Document 19's own baseline already names the
+requirement twice — RCV-FR-004 ("mismatch creates hold/deviation, not silent remapping") and RCV-FR-031
+("over/short/damaged/wrong lot/document mismatch generates discrepancy **workflow** and ERP
+reconciliation") — and even names the event (`ReceiptDiscrepancyRaised`, Document 19 §10, correctly
+emitted by the current code). What the baseline never defines, anywhere in its own Data Model (§4), API
+list (§5) or UI list (§6), is the workflow itself: no disposition entity, no resolution endpoint, no
+signer role, no answer to whether an accepted discrepancy still produces a lot. This gap sits entirely
+inside the specification's own silence, not a missed implementation of an already-stated rule.
+
+**Current behaviour, traced through the real code, not summarized from memory:**
+- `examine_receipt()` (`app/modules/material/commands.py:672-834`) checks five conditions in order —
+  `identity_confirmed=No` → `identity_mismatch`; `damage_observed=Yes` → `damaged`; `seal_broken=Yes` →
+  `seal_broken`; `contamination_observed=Yes` → `contamination`; `Supplier.status != "approved"` →
+  `source_not_approved` (the SG-097 fix, 2026-09-22 same day). First match wins.
+- On any match: `receipt_row.state = "discrepancy_hold"` (line 737), `discrepancy_type` and
+  `discrepancy_reason` are set, and the function returns. **No `MaterialLot` row is ever created** —
+  `lot_id` stays `None` through the whole function (confirmed: the only `MaterialLot(...)` construction
+  in `examine_receipt` is inside the `else` branch, the clean-exam path only).
+- `RECEIPT_STATES = ("received", "examined", "discrepancy_hold")` (`models.py:42`) — three states, no
+  fourth "resolved"/"disposed" state exists anywhere in the schema.
+- `MaterialReceipt`'s own class docstring (`models.py:184-190`) already documents the design intent as
+  written: *"this row itself never becomes a quarantine/release aggregate; that stays `MaterialLot`'s
+  job"* — meaning the existing release/reject signature framework (Document 106, `material_lot.release`/
+  `.reject`, QA Releaser, independent) structurally cannot apply to a `discrepancy_hold` receipt, because
+  there is no lot for it to govern.
+- **No command anywhere transitions a receipt out of `discrepancy_hold`.** The only two endpoints on the
+  receipt are `GET /materials/v1/receipts/{id}` (view) and `POST /materials/v1/receipts/{id}/examine`
+  (`router.py:571,588`), and `examine_receipt` itself requires `state == "received"` (line 692) to run —
+  so it can never be called again on an already-held receipt. Confirmed via full grep of
+  `app/modules/material/commands.py` and `router.py`: no `resolve`, `re-examine`, `dispose`, `accept`, or
+  similar receipt-level command exists.
+- **No auto-created Deviation.** `qms_commands.create_deviation` is called from exactly one place in
+  `material/commands.py` (line 5247, material-reconciliation variance, Document 22/CON-FR-022 — unrelated
+  to receipts) and nowhere in `examine_receipt`. Same missing-cross-module-wiring pattern SG-059 already
+  named generically for other modules; this is a concrete, undiscovered instance of it specific to
+  receiving.
+- **Frontend matches backend exactly, no UI gap of its own.** `material-receipts/page.tsx:241-243` renders
+  a critical banner on a `discrepancy_hold` receipt: *"On hold {discrepancy_type} — {reason}"*, with the
+  fallback text *"this receipt did not produce a lot."* No button, no link to Deviation, no resolve
+  action exists on the page — the UI is honestly reporting a dead end, not hiding a capability that
+  exists.
+- **One piece of defensive code that can structurally never fire:** `get_release_readiness()`
+  (`commands.py:1432-1461`) computes `receipt_discrepancy_clear` by checking whether a lot's *own*
+  receipt is in `discrepancy_hold` — but since a lot can only ever exist when its receipt is *not* in that
+  state, and a receipt can never transition back into `discrepancy_hold` after producing a lot (one-shot
+  `examine_receipt`), this field is always `True` in every reachable code path. Not a real gate; flagged
+  as dead code, not fixed here since it does not currently cause a wrong decision.
+- **Permissions on the existing path** (`scripts/seed.py:186-187`): `material_receipt.create` and
+  `material_receipt.examine` are both held by Operator and Supervisor — no QA-specific gate on the
+  examine step itself, consistent with "examine" being visual inspection, not a quality disposition. No
+  permission code for resolving a discrepancy exists because no resolving command exists.
+- **Existing test evidence already flags this informally**, unresolved until now: `TC-019-004-01`'s own
+  `actual_result` (`test-cases/TEST_CASE_LIBRARY.csv`) already states *"auto-creating a QMS deviation
+  record is deferred cross-module wiring, same class as SG-059"* — written by a prior session but never
+  promoted to its own SPEC_GAP entry until this investigation.
+
+**What a controlled resolution workflow would need — none of these can be guessed:**
+
+1. **Is a Deviation mandatory, optional, or configurable per discrepancy type?** RCV-FR-004 says
+   "hold/deviation" (either/or phrasing, not "hold and deviation") — the baseline itself is ambiguous on
+   whether every discrepancy requires a formal Deviation record or whether some (e.g. a trivial
+   `seal_broken` a Supervisor waves through) can resolve without one.
+2. **Who may resolve a discrepancy, and does resolution require a signature?** The existing release/
+   reject signature policy (Document 106) governs *lots*, not receipts — there is no Document 106 row for
+   any receipt-level action because no receipt-level action exists yet. A resolution decision that
+   ultimately allows regulated material into inventory is exactly the class of action Document 106 exists
+   to cover; inventing a signer role/meaning here without that document's own addendum would be a
+   fabricated Part 11 control (AG-07/SIG-FR-004).
+3. **What dispositions are allowed?** The baseline names none explicitly for this state. Candidates an
+   engineer could guess at — Accept (with documented deviation), Reject (return to supplier / destroy),
+   Replacement (supplier reships, new receipt) — are reasonable real-world options, but which ones this
+   product supports, and under what conditions each is permitted, is a quality-process decision.
+4. **If accepted, does the receipt then create a `MaterialLot`?** And if so, in what status —
+   `quarantine` (normal path, pending QC) or something narrower reflecting it arrived with a documented
+   exception? RCV-FR-028 ("conditional/under-deviation use... default disabled... requires deviation,
+   quality approval, bounded scope") suggests this should NOT be the ordinary `quarantine` path unchanged,
+   but the baseline doesn't spell out the mechanism.
+5. **What audit/evidence is required at resolution?** Reason capture (AUD-FR-008), a link to the
+   resolving Deviation's ID (so the two records are traceable to each other, not just co-incidentally
+   created), and whether the original discrepancy data (`discrepancy_type`/`discrepancy_reason`) must
+   survive unedited on the receipt (AG-08 append-only) alongside a separate resolution record, rather than
+   being overwritten.
+
+```yaml
+spec_gap_id: SG-212
+title: "Material Receipt discrepancy_hold has no controlled resolution workflow -- no disposition, no mandatory Deviation link, no path to ever create a lot from a held receipt"
+class: R  # regulated decision -- disposition options, signer role/independence, deviation-mandatory-or-not, and whether/how a lot gets created are all quality-process authority calls
+description: >
+  RCV-FR-004/RCV-FR-031 (Document 19) both require that a receiving discrepancy "generates a workflow"
+  ("hold/deviation"), and Document 19 §10 names the ReceiptDiscrepancyRaised event this codebase already
+  emits correctly. Neither requirement, nor Document 19's own Data Model/API/UI sections, defines what the
+  workflow actually is: MaterialReceipt has exactly 3 states (received/examined/discrepancy_hold, no
+  resolved/disposed state), no command anywhere transitions a receipt out of discrepancy_hold, no
+  Deviation is auto-created or linkable, and no MaterialLot is ever created for a held receipt -- the
+  material has no in-system representation at all once held. The existing lot-level release/reject
+  signature policy (Document 106) cannot apply, by design (MaterialReceipt's own docstring: "never becomes
+  a quarantine/release aggregate") -- there is no lot yet to govern.
+source_documents:
+  - Document 19 (SPEC-MAT-002A), RCV-FR-004, RCV-FR-027, RCV-FR-028, RCV-FR-031, §4 Data Model, §5 APIs,
+    §6 UI, §9 Audit/Signature, §10 Events
+  - Document 106 (signature policy baseline -- no row exists for any receipt-level disposition action,
+    because no such action exists to have a row)
+  - docs/generated/18_SPEC_GAPS.md SG-059 (the general "no cross-module auto-deviation-creation" pattern
+    this is a concrete, receiving-specific instance of)
+source_requirement_ids:
+  - RCV-FR-004
+  - RCV-FR-027
+  - RCV-FR-028
+  - RCV-FR-031
+  - AUD-FR-008
+  - SIG-FR-004
+affected_modules:
+  - SPEC-MAT-002A
+affected_functions:
+  - services/gxp-api/app/modules/material/commands.py examine_receipt() (creates the hold, lines 672-834;
+    no counterpart resolve/dispose command exists anywhere in this file)
+  - services/gxp-api/app/modules/material/commands.py get_release_readiness() (lines 1432-1461 --
+    receipt_discrepancy_clear is dead code for a state that can structurally never be reached, flagged not
+    fixed)
+  - services/gxp-api/app/modules/material/models.py MaterialReceipt (lines 184-235, RECEIPT_STATES line 42
+    -- 3 states only, no resolution state)
+  - services/gxp-api/app/modules/material/router.py (receipt endpoints -- GET + POST .../examine only, no
+    resolution endpoint)
+  - frontend/src/app/material-receipts/page.tsx (lines 128-129, 241-243 -- correctly renders the dead end,
+    no action button because none exists to call)
+why_material: >
+  Every one of the five open questions above (mandatory-or-optional Deviation, resolver role/signature,
+  allowed dispositions, whether/how a lot gets created on accept, required audit linkage) changes
+  regulated behaviour: record authority (does an accepted-with-exception lot need a different quality
+  status than an ordinary quarantine lot?), signature requirements (Part 11, AG-07), and quality/release
+  decision authority (who may let materially-discrepant material into the supply chain at all). CLAUDE.md
+  §4 forbids inventing any of these. This is not a missing engineering wiring choice like SG-059's other,
+  already-scoped instances -- it is a missing quality-process definition Document 19 itself never supplied.
+risk_if_guessed: >
+  A guessed disposition path (e.g. quietly adding an "Accept anyway" button that creates a normal
+  quarantine lot) could let a material-identity-mismatched or damaged-seal shipment enter inventory
+  through what looks like the ordinary quarantine path, indistinguishable at every downstream QC/release
+  check from material that never had a documented exception -- exactly the "silent remapping" RCV-FR-004
+  explicitly prohibits. A guessed mandatory-Deviation-for-everything rule, in the other direction, could
+  make the product unusable for a customer's own SOP that permits a Supervisor to waive a trivial
+  transport-seal nick without a full Deviation -- over-blocking is also a real-world cost, not a safe
+  default by itself.
+options:
+  - (A) Author a Document 106-style signature-policy addendum plus a small schema extension (a 4th
+      receipt state, e.g. "disposition_pending" -> "resolved", or a separate
+      `material_receipt_discrepancy_disposition` record referencing the receipt) once the project owner
+      answers the five questions above -- recommended, matches the remediation path SG-035/SG-138/SG-181/
+      SG-185/SG-186/SG-211 already used for other previously-unmapped (record_type, action) pairs.
+  - (B) Leave discrepancy_hold as a permanent dead end (current state) -- honest and safe (matches
+      RCV-FR-004's "no silent remapping" intent by construction), but leaves receiving with no recovery
+      path for a false-positive hold (e.g. a data-entry mistake on the visual-exam checkboxes) other than
+      creating an entirely new receipt from scratch, and leaves RCV-FR-031's "discrepancy workflow"
+      requirement permanently unimplemented.
+  - (C) Guess a disposition workflow now (rejected -- the risk above).
+blocking: false
+owner: Head of Quality + Materials module owner (disposition/signature authority) + Data Architect (schema)
+resolution_document: "-- (open)"
+status: OPEN
+```
+
+### SG-213 — `evaluate_policy(..., site_id=None)` on nearly every non-create action across ~28 routers means any actor holding the role can act on/view any site's records, not just their own site's
+
+**Found incidentally, unrelated to this entry's own task** (a Materials/QC/Genealogy/legacy-cleanup gap
+pass, Task 5 = retiring `app/modules/{product,recipe,batch}`) while porting `tests/test_tenancy.py`'s
+cross-organization RBAC-isolation test off the legacy `/batches` endpoint onto the authoritative
+`batch_execution` module's `/batches/v1` endpoints. The legacy test's premise -- "an actor scoped to one
+organization's site cannot act on a record belonging to another organization's site... enforced by the
+existing RBAC check (`UserSiteRole` is scoped to a specific site, never inherited across organizations)"
+-- does **not** hold for the ported test: an Operator whose only `UserSiteRole` is at a brand-new,
+unrelated Site B/Org B can successfully `POST /batches/v1/{batch_id}/steps/{step_id}/start` on a batch
+belonging to Site A (200 OK, not the expected 403 `ROLE_MISSING`). Reproduced deterministically (not a
+fixture-race flake -- re-run in isolation, same result both times).
+
+**Root cause, confirmed by reading the code, not guessed:** `app/modules/batch_execution/router.py` calls
+`evaluate_policy(session, actor.user_id, action="batch_execution.execute"/"batch_execution.view", site_id=
+None)` at 21 of its 22 call sites -- only `POST /batches/v1` (create) passes a real `site_id=cmd.site_id`.
+`policy/service.py::effective_role_names(session, user_id, site_id=None)` documents `site_id=None` as
+meaning "at any site" (deliberately, per its own docstring, as "the replacement for
+`require_admin_anywhere`'s 'anywhere' semantics"). Once a batch exists, every other action against it
+(issue/start/hold/resume/abort/step-start/step-complete/step-hold/step-resume/comments/handover/correct/
+production-complete/GET-detail/execution-view/record) only checks "does this actor hold a role that grants
+this permission at *any* site they're assigned to" -- never "at *this batch's* site." A grep for the same
+`evaluate_policy(..., site_id=None)` pattern across every module's router shows this is not
+batch_execution-specific: `product_master`, `recipe_master`, `qc`, `qa_review`, `release`, `material_
+specification`, `genealogy`, `evidence`, `vault`, `audit`, `iam`, `rules`, `security`, `validation`, `qms`,
+`readmodels`, `yield_reconciliation`, `packaging`, `device`, `supplier_quality`, `workflowops`,
+`disaster_recovery`, `dataops` and `ddcp` all use the identical `site_id=None` pattern at some or most of
+their non-create call sites (only `erp`/`material`/`postmarket`/`ddcp` mostly pass a real site_id).
+
+**Why this is flagged as a gap rather than fixed inline:** whether this is (a) a genuine, unintended
+cross-site authorization defect (SEC-THR-012 "cross-tenant and cross-site object access", MUT-FR-003
+"Requests crossing tenant/site boundaries fail closed") that needs a real fix, or (b) a deliberate
+consequence of the single-tenant-per-deployment decision (ADR-0006 Option A) where all sites belong to one
+trusted organization and staff holding a given role are intended to be able to act platform-wide regardless
+of which site their own `UserSiteRole` happens to be recorded against, is a regulated authorization-model
+decision this pass has no authority to make unilaterally -- and given how pervasive the pattern is (20+
+modules, not a local mistake), a real fix is a platform-wide, multi-module change far outside this task's
+scope (retiring the legacy product/recipe/batch trio), not a one-line correction.
+
+```yaml
+spec_gap_id: SG-213
+title: "evaluate_policy(..., site_id=None) on nearly every non-create action means any role-holder can act on/view any site's records, not scoped to the actor's own site"
+class: R  # regulated decision -- is site-scoped-per-action authorization required (MUT-FR-003/SEC-THR-012) or is platform-wide-by-role the intended single-tenant-deployment model
+description: >
+  evaluate_policy(session, actor_user_id, action=..., site_id=None) is used at the large majority of
+  non-create call sites across ~24 of ~28 module routers (confirmed by grep: batch_execution has 21/22
+  site_id=None call sites, only POST /batches/v1 create is site-scoped). effective_role_names(site_id=None)
+  resolves "does the actor hold this role at ANY site they are assigned to" rather than "at the specific
+  site of the record being acted on." Demonstrated concretely: an Operator whose only UserSiteRole is at an
+  unrelated Site B can start/view/complete a batch step belonging to Site A (200 OK where 403 ROLE_MISSING
+  was expected). tests/test_tenancy.py::test_cross_organization_access_denied (ported this session off the
+  retired legacy /batches endpoint, which WAS site-scoped) reproduces this deterministically against the
+  authoritative batch_execution module and is left failing/xfail(strict=True) citing this gap, not
+  silently weakened to match the current behaviour.
+source_documents:
+  - Document 61 (SPEC-SEC-001) SEC-THR-012
+  - Document 03 (SPEC-GXP-001) MUT-FR-003
+  - ADR-0006 (single-tenant-per-deployment, Option A)
+source_requirement_ids:
+  - SEC-THR-012
+  - MUT-FR-003
+affected_modules:
+  - Nearly every module with a router (confirmed: batch_execution, product_master, recipe_master, qc,
+    qa_review, release, material_specification, genealogy, evidence, vault, audit, iam, rules, security,
+    validation, qms, readmodels, yield_reconciliation, packaging, device, supplier_quality, workflowops,
+    disaster_recovery, dataops, ddcp)
+affected_functions:
+  - app/modules/policy/service.py effective_role_names/evaluate_policy (site_id=None semantics, by design for *some* callers)
+  - app/modules/batch_execution/router.py (21 of 22 evaluate_policy call sites pass site_id=None)
+  - tests/test_tenancy.py::test_cross_organization_access_denied (reproduces the defect, marked xfail(strict=True) citing SG-213)
+why_material: >
+  Whether per-action site scoping is required is exactly the class of authorization-trust-boundary decision
+  CLAUDE.md §4 and .claude/rules/06-security-rules.md reserve for a human decision, not an unattended
+  engineering guess -- especially given how many modules and call sites are affected; guessing wrong in
+  either direction either leaves a real cross-site data-exposure/tamper channel open across the whole
+  platform, or spends a large multi-module engineering effort "fixing" behavior that was actually intended.
+risk_if_guessed: >
+  If this is treated as "working as designed" and it is not, any authenticated staff member holding a
+  common execution/view role can read or mutate another site's batch/product/recipe/QC/release/genealogy/
+  vault/audit records -- a platform-wide cross-site confidentiality and integrity failure, not a cosmetic
+  gap. If it is "fixed" unilaterally and the single-tenant/platform-wide-role model was actually intended,
+  the fix could lock out legitimate cross-site roles (e.g., a multi-site Quality Director) that the current
+  design deliberately allows.
+options:
+  - (A) Confirm with the project owner/Security owner whether per-action site-scoped authorization is
+    required platform-wide; if yes, thread the resource's site_id through to evaluate_policy at every
+    affected call site (a large, its-own-dedicated-task change, likely needing a resource-lookup-before-
+    authorize refactor at several routers where the site isn't known until the domain function runs) --
+    recommended if confirmed as unintended.
+  - (B) Formally document this as the intended single-tenant/platform-wide-by-role authorization model
+    (update ADR-0006 or a new ADR) and correct tests/test_tenancy.py's own stated premise instead --
+    recommended if confirmed as intended.
+  - (C) Leave silently as-is with no test coverage of the discrepancy (rejected -- exactly the "guessed"
+    outcome CLAUDE.md forbids; the gap would remain undocumented for the next person to rediscover from
+    scratch).
+blocking: false
+owner: Security owner + Platform Architect (authorization-trust-boundary decision, platform-wide)
+resolution_document: "-- (open; tests/test_tenancy.py::test_cross_organization_access_denied left xfail(strict=True) citing this entry)"
+status: OPEN
+```
+
+### SG-214 — Workflow Handoff Notification audience originally read only the RBAC permission code, not the (possibly narrower) `signature.signature_policy.required_role_id` -- RESOLVED (Option B implemented)
+
+**Context:** project-owner-directed net-new capability ("Workflow Handoff Notifications" -- role-dependent
+action-required notifications, e.g. a QA Releaser being nudged that a batch is ready for their release
+decision). Not derived from Documents 01-115 -- no SPEC-xxx baseline row exists for it, and CLAUDE.md's
+own SPEC_GAP trigger list does not strictly require an entry here, since nothing about the actual
+regulated write path was ever affected by the gap this describes -- recorded anyway, and now closed out,
+matching this codebase's own established practice of tracking every non-obvious latitude decision even
+when it never blocked.
+
+**Original gap:** `app/modules/notifications/registry.py`'s six `WorkflowNotificationSpec` entries keyed
+each category's audience off the plain RBAC `iam.permissions.code` checked at the router
+(`evaluate_policy(action=...)`) for the next command on that aggregate. All six also carry a Document 106
+`signature.signature_policy` row (`scripts/seed.py` SIGNATURE_POLICY_FLOOR) whose `required_role_id` can
+narrow *who may actually complete the signed write* further than the RBAC permission alone -- nothing
+enforced that the two stayed aligned if either was edited independently.
+
+**Resolution (implemented same day):** `PendingStateRule` in `registry.py` now carries an optional
+`signature_record_type`/`signature_action` pointer per category, naming the exact (record_type, action)
+pair the real command handler passes to `signature_service.resolve_signature_requirement()`.
+`service.py::_signer_role_name_for_category()` reads the *current* `signature.signature_policy` row for
+that pointer at read time (never a role name hardcoded in this module) and, when it names a
+`required_role_id`, `list_visible_notifications()` additionally requires the viewing actor to hold that
+role (via `policy.service.effective_role_names()`) on top of the RBAC permission check -- so a change to
+the signature policy's required role takes effect on the notification audience automatically, with no
+drift possible between the two. Verified by
+`tests/test_workflow_notifications.py::test_signature_policy_role_narrows_audience_beyond_the_rbac_permission`:
+narrows a policy to `required_role_id=Admin`, and proves a second QA Releaser who holds the RBAC
+permission but not the Admin role is excluded, while an Admin who is not the triggering actor still sees
+it. `excluded_actor_id` (the SoD nudge) is unchanged -- independence chain-of-custody logic stays
+per-module (see "why not the independence chain too" below).
+source_documents:
+  - (none -- net-new capability, not derived from Documents 01-115)
+  - Document 106 (signature policy baseline) SIGNATURE_POLICY_FLOOR rows for
+    (release_scope/release), (deviation_record/disposition), (deviation_record/close),
+    (capa_record/plan), (capa_record/close), (controlled_document_version/release)
+source_requirement_ids:
+  - (none -- see above)
+affected_modules:
+  - app/modules/notifications (registry.py, service.py)
+affected_functions:
+  - app/modules/notifications/registry.py PendingStateRule.signature_record_type/signature_action, RULE_BY_CATEGORY
+  - app/modules/notifications/service.py _signer_role_name_for_category(), list_visible_notifications()
+why_material: >
+  Recorded so the simplification (and its fix) stay visible: before this fix, a future signature-policy
+  edit narrowing a required role away from its RBAC permission code's holders would have notified a wider
+  audience than could actually complete the action, without anyone deciding that on purpose. After the
+  fix, that can no longer happen -- audience resolution reads the same live policy data the write path
+  itself reads.
+risk_if_guessed: >
+  N/A both before and after -- nothing regulated was ever decided by the notification layer (Gateway
+  remains the only real gate); the only risk the original gap carried was UX noise (a notified user
+  hitting ROLE_MISSING/MISSING_SIGNATURE at the Gateway), never a false sense of authorization.
+options:
+  - (A) Leave as RBAC-only (superseded -- see resolution above).
+  - (B) IMPLEMENTED. Add a generic per-category signature-policy pointer, read live at audience-resolution
+      time, reused by both the real command handlers (indirectly, via the same `signature.signature_policy`
+      table) and this registry -- narrows audience resolution to match exactly, without duplicating any
+      module's bespoke independence/chain-signer enforcement logic.
+  - (C) Guess/hardcode a narrower audience without a shared resolver (rejected -- would have reintroduced
+      per-module special-casing).
+blocking: false
+owner: Platform Architect (registry/audience-resolution design ownership)
+resolution_document: "app/modules/notifications/registry.py + service.py (2026-09-23); tests/test_workflow_notifications.py::test_signature_policy_role_narrows_audience_beyond_the_rbac_permission"
+status: RESOLVED
+```
+
+### SG-215 — Equipment Asset `location_id` wired to the `EquipmentArea` master in the "New asset" UI, without a confirmed spec relationship between the two entities -- RESOLVED (Option B implemented, project-owner-directed)
+
+**Context:** User testing the DDCP demo journey (Phase 3, `/equipment` → "New asset") found no Area/location
+field in the create-asset form at all, even though the same page prominently shows an "Equipment areas"
+panel a few sections below it.
+
+**Original gap:** `EquipmentAsset.location_id` (`app/modules/equipment/models.py` docstring) is explicitly
+documented as "a captured, unenforced reference -- no location-master entity exists in this module's
+frozen 4-entity data model (same treatment as `material.MaterialLot.material_spec_version_id`)." Separately,
+`EquipmentArea` (`cleaning_models.py`) was added later (SG-177) as "a new shared master... referenced by
+`cleaning_execution`/`line_clearance`, `em_location` and `aseptic_operation`" -- its own docstring does not
+mention `EquipmentAsset`. Nothing in any source document (Documents 01-115) states that
+`EquipmentAsset.location_id` should resolve to `EquipmentArea.id`; the two were built in separate passes for
+different consuming modules. Wiring a picker from one to the other in the frontend requires assuming a
+relationship the frozen data model never declared -- the same class of decision the recipe_master session
+(2026-09-continuing) deliberately declined to guess for its own unbuilt raw-UUID fields.
+
+**Resolution:** Project owner directed Option B (wire it) over leaving it a raw UUID or leaving it
+unbuilt. `frontend/src/app/equipment/page.tsx`'s `CreateAssetModal` now takes an `areas: EquipmentArea[]`
+prop (the same list already loaded by the parent `/equipment` page for its "Equipment areas" panel) and
+renders an "Area / location" `<Select>` populated from it; the chosen id is sent as `location_id` on
+`POST /equipment/v1/assets`. The field is optional and its hint states explicitly that it is "unvalidated by
+the backend -- recorded for reference only, not enforced against cleaning/EM/aseptic area state," so the UI
+does not imply a stronger guarantee than the schema actually gives. No backend/model/migration change was
+made: `location_id` remains the same nullable, FK-less UUID column it always was; only the frontend now
+offers a convenience picker instead of requiring the operator to hand-type a UUID.
+source_documents:
+  - (none -- no Document 01-115 row defines an EquipmentAsset<->EquipmentArea relationship)
+affected_modules:
+  - frontend/src/app/equipment (page.tsx)
+affected_functions:
+  - frontend/src/app/equipment/page.tsx CreateAssetModal (added `areas` prop, "Area / location" Select, `location_id` in the POST payload)
+why_material: >
+  Recorded so the assumption stays visible: a future feature that reads `equipment_assets.location_id`
+  expecting it to always be a valid `equipment_areas.id` would be relying on a UI convenience, not a
+  database constraint -- there is no FK, and rows written before this change (or via direct API calls) can
+  still hold an arbitrary or null UUID.
+risk_if_guessed: >
+  Low -- `location_id` was already unenforced and non-regulated (no release/disposition/signature decision
+  reads it); the only change is which UUID an operator is likely to pick in the UI. No AG-03/AG-05/AG-06
+  regulated-mutation-path or audit/signature semantics are affected.
+options:
+  - (A) Leave "New asset" with no Area field at all, forcing hand-typed UUIDs or leaving location_id null
+      forever (rejected -- project owner wants the picker; matches the confusing empty-field UX the user
+      actually hit).
+  - (B) IMPLEMENTED. Add a non-authoritative `EquipmentArea` picker in the frontend only, explicit hint
+      that it is unenforced, no backend/schema change.
+  - (C) Add a real FK from `equipment_assets.location_id` to `equipment_areas.id` plus a migration
+      (rejected for this pass -- would be inventing a schema relationship/migration not requested by any
+      source document; revisit only if a future document or the project owner explicitly calls for
+      enforced equipment-to-area assignment).
+blocking: false
+owner: Project owner (directed Option B); Platform/Equipment module owner (implementation)
+resolution_document: "frontend/src/app/equipment/page.tsx (2026-09-24)"
+status: RESOLVED
+```
+
+### SG-216 — `RecipeVersionPickerField` (QC Test Specification's `scope_type=in_process` "Scope version ID") silently enforced a released-only filter the backend never required, blocking the documented Test-Spec-before-Recipe-release build order -- RESOLVED (fixed to match backend contract)
+
+**Context:** User testing the DDCP demo journey (PHASE 7 §7.1, Test Specification) drafted a recipe
+(`RCP-MJ-PFS-001`, still `draft`) and then tried to create a QC Test Specification with `scope_type=
+in_process`, selecting that recipe as scope. The frontend's recipe picker never listed it.
+
+**Original gap:** `frontend/src/components/shared/RecipeVersionPicker.tsx`'s `RecipeVersionPickerField`
+filtered recipe families to `has_released` and versions to `lifecycle_state === "released"` before
+building this dropdown -- a restriction invented in the frontend, not asked for by any backend contract or
+source document. `qc/commands.py::create_test_specification_draft` (`SCOPE_TABLE_BY_TYPE["in_process"] =
+RecipeVersion`, line ~165) validates `scope_version_id` only by `session.get(RecipeVersion, id) is not
+None` -- existence, no lifecycle_state condition, same as its `product`/`device`/`material` scope-type
+siblings. The demo doc itself (docs/testing/demo-gujarati/19_..., PHASE 7 §7.1 header: "Phase ૫ પહેલાં
+કરવું જરૂરી") documents that the Test Specification must be created and released *before* Phase 5 releases
+the recipe -- because Recipe Master steps (req #12, "Link required in-process QC tests to recipe steps")
+need an already-released Test Spec to link at a step. That order is only possible if a Test Spec can name
+a still-draft recipe version as its scope, which the frontend's released-only filter made impossible.
+
+**Resolution:** Removed the `has_released`/`lifecycle_state === "released"` filters from
+`RecipeVersionPickerField`; it now lists every version of a selected recipe family regardless of state,
+labeling each option with its `lifecycle_state` (e.g. "v1 (draft)") so the operator can still see what
+they're picking. No backend change -- the frontend now simply stops rejecting inputs the backend already
+accepted. `ProductVersionPicker` (used for QC's `scope_type=product`) was left untouched: Product Master
+has no equivalent "must reference a still-draft prior object" ordering documented, so there was no
+matching evidence to justify loosening it, and doing so without that evidence would itself be a guess.
+source_documents:
+  - docs/testing/demo-gujarati/19_Complete_EBMR_Journey_Gujarati.md PHASE 7 §7.1 (build-order note)
+  - (no Document 01-115 row states a lifecycle_state requirement for qc_test_specification.scope_version_id;
+    the backend's own existence-only check is the closest thing to an authoritative contract)
+affected_modules:
+  - frontend/src/components/shared (RecipeVersionPicker.tsx)
+affected_functions:
+  - frontend/src/components/shared/RecipeVersionPicker.tsx RecipeVersionPickerField
+why_material: >
+  Recorded so a future change to `create_test_specification_draft` that *does* add a lifecycle_state
+  check on `in_process` scope would need to also revisit this picker (and the demo doc's documented
+  build order) rather than being made in isolation.
+risk_if_guessed: >
+  Low -- read-only convenience picker; no regulated decision, signature, release or audit behavior
+  changes. The only outcome of the old bug was a false "recipe not found" UX dead-end for an operation the
+  backend already permitted.
+options:
+  - (A) Leave released-only (rejected -- directly blocks the documented Phase 7-before-Phase 5 build order
+      and contradicts the backend's own looser validation).
+  - (B) IMPLEMENTED. Show all versions regardless of lifecycle_state, labeled with their state.
+  - (C) Add a backend lifecycle_state restriction to match the old frontend filter (rejected -- would be
+      inventing a new validation-acceptance rule not requested by any source document, and would break the
+      documented demo build order outright).
+blocking: false
+owner: Platform/QC module owner
+resolution_document: "frontend/src/components/shared/RecipeVersionPicker.tsx (2026-09-24)"
+status: RESOLVED
+```
+
+### SG-217 — Training page's "Assess" action gated on the wrong permission (`training.waiver.create` instead of `training.assignment.assess`), and no frontend path existed at all to create a `qms.qualification_record`/`iam.qualifications` grant -- RESOLVED
+
+**Context:** User testing the DDCP demo journey hit `QUALIFICATION_MISSING` starting a recipe step
+(`STEP-A`, batch `MJ-PFS-B-2602`) that requires qualification code `DISPENSING_OPERATOR` (per the demo
+doc's own §5.2 recipe authoring instructions). DB check confirmed `operator1` genuinely had no
+`iam.qualifications` row for that code (only `ASEPTIC_GOWN_CERT_DEMO`) -- `batch_execution/commands.py::
+_enforce_step_qualification` (BAT-FR-014) was correctly failing closed, not a bug.
+
+**Original gap (two, found while locating how to grant it):**
+1. `qms/training_commands.py::create_qualification` is the only path that writes `iam.qualifications`
+   (the table every execution-time gate actually reads, per the existing SG-086 write-through note in that
+   function) -- but `frontend/src/app/training/page.tsx` never had any control that called
+   `POST /training/v1/qualifications`. The only qualification-adjacent buttons on that page were "Grant
+   waiver" (`qms.waivers`, a different record/table entirely) and "Assess" (completing a training
+   assignment, which does not itself create a qualification row).
+2. That "Assess" button was gated by `canQualifyTraining(me)` = `hasPermission(me, "training.waiver.create")`
+   -- the server-side assess endpoint actually checks `training.assignment.assess`
+   (`qms/training_router.py` line ~152). Same bug class as SG-fixed-this-session's QC Release button: a
+   frontend visibility gate checking an unrelated permission code instead of the one the backend action
+   itself requires.
+
+**Resolution:** Added `canAssessTraining`/`canCreateQualification` (`lib/api.ts`), fixed the "Assess"
+button to use the former, and added a "New qualification" button + `QualificationModal` (person picker +
+free-typed-with-suggestions qualification code, matching recipe-master's own SG-086 "no controlled
+catalogue" treatment of the same field + effective-from/to + optional evaluator) calling
+`POST /training/v1/qualifications`. No backend change -- the endpoint and its `iam.qualifications`
+write-through already existed and were verified correctly permissioned in the live DB (`QA Releaser`/
+`Admin` hold `training.qualification.create`). No qualification was granted by this session on the user's
+behalf -- the user asked not to have the blocking action (batch step start) called for them, extended here
+to this adjacent mutation too; they grant it themselves through the new UI.
+source_documents:
+  - (none -- Document 07/106 IAM-FR rows establish qualification-gated actions generally; no row specifies
+    this particular UI must exist, but the backend command/table it now calls was already the declared
+    owner per 04_DATA_MODEL_CATALOGUE.md)
+affected_modules:
+  - frontend/src/app/training (page.tsx)
+  - frontend/src/lib (api.ts)
+affected_functions:
+  - frontend/src/app/training/page.tsx QualificationModal (new), SubjectRecord (canAssess prop), TrainingPage ("New qualification" button)
+  - frontend/src/lib/api.ts canAssessTraining, canCreateQualification (new)
+why_material: >
+  Recorded so a future reviewer knows the "New qualification" control's field shape (free-typed code, no
+  hard Select) was a deliberate match to recipe-master's existing SG-086 treatment, not an oversight -- and
+  so the Assess-button permission fix isn't re-broken by someone assuming canQualifyTraining covered it.
+risk_if_guessed: >
+  Low -- both are frontend visibility/convenience fixes. The Assess fix only affects who *sees* a button
+  whose real gate is still server-side RBAC; the new qualification control writes through an
+  already-existing, already-correctly-permissioned backend command with no new authorization surface.
+options:
+  - (A) Leave both as found (rejected -- directly blocks the documented demo flow with no workaround, and
+      leaves a second confirmed instance of the wrong-permission-gate bug class unfixed).
+  - (B) IMPLEMENTED. Fix the Assess gate; add the missing qualification-grant UI, free-typed per SG-086.
+  - (C) Also reconcile qms.qualification_record and iam.qualifications into one store (rejected -- SG-086
+      stays explicitly open; out of scope for a frontend-only fix and a materially bigger data-model change).
+blocking: false
+owner: Platform/Training module owner
+resolution_document: "frontend/src/app/training/page.tsx, frontend/src/lib/api.ts (2026-09-24)"
+status: RESOLVED
+```
+
+### SG-218 — Equipment Asset creation had no "Equipment class" field, so no asset in the system could ever satisfy a recipe step's class-scoped equipment requirement (`EQUIPMENT_CLASS_MISMATCH` on every attempt) -- RESOLVED (field + RBAC-scope follow-up both implemented)
+
+**Context:** Immediately after SG-217's qualification fix, starting the same step (`STEP-A`, batch
+`MJ-PFS-B-2602`) failed again with `EQUIPMENT_CLASS_MISMATCH: None of the supplied equipment assets match
+this step's required equipment class`. DB check: the step's `gxp_batch_step_equipment_requirement` row
+requires `equipment_class_id` = the `BALANCE` class (`ebmr.gxp_equipment_class`), and **every** row in
+`equipment.equipment_assets` (8 of 8) had `equipment_class_id = NULL` -- no asset in the whole system had
+ever been assigned to a class, so `batch_execution/commands.py`'s class-match loop
+(`candidates = [a for a in assets.values() if a.equipment_class_id == req.equipment_class_id]`) could never
+find a match no matter which asset was supplied.
+
+**Original gap:** `equipment/commands.py::CreateEquipmentAssetCommand` already accepts an optional
+`equipment_class_id` and the model column exists -- but `frontend/src/app/equipment/page.tsx`'s
+`CreateAssetModal` never exposed a field for it (same class of omission SG-215 fixed for that command's
+sibling `location_id` field two turns earlier in this same session -- this one was simply the second half
+of the same modal's missing fields, and this time the missing field actually blocks execution rather than
+being merely unenforced).
+
+**Resolution:** Added an "Equipment class" `<Select>` to `CreateAssetModal`, sending `equipment_class_id`
+on `POST /equipment/v1/assets`.
+
+**Follow-up (same session, confirmed hit in practice):** the field was initially wired to recipe-master's
+own `GET /recipes/v2/equipment-classes`, gated `recipe.view` -- which `Equipment Administrator` (the demo's
+own equipment-creating role, doc Phase 3) does not hold, so the picker 403'd and fell back to a manual
+"enter the class id" text input for exactly that role. User reported this directly ("not showing equipment
+class in any dropdown") rather than it staying theoretical, so Option C below was implemented: added
+`GET /equipment/v1/equipment-classes` (`equipment/router.py`), an equipment-module-owned endpoint with no
+RBAC gate (matching this router's other plain read endpoints -- list_assets/list_areas/get_dashboard all
+skip evaluate_policy too, additive non-regulated read data, same AG-11 precedent), reading the
+`gxp_equipment_class` master through recipe_master's own `service.list_equipment_classes()` function rather
+than querying that module's table directly (AG-02 module-boundary compliance). Frontend now calls this new
+endpoint instead. Verified directly: `equipment.admin`'s token, which got `ROLE_MISSING` against the old
+route, gets the correct `[{class_code: "BALANCE", ...}]` payload from the new one.
+source_documents:
+  - (none -- no Document 01-115 row assigns equipment-class list visibility to a specific role)
+affected_modules:
+  - services/gxp-api/app/modules/equipment (router.py)
+  - frontend/src/app/equipment (page.tsx)
+affected_functions:
+  - app/modules/equipment/router.py list_equipment_classes_for_assets (new, GET /equipment/v1/equipment-classes)
+  - frontend/src/app/equipment/page.tsx CreateAssetModal (equipmentClasses/equipmentClassesUnavailable props, "Equipment class" field), EquipmentPage (equipmentClasses fetch, now against the new endpoint)
+why_material: >
+  Recorded so a future reader sees why two GET routes for the same gxp_equipment_class table exist
+  (recipe-master's original, RBAC-gated for its own recipe-authoring context; equipment's new one,
+  ungated for asset classification) rather than assuming one is dead code to consolidate away.
+risk_if_guessed: >
+  Low -- equipment_class_id has no regulated-decision role beyond the class-match check this now correctly
+  enables, and the new endpoint is read-only additive data (AG-11), not a new mutation surface.
+options:
+  - (A) Leave the RBAC gap as a documented-but-unfixed fallback (superseded -- user hit it in practice).
+  - (B) Grant `Equipment Administrator` the existing `recipe.view` permission (rejected -- broader than
+      this one list, would also open recipe/product family read access with no evidence that was intended).
+  - (C) IMPLEMENTED. Equipment-module-native read endpoint, gated by nothing (matching sibling GET routes),
+      reading through recipe_master's own service function.
+blocking: false
+owner: Platform/Equipment module owner
+resolution_document: "app/modules/equipment/router.py, frontend/src/app/equipment/page.tsx (2026-09-24)"
+status: RESOLVED
+```
+
+### SG-219 — Training page's Qualifications table read a field name (`status`) the backend never sends (`state`), crashing `WorkflowStatePill` for any person with a granted qualification -- RESOLVED (not a SPEC_GAP-class decision, logged for continuity with this session's other fixes)
+
+**Context:** Found incidentally in `pm2 logs ebmr-new-frontend` while verifying SG-218's fix didn't break
+the Training page -- an uncaught `TypeError: Cannot read properties of undefined (reading 'toUpperCase')`
+in `WorkflowStatePill`, called from `SubjectRecord`'s Qualifications table. Pre-existing, not introduced by
+SG-217/218; surfaced now because SG-217's new "Grant qualification" UI was about to start producing rows
+that hit it immediately.
+
+**Gap:** `training_router.py::_qualification_dict()` returns the field as `"state"`
+(`qms.QualificationRecord.state`, values like `QUALIFIED`/`RENEWED`). `frontend/src/app/training/page.tsx`'s
+`Qualification` interface declared it as `status`, and rendered `<WorkflowStatePill state={q.status} />` --
+always `undefined`, since the backend key was never `status`.
+
+**Resolution:** Renamed the interface field and its one usage to `state`, matching the backend payload
+exactly. Pure rename, no behavior/contract decision involved.
+source_documents:
+  - (none needed -- straight serializer/consumer field-name mismatch fix, no ambiguity)
+affected_modules:
+  - frontend/src/app/training (page.tsx)
+affected_functions:
+  - frontend/src/app/training/page.tsx Qualification interface, SubjectRecord's qualifications table render
+why_material: >
+  Logged for continuity with this session's other training-page fixes (SG-217) touching the same
+  Qualifications table, not because the fix itself required a judgment call.
+risk_if_guessed: N/A -- not a judgment call, a straight field-name correction verified against the actual backend response shape.
+options:
+  - (A) IMPLEMENTED. Rename frontend field to match backend.
+blocking: false
+owner: Platform/Training module owner
+resolution_document: "frontend/src/app/training/page.tsx (2026-09-24)"
+status: RESOLVED
+```
+
+### SG-221 — QC Test Specification's "New test specification" form had no field for `acceptance_rule_business_id`/`trend_rule_business_id`, so a `QcResult.outcome` could never become anything but "pending" -- RESOLVED
+
+**Context:** User recorded a result, had it reviewed (`qc_test_order.state = "reviewed"`), and still got
+`VALIDATION_FAILED: Required in-process QC test(s) have not reached a passing result` completing the recipe
+step. Traced live DB: the result's `outcome` was `"pending"` (`ebmr.qc_result`), and the linked
+`qc_test_definition` (`ASSAY`, on `QC-SPEC-ASSAY-01`) had `acceptance_rule_business_id = NULL`.
+
+**Root cause:** `qc/commands.py::_evaluate_acceptance()` returns `("pending", None)` immediately whenever
+`acceptance_rule_business_id` is unset — this is the *only* function that ever sets `QcResult.outcome`, and
+it's called only from `record_result()`. Neither `review_test_order()` (only moves `state`, never touches
+`outcome`) nor `approve_result_correction()` (line ~1324: `outcome=original.outcome`, copies the stale value
+verbatim, never re-evaluates) can turn a "pending" result into "pass" after the fact. So once a result is
+recorded against a test definition with no acceptance rule linked, it is **permanently** stuck at "pending"
+— no UI action, however many times repeated, can ever satisfy `batch_execution`'s step-completion gate for
+it. And there was no way to link one: `frontend/src/app/qc/page.tsx`'s `testDefinitionSubfields()` (used by
+"New test specification") had fields for test_code/test_name/result_data_type/uom/required/release_blocking
+only — `acceptance_rule_business_id` and `trend_rule_business_id`, both accepted by the backend's
+`TestDefinitionInput` (commands.py:138) since this module existed, had no UI field at all. The demo doc's
+own §7.1 walkthrough never mentions an acceptance rule either, so following it exactly guarantees this
+exact stuck state.
+
+**Resolution:** Added "Acceptance rule" (required for a step-completion-gating test to ever pass) and
+"Trend rule (optional)" fields to the test-definition subform, both `customSelect` pickers over `/rules/v1`
+(released rules) — same reusable shape recipe-master's own `ruleOptions` already uses. No backend change;
+the fields were already fully supported server-side.
+
+**Why the existing spec is still stuck, and what actually unblocks it:** `QC-SPEC-ASSAY-01` v1 is already
+`released` (immutable, AG-08) with its `ASSAY` definition still ruleless, and its recorded result is
+permanently "pending" as explained above -- neither can be edited in place. `qc/commands.py::
+create_test_specification_draft` auto-computes `version_no` from the max existing version for the same
+`spec_code` (line 168-173), so re-running "New test specification" with spec_code `QC-SPEC-ASSAY-01` again
+creates v2 automatically -- no separate "amend"/"new version" action exists or is needed. The path forward:
+(1) author + release a Rule (`/rules`, type "CC-3 - Tolerance evaluation" fits a numeric range check,
+declare input `value`, expression e.g. `value >= <low> AND value <= <high>` matching the spec's real
+tolerance), (2) create+release `QC-SPEC-ASSAY-01` v2 with that rule now selected as its `ASSAY` definition's
+Acceptance rule, (3) create a fresh Sample (`source_type=batch_step`) → Test order against the *v2*
+definition → Record result — only a result recorded against a rule-linked definition can ever reach "pass".
+The old stuck sample/order/result can be left as-is or the sample can be superseded by a fresh one; nothing
+about it needs to be corrected or deleted.
+source_documents:
+  - (none -- Document 23's own qc_test_definition schema already includes both rule-reference columns;
+    no source document specifies their UI treatment)
+affected_modules:
+  - frontend/src/app/qc (page.tsx)
+affected_functions:
+  - frontend/src/app/qc/page.tsx testDefinitionSubfields, useReleasedRuleOptions (new), NewSpecificationModal
+why_material: >
+  Recorded so a future reader understands why a result can get permanently stuck at "pending" with no
+  correction path, and so a QC-authoring user going forward always sees an explicit choice to link (or
+  knowingly skip) an acceptance rule instead of silently defaulting to a spec that can never gate anything.
+risk_if_guessed: >
+  Low for the UI fields themselves (both already-existing, backend-validated optional fields, no new
+  validation-acceptance behavior invented). Separately worth flagging without fixing this pass:
+  `approve_result_correction()` copying `outcome=original.outcome` instead of re-evaluating looks like its
+  own latent gap for a *different* scenario (correcting a value that should flip pass/fail) -- out of scope
+  here since it wasn't what blocked this user, noted for whoever picks it up next.
+options:
+  - (A) Leave unfixed, tell the user to accept every in-process result as automatically "pending" forever
+      (rejected -- makes the step-completion gate for in-process QC unsatisfiable in practice for every
+      spec authored through this UI, including the demo's own).
+  - (B) IMPLEMENTED. Add the two rule-reference fields, sourced from released rules.
+blocking: false
+owner: Platform/QC module owner
+resolution_document: "frontend/src/app/qc/page.tsx (2026-09-24)"
+status: RESOLVED
+```
+
+### SG-222 — Dispensing page: no Container dropdowns (select-source, and the transaction-operations console), and `ALLOWED_FROM`'s state keys ("weighing"/"weighed") never matched any real backend order state -- RESOLVED
+
+**Context:** User asked (a) for the "Select source"/"Material transaction operations" Container fields to
+be real dropdowns, and (b) how a 40kg batch requirement is meant to work when a single container only
+holds 24kg (a real scenario: `LOT-2601-01` was split into 4 containers of ~24.6kg each earlier this
+session).
+
+**Gap 1 (UI convenience):** `frontend/src/app/dispensing/page.tsx`'s "select_source" step had a raw
+`<Input>` for Container ID with nothing to pick from. `frontend/src/components/shared/FormConsole.tsx`'s
+"Material transaction operations" console (`dispensed_container_id` on consumptions/returns/losses) was
+the same, and worse: no list endpoint existed anywhere for `DispensedContainer` at all.
+
+**Gap 2 (real, more serious bug, found while fixing gap 1):** `ALLOWED_FROM` (dispensing/page.tsx) gated
+which action buttons show per `order.state`, keyed by `"weighing"`/`"weighed"` — but grepped every
+`order.state = ...` assignment across `material/commands.py` and neither string is ever set; the real
+value after Start is `"started"` (verified also checked against every reading/verify/complete guard).
+`ALLOWED_FROM[o.state] ?? []` therefore silently returned `[]` for every dispensing order past
+`source_selected` — Record reading, Record manual reading, Independent verify and Complete were **all
+unreachable from the UI** for any order that successfully started, regardless of role/permission. This
+predates this session; the qualification gate (below) meant no order had reached `started` yet to expose
+it before now.
+
+**Gap 3 (the actual answer to the user's 40kg/24kg question):** `select_dispensing_source`'s own docstring
+already documents DSP-FR-017 multi-lot dispensing — it may be called repeatedly while the order is in
+`created` *or* `source_selected`, each call adding one more `DispensingSource` row toward the target, with
+each call's own `quantity` validated only against that one lot/container's own available balance (not the
+order's total target). The frontend's `ALLOWED_FROM["source_selected"]` only ever listed `["start",
+"cancel"]` — there was no way to call "Select source" a second time for a second container, making
+multi-container dispensing (the correct, intended way to cover a target larger than any one container)
+impossible through the UI.
+
+**Resolution:**
+1. Dispensing order "select_source" step: Container is now a dependent `<Select>` populated from
+   `GET /material-lots/{lot_id}/containers` (the same endpoint Inventory's own Transfer modal already
+   uses) once a lot is picked; changing the lot clears the selection.
+2. Added `GET /dispensing/v1/dispensed-containers?batch_id=...` (new, no RBAC gate, matching this
+   router's other plain read endpoints) and a new `dispensedContainerSelect` `FormField` type in
+   `FormConsole.tsx` that scopes to the sibling `batch_id` field, with a manual-entry fallback. Wired into
+   consumptions/returns/losses (all three have a batch context); "Request a destruction" left as free text
+   since it has no batch field to scope by.
+3. Fixed `ALLOWED_FROM`'s keys to the real state strings (`started` replaces the dead `weighing`/`weighed`
+   pair, actions merged and de-duplicated) and added `select_source` back to `source_selected`'s allowed
+   actions, so a second (third, …) container can be selected before Start.
+source_documents:
+  - (none -- Document 21's own DSP-FR-017 multi-lot dispensing behavior was already correctly implemented
+    server-side; this pass fixes the frontend to actually expose it, not a new decision)
+affected_modules:
+  - services/gxp-api/app/modules/material (router.py)
+  - frontend/src/app/dispensing (page.tsx)
+  - frontend/src/components/shared (FormConsole.tsx)
+affected_functions:
+  - app/modules/material/router.py list_dispensed_containers (new, GET /dispensing/v1/dispensed-containers)
+  - frontend/src/app/dispensing/page.tsx ALLOWED_FROM, StepModal (lot-scoped container Select)
+  - frontend/src/components/shared/FormConsole.tsx DispensedContainerPicker (new), dispensedContainerSelect field type
+why_material: >
+  Gap 2 is the important one to flag distinctly: it was a live, severe defect (every dispensing order that
+  ever successfully started was then stuck with zero available actions in the UI) that had gone unnoticed
+  purely because no order had reached that state yet in this environment. Recorded so nobody re-guesses
+  "weighing"/"weighed" as real states from the old code if they show up in history/blame.
+risk_if_guessed: >
+  Low for the container pickers (read-only convenience, no new authorization surface, same precedent as
+  every other picker fixed this session). Gap 2's fix is a plain correction to match already-existing
+  backend truth, not a new behavioral decision.
+options:
+  - (A) IMPLEMENTED. All three fixes as described.
+blocking: false
+owner: Platform/Materials-Dispensing module owner
+resolution_document: "app/modules/material/router.py, frontend/src/app/dispensing/page.tsx, frontend/src/components/shared/FormConsole.tsx (2026-09-24)"
+status: RESOLVED
+```

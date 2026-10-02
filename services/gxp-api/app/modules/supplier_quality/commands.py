@@ -187,6 +187,93 @@ async def create_supplier(
 
 
 # ---------------------------------------------------------------------------
+# AddSupplierSite -- bug fix: Document 18 §7 only ever declared site creation embedded in
+# CreateSupplier's own command (see the comment above), so there was no way to add a site to a
+# supplier that already existed. Same fields/defaults as the embedded path (SupplierSiteInput),
+# same permission (supplier.create -- adding a site is the same class of master-data-authoring
+# action as creating the supplier itself), just addressed at one existing supplier instead of a
+# list embedded in the create call.
+# ---------------------------------------------------------------------------
+
+
+class AddSupplierSiteCommand(CommandEnvelope):
+    supplier_id: uuid.UUID
+    site: SupplierSiteInput
+
+
+async def add_supplier_site(
+    session: AsyncSession, cmd: AddSupplierSiteCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    supplier = await session.get(Supplier, cmd.supplier_id)
+    if supplier is None:
+        raise NotFoundError("Supplier not found")
+
+    site = SupplierSite(
+        supplier_id=supplier.id,
+        site_name=cmd.site.site_name,
+        address_line1=cmd.site.address_line1,
+        address_line2=cmd.site.address_line2,
+        city=cmd.site.city,
+        state_province=cmd.site.state_province,
+        postal_code=cmd.site.postal_code,
+        country=cmd.site.country,
+        manufacturer_flag=cmd.site.manufacturer_flag,
+        certification_refs=cmd.site.certification_refs,
+        status="active",
+        version=1,
+    )
+    session.add(site)
+    await session.flush()
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=None,
+        aggregate_type="supplier_site",
+        aggregate_id=site.id,
+        aggregate_version=1,
+        action="Created",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        new_value={"supplier_id": str(supplier.id), "site_name": site.site_name},
+    )
+    await write_outbox_event(
+        session,
+        event_type="SupplierSiteAdded",
+        aggregate_type="supplier_site",
+        aggregate_id=site.id,
+        aggregate_version=1,
+        payload={"id": str(site.id), "supplier_id": str(supplier.id), "site_name": site.site_name},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=None,
+        command_type="AddSupplierSite",
+        aggregate_type="supplier_site",
+        aggregate_id=site.id,
+        expected_version=None,
+        resulting_version=1,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=site.id,
+        resulting_version=1,
+        audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
 # CreateSupplierQualification -- SUP-FR-003/004/005/009/013: POST /suppliers/{id}/qualifications.
 # ---------------------------------------------------------------------------
 
@@ -475,4 +562,120 @@ async def approve_supplier_qualification(
         audit_event_id=audit_event.id,
         signature_id=signature_id,
         correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# SuspendSupplier / ReinstateSupplier — SG-097 (2026-09-22, project-owner-directed, option A): the owning
+# command for `ebmr.supplier.status` a SCAR closure needs but never had. Called directly by
+# `qms/scar_commands.py::close_scar()` (same cross-module owning-command precedent as
+# `material/commands.py`'s call into `qms_commands.create_deviation()`, AG-06) when the SCAR's
+# `source_status_decision` is "suspend"/"reinstate" -- not itself independently signed (it is a side
+# effect of the already-signed SCAR closure, and Document 106 has no row of its own for it), but RBAC-
+# gated so the calling actor must hold the new `supplier.suspend`/`supplier.reinstate` permission.
+# Once `Supplier.status` actually changes, the existing RCV-FR-005 receipt-examination check
+# (`material/commands.py`, `supplier.status != "approved"` -> `source_not_approved` discrepancy hold)
+# already gates receiving from a suspended source with no changes needed there -- this closes SG-097's
+# "does not gate materials-module receipt" half. The "does not gate materials-module use/issue" half
+# (MAT-013 FEFO/eligibility for already-received lots) is a separate, larger scope the SG-097 entry's own
+# option (A) also names; not attempted this pass, left open.
+# ---------------------------------------------------------------------------
+
+
+class SuspendSupplierCommand(CommandEnvelope):
+    supplier_id: uuid.UUID
+    reason: str
+
+
+async def suspend_supplier(session: AsyncSession, cmd: SuspendSupplierCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.reason.strip():
+        raise ValidationFailedError("reason is required to suspend a supplier")
+
+    supplier = await session.get(Supplier, cmd.supplier_id)
+    if supplier is None:
+        raise NotFoundError("Supplier not found")
+
+    await evaluate_policy(session, actor_user_id, action="supplier.suspend", site_id=None)
+
+    old_status = supplier.status
+    supplier.status = "suspended"
+    supplier.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=None, aggregate_type="supplier", aggregate_id=supplier.id,
+        aggregate_version=supplier.version, action="StatusChanged", actor_id=actor_user_id,
+        correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"status": old_status}, new_value={"status": "suspended"},
+    )
+    await write_outbox_event(
+        session, event_type="SupplierSuspended", aggregate_type="supplier", aggregate_id=supplier.id,
+        aggregate_version=supplier.version, payload={"id": str(supplier.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=None, command_type="SuspendSupplier", aggregate_type="supplier",
+        aggregate_id=supplier.id, expected_version=None, resulting_version=supplier.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=supplier.id, resulting_version=supplier.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+class ReinstateSupplierCommand(CommandEnvelope):
+    supplier_id: uuid.UUID
+    reason: str
+
+
+async def reinstate_supplier(session: AsyncSession, cmd: ReinstateSupplierCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.reason.strip():
+        raise ValidationFailedError("reason is required to reinstate a supplier")
+
+    supplier = await session.get(Supplier, cmd.supplier_id)
+    if supplier is None:
+        raise NotFoundError("Supplier not found")
+
+    await evaluate_policy(session, actor_user_id, action="supplier.reinstate", site_id=None)
+
+    old_status = supplier.status
+    # Reinstating returns the supplier to "approved" only if it was actually suspended -- a reinstate
+    # decision against a supplier that was never suspended (or already qualified some other way) is a
+    # no-op on status, matching create_supplier_case()'s own "no later reinstate" check reading only
+    # the most recent CLOSED SCAR's decision, not this command's own precondition.
+    if supplier.status == "suspended":
+        supplier.status = "approved"
+    supplier.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=None, aggregate_type="supplier", aggregate_id=supplier.id,
+        aggregate_version=supplier.version, action="StatusChanged", actor_id=actor_user_id,
+        correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"status": old_status}, new_value={"status": supplier.status},
+    )
+    await write_outbox_event(
+        session, event_type="SupplierReinstated", aggregate_type="supplier", aggregate_id=supplier.id,
+        aggregate_version=supplier.version, payload={"id": str(supplier.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=None, command_type="ReinstateSupplier", aggregate_type="supplier",
+        aggregate_id=supplier.id, expected_version=None, resulting_version=supplier.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=supplier.id, resulting_version=supplier.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
     )

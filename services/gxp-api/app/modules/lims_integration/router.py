@@ -42,7 +42,11 @@ def _instance_summary_dict(instance: LimsInstance) -> dict:
 # `LimsInstance` docstring), so this lets the frontend offer a "pick an instance" selector instead of
 # requiring the operator to already have the instance id in hand.
 @router.get("")
-async def list_instances(session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)) -> dict:
+async def list_instances(
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     stmt = select(LimsInstance)
     if params.q:
         stmt = stmt.where(LimsInstance.instance_code.ilike(f"%{params.q}%"))
@@ -116,7 +120,11 @@ async def post_reconcile(
 
 
 @router.get("/{instance_id}/health")
-async def get_health(instance_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_health(
+    instance_id: str,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     instance = await _get_instance(session, instance_id)
     pending = (
         await session.execute(
@@ -177,6 +185,7 @@ def _message_dict(msg: LimsMessage) -> dict:
 async def list_mappings(
     instance_id: str, session: AsyncSession = Depends(get_session),
     internal_object_type: str | None = None, external_entity_type: str | None = None,
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
     instance = await _get_instance(session, instance_id)
     stmt = select(LimsMapping).where(LimsMapping.instance_id == instance.id)
@@ -189,7 +198,12 @@ async def list_mappings(
 
 
 @router.get("/{instance_id}/mappings/{mapping_id}")
-async def get_mapping(instance_id: str, mapping_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_mapping(
+    instance_id: str,
+    mapping_id: str,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     await _get_instance(session, instance_id)
     mapping = await session.get(LimsMapping, mapping_id)
     if mapping is None or str(mapping.instance_id) != instance_id:
@@ -203,6 +217,7 @@ async def get_mapping(instance_id: str, mapping_id: str, session: AsyncSession =
 @router.get("/{instance_id}/messages")
 async def list_messages(
     instance_id: str, session: AsyncSession = Depends(get_session), status: str | None = None,
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
     instance = await _get_instance(session, instance_id)
     stmt = select(LimsMessage).where(LimsMessage.instance_id == instance.id)
@@ -213,7 +228,12 @@ async def list_messages(
 
 
 @router.get("/{instance_id}/messages/{message_id}")
-async def get_message(instance_id: str, message_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_message(
+    instance_id: str,
+    message_id: str,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     await _get_instance(session, instance_id)
     message = await session.get(LimsMessage, message_id)
     if message is None or str(message.instance_id) != instance_id:

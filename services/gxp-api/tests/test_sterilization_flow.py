@@ -9,6 +9,19 @@ from sqlalchemy import select
 
 from app.modules.equipment.sterilization_models import SterilizationLoadItem
 from tests.conftest import auth_headers, idem, login
+from tests.test_batch_execution import _create_body, _released_pair
+
+
+async def _create_equipment_class(client):
+    # equipment_class_id is now required/validated at creation (bug fix) -- a real class row is needed.
+    pe_token = await login(client, "process.engineer")
+    resp = await client.post(
+        "/recipes/v2/equipment-classes",
+        json={"idempotency_key": idem(), "class_code": f"CLASS-{uuid.uuid4().hex[:12]}", "name": "Test class"},
+        headers=auth_headers(pe_token),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["aggregate_id"]
 
 
 async def _create_equipment(client, _token_unused, site_id, code="EQP-STR-1"):
@@ -18,8 +31,13 @@ async def _create_equipment(client, _token_unused, site_id, code="EQP-STR-1"):
     # now cross-checks equipment eligibility) -- same qualify call test_aseptic_flow's own
     # _create_and_qualify_equipment already uses successfully.
     admin_token = await login(client, "equipment.admin")
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
-        "/equipment/v1/assets", json={"idempotency_key": idem(), "site_id": str(site_id), "equipment_code": code},
+        "/equipment/v1/assets",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "equipment_code": code,
+        },
         headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
@@ -103,12 +121,12 @@ async def test_full_cycle_lifecycle_accepted_issues_sterile_status(client, seede
 
     resp = await _record_data(client, op_token, cycle_id, expected_version=2, final=True)
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/sterilization/v1/cycles/{cycle_id}")).json()
+    detail = (await client.get(f"/sterilization/v1/cycles/{cycle_id}", headers=auth_headers(qa_token))).json()
     assert detail["state"] == "REVIEW_PENDING"
 
     resp = await _review(client, qa_token, cycle_id, expected_version=3, decision="accept")
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/sterilization/v1/cycles/{cycle_id}")).json()
+    detail = (await client.get(f"/sterilization/v1/cycles/{cycle_id}", headers=auth_headers(qa_token))).json()
     assert detail["state"] == "ACCEPTED"
 
     # STR-FR-012: acceptance issues sterile status onto every load item, with an expiry from the
@@ -120,7 +138,7 @@ async def test_full_cycle_lifecycle_accepted_issues_sterile_status(client, seede
     assert items[0].sterile_status == "eligible"
     assert items[0].sterile_status_expiry is not None
 
-    status = (await client.get(f"/sterilization/v1/items/{items[0].id}/status")).json()
+    status = (await client.get(f"/sterilization/v1/items/{items[0].id}/status", headers=auth_headers(qa_token))).json()
     assert status["sterile_status"] == "eligible"
 
 
@@ -136,7 +154,7 @@ async def test_critical_alarm_holds_and_blocks_acceptance(client, seeded):
 
     resp = await _record_data(client, op_token, cycle_id, expected_version=2, critical_alarm=True)
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/sterilization/v1/cycles/{cycle_id}")).json()
+    detail = (await client.get(f"/sterilization/v1/cycles/{cycle_id}", headers=auth_headers(qa_token))).json()
     assert detail["state"] == "HOLD"
     assert detail["requires_deviation"] is True
 
@@ -146,7 +164,7 @@ async def test_critical_alarm_holds_and_blocks_acceptance(client, seeded):
 
     resp = await _review(client, qa_token, cycle_id, expected_version=3, decision="reject", reason="Critical alarm during cycle")
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/sterilization/v1/cycles/{cycle_id}")).json()
+    detail = (await client.get(f"/sterilization/v1/cycles/{cycle_id}", headers=auth_headers(qa_token))).json()
     assert detail["state"] == "FAILED"
 
 
@@ -206,7 +224,7 @@ async def test_filter_install_integrity_and_complete_flow(client, seeded):
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/filtration/v1/filters/{use_id}")).json()
+    detail = (await client.get(f"/filtration/v1/filters/{use_id}", headers=auth_headers(op_token))).json()
     assert detail["state"] == "ACCEPTED"
 
 
@@ -227,7 +245,7 @@ async def test_filter_pre_use_integrity_failure_holds_filter(client, seeded):
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/filtration/v1/filters/{use_id}")).json()
+    detail = (await client.get(f"/filtration/v1/filters/{use_id}", headers=auth_headers(op_token))).json()
     assert detail["state"] == "FAILED"
     assert detail["requires_deviation"] is True
 
@@ -279,9 +297,13 @@ async def test_create_cycle_rejects_ineligible_sterilizer(client, seeded):
     site_id = seeded["site_id"]
     profile_id = str(seeded["sterilization_profile"].id)
 
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": idem(), "site_id": str(site_id), "equipment_code": "EQP-STR-UNQUAL"},
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "equipment_code": "EQP-STR-UNQUAL",
+        },
         headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
@@ -319,7 +341,7 @@ async def test_indicator_results_captured_on_cycle_data(client, seeded):
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/sterilization/v1/cycles/{cycle_id}")).json()
+    detail = (await client.get(f"/sterilization/v1/cycles/{cycle_id}", headers=auth_headers(op_token))).json()
     assert detail["indicator_results"] == indicator_results
 
 
@@ -336,7 +358,7 @@ async def test_filter_reuse_count_increments_after_accepted_use(client, seeded):
         )
         assert resp.status_code == 200, resp.text
         use_id = resp.json()["aggregate_id"]
-        detail = (await client.get(f"/filtration/v1/filters/{use_id}")).json()
+        detail = (await client.get(f"/filtration/v1/filters/{use_id}", headers=auth_headers(op_token))).json()
         assert detail["reuse_count"] == expect_reuse_count
 
         resp = await client.post(
@@ -363,7 +385,7 @@ async def test_filter_reuse_count_increments_after_accepted_use(client, seeded):
             headers=auth_headers(op_token),
         )
         assert resp.status_code == 200, resp.text
-        detail = (await client.get(f"/filtration/v1/filters/{use_id}")).json()
+        detail = (await client.get(f"/filtration/v1/filters/{use_id}", headers=auth_headers(op_token))).json()
         assert detail["state"] == "ACCEPTED"
 
     await _install_use_and_complete(expect_reuse_count=0)
@@ -396,7 +418,7 @@ async def test_reprocessing_requires_authorization_reference(client, seeded):
     assert resp.status_code == 200, resp.text
     resp = await _review(client, qa_token, first_cycle_id, expected_version=3, decision="reject", reason="Critical alarm")
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/sterilization/v1/cycles/{first_cycle_id}")).json()
+    detail = (await client.get(f"/sterilization/v1/cycles/{first_cycle_id}", headers=auth_headers(qa_token))).json()
     assert detail["state"] == "FAILED"
 
     equipment_id_2 = await _create_equipment(client, op_token, site_id, code="EQP-STR-REPRO-2")
@@ -423,7 +445,7 @@ async def test_reprocessing_requires_authorization_reference(client, seeded):
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/sterilization/v1/cycles/{resp.json()['aggregate_id']}")).json()
+    detail = (await client.get(f"/sterilization/v1/cycles/{resp.json()['aggregate_id']}", headers=auth_headers(qa_token))).json()
     assert detail["reprocessing_authorization_ref"] == {"deviation_ref": "DEV-2026-042"}
 
 
@@ -463,7 +485,7 @@ async def test_create_process_cycle_profile_version_succeeds_and_is_usable(clien
     profile_id = resp.json()["aggregate_id"]
 
     # Immediately usable as a real cycle's profile_version_id -- not just stored, actually wired.
-    listing = await client.get(f"/sterilization/v1/profiles?site_id={site_id}")
+    listing = await client.get(f"/sterilization/v1/profiles?site_id={site_id}", headers=auth_headers(qa_token))
     assert any(p["id"] == profile_id and p["profile_number"] == "STR-PROC-NEW-001" for p in listing.json()["items"])
 
     equipment_id = await _create_equipment(client, None, site_id, code="EQP-STR-NEWPROF")
@@ -501,3 +523,49 @@ async def test_create_process_cycle_profile_version_rejects_duplicate(client, se
     second = await client.post("/sterilization/v1/profiles", json=dup_payload, headers=auth_headers(qa_token))
     assert second.status_code == 422
     assert second.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_list_cycles_filters_by_batch_id(client, seeded, db):
+    # Batch Workspace: batch_id is a real column on ProcessCycle but had no filtered read before --
+    # confirms the new optional query param actually scopes the result set.
+    op_token = await login(client, "sterilization.operator")
+    site_id = seeded["site_id"]
+    profile_id = str(seeded["sterilization_profile"].id)
+
+    equipment_id = await _create_equipment(client, op_token, site_id)
+    unscoped_cycle_id = await _create_cycle(client, op_token, site_id, equipment_id, profile_id)
+
+    # The `seeded[...]` attribute read above can implicitly autobegin a transaction on `db` (SQLAlchemy
+    # 2.0 autobegin) -- close it before `_released_pair`'s own `db.begin()`, same fix
+    # test_batch_record.py's own tests needed for this exact shape.
+    await db.commit()
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "strwsfilter")
+    batch_resp = await client.post(
+        "/batches/v1",
+        json=_create_body(site_id, product_version_id, recipe_version_id, "BAT-STR-WS-FILTER"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = batch_resp.json()["aggregate_id"]
+    equipment_id2 = await _create_equipment(client, op_token, site_id, code="EQP-STR-WSFILTER")
+    resp = await client.post(
+        "/sterilization/v1/cycles",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "process_type": "steam_autoclave",
+            "equipment_id": equipment_id2, "profile_version_id": profile_id, "batch_id": batch_id,
+            "load_items": [{"item_type": "component", "item_reference": "COMP-WSFILTER"}],
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+    scoped_cycle_id = resp.json()["aggregate_id"]
+
+    unscoped_check = (
+        await client.get(f"/sterilization/v1/cycles?site_id={site_id}", headers=auth_headers(op_token))
+    ).json()
+    ids = {r["id"] for r in unscoped_check["items"]}
+    assert unscoped_cycle_id in ids and scoped_cycle_id in ids
+
+    filtered = (
+        await client.get(f"/sterilization/v1/cycles?site_id={site_id}&batch_id={batch_id}", headers=auth_headers(op_token))
+    ).json()
+    assert [r["id"] for r in filtered["items"]] == [scoped_cycle_id]

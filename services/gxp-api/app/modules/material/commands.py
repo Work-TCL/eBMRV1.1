@@ -27,7 +27,6 @@ from app.modules.material.models import (
     MaterialContainer,
     MaterialIssue,
     MaterialLot,
-    MaterialLotDisposition,
     MaterialQualityDisposition,
     MaterialReceipt,
     MaterialReconciliation,
@@ -260,6 +259,7 @@ async def receive_material_lot(
     if cmd.storage_location_id is not None and await session.get(WarehouseLocation, cmd.storage_location_id) is None:
         raise NotFoundError("Warehouse location not found", storage_location_id=str(cmd.storage_location_id))
 
+    lot_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
     lot = MaterialLot(
         material_id=cmd.material_id,
         site_id=cmd.site_id,
@@ -270,7 +270,7 @@ async def receive_material_lot(
         received_quantity=cmd.received_quantity,
         available_quantity=cmd.received_quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
+        uom_id=lot_uom_id,
         status="quarantine",
         expiry_date=cmd.expiry_date,
         retest_date=cmd.retest_date,
@@ -281,6 +281,22 @@ async def receive_material_lot(
     )
     session.add(lot)
     await session.flush()
+
+    # Same container-creation shape `examine_receipt()` uses (a lot is never usable by Transfer/Split/
+    # Sampling Order without at least one MaterialContainer) -- this quick-create path has no
+    # container-count input of its own, so it creates exactly one container holding the full received
+    # quantity, matching the single-container case of the receipt/examine flow's own loop.
+    session.add(
+        MaterialContainer(
+            material_lot_id=lot.id,
+            container_code=f"{cmd.internal_lot}-C001",
+            received_quantity=cmd.received_quantity,
+            current_quantity=cmd.received_quantity,
+            uom=cmd.uom,
+            uom_id=lot_uom_id,
+            version=1,
+        )
+    )
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
@@ -326,306 +342,32 @@ async def receive_material_lot(
 
 
 # ---------------------------------------------------------------------------
-# DispositionMaterialLot — MAT-011: QC release/reject, signed, requires QC Reviewer role.
+# DispositionMaterialLot (legacy, Document 18, QC Reviewer-signed) — RETIRED 2026-09-22, SG-075
+# (project-owner-directed). Superseded entirely by `release_material_lot`/`reject_material_lot`
+# (`_disposition_material_lot_v2` below), the Document-106-compliant path (QA Releaser, rows 44/45),
+# which is a strict superset: same quarantine-state guard (via `PRE_DISPOSITION_LOT_STATES`), same
+# release-gate rule hook, same signature ceremony, same vault snapshot — plus an independence check
+# (`_independence_violation`) and `container_ids` support this legacy path never had. Two live paths
+# with mismatched signer authorization on the same quality-status transition was the SG-075 finding
+# itself; retiring this one removes the mismatch rather than reconciling it. The historical
+# `materials.material_lot_dispositions` table (and its `MaterialLotDisposition` model) is left in place
+# for any pre-existing rows — only the command/endpoint that wrote new ones is removed.
 # ---------------------------------------------------------------------------
 
 
-class DispositionMaterialLotCommand(CommandEnvelope):
-    lot_id: uuid.UUID
-    expected_version: int
-    decision: str  # "released" | "rejected"
-    reason: str | None = None
-    challenge_id: uuid.UUID
-    reauth_password: str
-
-
-async def disposition_material_lot(
-    session: AsyncSession, cmd: DispositionMaterialLotCommand, actor_user_id: uuid.UUID, site_id: uuid.UUID
-) -> MutationReceipt:
-    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
-    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
-    if existing is not None:
-        return _receipt_from_existing(existing)
-
-    if cmd.decision not in ("released", "rejected"):
-        raise ValidationFailedError("decision must be 'released' or 'rejected'")
-
-    result = await session.execute(select(MaterialLot).where(MaterialLot.id == cmd.lot_id).with_for_update())
-    lot = result.scalar_one_or_none()
-    if lot is None:
-        raise NotFoundError("Material lot not found")
-    if lot.version != cmd.expected_version:
-        raise StaleVersionError(
-            "Material lot was modified by another actor since it was read",
-            expected_version=cmd.expected_version,
-            current_version=lot.version,
-        )
-    if lot.status != "quarantine":
-        raise InvalidTransitionError("Only a lot in quarantine can be dispositioned", current_status=lot.status)
-
-    await evaluate_policy(session, actor_user_id, action="material_lot.disposition", site_id=site_id)
-
-    # MUT-FR-014/RUL-FR-016: optional release-gating rule. A no-op until a deployment authors and
-    # releases a rule at this rule_id -- see app/modules/rules/commands.py::evaluate_release_gate.
-    if cmd.decision == "released":
-        await rules_commands.evaluate_release_gate(
-            session,
-            rule_id=f"material-lot-release-eligibility:{lot.material_id}",
-            inputs={
-                "available_quantity": str(lot.available_quantity),
-                "received_quantity": str(lot.received_quantity),
-            },
-            aggregate_type="material_lot",
-            aggregate_id=lot.id,
-            aggregate_version=lot.version,
-            actor_user_id=actor_user_id,
-        )
-
-    policy = await signature_service.resolve_signature_requirement(
-        session, record_type="material_lot", action="disposition"
-    )
-    signature_id = None
-    if policy.signature_required:
-        actor = await session.get(User, actor_user_id)
-        if actor is None or not verify_password(cmd.reauth_password, actor.password_hash):
-            raise MissingSignatureError("Fresh step-up authentication failed")
-        challenge = await signature_service.consume_challenge(
-            session,
-            challenge_id=cmd.challenge_id,
-            user_id=actor_user_id,
-            record_version=lot.version,
-            record_hash=lot_record_hash(lot),
-        )
-        signature = await signature_service.sign(
-            session, challenge=challenge, auth_context={"method": "password_reauth"}
-        )
-        signature_id = signature.id
-
-    session.add(
-        MaterialLotDisposition(
-            material_lot_id=lot.id,
-            decision=cmd.decision,
-            reason=cmd.reason,
-            signature_id=signature_id,
-            disposed_by_user_id=actor_user_id,
-        )
-    )
-    old_status = lot.status
-    lot.status = cmd.decision
-    if cmd.decision == "released":
-        lot.released_at = datetime.now(timezone.utc)
-        lot.release_signature_id = signature_id
-    lot.version += 1
-
-    # Document 06 (VLT-FR-001/006): a QC disposition is a "regulated final record" too — same immutable
-    # vault snapshot pattern as release_batch, in the same transaction, not itself signature-gated (the
-    # disposition's own authorization/signature already happened above).
-    await vault_service.release_master(
-        session,
-        object_type="material_lot",
-        business_id=lot.internal_lot,
-        site_id=site_id,
-        actor_user_id=actor_user_id,
-        canonical_payload={
-            "lot_id": str(lot.id),
-            "internal_lot": lot.internal_lot,
-            "material_id": str(lot.material_id),
-            "supplier_lot": lot.supplier_lot,
-            "manufacturer_lot": lot.manufacturer_lot,
-            "received_quantity": str(lot.received_quantity),
-            "uom": lot.uom,
-            "decision": cmd.decision,
-            "reason": cmd.reason,
-            "signature_id": str(signature_id) if signature_id else None,
-        },
-    )
-
-    correlation_id = uuid.uuid4()
-    audit_event = await write_audit_event(
-        session,
-        site_id=site_id,
-        aggregate_type="material_lot",
-        aggregate_id=lot.id,
-        aggregate_version=lot.version,
-        action="StatusChanged",
-        actor_id=actor_user_id,
-        correlation_id=correlation_id,
-        old_value={"status": old_status},
-        new_value={"status": lot.status},
-        signature_id=signature_id,
-        reason=cmd.reason,
-    )
-    await write_outbox_event(
-        session,
-        event_type="MaterialLotDispositioned",
-        aggregate_type="material_lot",
-        aggregate_id=lot.id,
-        aggregate_version=lot.version,
-        payload={"id": str(lot.id), "status": lot.status},
-        correlation_id=correlation_id,
-    )
-    receipt = await record_command_receipt(
-        session,
-        site_id=site_id,
-        command_type="DispositionMaterialLot",
-        aggregate_type="material_lot",
-        aggregate_id=lot.id,
-        expected_version=cmd.expected_version,
-        resulting_version=lot.version,
-        idempotency_key=cmd.idempotency_key,
-        command_hash=payload_hash,
-        actor_user_id=actor_user_id,
-        payload_hash=payload_hash,
-    )
-    return MutationReceipt(
-        command_id=receipt.id,
-        aggregate_id=lot.id,
-        resulting_version=lot.version,
-        audit_event_id=audit_event.id,
-        signature_id=signature_id,
-        correlation_id=correlation_id,
-    )
-
-
 # ---------------------------------------------------------------------------
-# IssueMaterialToBatch — MAT-013/MAT-015: only released, unexpired lots are eligible.
+# IssueMaterialToBatch -- retired 2026-09-22, project-owner-directed. Never called by any frontend
+# page and reachable only via the legacy `/batches/{id}/material-issues` router with no permission
+# check at all (any authenticated user could issue any lot to any batch). It also duplicated the real,
+# permission-gated batch-consumption path (`RecordConsumption` below, via Dispensing -> `/dispensing`)
+# with a second, disconnected `MaterialLot.available_quantity` writer -- the direct cause of the Material
+# Lots page showing a quantity that never changed once material was actually dispensed and consumed.
+# Its two useful pieces of logic were ported rather than dropped: the released/unexpired eligibility +
+# over-issue guard already matched `complete_dispensing`'s own checks and needed no porting, and its
+# genealogy `CONSUMED_IN` edge (material_lot -> drug_batch) was ported into `record_consumption()`, which
+# never had one. The historical `materials.material_issues` table (and `MaterialIssue` model) is left in
+# place for any pre-existing rows -- only the command/endpoints that wrote new ones are removed.
 # ---------------------------------------------------------------------------
-
-
-class IssueMaterialToBatchCommand(CommandEnvelope):
-    lot_id: uuid.UUID
-    expected_version: int
-    batch_id: uuid.UUID
-    batch_step_id: uuid.UUID | None = None
-    quantity: Decimal
-
-
-async def issue_material_to_batch(
-    session: AsyncSession, cmd: IssueMaterialToBatchCommand, actor_user_id: uuid.UUID, site_id: uuid.UUID
-) -> MutationReceipt:
-    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
-    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
-    if existing is not None:
-        return _receipt_from_existing(existing)
-
-    if cmd.quantity <= 0:
-        raise ValidationFailedError("quantity must be positive")
-
-    result = await session.execute(select(MaterialLot).where(MaterialLot.id == cmd.lot_id).with_for_update())
-    lot = result.scalar_one_or_none()
-    if lot is None:
-        raise NotFoundError("Material lot not found")
-    if lot.version != cmd.expected_version:
-        raise StaleVersionError(
-            "Material lot was modified by another actor since it was read",
-            expected_version=cmd.expected_version,
-            current_version=lot.version,
-        )
-
-    # MAT-013 eligibility: released, not expired, sufficient available quantity.
-    if lot.status != "released":
-        raise InvalidTransitionError(
-            "Only a released lot is eligible for issue", current_status=lot.status
-        )
-    if lot.expiry_date is not None and lot.expiry_date < datetime.now(timezone.utc).date():
-        raise InvalidTransitionError("Lot has passed its expiry date and is not eligible for issue")
-    if cmd.quantity > lot.available_quantity:
-        raise ValidationFailedError(
-            "Requested quantity exceeds available lot quantity",
-            available=str(lot.available_quantity),
-            requested=str(cmd.quantity),
-        )
-
-    batch = await session.get(Batch, cmd.batch_id)
-    if batch is None:
-        raise NotFoundError("Batch not found")
-    if cmd.batch_step_id is not None:
-        step = await session.get(BatchStep, cmd.batch_step_id)
-        if step is None or step.batch_id != batch.id:
-            raise NotFoundError("Batch step not found")
-
-    old_available = lot.available_quantity
-    lot.available_quantity -= cmd.quantity
-    if lot.available_quantity == 0:
-        lot.status = "consumed"
-    lot.version += 1
-
-    issue = MaterialIssue(
-        material_lot_id=lot.id,
-        batch_id=cmd.batch_id,
-        batch_step_id=cmd.batch_step_id,
-        quantity=cmd.quantity,
-        uom=lot.uom,
-        uom_id=lot.uom_id,  # copied from the lot's own already-resolved value, not re-queried
-        issued_by_user_id=actor_user_id,
-    )
-    session.add(issue)
-    await session.flush()  # need issue.id for the genealogy edge's idempotent source_event_id below
-
-    # 2026-09-19, project-owner-directed: Document 13 §8's own "MaterialConsumed" event, wired directly --
-    # this command IS that event, so no separate outbox consumer is needed (SG-052's deferred wiring
-    # otherwise waits for a Material Service that already exists here as this module).
-    material_lot_node = await genealogy_service.get_or_create_node(
-        session, site_id=site_id, node_type="material_lot", authoritative_record_type="material_lot",
-        authoritative_record_id=lot.id, business_ref=lot.internal_lot, actor_user_id=actor_user_id,
-    )
-    drug_batch_node = await genealogy_service.get_or_create_node(
-        session, site_id=site_id, node_type="drug_batch", authoritative_record_type="batch",
-        authoritative_record_id=batch.id, business_ref=batch.batch_number, actor_user_id=actor_user_id,
-    )
-    await genealogy_service.create_edge(
-        session, from_node_id=material_lot_node.id, to_node_id=drug_batch_node.id, edge_type="CONSUMED_IN",
-        quantity=cmd.quantity, uom=lot.uom, step_id=cmd.batch_step_id, source_event_id=issue.id,
-        actor_user_id=actor_user_id,
-    )
-
-    correlation_id = uuid.uuid4()
-    audit_event = await write_audit_event(
-        session,
-        site_id=site_id,
-        aggregate_type="material_lot",
-        aggregate_id=lot.id,
-        aggregate_version=lot.version,
-        action="Consumed",
-        actor_id=actor_user_id,
-        correlation_id=correlation_id,
-        old_value={"available_quantity": str(old_available)},
-        new_value={"available_quantity": str(lot.available_quantity), "issued_to_batch_id": str(cmd.batch_id)},
-    )
-    await write_outbox_event(
-        session,
-        event_type="MaterialIssued",
-        aggregate_type="material_lot",
-        aggregate_id=lot.id,
-        aggregate_version=lot.version,
-        payload={
-            "lot_id": str(lot.id),
-            "batch_id": str(cmd.batch_id),
-            "quantity": str(cmd.quantity),
-        },
-        correlation_id=correlation_id,
-    )
-    receipt = await record_command_receipt(
-        session,
-        site_id=site_id,
-        command_type="IssueMaterialToBatch",
-        aggregate_type="material_lot",
-        aggregate_id=lot.id,
-        expected_version=cmd.expected_version,
-        resulting_version=lot.version,
-        idempotency_key=cmd.idempotency_key,
-        command_hash=payload_hash,
-        actor_user_id=actor_user_id,
-        payload_hash=payload_hash,
-    )
-    return MutationReceipt(
-        command_id=receipt.id,
-        aggregate_id=lot.id,
-        resulting_version=lot.version,
-        audit_event_id=audit_event.id,
-        correlation_id=correlation_id,
-    )
-
 
 # ---------------------------------------------------------------------------
 # UpdateMaterial / DeleteMaterial — code, site_id and uom are immutable once created (uom changes would
@@ -635,6 +377,7 @@ async def issue_material_to_batch(
 
 class UpdateMaterialCommand(CommandEnvelope):
     material_id: uuid.UUID
+    expected_version: int
     name: str
     status: str
     is_in_house: bool | None = None
@@ -649,9 +392,16 @@ async def update_material(
     if existing_receipt is not None:
         return _receipt_from_existing(existing_receipt)
 
-    material = await session.get(Material, cmd.material_id)
+    result = await session.execute(select(Material).where(Material.id == cmd.material_id).with_for_update())
+    material = result.scalar_one_or_none()
     if material is None:
         raise NotFoundError("Material not found")
+    if material.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Material was modified by another actor since it was read",
+            expected_version=cmd.expected_version,
+            current_version=material.version,
+        )
 
     if cmd.default_storage_condition is not None and cmd.default_storage_condition not in STORAGE_CONDITIONS:
         raise ValidationFailedError(
@@ -669,6 +419,7 @@ async def update_material(
         material.is_in_house = cmd.is_in_house
     if cmd.default_storage_condition is not None:
         material.default_storage_condition = cmd.default_storage_condition
+    material.version += 1
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
@@ -701,7 +452,7 @@ async def update_material(
         command_type="UpdateMaterial",
         aggregate_type="material",
         aggregate_id=material.id,
-        expected_version=None,
+        expected_version=cmd.expected_version,
         resulting_version=material.version,
         idempotency_key=cmd.idempotency_key,
         command_hash=payload_hash,
@@ -1845,6 +1596,169 @@ async def create_warehouse_location(
     )
 
 
+# ---------------------------------------------------------------------------
+# UpdateWarehouseLocation / RetireWarehouseLocation — SG-081 (2026-09-22, project-owner-directed): Document
+# 20 §7 declares 9 operations and warehouse_location itself has none (create was added 2026-09-07,
+# read-only otherwise). A location referenced by MaterialLot.storage_location_id (req #4, 2026-09-21)
+# makes a hard delete unsafe -- soft-retire via `status="retired"` instead, matching how list_
+# warehouse_locations already filters on `status == "active"` (that filter's own existence already implied
+# a non-active status was anticipated). Rename covers location_code/zone_type/environment_profile_id only
+# -- warehouse_code + site_id are the row's identity (see the duplicate check in create_warehouse_location
+# above) and are not mutable here.
+# ---------------------------------------------------------------------------
+
+
+class UpdateWarehouseLocationCommand(CommandEnvelope):
+    warehouse_location_id: uuid.UUID
+    expected_version: int
+    location_code: str | None = None
+    zone_type: str | None = None
+    environment_profile_id: uuid.UUID | None = None
+
+
+async def update_warehouse_location(
+    session: AsyncSession, cmd: UpdateWarehouseLocationCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    location = await session.get(WarehouseLocation, cmd.warehouse_location_id)
+    if location is None:
+        raise NotFoundError("Warehouse location not found")
+    if location.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Warehouse location was modified by another actor since it was read",
+            expected_version=cmd.expected_version, current_version=location.version,
+        )
+    if location.status != "active":
+        raise InvalidTransitionError("Only an active warehouse location can be updated", current_status=location.status)
+
+    new_location_code = cmd.location_code if cmd.location_code is not None else location.location_code
+    new_zone_type = cmd.zone_type if cmd.zone_type is not None else location.zone_type
+    if not new_location_code.strip() or not new_zone_type.strip():
+        raise ValidationFailedError("location_code and zone_type cannot be blank")
+
+    if cmd.location_code is not None and cmd.location_code != location.location_code:
+        duplicate = (
+            await session.execute(
+                select(WarehouseLocation).where(
+                    WarehouseLocation.site_id == location.site_id,
+                    WarehouseLocation.warehouse_code == location.warehouse_code,
+                    WarehouseLocation.location_code == cmd.location_code,
+                    WarehouseLocation.id != location.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if duplicate is not None:
+            raise ValidationFailedError(
+                "A location with this warehouse code and location code already exists at this site",
+                existing_id=str(duplicate.id),
+            )
+
+    old_value = {
+        "location_code": location.location_code, "zone_type": location.zone_type,
+        "environment_profile_id": str(location.environment_profile_id) if location.environment_profile_id else None,
+    }
+    location.location_code = new_location_code
+    location.zone_type = new_zone_type
+    if cmd.environment_profile_id is not None:
+        location.environment_profile_id = cmd.environment_profile_id
+    location.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=location.site_id, aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, action="Changed", actor_id=actor_user_id, correlation_id=correlation_id,
+        old_value=old_value,
+        new_value={
+            "location_code": location.location_code, "zone_type": location.zone_type,
+            "environment_profile_id": str(location.environment_profile_id) if location.environment_profile_id else None,
+        },
+    )
+    await write_outbox_event(
+        session, event_type="WarehouseLocationChanged", aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, payload={"id": str(location.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=location.site_id, command_type="UpdateWarehouseLocation", aggregate_type="warehouse_location",
+        aggregate_id=location.id, expected_version=cmd.expected_version, resulting_version=location.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=location.id, resulting_version=location.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+class RetireWarehouseLocationCommand(CommandEnvelope):
+    warehouse_location_id: uuid.UUID
+    expected_version: int
+    reason: str
+
+
+async def retire_warehouse_location(
+    session: AsyncSession, cmd: RetireWarehouseLocationCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    location = await session.get(WarehouseLocation, cmd.warehouse_location_id)
+    if location is None:
+        raise NotFoundError("Warehouse location not found")
+    if location.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Warehouse location was modified by another actor since it was read",
+            expected_version=cmd.expected_version, current_version=location.version,
+        )
+    if location.status != "active":
+        raise InvalidTransitionError("Only an active warehouse location can be retired", current_status=location.status)
+    if not cmd.reason.strip():
+        raise ValidationFailedError("reason is required to retire a warehouse location")
+
+    # A location currently holding material (via storage_location_id, req #4) or an open reservation
+    # cannot be retired out from under it.
+    occupied = (
+        await session.execute(
+            select(MaterialLot.id).where(
+                MaterialLot.storage_location_id == location.id, MaterialLot.status.notin_(("rejected",)),
+            ).limit(1)
+        )
+    ).scalar_one_or_none()
+    if occupied is not None:
+        raise ValidationFailedError("Cannot retire a warehouse location that still has material stored in it")
+
+    old_status = location.status
+    location.status = "retired"
+    location.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=location.site_id, aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, action="StatusChanged", actor_id=actor_user_id,
+        correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"status": old_status}, new_value={"status": "retired"},
+    )
+    await write_outbox_event(
+        session, event_type="WarehouseLocationRetired", aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, payload={"id": str(location.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=location.site_id, command_type="RetireWarehouseLocation", aggregate_type="warehouse_location",
+        aggregate_id=location.id, expected_version=cmd.expected_version, resulting_version=location.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=location.id, resulting_version=location.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
 # Section 6 selection algorithm's zone-compatibility rule (INV-FR-002/008): ordinary engineering decision
 # -- the spec gives no explicit status->zone_type compatibility table. A zone_type not in this map (return/
 # destruction/controlled_temperature/sterile_component/other) has no additional constraint.
@@ -1865,12 +1779,35 @@ def _effective_status(lot: MaterialLot, container: MaterialContainer | None) -> 
     return lot.status
 
 
-def _is_eligible(lot: MaterialLot, container: MaterialContainer | None, today: date) -> bool:
+async def _supplier_status_for_lot(session: AsyncSession, lot: MaterialLot | None) -> str | None:
+    """SG-097 (MAT-013 half). Single-lot counterpart to the `Supplier.status` outer-join used by the
+    joined-query `_is_eligible` callers -- for a caller that already has one `MaterialLot` in hand."""
+    if lot is None or lot.supplier_id is None:
+        return None
+    supplier = await session.get(Supplier, lot.supplier_id)
+    return supplier.status if supplier is not None else None
+
+
+def _is_eligible(
+    lot: MaterialLot, container: MaterialContainer | None, today: date, supplier_status: str | None = None
+) -> bool:
+    """MAT-013. `supplier_status` is the lot's `Supplier.status` at evaluation time, or `None` when the
+    lot has no `supplier_id` or the caller has not looked one up -- a missing value never blocks (same
+    "no info, no check" treatment `_effective_status`'s own container-override already uses), so this
+    stays backward compatible for any caller not yet updated to pass it.
+
+    SG-097 (MAT-013 half, 2026-09-22): reuses the exact `!= "approved"` inequality RCV-FR-005's own
+    `examine_receipt()` check already established for the same `Supplier.status` field (draft/
+    under_qualification/suspended/disqualified all block), rather than special-casing only "suspended" --
+    consistent with the one precedent this codebase already has for this exact comparison, not a new
+    regulated rule invented here."""
     if _effective_status(lot, container) != "released":
         return False
     if lot.expiry_date is not None and lot.expiry_date < today:
         return False
     if lot.retest_date is not None and lot.retest_date < today:
+        return False
+    if supplier_status is not None and supplier_status != "approved":
         return False
     return True
 
@@ -1915,7 +1852,7 @@ async def get_inventory_availability(
     today = datetime.now(timezone.utc).date()
     rows = (
         await session.execute(
-            select(MaterialLot, MaterialContainer, InventoryBalanceProjection, WarehouseLocation)
+            select(MaterialLot, MaterialContainer, InventoryBalanceProjection, WarehouseLocation, Supplier.status)
             .join(MaterialContainer, MaterialContainer.material_lot_id == MaterialLot.id)
             .join(
                 InventoryBalanceProjection,
@@ -1923,6 +1860,7 @@ async def get_inventory_availability(
                 & (InventoryBalanceProjection.container_id == MaterialContainer.id),
             )
             .join(WarehouseLocation, WarehouseLocation.id == InventoryBalanceProjection.location_id)
+            .outerjoin(Supplier, Supplier.id == MaterialLot.supplier_id)
             .where(
                 MaterialLot.material_id == material_id,
                 MaterialLot.site_id == site_id,
@@ -1943,8 +1881,8 @@ async def get_inventory_availability(
             "uom": container.uom,
             "expiry_date": lot.expiry_date.isoformat() if lot.expiry_date else None,
         }
-        for lot, container, balance, location in rows
-        if _is_eligible(lot, container, today)
+        for lot, container, balance, location, supplier_status in rows
+        if _is_eligible(lot, container, today, supplier_status)
     ]
 
 
@@ -1980,13 +1918,14 @@ async def create_inventory_reservation(
     today = datetime.now(timezone.utc).date()
     candidates = (
         await session.execute(
-            select(MaterialLot, MaterialContainer, InventoryBalanceProjection)
+            select(MaterialLot, MaterialContainer, InventoryBalanceProjection, Supplier.status)
             .join(MaterialContainer, MaterialContainer.material_lot_id == MaterialLot.id)
             .join(
                 InventoryBalanceProjection,
                 (InventoryBalanceProjection.material_lot_id == MaterialLot.id)
                 & (InventoryBalanceProjection.container_id == MaterialContainer.id),
             )
+            .outerjoin(Supplier, Supplier.id == MaterialLot.supplier_id)
             .where(
                 MaterialLot.material_id == cmd.material_id,
                 MaterialLot.site_id == cmd.site_id,
@@ -2000,8 +1939,8 @@ async def create_inventory_reservation(
     chosen_balance_id = None
     chosen_lot = None
     chosen_container = None
-    for lot, container, balance in candidates:
-        if _is_eligible(lot, container, today):
+    for lot, container, balance, supplier_status in candidates:
+        if _is_eligible(lot, container, today, supplier_status):
             chosen_balance_id = balance.id
             chosen_lot = lot
             chosen_container = container
@@ -2575,6 +2514,24 @@ async def split_container(
     container.current_quantity = Decimal("0")
     container.container_status = "split"
     container.version += 1
+
+    # SG-085 (Task 2, 2026-09-23): GEN-FR-015 "one lot split into many" -> SPLIT_FROM, a direct catalogue
+    # match (Document 13 SS5), unlike merge/transfer (see SG-085's register entry for why those two are
+    # not built here). Same get_or_create_node/create_edge shape as record_consumption()'s existing
+    # material_lot -> drug_batch wiring.
+    parent_node = await genealogy_service.get_or_create_node(
+        session, site_id=site_id, node_type="material_container", authoritative_record_type="material_container",
+        authoritative_record_id=container.id, business_ref=container.container_code, actor_user_id=actor_user_id,
+    )
+    for child, qty in children:
+        child_node = await genealogy_service.get_or_create_node(
+            session, site_id=site_id, node_type="material_container", authoritative_record_type="material_container",
+            authoritative_record_id=child.id, business_ref=child.container_code, actor_user_id=actor_user_id,
+        )
+        await genealogy_service.create_edge(
+            session, from_node_id=parent_node.id, to_node_id=child_node.id, edge_type="SPLIT_FROM",
+            quantity=qty, uom=container.uom, source_event_id=child.id, actor_user_id=actor_user_id,
+        )
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
@@ -3185,7 +3142,7 @@ async def select_dispensing_source(
     else:
         raise ValidationFailedError("either reservation_id or material_lot_id must be supplied")
 
-    if not _is_eligible(lot, container, today):
+    if not _is_eligible(lot, container, today, await _supplier_status_for_lot(session, lot)):
         raise LotIneligibleError("Selected lot/container is not eligible", current_status=_effective_status(lot, container))
     if cmd.scanned_container_code is not None and container is not None:
         if cmd.scanned_container_code != container.container_code:
@@ -3678,15 +3635,24 @@ async def complete_dispensing(
 
     today = datetime.now(timezone.utc).date()
     total_taken = Decimal("0")
+    correlation_id = uuid.uuid4()
+    genealogy_sources: list[tuple[MaterialLot, Decimal]] = []
     for source in sources:
         qty = cmd.actual_taken_quantities.get(str(source.id))
         if qty is None or qty <= 0:
             raise ValidationFailedError("actual_taken_quantities must include a positive value for every source", source_id=str(source.id))
 
-        lot = await session.get(MaterialLot, source.material_lot_id)
+        lot = (
+            await session.execute(select(MaterialLot).where(MaterialLot.id == source.material_lot_id).with_for_update())
+        ).scalar_one_or_none()
         container = await session.get(MaterialContainer, source.container_id) if source.container_id else None
-        if not _is_eligible(lot, container, today):
+        if not _is_eligible(lot, container, today, await _supplier_status_for_lot(session, lot)):
             raise LotIneligibleError("Source lot is no longer eligible at completion time (DSP-FR-025)", lot_id=str(lot.id))
+        if qty > lot.available_quantity:
+            raise QuantityExceedsAvailableError(
+                "Requested quantity exceeds the lot's available quantity",
+                available=str(lot.available_quantity), requested=str(qty),
+            )
 
         balance = (
             await session.execute(
@@ -3741,8 +3707,32 @@ async def complete_dispensing(
         await session.flush()
         balance.last_transaction_id = txn.id
 
+        # 2026-09-22, project-owner-directed (Material Lots page showed a permanently stale
+        # `available_quantity` -- nothing but the retired `issue_material_to_batch` path ever touched it,
+        # so a fully-dispensed lot still displayed as 100% available): dispensing is the real point
+        # material leaves the warehouse, so it's the one place `available_quantity` must be decremented
+        # too, alongside the `InventoryBalanceProjection` row this function already maintained correctly.
+        old_available = lot.available_quantity
+        lot.available_quantity -= qty
+        if lot.available_quantity == 0:
+            lot.status = "consumed"
+        lot.version += 1
+        await write_audit_event(
+            session,
+            site_id=site_id,
+            aggregate_type="material_lot",
+            aggregate_id=lot.id,
+            aggregate_version=lot.version,
+            action="Consumed",
+            actor_id=actor_user_id,
+            correlation_id=correlation_id,
+            old_value={"available_quantity": str(old_available)},
+            new_value={"available_quantity": str(lot.available_quantity), "dispensing_order_id": str(order.id)},
+        )
+
         source.actual_taken_quantity = qty
         total_taken += qty
+        genealogy_sources.append((lot, qty))
 
     if not (order.tolerance_low <= total_taken <= order.tolerance_high):
         raise WeightOutOfToleranceError(
@@ -3768,6 +3758,27 @@ async def complete_dispensing(
     session.add(dispensed)
     await session.flush()
 
+    # SG-096 DSP-FR-023 (Task 2, 2026-09-23): "Create source lot/container -> dispensed container -> batch
+    # relationship." DERIVED_FROM is the closest catalogue fit (Document 13 SS5) -- unlike SPLIT_FROM
+    # (single-parent, same-lot-identity conservation, see split_container()), a dispensed container can
+    # draw from multiple, possibly different, source lots (DSP-FR-017 multi-lot dispensing), so this is a
+    # many-to-one derivation, not a split. The dispensed-container -> batch hop already exists separately
+    # via record_consumption()'s existing material_lot -> drug_batch CONSUMED_IN edge (2026-09-22,
+    # project-owner-directed) -- left unchanged here, out of this task's scope.
+    dispensed_container_node = await genealogy_service.get_or_create_node(
+        session, site_id=site_id, node_type="material_container", authoritative_record_type="dispensed_container",
+        authoritative_record_id=dispensed.id, business_ref=dispensed.container_code, actor_user_id=actor_user_id,
+    )
+    for source_lot, source_qty in genealogy_sources:
+        source_lot_node = await genealogy_service.get_or_create_node(
+            session, site_id=site_id, node_type="material_lot", authoritative_record_type="material_lot",
+            authoritative_record_id=source_lot.id, business_ref=source_lot.internal_lot, actor_user_id=actor_user_id,
+        )
+        await genealogy_service.create_edge(
+            session, from_node_id=source_lot_node.id, to_node_id=dispensed_container_node.id, edge_type="DERIVED_FROM",
+            quantity=source_qty, uom=order.target_uom, source_event_id=dispensed.id, actor_user_id=actor_user_id,
+        )
+
     signature_id = await _dispensing_sign(
         session, actor_user_id=actor_user_id, action="complete", order=order,
         challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
@@ -3777,7 +3788,6 @@ async def complete_dispensing(
     order.state = "completed"
     order.version += 1
 
-    correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
         session,
         site_id=site_id,
@@ -4164,6 +4174,28 @@ async def record_consumption(
     )
     session.add(consumption)
     await session.flush()
+
+    # 2026-09-22, project-owner-directed (MAT-021 material genealogy): this is the real, permission-gated
+    # batch-consumption path the frontend actually uses, but unlike the retired `issue_material_to_batch`
+    # it never linked the consumed lot to the batch in genealogy -- so a released batch's traceability
+    # chain (supplier lot -> internal lot -> container -> batch) was silently missing its material edge.
+    # Same node/edge shape `issue_material_to_batch` used to write, ported here rather than reinvented.
+    lot = await session.get(MaterialLot, material_lot_id)
+    batch = await session.get(Batch, cmd.batch_id)
+    if lot is not None and batch is not None:
+        material_lot_node = await genealogy_service.get_or_create_node(
+            session, site_id=site_id, node_type="material_lot", authoritative_record_type="material_lot",
+            authoritative_record_id=lot.id, business_ref=lot.internal_lot, actor_user_id=actor_user_id,
+        )
+        drug_batch_node = await genealogy_service.get_or_create_node(
+            session, site_id=site_id, node_type="drug_batch", authoritative_record_type="batch",
+            authoritative_record_id=batch.id, business_ref=batch.batch_number, actor_user_id=actor_user_id,
+        )
+        await genealogy_service.create_edge(
+            session, from_node_id=material_lot_node.id, to_node_id=drug_batch_node.id, edge_type="CONSUMED_IN",
+            quantity=cmd.quantity, uom=cmd.uom, step_id=cmd.step_id, source_event_id=consumption.id,
+            actor_user_id=actor_user_id,
+        )
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(

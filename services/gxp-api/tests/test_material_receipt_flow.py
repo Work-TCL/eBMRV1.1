@@ -65,9 +65,10 @@ async def _examine_clean(client, token, receipt_id, internal_lot="LOT-D19", cont
 
 
 async def _lot_id_for_receipt(client, receipt_id) -> str:
-    detail = (await client.get(f"/materials/v1/receipts/{receipt_id}")).json()
+    token = await login(client, "operator1")
+    detail = (await client.get(f"/materials/v1/receipts/{receipt_id}", headers=auth_headers(token))).json()
     assert detail["state"] == "examined"
-    lots = (await client.get("/material-lots", params={"page_size": 50})).json()["items"]
+    lots = (await client.get("/material-lots", params={"page_size": 50}, headers=auth_headers(token))).json()["items"]
     matches = [row for row in lots if row.get("internal_lot")]
     # the receipt->lot link isn't projected on the list endpoint; fetch via quality-status by scanning
     # the most recently created lot for this material instead.
@@ -126,11 +127,11 @@ async def test_receipt_examine_creates_lot_and_containers_in_quarantine(client, 
     receipt = await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-QTN", container_count=3)
     assert receipt["resulting_version"] == 2
 
-    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}")).json()
+    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}", headers=auth_headers(op_token))).json()
     assert receipt_detail["state"] == "examined"
     assert receipt_detail["discrepancy_type"] is None
 
-    lots = (await client.get("/material-lots", params={"q": "LOT-QTN"})).json()["items"]
+    lots = (await client.get("/material-lots", params={"q": "LOT-QTN"}, headers=auth_headers(op_token))).json()["items"]
     assert len(lots) == 1
     assert lots[0]["status"] == "quarantine"
     assert lots[0]["available_quantity"] == "100.000000"
@@ -163,11 +164,11 @@ async def test_identity_mismatch_holds_receipt_no_lot_created(client, seeded):
     )
     assert resp.status_code == 200, resp.text
 
-    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}")).json()
+    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}", headers=auth_headers(op_token))).json()
     assert receipt_detail["state"] == "discrepancy_hold"
     assert receipt_detail["discrepancy_type"] == "identity_mismatch"
 
-    lots = (await client.get("/material-lots", params={"q": "LOT-MISMATCH"})).json()["items"]
+    lots = (await client.get("/material-lots", params={"q": "LOT-MISMATCH"}, headers=auth_headers(op_token))).json()["items"]
     assert lots == []
 
 
@@ -221,7 +222,7 @@ async def test_damage_observed_holds_without_requiring_free_text_reason(client, 
     )
     assert resp.status_code == 200, resp.text
 
-    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}")).json()
+    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}", headers=auth_headers(op_token))).json()
     assert receipt_detail["state"] == "discrepancy_hold"
     assert receipt_detail["discrepancy_type"] == "damaged"
     assert receipt_detail["discrepancy_reason"]
@@ -247,7 +248,7 @@ async def test_unapproved_supplier_holds_receipt(client, seeded, db):
     )
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-SUP")
 
-    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}")).json()
+    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}", headers=auth_headers(op_token))).json()
     assert receipt_detail["state"] == "discrepancy_hold"
     assert receipt_detail["discrepancy_type"] == "source_not_approved"
 
@@ -289,7 +290,7 @@ async def test_sampling_order_and_collect_creates_qc_sample(client, seeded, db):
     assert order_resp.status_code == 200, order_resp.text
     order_id = order_resp.json()["aggregate_id"]
 
-    lot_detail = (await client.get(f"/material-lots/{lot.id}")).json()
+    lot_detail = (await client.get(f"/material-lots/{lot.id}", headers=auth_headers(qc_token))).json()
     assert lot_detail["status"] == "sampling"
 
     collect_resp = await client.post(
@@ -305,7 +306,7 @@ async def test_sampling_order_and_collect_creates_qc_sample(client, seeded, db):
     )
     assert collect_resp.status_code == 200, collect_resp.text
 
-    lot_detail = (await client.get(f"/material-lots/{lot.id}")).json()
+    lot_detail = (await client.get(f"/material-lots/{lot.id}", headers=auth_headers(qc_token))).json()
     assert lot_detail["status"] == "testing"
 
     samples = (await db.execute(select(QcSample).where(QcSample.source_type == "material_lot"))).scalars().all()
@@ -352,10 +353,10 @@ async def test_release_lot_signed_by_qa_releaser(client, seeded):
     assert resp.status_code == 200, resp.text
     assert resp.json()["signature_id"] is not None
 
-    lot_detail = (await client.get(f"/material-lots/{lot_id}")).json()
+    lot_detail = (await client.get(f"/material-lots/{lot_id}", headers=auth_headers(qa_token))).json()
     assert lot_detail["status"] == "released"
 
-    status = (await client.get(f"/materials/v1/lots/{lot_id}/quality-status")).json()
+    status = (await client.get(f"/materials/v1/lots/{lot_id}/quality-status", headers=auth_headers(qa_token))).json()
     assert status["eligible_for_use"] is True
     assert status["latest_disposition_decision"] == "released"
 
@@ -423,7 +424,7 @@ async def test_reject_lot_and_stale_version_retry_rejected(client, seeded):
     resp = await _reject(client, qa_token, lot_id, expected_version=1, reason="Failed visual inspection")
     assert resp.status_code == 200, resp.text
 
-    lot_detail = (await client.get(f"/material-lots/{lot_id}")).json()
+    lot_detail = (await client.get(f"/material-lots/{lot_id}", headers=auth_headers(qa_token))).json()
     assert lot_detail["status"] == "rejected"
 
     # Re-attempting reject at the now-stale version 1 must fail.
@@ -470,7 +471,7 @@ async def test_retest_material_lot(client, seeded):
     )
     assert resp.status_code == 200, resp.text
 
-    lot_detail = (await client.get(f"/material-lots/{lot_id}")).json()
+    lot_detail = (await client.get(f"/material-lots/{lot_id}", headers=auth_headers(qc_token))).json()
     assert lot_detail["status"] == "retest_due"
 
 
@@ -501,7 +502,7 @@ async def test_partial_container_release_does_not_change_lot_status(client, seed
     )
     assert resp.status_code == 200, resp.text
 
-    lot_detail = (await client.get(f"/material-lots/{lot.id}")).json()
+    lot_detail = (await client.get(f"/material-lots/{lot.id}", headers=auth_headers(qa_token))).json()
     assert lot_detail["status"] == "quarantine"  # whole-lot status unaffected by a partial disposition
 
     await db.refresh(containers[0])
@@ -522,7 +523,7 @@ async def test_release_readiness_reports_qc_sample_evidence(client, seeded, db):
     await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-READY", container_count=1)
     lot = (await db.execute(select(MaterialLot).where(MaterialLot.internal_lot == "LOT-READY"))).scalar_one()
 
-    readiness = (await client.get(f"/materials/v1/lots/{lot.id}/release-readiness")).json()
+    readiness = (await client.get(f"/materials/v1/lots/{lot.id}/release-readiness", headers=auth_headers(op_token))).json()
     assert readiness["eligible_state"] is True
     assert readiness["receipt_discrepancy_clear"] is True
     assert readiness["sampling_complete"] is None

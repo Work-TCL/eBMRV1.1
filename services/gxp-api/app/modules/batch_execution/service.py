@@ -215,6 +215,26 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
         for h in hold_rows:
             active_hold_by_step_id[h.step_id] = h
 
+    # Full hold history (active and released) per step -- StepHold.released_at/released_by/
+    # release_reason/release_signature_id are written by resume_step but were never read back anywhere
+    # before this: only the single currently-open hold was ever surfaced. Read-path completeness fix,
+    # same class as comments_by_step_id/handovers_by_step_id above; kept alongside
+    # active_hold_by_step_id rather than replacing it since callers still want the cheap "is it on hold
+    # right now" check.
+    holds_by_step_id: dict[uuid.UUID, list[StepHold]] = defaultdict(list)
+    if steps:
+        all_hold_rows = (
+            (
+                await session.execute(
+                    select(StepHold).where(StepHold.step_id.in_([s.id for s in steps])).order_by(StepHold.held_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for h in all_hold_rows:
+            holds_by_step_id[h.step_id].append(h)
+
     comments_by_step_id: dict[uuid.UUID, list[StepComment]] = defaultdict(list)
     handovers_by_step_id: dict[uuid.UUID, list[StepHandover]] = defaultdict(list)
     if steps:
@@ -314,6 +334,7 @@ async def get_execution_view(session: AsyncSession, batch_id: uuid.UUID) -> dict
         "successors_of": successors_of,
         "results_by_step_id": results_by_step_id,
         "active_hold_by_step_id": active_hold_by_step_id,
+        "holds_by_step_id": holds_by_step_id,
         "comments_by_step_id": comments_by_step_id,
         "handovers_by_step_id": handovers_by_step_id,
         "evidence_links_by_step_id": evidence_links_by_step_id,

@@ -603,4 +603,17 @@ tr[data-just-added]{animation:row-in 1.6s ease}
   background:var(--surface-sunken);
 }
 .role-badge .k{font-size:var(--fs-1);color:var(--ink-muted);text-transform:uppercase;letter-spacing:.04em;display:block}
+
+/* Compact record list — a handful of records (id + state pill) inside a card, too short to justify a
+   full .table (headers, scroll container) but still needing to look like a designed list, not a raw
+   browser <ul>. Same border-bottom-per-row rhythm as .step-item, at a lighter weight since these rows
+   carry no marker/number. First used by the Batch Workspace's Release-blockers and Deviations/CAPA
+   cards (frontend/src/app/batch-workspace/[batchId]/page.tsx). */
+.record-list{list-style:none;margin:0;padding:0}
+.record-list li{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);
+  padding:var(--space-2) 2px;border-bottom:1px solid var(--gridline);font-size:var(--fs-2);
+}
+.record-list li:last-child{border-bottom:none}
+.record-list .record-list-label{color:var(--ink-primary);font-weight:var(--fw-semibold)}
 .role-badge .v{font-size:var(--fs-2);font-weight:var(--fw-semibold);color:var(--ink-primary);display:block;margin-top:1px}

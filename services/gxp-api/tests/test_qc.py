@@ -6,8 +6,13 @@ SUP...QC-FR-001/002) -> sample create/receive (QC-FR-005..009) -> test order cre
 scope_type="material", instrument eligibility, and actual OOS/OOT record creation are out of scope this
 pass (SG-057/SG-063)."""
 
+from datetime import datetime, timedelta, timezone
+
 from app.core.security import hash_password
-from app.modules.iam.models import User, UserSiteRole
+from app.modules.iam.models import Qualification, User, UserSiteRole
+from sqlalchemy import select
+from app.modules.material.models import Material
+from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.product_master.models import ProductVersion
 from app.modules.qc.models import QcResult, QcResultCorrection, QcSample, QcTestOrder, QcTestSpecification
 from app.modules.signature.models import SignaturePolicy
@@ -109,18 +114,85 @@ async def _create_and_release_spec(client, admin_token, product_version_id, acce
     return spec_id
 
 
-async def test_material_scope_rejected(client, seeded, db):
+async def test_unknown_scope_type_rejected(client, seeded, db):
+    """SG-076: scope_type="material" is now buildable (MaterialSpecificationVersion exists); the generic
+    BUILDABLE_SCOPE_TYPES check still rejects a genuinely unknown scope_type."""
     op_token = await login(client, "operator1")
     resp = await client.post(
         "/qc/v1/specifications/drafts",
         json={
-            "idempotency_key": idem(), "spec_code": "SPEC-MAT", "scope_type": "material",
+            "idempotency_key": idem(), "spec_code": "SPEC-WIDGET", "scope_type": "widget",
             "scope_version_id": idem(),
         },
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 422
     assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_material_scope_unknown_scope_version_id_not_found(client, seeded, db):
+    op_token = await login(client, "operator1")
+    resp = await client.post(
+        "/qc/v1/specifications/drafts",
+        json={
+            "idempotency_key": idem(), "spec_code": "SPEC-MAT-404", "scope_type": "material",
+            "scope_version_id": idem(),
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "NOT_FOUND"
+
+
+async def test_material_scope_accepted_and_round_trips(client, seeded, db):
+    """SG-076: scope_type="material" referencing a real MaterialSpecificationVersion is now buildable."""
+    async with db.begin():
+        material = Material(site_id=seeded["site_id"], code="MAT-QC-SCOPE-001", name="QC Scope Material", uom="kg")
+        db.add(material)
+        await db.flush()
+        matspec = MaterialSpecificationVersion(
+            material_spec_business_id="MATSPEC-QC-1", version_no=1, material_id=material.id,
+            name="QC Scope Material Spec", lifecycle_state="released", site_id=seeded["site_id"],
+        )
+        db.add(matspec)
+        await db.flush()
+        matspec_id = matspec.id
+
+    op_token = await login(client, "operator1")
+    resp = await client.post(
+        "/qc/v1/specifications/drafts",
+        json={
+            "idempotency_key": idem(), "spec_code": "SPEC-MAT-OK", "scope_type": "material",
+            "scope_version_id": str(matspec_id),
+            "test_definitions": [{
+                "test_code": "IDENTITY", "test_name": "Identity", "result_data_type": "numeric_single",
+                "uom": "mg", "required": True, "release_blocking": True,
+            }],
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+    spec_id = resp.json()["aggregate_id"]
+
+    listing = await client.get(
+        "/qc/v1/specifications", params={"q": "SPEC-MAT-OK"}, headers=auth_headers(op_token)
+    )
+    assert listing.status_code == 200
+    items = listing.json()["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == spec_id
+    assert items[0]["scope_type"] == "material"
+    assert items[0]["scope_version_id"] == str(matspec_id)
+
+    # Backs /qc's redesigned "Test specifications" detail page (2026-09-26) -- no single-record GET
+    # existed before this, only the list above.
+    detail = await client.get(f"/qc/v1/specifications/{spec_id}", headers=auth_headers(op_token))
+    assert detail.status_code == 200, detail.text
+    detail_body = detail.json()
+    assert detail_body["id"] == spec_id
+    assert detail_body["spec_code"] == "SPEC-MAT-OK"
+    assert len(detail_body["test_definitions"]) == 1
+    assert detail_body["test_definitions"][0]["test_code"] == "IDENTITY"
 
 
 async def test_full_qc_flow_pass_result(client, seeded, db):
@@ -240,10 +312,10 @@ async def test_full_qc_flow_pass_result(client, seeded, db):
     order = await db.get(QcTestOrder, order_id)
     assert order.state == "reviewed"
 
-    readiness = await client.get(f"/qc/v1/release-readiness?sample_id={sample_id}")
+    readiness = await client.get(f"/qc/v1/release-readiness?sample_id={sample_id}", headers=auth_headers(admin_token))
     assert readiness.json()["ready"] is True
 
-    record = await client.get(f"/qc/v1/samples/{sample_id}/record")
+    record = await client.get(f"/qc/v1/samples/{sample_id}/record", headers=auth_headers(admin_token))
     assert record.json()["test_orders"][0]["results"][0]["outcome"] == "pass"
 
 
@@ -651,3 +723,93 @@ async def test_review_stale_version_rejected(client, seeded, db):
     )
     assert resp.status_code == 409
     assert resp.json()["code"] == "STALE_VERSION"
+
+
+# ---------------------------------------------------------------------------
+# QC-FR-011 (Task 4, 2026-09-23, SG-066): qc_analyst qualification gate on start_test_order, mirroring
+# test_batch_execution.py::test_start_step_blocked_when_qualification_expired.
+# ---------------------------------------------------------------------------
+
+
+async def _order_ready_to_start(client, db, seeded, op_token, tag):
+    async with db.begin():
+        product_version = await _seed_product_version(db, seeded, code=f"QUAL-PROD-{tag}")
+    spec_id = await _create_and_release_spec(client, op_token, product_version.id, code=f"QUAL-SPEC-{tag}")
+    from app.modules.qc.models import QcTestDefinition
+
+    definition_id = str(
+        (await db.execute(select(QcTestDefinition.id).where(QcTestDefinition.specification_id == spec_id))).scalars().first()
+    )
+    sample_id = (
+        await client.post(
+            "/qc/v1/samples",
+            json={
+                "idempotency_key": idem(), "sample_number": f"QUAL-SAMPLE-{tag}", "sample_type": "finished_product",
+                "source_type": "reserve",
+            },
+            headers=auth_headers(op_token),
+        )
+    ).json()["aggregate_id"]
+    await client.post(
+        f"/qc/v1/samples/{sample_id}/receive",
+        json={"idempotency_key": idem(), "sample_id": sample_id, "expected_version": 1},
+        headers=auth_headers(op_token),
+    )
+    return (
+        await client.post(
+            "/qc/v1/test-orders",
+            json={"idempotency_key": idem(), "sample_id": sample_id, "test_definition_id": definition_id},
+            headers=auth_headers(op_token),
+        )
+    ).json()["aggregate_id"]
+
+
+async def test_start_test_order_blocked_without_qc_analyst_qualification(client, seeded, db):
+    """operator1 (the fixture's default) has a qc_analyst qualification seeded -- use a fresh Admin
+    (qc_test_order.start is Admin-grantable too) with none at all."""
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.qualmissing")
+    admin_token = await login(client, "admin.qualmissing")
+    order_id = await _order_ready_to_start(client, db, seeded, admin_token, "missing")
+
+    resp = await client.post(
+        f"/qc/v1/test-orders/{order_id}/start",
+        json={"idempotency_key": idem(), "test_order_id": order_id, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["code"] == "QUALIFICATION_MISSING"
+
+
+async def test_start_test_order_blocked_with_expired_qc_analyst_qualification(client, seeded, db):
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.qualexpired")
+        admin = (await db.execute(select(User).where(User.username == "admin.qualexpired"))).scalar_one()
+        db.add(Qualification(
+            user_id=admin.id, qualification_code="qc_analyst",
+            expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+        ))
+    admin_token = await login(client, "admin.qualexpired")
+    order_id = await _order_ready_to_start(client, db, seeded, admin_token, "expired")
+
+    resp = await client.post(
+        f"/qc/v1/test-orders/{order_id}/start",
+        json={"idempotency_key": idem(), "test_order_id": order_id, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["code"] == "QUALIFICATION_EXPIRED"
+
+
+async def test_qc_dashboard_and_export(client, seeded, db):
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.qcdash")
+    admin_token = await login(client, "admin.qcdash")
+    order_id = await _order_ready_to_start(client, db, seeded, admin_token, "dash")
+
+    dashboard = (await client.get("/qc/v1/dashboard", headers=auth_headers(admin_token))).json()
+    assert dashboard["test_orders_by_state"].get("created", 0) >= 1
+    assert "open_oos" in dashboard and "open_oot" in dashboard
+
+    export = (await client.get("/qc/v1/export", headers=auth_headers(admin_token))).json()
+    assert any(row["id"] == order_id for row in export)

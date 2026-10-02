@@ -33,6 +33,7 @@ from app.modules.equipment.models import (
 )
 from app.modules.iam.models import User
 from app.modules.qms.change_commands import CreateChangeCommand, create_change
+from app.modules.recipe_master.service import list_equipment_classes
 from app.modules.qms.change_models import CHANGE_CLASSIFICATIONS
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
@@ -178,7 +179,7 @@ async def _write_receipt(
 class CreateEquipmentAssetCommand(CommandEnvelope):
     site_id: uuid.UUID
     equipment_code: str | None = None
-    equipment_class_id: uuid.UUID | None = None
+    equipment_class_id: uuid.UUID
     manufacturer: str | None = None
     model: str | None = None
     serial_no: str | None = None
@@ -204,6 +205,15 @@ async def create_equipment_asset(
         equipment_code = cmd.equipment_code
     else:
         equipment_code = await codegen_service.next_code(session, entity_type="EQUIPMENT_ASSET", prefix="EQP")
+
+    # Bug fix: equipment_class_id used to be captured-but-unvalidated, so an asset could be created with a
+    # class that later made every step-start referencing it fail EQUIPMENT_CLASS_MISMATCH with no earlier
+    # warning. Validated the same way product_master validates sterile_profile_id against its own
+    # registry -- through the existing cross-module read function router.py already uses for the picker
+    # (list_equipment_classes), not by importing recipe_master's EquipmentClass model directly (AG-02).
+    known_class_ids = {c.id for c in await list_equipment_classes(session)}
+    if cmd.equipment_class_id not in known_class_ids:
+        raise NotFoundError("equipment_class_id does not reference a known equipment class", equipment_class_id=str(cmd.equipment_class_id))
 
     asset = EquipmentAsset(
         site_id=cmd.site_id, equipment_code=equipment_code, equipment_class_id=cmd.equipment_class_id,

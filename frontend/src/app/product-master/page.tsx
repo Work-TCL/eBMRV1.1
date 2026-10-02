@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   api,
   ApiError,
@@ -10,7 +11,7 @@ import {
   clientPagedFetcher,
   newIdempotencyKey,
 } from "@/lib/api";
-import { useApiResource, useMe, useSites } from "@/lib/hooks";
+import { useApiResource, useMe, useRequirePermission, useSites } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -241,7 +242,8 @@ function toConstituentDrafts(constituents: Constituent[] | undefined): Constitue
 }
 
 export default function ProductMasterPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("product.view");
+  const router = useRouter();
   const [draftOpen, setDraftOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [historyBusinessId, setHistoryBusinessId] = useState<string | null>(null);
@@ -249,6 +251,20 @@ export default function ProductMasterPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+
+  // Deep link from the workflow-notifications bell (`?product_version_id=<id>`) — jump straight to the
+  // version detail (its own Release button lives there). Reads window.location directly rather than
+  // next/navigation's useSearchParams(), which needs a Suspense boundary this page has no other reason to
+  // opt into.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const versionId = params.get("product_version_id");
+    if (!versionId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedId(versionId);
+    router.replace("/product-master");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // GET /products/v1/business-ids returns a plain array, not the server-side Paged<T> envelope
   // (Phase 1, small row counts — same ceiling `listAll`/`clientPagedFetcher` document) — DataTable's
@@ -315,8 +331,8 @@ export default function ProductMasterPage() {
       />
 
       <p className="hint mb-4">
-        This is the current product master - separate from the legacy Products page, which still feeds
-        batch creation until the two are unified.
+        This is the authoritative product master - every batch is created against a released version
+        from this page.
       </p>
 
       <Card className="mb-4">

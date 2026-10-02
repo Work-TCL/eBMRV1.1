@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiError, isAdminAnywhere, listAll, listBatchesForSite, type EquipmentArea, type EquipmentAsset, type Material, type MaterialLot, type Me, type Site, type Supplier, type User } from "./api";
+import { api, ApiError, hasAnyPermission, isAdminAnywhere, listAll, listBatchesForSite, type EquipmentArea, type EquipmentAsset, type Material, type MaterialLot, type Me, type Site, type Supplier, type User } from "./api";
 
 export function useSites() {
   const [sites, setSites] = useState<Site[]>([]);
@@ -59,6 +59,26 @@ export function useRequireAdmin(redirectTo = "/batch-execution") {
   }, [me, loading, router, redirectTo]);
 
   return { me, loading, isAdmin: isAdminAnywhere(me) };
+}
+
+/** Generalized version of `useRequireAdmin` for every page backed by a real, non-Admin view permission
+ * (or set of any-of codes) — redirects away a signed-in user who holds none of them, the same way
+ * `useRequireAdmin` does for Admin. `codes` is read once per call site (a literal array/string, the same
+ * convention `useListEntityOptions` uses for `path`) rather than tracked as a dependency, so passing a
+ * fresh array literal inline at each call site is safe and does not retrigger the effect. */
+export function useRequirePermission(codes: string | readonly string[], redirectTo = "/batch-execution") {
+  const { me, loading } = useMe();
+  const router = useRouter();
+  const list = Array.isArray(codes) ? codes : [codes as string];
+
+  useEffect(() => {
+    if (!loading && !hasAnyPermission(me, list)) {
+      router.replace(redirectTo);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `codes` is a literal per call site, same convention as useListEntityOptions's `path`.
+  }, [me, loading, router, redirectTo]);
+
+  return { me, loading };
 }
 
 /** The site to scope site-required reads to (equipment/risk/metrics dashboards, QMS lists).
@@ -226,6 +246,10 @@ export function useEntityOptions(): {
   capasStatus: EntityOptionsStatus;
   nonconformances: EntityOption[];
   nonconformancesStatus: EntityOptionsStatus;
+  oosRecords: EntityOption[];
+  oosRecordsStatus: EntityOptionsStatus;
+  ootRecords: EntityOption[];
+  ootRecordsStatus: EntityOptionsStatus;
   internalAudits: EntityOption[];
   internalAuditsStatus: EntityOptionsStatus;
   risks: EntityOption[];
@@ -498,6 +522,21 @@ export function useEntityOptions(): {
     state: string;
   }>("/qms/v1/risks", (r) => ({ value: r.id, label: `${r.risk_number} (${r.state})` }));
 
+  // qc/router.py::list_oos_records / list_oot_records (2026-09-26) — CAPA's own source-record picker
+  // previously fell back to a free-text id field for these two, same "no browse list exists yet"
+  // reasoning the OOS/OOT page itself used to carry before its own redesign.
+  const { options: oosRecords, status: oosRecordsStatus } = useListEntityOptions<{
+    id: string;
+    oos_number: string;
+    state: string;
+  }>("/quality/oos/v1", (o) => ({ value: o.id, label: `${o.oos_number} (${o.state})` }));
+
+  const { options: ootRecords, status: ootRecordsStatus } = useListEntityOptions<{
+    id: string;
+    source_result_id: string;
+    state: string;
+  }>("/quality/oot/v1", (o) => ({ value: o.id, label: `${o.source_result_id.slice(0, 8)}… (${o.state})` }));
+
   const [rules, setRules] = useState<EntityOption[]>([]);
   const [rulesStatus, setRulesStatus] = useState<EntityOptionsStatus>("loading");
   useEffect(() => {
@@ -532,6 +571,8 @@ export function useEntityOptions(): {
     complaints, complaintsStatus,
     capas, capasStatus,
     nonconformances, nonconformancesStatus,
+    oosRecords, oosRecordsStatus,
+    ootRecords, ootRecordsStatus,
     internalAudits, internalAuditsStatus,
     risks, risksStatus,
     rules, rulesStatus,

@@ -7,7 +7,7 @@ import {
   formatDateTime,
   newIdempotencyKey,
 } from "@/lib/api";
-import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { useApiResource, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -68,7 +68,7 @@ interface Exceptions {
 const PACKAGE_STATES = ["READY_FOR_REVIEW", "REVIEW_COMPLETE", "REOPENED"];
 
 export default function QaReviewPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("qa_review.view");
   const { siteId } = useSiteId();
   const [state, setState] = useState("");
   const [reloadToken, setReloadToken] = useState(0);

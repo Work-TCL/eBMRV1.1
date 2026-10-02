@@ -39,7 +39,7 @@ export function RemindersBell() {
   if (count === 0) return null;
 
   return (
-    <div style={{ position: "relative", marginLeft: "auto" }}>
+    <div style={{ position: "relative" }}>
       <button
         className="btn-icon btn-ghost"
         onClick={() => setOpen((v) => !v)}

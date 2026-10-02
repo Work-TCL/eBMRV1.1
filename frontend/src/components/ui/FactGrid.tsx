@@ -31,8 +31,8 @@ export function IdFact({ label, value, action }: { label: ReactNode; value: stri
        * a long single text node from wrapping via word-break the way every existing IdFact caller
        * (without an action) relies on to keep a UUID from pushing the grid wider than its column. */}
       {value && action ? (
-        <span className="fact-v flex items-center gap-1">
-          <span className="tabular fs-2" style={{ wordBreak: "break-all" }}>
+        <span className="fact-v flex items-center gap-1" style={{ flexWrap: "wrap" }}>
+          <span className="tabular fs-2" style={{ wordBreak: "break-all", flexShrink: 0 }}>
             {value}
           </span>
           {action}

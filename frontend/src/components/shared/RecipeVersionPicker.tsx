@@ -24,12 +24,18 @@ interface RecipeVersionRow {
 }
 
 /**
- * Two dependent dropdowns — Recipe family, then that family's RELEASED versions only — for any field
- * that references a Recipe Master version id. Same shape as `ProductVersionPicker`'s
- * `ProductVersionPickerField` (both endpoints follow the identical "business id/family list, then that
- * item's versions" two-step Recipe Master's own page already established) — built for QC's specification
- * "Scope version ID" (`scope_type=in_process`), which previously asked the operator to go find a recipe
- * version id on `/recipe-master` and paste it in.
+ * Two dependent dropdowns — Recipe family, then that family's versions — for any field that references a
+ * Recipe Master version id. Built for QC's specification "Scope version ID" (`scope_type=in_process`),
+ * which previously asked the operator to go find a recipe version id on `/recipe-master` and paste it in.
+ *
+ * Deliberately NOT restricted to released versions (unlike `ProductVersionPicker`'s equivalent): the
+ * backend's own scope_version_id check (`qc/commands.py::create_test_specification_draft`) only verifies
+ * the RecipeVersion row exists, with no lifecycle_state condition -- and the demo journey doc
+ * (docs/testing/demo-gujarati/19_..., PHASE 7 §7.1) explicitly documents creating/releasing the Test
+ * Specification *before* Phase 5 releases the recipe, so this field's whole reason to exist is to let a
+ * still-draft recipe version be selected as scope. Restricting to released-only (as an earlier version of
+ * this component did) silently blocked that documented order. Each option shows its lifecycle_state so
+ * draft vs. released stays visible to the operator.
  */
 export function RecipeVersionPickerField({
   label,
@@ -51,8 +57,6 @@ export function RecipeVersionPickerField({
   const { data: versions, loading: versionsLoading, error: versionsError } = useApiResource<RecipeVersionRow[]>(
     familyId ? `/recipes/v2/${encodeURIComponent(familyId)}/versions` : null,
   );
-  const released = (versions ?? []).filter((v) => v.lifecycle_state === "released");
-
   if (familiesError) {
     return (
       <Field label={label} required={required} hint="Couldn't load the recipe list - enter the recipe version ID directly.">
@@ -74,7 +78,7 @@ export function RecipeVersionPickerField({
           style={{ flex: "1 1 200px", minWidth: 0 }}
         >
           <option value="">{familiesLoading ? "Loading recipes…" : "Select a recipe…"}</option>
-          {(families ?? []).filter((f) => f.has_released).map((f) => (
+          {(families ?? []).map((f) => (
             <option key={f.recipe_family_id} value={f.recipe_family_id}>
               {f.recipe_code}
             </option>
@@ -87,11 +91,11 @@ export function RecipeVersionPickerField({
           style={{ flex: "1 1 200px", minWidth: 0 }}
         >
           <option value="">
-            {!familyId ? "—" : versionsLoading ? "Loading versions…" : released.length ? "Select a released version…" : "No released versions"}
+            {!familyId ? "—" : versionsLoading ? "Loading versions…" : (versions ?? []).length ? "Select a version…" : "No versions yet"}
           </option>
-          {released.map((v) => (
+          {(versions ?? []).map((v) => (
             <option key={v.recipe_version_id} value={v.recipe_version_id}>
-              v{v.version_no}
+              v{v.version_no} ({v.lifecycle_state})
             </option>
           ))}
         </Select>
