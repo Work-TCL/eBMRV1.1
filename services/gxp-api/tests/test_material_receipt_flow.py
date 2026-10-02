@@ -627,3 +627,167 @@ async def test_release_by_the_receiver_of_the_same_lot_denied(client, seeded, db
     assert resp.status_code == 422
     assert resp.json()["code"] == "VALIDATION_FAILED"
     assert "independent" in resp.json()["message"].lower()
+
+
+# --- Client_Decisions_Neededanswers Topic 4: held-receipt disposition --------------------------------
+
+
+async def _hold_receipt(client, op_token, site_id, code, receipt_number, internal_lot):
+    """Creates a receipt and examines it into discrepancy_hold via an identity mismatch."""
+    material_id = await _create_material(client, site_id, code=code)
+    receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number=receipt_number)
+    resp = await client.post(
+        f"/materials/v1/receipts/{receipt_id}/examine",
+        json={
+            "idempotency_key": idem(),
+            "receipt_id": receipt_id,
+            "expected_version": 1,
+            "labeling_ok": True,
+            "damage_observed": False,
+            "seal_broken": False,
+            "contamination_observed": False,
+            "identity_confirmed": False,
+            "internal_lot": internal_lot,
+            "discrepancy_reason": "Label does not match expected material code",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+    return receipt_id
+
+
+async def _disposition(client, token, receipt_id, expected_version, **body_overrides):
+    challenge = (
+        await client.post(
+            f"/materials/v1/receipts/{receipt_id}/signature-challenges",
+            json={"action": "disposition"},
+            headers=auth_headers(token),
+        )
+    ).json()
+    body = {
+        "idempotency_key": idem(),
+        "receipt_id": receipt_id,
+        "expected_version": expected_version,
+        "decision": "accepted",
+        "severity": "minor",
+        "reason": "Minor label discrepancy, supervisor-reviewed, safe to use",
+        "challenge_id": challenge["challenge_id"],
+        "reauth_password": "ChangeMe123!",
+    }
+    body.update(body_overrides)
+    return await client.post(f"/materials/v1/receipts/{receipt_id}/disposition", json=body, headers=auth_headers(token))
+
+
+async def test_disposition_minor_accept_creates_exception_flagged_lot(client, seeded):
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    site_id = seeded["site_id"]
+    receipt_id = await _hold_receipt(client, op_token, site_id, "RM-DISP-MINOR", "RCPT-DISP-MINOR", "LOT-DISP-MINOR")
+
+    resp = await _disposition(
+        client, qa_token, receipt_id, expected_version=2,
+        decision="accepted", severity="minor", internal_lot="LOT-DISP-MINOR",
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is not None
+
+    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}", headers=auth_headers(qa_token))).json()
+    assert receipt_detail["state"] == "disposition_accepted"
+    assert receipt_detail["disposition_decision"] == "accepted"
+    assert receipt_detail["disposition_severity"] == "minor"
+    assert receipt_detail["disposition_deviation_id"] is None
+
+    lots = (await client.get("/material-lots", params={"q": "LOT-DISP-MINOR"}, headers=auth_headers(qa_token))).json()["items"]
+    assert len(lots) == 1
+    assert lots[0]["status"] == "quarantine"  # Q10: still enters normal quarantine, not released stock
+
+
+async def test_disposition_significant_without_deviation_rejected(client, seeded):
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    site_id = seeded["site_id"]
+    receipt_id = await _hold_receipt(client, op_token, site_id, "RM-DISP-SIG", "RCPT-DISP-SIG", "LOT-DISP-SIG")
+
+    resp = await _disposition(client, qa_token, receipt_id, expected_version=2, severity="significant")
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+    assert "deviation" in resp.json()["message"].lower()
+
+
+async def test_disposition_significant_with_deviation_links_it(client, seeded, db):
+    from app.modules.qms.models import DeviationRecord
+
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    site_id = seeded["site_id"]
+    receipt_id = await _hold_receipt(client, op_token, site_id, "RM-DISP-SIG2", "RCPT-DISP-SIG2", "LOT-DISP-SIG2")
+
+    async with db.begin():
+        deviation = DeviationRecord(
+            site_id=site_id, deviation_number="DEV-DISP-1", deviation_type="process",
+            source_type="material_receipt", source_id=uuid.UUID(receipt_id), severity="major",
+        )
+        db.add(deviation)
+        await db.flush()
+        deviation_id = str(deviation.id)
+
+    resp = await _disposition(
+        client, qa_token, receipt_id, expected_version=2,
+        decision="rejected", severity="significant", deviation_id=deviation_id,
+        reason="Confirmed identity mismatch, deviation investigation closed, reject and return to supplier",
+    )
+    assert resp.status_code == 200, resp.text
+
+    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}", headers=auth_headers(qa_token))).json()
+    assert receipt_detail["state"] == "disposition_rejected"
+    assert receipt_detail["disposition_deviation_id"] == deviation_id
+
+    lots = (await client.get("/material-lots", params={"q": "LOT-DISP-SIG2"}, headers=auth_headers(qa_token))).json()["items"]
+    assert lots == []  # rejected -- no lot ever created
+
+
+async def test_disposition_by_operator_role_denied(client, seeded):
+    """Q8: the final decision must be made by an authorized QA/quality approver -- Operator lacks the
+    material_receipt.disposition permission entirely."""
+    op_token = await login(client, "operator1")
+    site_id = seeded["site_id"]
+    receipt_id = await _hold_receipt(client, op_token, site_id, "RM-DISP-RBAC", "RCPT-DISP-RBAC", "LOT-DISP-RBAC")
+
+    resp = await _disposition(client, op_token, receipt_id, expected_version=2, internal_lot="LOT-DISP-RBAC")
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+
+async def test_disposition_by_the_examiner_denied_as_not_independent(client, seeded, db):
+    """Same independence precedent as material_lot.release/reject."""
+    from app.modules.iam.models import UserSiteRole
+
+    async with db.begin():
+        db.add(
+            UserSiteRole(
+                user_id=seeded["users"]["operator1"].id,
+                site_id=seeded["site_id"],
+                role_id=seeded["roles"]["QA Releaser"].id,
+            )
+        )
+
+    op_token = await login(client, "operator1")
+    site_id = seeded["site_id"]
+    receipt_id = await _hold_receipt(client, op_token, site_id, "RM-DISP-SELF", "RCPT-DISP-SELF", "LOT-DISP-SELF")
+
+    resp = await _disposition(client, op_token, receipt_id, expected_version=2, internal_lot="LOT-DISP-SELF")
+    assert resp.status_code == 422
+    assert "independent" in resp.json()["message"].lower()
+
+
+async def test_disposition_on_non_held_receipt_invalid_transition(client, seeded):
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    site_id = seeded["site_id"]
+    material_id = await _create_material(client, site_id, code="RM-DISP-CLEAN")
+    receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-DISP-CLEAN")
+    await _examine_clean(client, op_token, receipt_id, internal_lot="LOT-DISP-CLEAN")
+
+    resp = await _disposition(client, qa_token, receipt_id, expected_version=2, internal_lot="LOT-DISP-CLEAN")
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "INVALID_TRANSITION"

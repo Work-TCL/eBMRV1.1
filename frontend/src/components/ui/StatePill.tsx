@@ -82,14 +82,22 @@ const TERMINAL_GOOD = new Set([
   "IMPLEMENTATION_VERIFIED", "APPROVED",
   // Document 38 equipment lifecycle
   "QUALIFIED_AVAILABLE",
+  // Client Topic 4 — held-receipt disposition (material_receipt.state)
+  "DISPOSITION_ACCEPTED",
 ]);
 const TERMINAL_INERT = new Set([
   "CANCELLED", "OBSOLETE", "SUPERSEDED", "FROZEN", "NO_INVESTIGATION_JUSTIFIED", "SUSPENDED",
 ]);
-const FAILED = new Set(["EFFECTIVENESS_FAILED", "REJECTED", "OUT_OF_SERVICE"]);
+const FAILED = new Set([
+  "EFFECTIVENESS_FAILED", "REJECTED", "OUT_OF_SERVICE",
+  // Client Topic 4 — held-receipt disposition
+  "DISPOSITION_REJECTED",
+]);
 const NEEDS_ATTENTION = new Set([
   "OPEN", "REOPENED", "FINDINGS_OPEN", "SEGREGATED", "NEW_VERSION",
   "CALIBRATION_DUE", "MAINTENANCE_DUE",
+  // Client Topic 4 — held-receipt disposition: still waiting on the supplier
+  "DISPOSITION_REPLACEMENT_REQUESTED",
 ]);
 const NOT_STARTED = new Set([
   "DRAFT", "SCHEDULED", "ASSIGNED", "RECEIVED", "INSTALLED", "QUALIFICATION_PENDING",

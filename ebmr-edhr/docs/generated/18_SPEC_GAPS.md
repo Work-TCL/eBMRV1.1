@@ -15469,9 +15469,50 @@ options:
   - (C) Guess a disposition workflow now (rejected -- the risk above).
 blocking: false
 owner: Head of Quality + Materials module owner (disposition/signature authority) + Data Architect (schema)
-resolution_document: "-- (open)"
-status: OPEN
+resolution_document: "Client_Decisions_Neededanswers.txt Topic 4 (2026-10-02) -- Option A implemented"
+status: RESOLVED_APPROVED
 ```
+
+**RESOLVED_APPROVED 2026-10-02, project-owner-directed via client decision document, Topic 4** --
+Option A implemented, answering all five open questions above directly from the client's own wording:
+
+1. **Deviation mandatory/optional**: configurable by severity, not a single fixed rule. "Significant or
+   potentially quality-impacting issues" require a formal Deviation (`disposition_deviation_id`
+   mandatory); "minor" issues don't (Q7).
+2. **Who resolves, and is it signed**: the disposition decision itself is always QA-Releaser-signed
+   regardless of severity -- Q7's "supervisor with a written note" describes how a *minor* issue gets
+   investigated/justified, not an exemption from Q8's unconditional "the final decision... should require
+   an electronic signature". New Document 106-style policy row: `(material_receipt, disposition,
+   "Approved", QA Releaser, independent=True, signed=True)`, same independence rule (signer != receiver/
+   examiner) as `material_lot.release`/`.reject`.
+3. **Allowed dispositions**: `accepted` / `rejected` / `replacement_requested` (Q9's three concretely
+   named outcomes). "Conditional acceptance"/"disposal" were named only as examples of outcomes that may
+   apply "when appropriate" with no concrete trigger specified -- not built, left for a future decision
+   if a concrete case is named (not guessed).
+4. **Lot creation on accept, and what status**: yes, the same `MaterialLot`/`MaterialContainer` creation
+   `examine_receipt`'s clean path already does, but flagged `is_exception_release=True` with the
+   disposition reason copied onto `exception_reason` -- still enters ordinary `quarantine`, not a
+   released/bypassed status (Q10: "should not automatically enter normal production stock... special
+   R&D/exception status... remain subject to any required testing and approval").
+5. **Audit/evidence at resolution**: `disposition_decision`/`disposition_severity`/`disposition_reason`/
+   `disposition_deviation_id`/`disposition_decided_by_user_id`/`disposition_decided_at`/
+   `disposition_signature_id` added to `MaterialReceipt` (migration 0125) -- the original
+   `discrepancy_type`/`discrepancy_reason` fields are untouched (AG-08 append-only), the resolution is a
+   separate set of columns, not an overwrite.
+
+**Implementation**: migration `f1b3d5a7c9e2`/0125 (additive -- 7 new `material_receipts` columns, 2 new
+`material_lots` columns); `disposition_held_receipt()` (`app/modules/material/commands.py`, new);
+`POST /materials/v1/receipts/{id}/disposition` + `.../signature-challenges`
+(`app/modules/material/router.py`, new, beyond Document 19 §5's originally-declared 9 operations --
+same "own considered contract" precedent as `warehouse_location.create`/SG-081); 2 new permission codes
+(`material_receipt.view`, `material_receipt.disposition`) plus `material_receipt.view` folded into the
+existing `material.view`-class grant bundle; frontend `DispositionHeldReceiptModal`
+(`frontend/src/app/material-receipts/page.tsx`) using the shared `SignatureCeremony` component. The
+`get_release_readiness()` dead-code note (item in "current behaviour" above) is unaffected -- still
+correctly unreachable, not touched by this change. Verified: 25/25 `test_material_receipt_flow.py`
+(18 pre-existing + 7 new, covering minor-accept/significant-without-deviation/significant-with-deviation/
+RBAC-denied/independence-denied/invalid-transition), plus the full material-module regression suite
+(82/82) unaffected.
 
 ### SG-213 — `evaluate_policy(..., site_id=None)` on nearly every non-create action across ~28 routers means any actor holding the role can act on/view any site's records, not just their own site's
 

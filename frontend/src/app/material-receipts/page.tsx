@@ -30,6 +30,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Fact, FactGrid } from "@/components/ui/FactGrid";
 import { Banner } from "@/components/ui/Banner";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 
 // app/modules/material/commands.py CreateMaterialReceiptCommand / ExamineReceiptCommand,
 // app/modules/material/router.py _receipt_dict()/list_material_receipts(). Document 19 (SPEC-MAT-002A)
@@ -68,10 +69,19 @@ interface MaterialReceipt {
   discrepancy_reason: string | null;
   received_at: string | null;
   version: number;
+  disposition_decision: string | null;
+  disposition_severity: string | null;
+  disposition_reason: string | null;
+  disposition_deviation_id: string | null;
+  disposition_decided_by_user_id: string | null;
+  disposition_decided_at: string | null;
 }
 
 // material_receipt.create/.examine share one grant (Admin/Operator/Supervisor).
 const canReceive = (me: Me | null) => hasPermission(me, "material_receipt.create");
+// Client_Decisions_Neededanswers Topic 4: disposition of a held (discrepancy_hold) receipt is
+// QA-Releaser-signed only (app/modules/material/commands.py disposition_held_receipt).
+const canDisposition = (me: Me | null) => hasPermission(me, "material_receipt.disposition");
 
 function fetchReceipts(query: ListQuery): Promise<Paged<MaterialReceipt>> {
   const search = new URLSearchParams({
@@ -91,6 +101,7 @@ export default function MaterialReceiptsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [viewing, setViewing] = useState<MaterialReceipt | null>(null);
   const [examining, setExamining] = useState<MaterialReceipt | null>(null);
+  const [dispositioning, setDispositioning] = useState<MaterialReceipt | null>(null);
 
   const columns: DataTableColumn<MaterialReceipt>[] = [
     {
@@ -134,19 +145,37 @@ export default function MaterialReceiptsPage() {
     {
       key: "actions",
       header: "",
-      render: (r) =>
-        r.state === "received" && canReceive(me) ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={(e) => {
-              e.stopPropagation();
-              setExamining(r);
-            }}
-          >
-            <Icon name="badge-check" /> Examine
-          </Button>
-        ) : null,
+      render: (r) => {
+        if (r.state === "received" && canReceive(me)) {
+          return (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExamining(r);
+              }}
+            >
+              <Icon name="badge-check" /> Examine
+            </Button>
+          );
+        }
+        if (r.state === "discrepancy_hold" && canDisposition(me)) {
+          return (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDispositioning(r);
+              }}
+            >
+              <Icon name="scale" /> Disposition
+            </Button>
+          );
+        }
+        return null;
+      },
     },
   ];
 
@@ -188,6 +217,10 @@ export default function MaterialReceiptsPage() {
             setExamining(viewing);
             setViewing(null);
           }}
+          onDisposition={() => {
+            setDispositioning(viewing);
+            setViewing(null);
+          }}
         />
       )}
 
@@ -212,6 +245,17 @@ export default function MaterialReceiptsPage() {
           }}
         />
       )}
+
+      {dispositioning && (
+        <DispositionHeldReceiptModal
+          receipt={dispositioning}
+          onClose={() => setDispositioning(null)}
+          onDone={() => {
+            setDispositioning(null);
+            setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -221,11 +265,13 @@ function ReceiptDetailModal({
   me,
   onClose,
   onExamine,
+  onDisposition,
 }: {
   receipt: MaterialReceipt;
   me: Me | null;
   onClose: () => void;
   onExamine: () => void;
+  onDisposition: () => void;
 }) {
   return (
     <Modal
@@ -241,11 +287,23 @@ function ReceiptDetailModal({
       {r.state === "discrepancy_hold" && (
  <Banner tone="critical" title={`On hold ${r.discrepancy_type ?? "discrepancy"}`}>
           {r.discrepancy_reason ?? "Examination raised a discrepancy; this receipt did not produce a lot."}
+          {canDisposition(me) && " A QA Releaser can accept, reject, or request a replacement below."}
         </Banner>
       )}
       {r.state === "examined" && (
  <Banner tone="ok" title="Examined lot created">
           This receipt passed examination. Find its lot under Material lots, filtered by this receipt&rsquo;s material.
+        </Banner>
+      )}
+      {(r.state === "disposition_accepted" || r.state === "disposition_rejected" || r.state === "disposition_replacement_requested") && (
+        <Banner
+          tone={r.state === "disposition_accepted" ? "warn" : "ok"}
+          title={`Dispositioned: ${r.disposition_decision} (${r.disposition_severity})`}
+        >
+          {r.disposition_reason}
+          {r.state === "disposition_accepted" &&
+            " Accepted despite the discrepancy — the resulting lot is flagged as an exception and still requires normal quarantine testing/release."}
+          {r.disposition_deviation_id && " Linked to a Deviation record."}
         </Banner>
       )}
 
@@ -296,6 +354,11 @@ function ReceiptDetailModal({
         {r.state === "received" && canReceive(me) && (
           <Button variant="primary" onClick={onExamine}>
             <Icon name="badge-check" /> Examine receipt
+          </Button>
+        )}
+        {r.state === "discrepancy_hold" && canDisposition(me) && (
+          <Button variant="primary" onClick={onDisposition}>
+            <Icon name="scale" /> Disposition
           </Button>
         )}
       </div>
@@ -575,5 +638,162 @@ function ExamineReceiptModal({
         </div>
       </form>
     </Modal>
+  );
+}
+
+const DISPOSITION_DECISIONS = [
+  { value: "accepted", label: "Accept despite the discrepancy" },
+  { value: "rejected", label: "Reject and return to supplier" },
+  { value: "replacement_requested", label: "Request a replacement shipment" },
+];
+
+const DISPOSITION_SEVERITIES = [
+  { value: "minor", label: "Minor — supervisor-reviewed, no Deviation needed" },
+  { value: "significant", label: "Significant — requires a linked Deviation" },
+];
+
+/** Client_Decisions_Neededanswers Topic 4: a receipt on `discrepancy_hold` previously had no forward
+ * path at all. Q7: severity governs whether a Deviation link is required (significant does, minor
+ * doesn't) — not whether the disposition itself is signed. Q8: every disposition is QA-Releaser-signed
+ * regardless of severity, same independence rule as the material-lot release/reject ceremony. Q9: the
+ * three decisions below. Q10: "accepted" creates the lot the same way a clean examination does, flagged
+ * as an exception — it still enters normal quarantine, never released stock directly. */
+function DispositionHeldReceiptModal({
+  receipt,
+  onClose,
+  onDone,
+}: {
+  receipt: MaterialReceipt;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const entities = useEntityOptions();
+  const [decision, setDecision] = useState("accepted");
+  const [severity, setSeverity] = useState("minor");
+  const [reason, setReason] = useState("");
+  const [deviationId, setDeviationId] = useState("");
+  const [internalLot, setInternalLot] = useState("");
+  const [containerCount, setContainerCount] = useState("1");
+  const [storageLocationId, setStorageLocationId] = useState("");
+  const [storageCondition, setStorageCondition] = useState("");
+  const [locations, setLocations] = useState<WarehouseLocation[]>([]);
+
+  useEffect(() => {
+    listAll<WarehouseLocation>("/inventory/v1/warehouse-locations", { site_id: receipt.site_id })
+      .then(setLocations)
+      .catch(() => setLocations([]));
+  }, [receipt.site_id]);
+
+  const needsDeviation = severity === "significant";
+  const needsLotFields = decision === "accepted";
+  const disabled =
+    !reason.trim() ||
+    (needsDeviation && !deviationId) ||
+    (needsLotFields && !internalLot.trim());
+
+  return (
+    <SignatureCeremony
+      open
+      onClose={onClose}
+      onDone={onDone}
+      challengePath={`/materials/v1/receipts/${receipt.id}/signature-challenges`}
+      action="disposition"
+      title={`Disposition held receipt ${receipt.receipt_number}`}
+      summary={
+        <>
+          On hold: {receipt.discrepancy_type ?? "discrepancy"} — {receipt.discrepancy_reason}. Signer
+          must be independent of this receipt&rsquo;s receiver and examiner (enforced server-side).
+        </>
+      }
+      submitLabel="Sign & disposition"
+      submitVariant={decision === "rejected" ? "danger" : "success"}
+      reason="none"
+      disabled={disabled}
+      extraFields={
+        <>
+          <Field label="Decision" required>
+            <Select value={decision} onChange={(e) => setDecision(e.target.value)}>
+              {DISPOSITION_DECISIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Severity" required hint="Governs whether a Deviation link is required.">
+            <Select value={severity} onChange={(e) => setSeverity(e.target.value)}>
+              {DISPOSITION_SEVERITIES.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Justification" required>
+            <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </Field>
+          {needsDeviation && (
+            <EntityPickerField
+              label="Deviation" required
+              value={deviationId} onChange={setDeviationId}
+              options={entities.deviations} status={entities.deviationsStatus} kind="deviation"
+            />
+          )}
+          {needsLotFields && (
+            <>
+              <p className="fs-2 text-muted">
+                Accepting creates the material lot the same way a clean examination does — flagged as an
+                exception, still entering normal quarantine.
+              </p>
+              <Field label="Internal lot number" required>
+                <Input value={internalLot} onChange={(e) => setInternalLot(e.target.value)} />
+              </Field>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Container count" hint="Defaults to 1 if left blank.">
+                  <Input type="number" value={containerCount} onChange={(e) => setContainerCount(e.target.value)} />
+                </Field>
+                <Field label="Storage condition">
+                  <Select value={storageCondition} onChange={(e) => setStorageCondition(e.target.value)}>
+                    <option value="">—</option>
+                    {STORAGE_CONDITIONS.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+              <Field label="Storage location">
+                <Select value={storageLocationId} onChange={(e) => setStorageLocationId(e.target.value)}>
+                  <option value="">—</option>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.location_code} ({loc.zone_type})
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </>
+          )}
+        </>
+      }
+      onSign={(p) =>
+        api.post<MutationReceipt>(`/materials/v1/receipts/${receipt.id}/disposition`, {
+          idempotency_key: p.idempotency_key,
+          receipt_id: receipt.id,
+          expected_version: receipt.version,
+          decision,
+          severity,
+          reason,
+          deviation_id: needsDeviation ? deviationId : null,
+          challenge_id: p.challenge_id,
+          reauth_password: p.reauth_password,
+          internal_lot: needsLotFields ? internalLot : null,
+          container_count: needsLotFields ? (containerCount ? Number(containerCount) : 1) : 1,
+          storage_location_id: needsLotFields ? storageLocationId || null : null,
+          storage_condition: needsLotFields ? storageCondition || null : null,
+        })
+      }
+    />
   );
 }

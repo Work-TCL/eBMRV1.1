@@ -189,6 +189,13 @@ PERMISSION_CATALOG = [
     ("oot_record.reopen", "reopen", "oot_record", "Reopen a closed OOT record (Document 25, SG-074 Task 3)"),
     ("material_receipt.create", "create", "material_receipt", "Create a material receipt (Document 19)"),
     ("material_receipt.examine", "examine", "material_receipt", "Visual examination / identity check of a material receipt (Document 19)"),
+    # Client Topic 4/15 fix (2026-10-02, project-owner-directed): list_material_receipts/get_receipt had
+    # no actor dependency or evaluate_policy() call at all -- a genuinely unauthenticated read, found
+    # while adding the disposition action below (same site-isolation discipline as Topic 15's sweep).
+    ("material_receipt.view", "view", "material_receipt", "Read material receipts (Client Topic 4/15 fix)"),
+    # Held-receipt disposition (Client Topic 4): accept/reject/request-replacement on a discrepancy_hold
+    # receipt. QA Releaser only -- see SIGNATURE_POLICY_FLOOR below.
+    ("material_receipt.disposition", "disposition", "material_receipt", "Disposition a held (discrepancy_hold) material receipt (Client Topic 4 fix)"),
     ("material_lot.sampling_order", "create", "material_lot", "Create a sampling order against a material lot (Document 19)"),
     ("material_lot.collect_sample", "execute", "material_lot", "Collect a sample from a sampling order (Document 19)"),
     ("material_lot.release", "release", "material_lot", "QA release of a material lot (Document 19)"),
@@ -734,7 +741,7 @@ QMS_WRITE_CODES = [
 # `equipment_area` reads had an `actor` dependency but no permission/site check. Spread into every
 # role that already holds the corresponding write codes, same "view code travels with the write
 # codes" pattern as `product.view`/`recipe.view` elsewhere in this file.
-MATERIAL_VIEW_CODES = ["material.view", "warehouse_location.view", "inventory_availability.view"]
+MATERIAL_VIEW_CODES = ["material.view", "warehouse_location.view", "inventory_availability.view", "material_receipt.view"]
 EQUIPMENT_VIEW_CODES = ["equipment_asset.view", "equipment_area.view"]
 
 # Role -> permission codes it's granted, matching exactly what require_role()/require_admin_anywhere()
@@ -892,7 +899,7 @@ ROLE_PERMISSIONS = {
         # code QA Reviewer already holds for the same "view what this role's own actions produce" reason.
         "evidence.download",
         *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
-        "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.plan", "capa.effectiveness", "capa.extend", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "supplier.suspend", "supplier.reinstate", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
+        "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.plan", "capa.effectiveness", "capa.extend", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "supplier.suspend", "supplier.reinstate", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
     # SG-157 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): closest existing real role to Document
     # 106's "QA Manager/Head of Quality per record class" text for regulatory_report.approve -- QA Releaser
     # is this codebase's actual highest quality-release-authority role (batch/recipe/product release).
@@ -1203,6 +1210,11 @@ SIGNATURE_POLICY_FLOOR = [
     # SPEC_GAP recorded for that mismatch). retest has no Document 106 row -- unsigned, RBAC-gated only.
     ("material_lot", "release", "Released", "QA Releaser", True, True, False),
     ("material_lot", "reject", "Rejected", "QA Releaser", True, True, False),
+    # Client Topic 4 fix (2026-10-02, project-owner-directed): a held receipt (discrepancy_hold) had no
+    # forward path at all. Q8: the final decision (accept/reject/replacement-request) is always
+    # QA-Releaser-signed regardless of severity -- same role/independence precedent as material_lot
+    # release/reject above.
+    ("material_receipt", "disposition", "Approved", "QA Releaser", True, True, False),
     # Document 106 row 46 (SPEC-MAT-002B) -- reason_required=True per Document 106's own Reason column,
     # fixed this pass (SG-086) since this is code I wrote and own outright.
     ("inventory_reservation", "release", "Released", "QA Releaser", True, True, True),

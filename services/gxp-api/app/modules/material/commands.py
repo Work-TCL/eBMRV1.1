@@ -39,6 +39,7 @@ from app.modules.material.models import (
 from app.modules.policy.service import evaluate_policy
 from app.modules.qc import commands as qc_commands
 from app.modules.qms import commands as qms_commands
+from app.modules.qms.models import DeviationRecord
 from app.modules.rules import commands as rules_commands
 from app.modules.rules import service as rules_service
 from app.modules.signature import service as signature_service
@@ -76,6 +77,10 @@ from app.mutation.schemas import CommandEnvelope, MutationReceipt
 
 def lot_record_hash(lot: MaterialLot) -> str:
     return sha256_hex({"id": str(lot.id), "version": lot.version, "status": lot.status})
+
+
+def receipt_record_hash(receipt: MaterialReceipt) -> str:
+    return sha256_hex({"id": str(receipt.id), "version": receipt.version, "state": receipt.state})
 
 
 def reservation_record_hash(reservation: InventoryReservation) -> str:
@@ -863,6 +868,253 @@ async def examine_receipt(
         aggregate_id=receipt_row.id,
         resulting_version=receipt_row.version,
         audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# DispositionHeldReceipt — Client_Decisions_Neededanswers Topic 4 (2026-10-02, project-owner-directed):
+# a receipt examined into "discrepancy_hold" above had no forward path at all; this adds one. Beyond
+# Document 19 §5's originally declared 9 operations, same "own considered contract, not a guessed one"
+# precedent as warehouse_location.create (SG-081)/aseptic_profile_version.create -- a real need found
+# while implementing the client's own answer, not invented speculatively.
+#
+# Q7: severity determines whether a Deviation is required alongside the disposition ("significant" does,
+# "minor" does not) -- NOT whether the disposition itself is signed; Q8 is unconditional on that: every
+# disposition is QA-Releaser-signed, same role/independence precedent as material_lot.release/reject
+# above. Q9: "accepted"/"rejected"/"replacement_requested" are the three decisions this pass builds;
+# "conditional acceptance"/"disposal" are named as examples of other outcomes the client said may apply
+# "when appropriate" but are not concretely specified -- not added here, left for a future decision if
+# the client names a concrete trigger/workflow for them (not guessed). Q10: an "accepted" decision creates
+# a MaterialLot the same way a clean `examine_receipt` does, flagged `is_exception_release=True` -- it
+# still enters normal quarantine, not released stock.
+# ---------------------------------------------------------------------------
+
+
+_HELD_RECEIPT_DECISIONS = {"accepted", "rejected", "replacement_requested"}
+_HELD_RECEIPT_SEVERITIES = {"minor", "significant"}
+
+
+class DispositionHeldReceiptCommand(CommandEnvelope):
+    receipt_id: uuid.UUID
+    expected_version: int
+    decision: str  # "accepted" | "rejected" | "replacement_requested"
+    severity: str  # "minor" | "significant" -- governs whether deviation_id is required (Q7)
+    reason: str
+    deviation_id: uuid.UUID | None = None
+    challenge_id: uuid.UUID
+    reauth_password: str
+    # Only consulted when decision == "accepted" (a lot must be created, same inputs examine_receipt's
+    # clean path needs).
+    internal_lot: str | None = None
+    container_count: int = 1
+    storage_location_id: uuid.UUID | None = None
+    storage_condition: str | None = None
+
+
+_HELD_RECEIPT_STATE_BY_DECISION = {
+    "accepted": "disposition_accepted",
+    "rejected": "disposition_rejected",
+    "replacement_requested": "disposition_replacement_requested",
+}
+
+
+async def disposition_held_receipt(
+    session: AsyncSession, cmd: DispositionHeldReceiptCommand, actor_user_id: uuid.UUID, site_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(
+        select(MaterialReceipt).where(MaterialReceipt.id == cmd.receipt_id).with_for_update()
+    )
+    receipt_row = result.scalar_one_or_none()
+    if receipt_row is None:
+        raise NotFoundError("Material receipt not found")
+    if receipt_row.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Material receipt was modified by another actor since it was read",
+            expected_version=cmd.expected_version,
+            current_version=receipt_row.version,
+        )
+    if receipt_row.state != "discrepancy_hold":
+        raise InvalidTransitionError(
+            "Only a receipt on discrepancy hold can be dispositioned", current_status=receipt_row.state
+        )
+    if cmd.decision not in _HELD_RECEIPT_DECISIONS:
+        raise ValidationFailedError("decision must be one of accepted, rejected, replacement_requested")
+    if cmd.severity not in _HELD_RECEIPT_SEVERITIES:
+        raise ValidationFailedError("severity must be one of minor, significant")
+    if not cmd.reason:
+        raise ValidationFailedError("reason is required to disposition a held receipt")
+
+    deviation = None
+    if cmd.severity == "significant":
+        if cmd.deviation_id is None:
+            raise ValidationFailedError(
+                "A significant-severity disposition requires a linked Deviation (deviation_id)"
+            )
+        deviation = await session.get(DeviationRecord, cmd.deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation record not found", deviation_id=str(cmd.deviation_id))
+
+    await evaluate_policy(session, actor_user_id, action="material_receipt.disposition", site_id=site_id)
+
+    # Same independence precedent as material_lot.release/reject's _independence_violation: the signer
+    # must be independent of whoever received/examined this delivery.
+    if actor_user_id in (receipt_row.receiver_subject_id, receipt_row.examined_by_user_id):
+        raise ValidationFailedError(
+            "Signer must be independent of the receipt's receiver/examiner"
+        )
+
+    policy = await signature_service.resolve_signature_requirement(
+        session, record_type="material_receipt", action="disposition"
+    )
+    signature_id = None
+    if policy.signature_required:
+        actor = await session.get(User, actor_user_id)
+        if actor is None or not verify_password(cmd.reauth_password, actor.password_hash):
+            raise MissingSignatureError("Fresh step-up authentication failed")
+        challenge = await signature_service.consume_challenge(
+            session,
+            challenge_id=cmd.challenge_id,
+            user_id=actor_user_id,
+            record_version=receipt_row.version,
+            record_hash=receipt_record_hash(receipt_row),
+        )
+        signature = await signature_service.sign(
+            session, challenge=challenge, auth_context={"method": "password_reauth"}
+        )
+        signature_id = signature.id
+
+    lot_id = None
+    if cmd.decision == "accepted":
+        if not cmd.internal_lot:
+            raise ValidationFailedError("internal_lot is required when accepting a held receipt")
+        if cmd.container_count < 1:
+            raise ValidationFailedError("container_count must be at least 1")
+        existing_lot = (
+            await session.execute(select(MaterialLot).where(MaterialLot.internal_lot == cmd.internal_lot))
+        ).scalar_one_or_none()
+        if existing_lot is not None:
+            raise ValidationFailedError(
+                "A material lot with this internal lot number already exists", internal_lot=cmd.internal_lot
+            )
+        if cmd.storage_condition is not None and cmd.storage_condition not in STORAGE_CONDITIONS:
+            raise ValidationFailedError(
+                "storage_condition must be one of the controlled list",
+                storage_condition=cmd.storage_condition, allowed=list(STORAGE_CONDITIONS),
+            )
+        if cmd.storage_location_id is not None and await session.get(WarehouseLocation, cmd.storage_location_id) is None:
+            raise NotFoundError("Warehouse location not found", storage_location_id=str(cmd.storage_location_id))
+
+        accepted_qty = receipt_row.accepted_quantity or receipt_row.received_gross_quantity
+        lot = MaterialLot(
+            material_id=receipt_row.material_id,
+            site_id=receipt_row.site_id,
+            supplier_id=receipt_row.supplier_id,
+            supplier_lot=receipt_row.supplier_lot,
+            manufacturer_lot=receipt_row.manufacturer_lot,
+            internal_lot=cmd.internal_lot,
+            received_quantity=accepted_qty,
+            available_quantity=accepted_qty,
+            uom=receipt_row.uom,
+            uom_id=receipt_row.uom_id,
+            status="quarantine",
+            expiry_date=receipt_row.expiry_date,
+            retest_date=receipt_row.retest_date,
+            storage_location_id=cmd.storage_location_id,
+            storage_condition=cmd.storage_condition,
+            received_by_user_id=receipt_row.receiver_subject_id,
+            version=1,
+            receipt_id=receipt_row.id,
+            manufacture_date=receipt_row.manufacture_date,
+            is_exception_release=True,
+            exception_reason=cmd.reason,
+        )
+        session.add(lot)
+        await session.flush()
+        lot_id = lot.id
+
+        precision = Decimal("0.000001")
+        per_container_qty = (accepted_qty / cmd.container_count).quantize(precision)
+        remainder = accepted_qty - (per_container_qty * cmd.container_count)
+        for i in range(cmd.container_count):
+            qty = per_container_qty + (remainder if i == cmd.container_count - 1 else Decimal("0"))
+            session.add(
+                MaterialContainer(
+                    material_lot_id=lot.id,
+                    container_code=f"{cmd.internal_lot}-C{i + 1:03d}",
+                    received_quantity=qty,
+                    current_quantity=qty,
+                    uom=receipt_row.uom,
+                    uom_id=receipt_row.uom_id,
+                    version=1,
+                )
+            )
+
+    old_state = receipt_row.state
+    receipt_row.state = _HELD_RECEIPT_STATE_BY_DECISION[cmd.decision]
+    receipt_row.disposition_decision = cmd.decision
+    receipt_row.disposition_severity = cmd.severity
+    receipt_row.disposition_reason = cmd.reason
+    receipt_row.disposition_deviation_id = cmd.deviation_id if cmd.severity == "significant" else None
+    receipt_row.disposition_decided_by_user_id = actor_user_id
+    receipt_row.disposition_decided_at = datetime.now(timezone.utc)
+    receipt_row.disposition_signature_id = signature_id
+    receipt_row.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=receipt_row.site_id,
+        aggregate_type="material_receipt",
+        aggregate_id=receipt_row.id,
+        aggregate_version=receipt_row.version,
+        action="StatusChanged",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        old_value={"state": old_state},
+        new_value={
+            "state": receipt_row.state, "decision": cmd.decision, "severity": cmd.severity,
+            "deviation_id": str(cmd.deviation_id) if cmd.deviation_id else None, "lot_id": str(lot_id) if lot_id else None,
+        },
+        signature_id=signature_id,
+        reason=cmd.reason,
+    )
+    await write_outbox_event(
+        session,
+        event_type="ReceiptDispositioned",
+        aggregate_type="material_receipt",
+        aggregate_id=receipt_row.id,
+        aggregate_version=receipt_row.version,
+        payload={
+            "id": str(receipt_row.id), "state": receipt_row.state, "decision": cmd.decision,
+            "lot_id": str(lot_id) if lot_id else None,
+        },
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=receipt_row.site_id,
+        command_type="DispositionHeldReceipt",
+        aggregate_type="material_receipt",
+        aggregate_id=receipt_row.id,
+        expected_version=cmd.expected_version,
+        resulting_version=receipt_row.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=receipt_row.id,
+        resulting_version=receipt_row.version,
+        audit_event_id=audit_event.id,
+        signature_id=signature_id,
         correlation_id=correlation_id,
     )
 

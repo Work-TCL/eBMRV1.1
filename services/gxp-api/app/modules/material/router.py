@@ -26,6 +26,7 @@ from app.modules.material.commands import (
     CreateMaterialReceiptCommand,
     CreateSamplingOrderCommand,
     CreateWarehouseLocationCommand,
+    DispositionHeldReceiptCommand,
     DeleteMaterialCommand,
     EvaluateMaterialReconciliationCommand,
     ExamineReceiptCommand,
@@ -64,6 +65,7 @@ from app.modules.material.commands import (
     delete_material,
     destruction_record_hash,
     dispensing_order_record_hash,
+    disposition_held_receipt,
     evaluate_material_reconciliation,
     examine_receipt,
     execute_destruction,
@@ -75,6 +77,7 @@ from app.modules.material.commands import (
     inventory_adjustment_request_record_hash,
     lot_record_hash,
     merge_containers,
+    receipt_record_hash,
     receive_material_lot,
     record_consumption,
     record_manual_reading,
@@ -512,6 +515,12 @@ def _receipt_dict(
         "discrepancy_reason": receipt_row.discrepancy_reason,
         "received_at": receipt_row.received_at.isoformat() if receipt_row.received_at else None,
         "version": receipt_row.version,
+        "disposition_decision": receipt_row.disposition_decision,
+        "disposition_severity": receipt_row.disposition_severity,
+        "disposition_reason": receipt_row.disposition_reason,
+        "disposition_deviation_id": str(receipt_row.disposition_deviation_id) if receipt_row.disposition_deviation_id else None,
+        "disposition_decided_by_user_id": str(receipt_row.disposition_decided_by_user_id) if receipt_row.disposition_decided_by_user_id else None,
+        "disposition_decided_at": receipt_row.disposition_decided_at.isoformat() if receipt_row.disposition_decided_at else None,
     }
 
 
@@ -547,11 +556,21 @@ def _receipt_select():
 # of Document 19 §5's 9 declared *mutating* operations, so it carries no signature/authority implication;
 # same GET-alongside-the-mutating-set precedent as `list_material_lots` below and `get_migration_legacy_trace`
 # in the validation module.
+#
+# Client Topic 4/15 fix (2026-10-02, project-owner-directed): unlike `list_material_lots`/
+# `get_material_lot` below (deliberately authenticated-but-not-yet-RBAC-scoped, documented there), this
+# endpoint and `get_receipt` had no `actor` dependency or evaluate_policy() call at all -- a genuinely
+# unauthenticated read, found while adding the held-receipt disposition action. `material_receipt.view`
+# closes it the same way Topic 15's sweep closed every other such gap.
 @v1_router.get("/receipts")
 async def list_material_receipts(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+    params: PageParams = Depends(page_params),
+    site_id: uuid.UUID | None = None,
 ) -> dict:
-    stmt = _receipt_select()
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="material_receipt.view")
+    stmt = _receipt_select().where(MaterialReceipt.site_id.in_(site_scope))
     if params.q:
         needle = f"%{params.q}%"
         stmt = stmt.where(
@@ -574,13 +593,18 @@ async def list_material_receipts(
 
 
 @v1_router.get("/receipts/{receipt_id}")
-async def get_receipt(receipt_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_receipt(
+    receipt_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     row = (
         await session.execute(_receipt_select().where(MaterialReceipt.id == receipt_id))
     ).first()
     if row is None:
         raise NotFoundError("Material receipt not found")
     receipt_row, material_code, material_name, supplier_code, supplier_name, manufacturer_code, manufacturer_name = row
+    await evaluate_policy(session, actor.user_id, action="material_receipt.view", site_id=receipt_row.site_id)
     return _receipt_dict(
         receipt_row, material_code, material_name, supplier_code, supplier_name, manufacturer_code, manufacturer_name
     )
@@ -601,6 +625,58 @@ async def post_examine_receipt(
             raise NotFoundError("Material receipt not found")
         await evaluate_policy(session, actor.user_id, action="material_receipt.examine", site_id=receipt_row.site_id)
         return await examine_receipt(session, cmd, actor.user_id)
+
+
+class ReceiptSignatureChallengeRequest(BaseModel):
+    action: str = "disposition"
+
+
+@v1_router.post("/receipts/{receipt_id}/signature-challenges")
+async def post_receipt_signature_challenge(
+    receipt_id: uuid.UUID,
+    body: ReceiptSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        receipt_row = await session.get(MaterialReceipt, receipt_id)
+        if receipt_row is None:
+            raise NotFoundError("Material receipt not found")
+        if body.action != "disposition":
+            raise ValidationFailedError("Unknown action", action=body.action)
+        challenge = await create_challenge(
+            session,
+            user_id=actor.user_id,
+            record_type="material_receipt",
+            record_id=receipt_row.id,
+            record_version=receipt_row.version,
+            record_hash=receipt_record_hash(receipt_row),
+            meaning="Approved",
+        )
+        return {
+            "challenge_id": str(challenge.id),
+            "meaning": challenge.meaning,
+            "expires_at": challenge.expires_at.isoformat(),
+        }
+
+
+# Client Topic 4 (2026-10-02, project-owner-directed): disposition a receipt on discrepancy_hold --
+# accept (creates the lot, exception-flagged)/reject/request-replacement. See the module docstring on
+# `disposition_held_receipt` (commands.py) for the severity/deviation/signature rules.
+@v1_router.post("/receipts/{receipt_id}/disposition", response_model=MutationReceipt)
+async def post_disposition_held_receipt(
+    receipt_id: uuid.UUID,
+    cmd: DispositionHeldReceiptCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.receipt_id != receipt_id:
+        raise ValidationFailedError("receipt_id in path and body must match")
+    async with session.begin():
+        receipt_row = await session.get(MaterialReceipt, receipt_id)
+        if receipt_row is None:
+            raise NotFoundError("Material receipt not found")
+        return await disposition_held_receipt(session, cmd, actor.user_id, receipt_row.site_id)
 
 
 @v1_router.post("/lots/{lot_id}/sampling-orders", response_model=MutationReceipt)

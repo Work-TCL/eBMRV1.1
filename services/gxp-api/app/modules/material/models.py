@@ -141,6 +141,13 @@ class MaterialLot(Base):
     )
     storage_condition: Mapped[str | None] = mapped_column(String(40))
 
+    # Client_Decisions_Neededanswers Topic 4 (2026-10-02, migration 0125): a lot created from a held
+    # receipt accepted-despite-discrepancy (`disposition_held_receipt`, decision="accepted") is flagged
+    # here rather than entering the normal quarantine flow unmarked -- per Q10, it still goes through the
+    # same quarantine/test/release path (no new `status` value), just visibly carrying the exception.
+    is_exception_release: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    exception_reason: Mapped[str | None] = mapped_column(String(2000))
+
 
 class MaterialLotDisposition(Base):
     """QC release/reject decision on a lot (MAT-011). Signed — same pattern as batch_reviews."""
@@ -241,6 +248,23 @@ class MaterialReceipt(Base):
     discrepancy_reason: Mapped[str | None] = mapped_column(String(2000))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    # Client_Decisions_Neededanswers Topic 4 (2026-10-02, migration 0125): a receipt held at
+    # "discrepancy_hold" (above) previously had no forward path at all -- `disposition_held_receipt`
+    # moves it to "accepted"/"rejected"/"replacement_requested". `disposition_severity` governs whether a
+    # Deviation is required (Q7): "significant" requires `disposition_deviation_id`, "minor" does not.
+    # The disposition itself is always QA-Releaser-signed regardless of severity (Q8).
+    disposition_decision: Mapped[str | None] = mapped_column(String(30))
+    disposition_severity: Mapped[str | None] = mapped_column(String(20))
+    disposition_reason: Mapped[str | None] = mapped_column(String(2000))
+    disposition_deviation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("qms.deviation_record.id")
+    )
+    disposition_decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("iam.users.id")
+    )
+    disposition_decided_at: Mapped[datetime | None] = mapped_column()
+    disposition_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
 
 class MaterialContainer(Base):
