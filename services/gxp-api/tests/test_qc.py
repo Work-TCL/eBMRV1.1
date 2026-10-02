@@ -86,7 +86,7 @@ async def _author_and_release_rule(client, admin_token, db, *, rule_id, expressi
     return rule_object_id
 
 
-async def _create_and_release_spec(client, admin_token, product_version_id, acceptance_rule_id=None, code="SPEC-1"):
+async def _create_and_release_spec(client, admin_token, product_version_id, acceptance_rule_id=None, code="SPEC-1", max_retests=None):
     resp = await client.post(
         "/qc/v1/specifications/drafts",
         json={
@@ -95,7 +95,7 @@ async def _create_and_release_spec(client, admin_token, product_version_id, acce
             "test_definitions": [{
                 "test_code": "ASSAY", "test_name": "Assay", "result_data_type": "numeric_single",
                 "uom": "mg", "acceptance_rule_business_id": acceptance_rule_id, "required": True,
-                "release_blocking": True,
+                "release_blocking": True, "max_retests": max_retests,
             }],
         },
         headers=auth_headers(admin_token),

@@ -4855,9 +4855,43 @@ addendum), OOS-FR-023 (OOS reopen specifically -- see the two blockers above), O
 wiring for OOS/OOT), `RETEST_LIMIT_REACHED` (no numeric policy value exists to enforce).
 
 ```yaml
-resolution_document: "OOT-FR-006 release-blocking: services/gxp-api/app/modules/release/service.py, app/modules/qa_review/service.py. Reopen/dashboard/export: app/modules/qc/models.py (OotRecord.reopen_history), app/modules/qc/commands.py (reopen_oot), app/modules/qc/router.py (reopen/dashboard/export x4), migrations/versions/b7c9d1e3f5a7_0121_oot_record_reopen_history.py, scripts/seed.py + tests/conftest.py (oot_record.reopen permission). OOS reopen NOT built (schema-frozen + ambiguous landing state, see update). Still open: OOS-FR-020/021 (CAPA/Change-Control link), OOS-FR-023 (OOS reopen), OOS-FR-027 (QA-review wiring), RETEST_LIMIT_REACHED."
-status: PARTIALLY_RESOLVED  # OOT blocking + OOT reopen/dashboard/export + OOS dashboard/export done 2026-09-23; OOS reopen, CAPA/Change-Control link, QA-review wiring, retest limit remain open
+resolution_document: "OOT-FR-006 release-blocking: services/gxp-api/app/modules/release/service.py, app/modules/qa_review/service.py. Reopen/dashboard/export: app/modules/qc/models.py (OotRecord.reopen_history), app/modules/qc/commands.py (reopen_oot), app/modules/qc/router.py (reopen/dashboard/export x4), migrations/versions/b7c9d1e3f5a7_0121_oot_record_reopen_history.py, scripts/seed.py + tests/conftest.py (oot_record.reopen permission). OOS reopen/CAPA-link/retest-limit RESOLVED_APPROVED 2026-10-02 via Client_Decisions_Neededanswers Topic 3 (see note below). Still open: OOS-FR-027 (QA-review wiring)."
+status: RESOLVED_APPROVED  # OOT blocking + OOT reopen/dashboard/export + OOS dashboard/export done 2026-09-23; OOS reopen/CAPA-Change-Control-link/retest-limit resolved 2026-10-02; only OOS-FR-027 (QA-review-package wiring) remains open, tracked separately, not blocking
 ```
+
+**OOS-FR-023/020/021/retest-limit RESOLVED_APPROVED 2026-10-02, project-owner-directed via client
+decision document, Topic 3.** The two blockers this entry identified above (DDL-frozen schema; no
+Document-25-defined landing state) are both settled directly by the client's own answers, not guessed:
+
+1. **Schema freeze**: the client's Q4/Q5 answers are themselves the authorization to extend
+   `oos_record` beyond its originally-frozen 17 columns -- the same "project-owner-directed addition"
+   precedent used throughout this codebase (e.g. `OotRecord.reopen_history` itself, SG-074's own prior
+   update above). Migration 0127 adds `reopen_history` (mirroring `OotRecord`/`CapaRecord` exactly) and
+   `change_control_id`.
+2. **Landing-state ambiguity (OOS-FR-023)**: Q4 says "return to the appropriate investigation step" --
+   read as a deliberate instruction to let the reopener choose, not a single always-right answer to
+   guess. `reopen_oos()` takes a `target_state`, validated against `OOS_REOPEN_TARGET_STATES =
+   ("lab_investigation", "qa_review", "extended_investigation", "final_disposition")` -- every real
+   pre-approval investigation stage, excluding `qa_approval`/`closed` (approval-only, not an
+   investigation step to "redo"). Unsigned/RBAC-gated only (`oos_record.reopen`, QA Releaser), no
+   independence check -- same precedent as `reopen_oot`/`reopen_capa`, neither of which has one either.
+3. **OOS-FR-020/021 (CAPA/Change Control link)**: the OOS->CAPA direction needed no schema change at
+   all -- `CapaRecord.source_type=="oos"/source_id` (CAPA-FR-001, already built) already covers it; a
+   new `get_oos_linked_capas()` read-only reverse query exposes it on the OOS detail endpoint. The
+   OOS->ChangeControl direction uses the new `change_control_id` column, set via a new
+   `link_oos_change_control()` command (RBAC-gated only -- Q5 said "linkable... when applicable," not a
+   quality decision requiring its own signature; granted to QA Reviewer and QA Releaser).
+4. **`RETEST_LIMIT_REACHED`**: Q6 names the governing policy value directly -- "the applicable test
+   procedure/SOP" -- resolved as `max_retests` on `QcTestDefinition` (migration 0127), enforced in
+   `authorize_retest_plan()` against the running total of all `OosRetestPlan.number_of_retests` already
+   authorized for the OOS (not just the new plan), consistent with "should not be unlimited." `None` =
+   no configured cap, so every pre-existing spec/test with no `max_retests` set is unaffected.
+
+Verified: 30/30 (`test_qc_oos.py` -- 8 new tests covering reopen success/invalid-target/RBAC-denial,
+CAPA-link read, Change-Control link success/404, and retest-cap success-then-exceeded; `test_qc.py`
+unaffected). Frontend: `/quality/oos/[id]` gets a Reopen button + modal (target-state picker), a Link
+Change Control action, a Linked CAPAs tab, and a reopen-history panel, mirroring the OOT page's own
+reopen UI; `tsc`/`eslint` clean.
 
 ### SG-075 — `material_lot`'s existing `disposition` signature policy row does not match Document 106 rows 44/45 for the same aggregate
 

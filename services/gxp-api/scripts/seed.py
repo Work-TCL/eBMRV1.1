@@ -187,6 +187,12 @@ PERMISSION_CATALOG = [
     ("oos_record.close", "close", "oos_record", "Close an OOS record (Document 25)"),
     ("oot_record.close", "close", "oot_record", "Close an OOT record (Document 25)"),
     ("oot_record.reopen", "reopen", "oot_record", "Reopen a closed OOT record (Document 25, SG-074 Task 3)"),
+    # Client Topic 3 fix (2026-10-02, project-owner-directed): closes SG-074's remaining "reopen a
+    # closed OOS" and "link OOS to a Change Control" gaps. Same role as oot_record.reopen for the
+    # former (QA Releaser); the link is lower-stakes (not itself a quality decision) so also granted
+    # to QA Reviewer, who already drives the investigation day to day.
+    ("oos_record.reopen", "reopen", "oos_record", "Reopen a closed OOS record (Document 25, Client Topic 3 fix)"),
+    ("oos_record.link_change_control", "link_change_control", "oos_record", "Link an OOS investigation to a Change Control record (Client Topic 3 fix)"),
     ("material_receipt.create", "create", "material_receipt", "Create a material receipt (Document 19)"),
     ("material_receipt.examine", "examine", "material_receipt", "Visual examination / identity check of a material receipt (Document 19)"),
     # Client Topic 4/15 fix (2026-10-02, project-owner-directed): list_material_receipts/get_receipt had
@@ -761,7 +767,7 @@ ROLE_PERMISSIONS = {
         "packaging.execute", "supplier_qualification.approve", "supplier.suspend", "supplier.reinstate",
         "qc_test_specification.release", "qc_method.author", "qc_method.release", "qc_method.view",
         "qc_test_order.review", "qc_result.correct", "lims_sample.cancel",
-        "oos_record.extended_investigation", "oos_record.disposition", "oos_record.close", "oot_record.close", "oot_record.reopen",
+        "oos_record.extended_investigation", "oos_record.disposition", "oos_record.close", "oos_record.reopen", "oos_record.link_change_control", "oot_record.close", "oot_record.reopen",
         "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
         "material_lot.collect_sample", "material_lot.release", "material_lot.reject", "material_lot.retest",
         *MATERIAL_VIEW_CODES,
@@ -879,7 +885,7 @@ ROLE_PERMISSIONS = {
         "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
         *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
         "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
-    "QA Reviewer": ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation",
+    "QA Reviewer": ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation", "oos_record.link_change_control",
         # 2026-09-18, project-owner-directed: QC investigation class — mirrors qms_deviation.investigate
         # (also QA Reviewer) plus QC Reviewer since this is QC-domain investigation work.
         "oos_record.lab_investigation", "oos_record.classify_lab_cause", "oos_record.retest_plan",
@@ -899,7 +905,7 @@ ROLE_PERMISSIONS = {
         # code QA Reviewer already holds for the same "view what this role's own actions produce" reason.
         "evidence.download",
         *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
-        "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.plan", "capa.effectiveness", "capa.extend", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "supplier.suspend", "supplier.reinstate", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
+        "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oos_record.reopen", "oos_record.link_change_control", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.plan", "capa.effectiveness", "capa.extend", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "supplier.suspend", "supplier.reinstate", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
     # SG-157 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): closest existing real role to Document
     # 106's "QA Manager/Head of Quality per record class" text for regulatory_report.approve -- QA Releaser
     # is this codebase's actual highest quality-release-authority role (batch/recipe/product release).

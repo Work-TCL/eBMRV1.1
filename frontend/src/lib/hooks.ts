@@ -240,6 +240,8 @@ export function useEntityOptions(): {
    * same policy check each module's own list page already passes). */
   deviations: EntityOption[];
   deviationsStatus: EntityOptionsStatus;
+  changeControls: EntityOption[];
+  changeControlsStatus: EntityOptionsStatus;
   complaints: EntityOption[];
   complaintsStatus: EntityOptionsStatus;
   capas: EntityOption[];
@@ -492,6 +494,13 @@ export function useEntityOptions(): {
     state: string;
   }>("/qms/v1/deviations", (d) => ({ value: d.id, label: `${d.deviation_number} (${d.state})` }));
 
+  // Client_Decisions_Neededanswers Topic 3 Q5: lets an OOS investigation be linked to a Change Control.
+  const { options: changeControls, status: changeControlsStatus } = useListEntityOptions<{
+    id: string;
+    change_number: string;
+    state: string;
+  }>("/qms/v1/changes", (c) => ({ value: c.id, label: `${c.change_number} (${c.state})` }));
+
   const { options: complaints, status: complaintsStatus } = useListEntityOptions<{
     id: string;
     complaint_number: string;
@@ -568,6 +577,7 @@ export function useEntityOptions(): {
     asepticProfiles, asepticProfilesStatus,
     qcSamples, qcSamplesStatus,
     deviations, deviationsStatus,
+    changeControls, changeControlsStatus,
     complaints, complaintsStatus,
     capas, capasStatus,
     nonconformances, nonconformancesStatus,

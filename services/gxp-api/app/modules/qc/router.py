@@ -25,6 +25,7 @@ from app.modules.qc.commands import (
     CreateTestOrderCommand,
     CreateTestSpecificationDraftCommand,
     EvaluateOotCommand,
+    LinkOosChangeControlCommand,
     OpenOosFromResultCommand,
     ReceiveSampleCommand,
     RecordImpactAssessmentCommand,
@@ -33,6 +34,7 @@ from app.modules.qc.commands import (
     RecordResultCommand,
     ReleaseQcMethodVersionCommand,
     ReleaseTestSpecificationCommand,
+    ReopenOosCommand,
     ReopenOotCommand,
     RequestResultCorrectionCommand,
     ReviewTestOrderCommand,
@@ -53,6 +55,8 @@ from app.modules.qc.commands import (
     create_test_order,
     create_test_specification_draft,
     evaluate_oot,
+    get_oos_linked_capas,
+    link_oos_change_control,
     open_oos_from_result,
     receive_sample,
     record_impact_assessment,
@@ -61,6 +65,7 @@ from app.modules.qc.commands import (
     record_result,
     release_qc_method_version,
     release_test_specification,
+    reopen_oos,
     reopen_oot,
     request_result_correction,
     review_test_order,
@@ -910,6 +915,9 @@ async def get_oos_record(
         "version": oos.version,
         "opened_at": oos.opened_at.isoformat() if oos.opened_at else None,
         "closed_at": oos.closed_at.isoformat() if oos.closed_at else None,
+        "change_control_id": str(oos.change_control_id) if oos.change_control_id else None,
+        "reopen_history": oos.reopen_history,
+        "linked_capas": await get_oos_linked_capas(session, oos.id),
         "activities": [
             {
                 "id": str(a.id), "phase": a.phase, "activity_type": a.activity_type,
@@ -1073,6 +1081,32 @@ async def post_close_oos(
         raise ValidationFailedError("oos_id in path and body must match")
     async with session.begin():
         return await close_oos(session, cmd, actor.user_id)
+
+
+@oos_router.post("/oos/v1/{oos_id}/reopen", response_model=MutationReceipt)
+async def post_reopen_oos(
+    oos_id: str,
+    cmd: ReopenOosCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if str(cmd.oos_record_id) != oos_id:
+        raise ValidationFailedError("oos_id in path and body must match")
+    async with session.begin():
+        return await reopen_oos(session, cmd, actor.user_id)
+
+
+@oos_router.post("/oos/v1/{oos_id}/change-control", response_model=MutationReceipt)
+async def post_link_oos_change_control(
+    oos_id: str,
+    cmd: LinkOosChangeControlCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if str(cmd.oos_record_id) != oos_id:
+        raise ValidationFailedError("oos_id in path and body must match")
+    async with session.begin():
+        return await link_oos_change_control(session, cmd, actor.user_id)
 
 
 @oos_router.post("/oot/v1/evaluate", response_model=MutationReceipt)

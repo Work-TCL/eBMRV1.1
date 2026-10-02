@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
@@ -30,6 +30,7 @@ from app.modules.qc.models import (
     QcTestRun,
     QcTestSpecification,
 )
+from app.modules.qms.change_models import ChangeControl
 from app.modules.recipe_master.models import RecipeVersion
 from app.modules.rules import commands as rules_commands
 from app.modules.rules import service as rules_service
@@ -140,6 +141,7 @@ class TestDefinitionInput(BaseModel):
     required: bool = True
     release_blocking: bool = True
     review_policy: str | None = None
+    max_retests: int | None = None
 
 
 class CreateTestSpecificationDraftCommand(CommandEnvelope):
@@ -204,6 +206,7 @@ async def create_test_specification_draft(
                 required=td.required,
                 release_blocking=td.release_blocking,
                 review_policy=td.review_policy,
+                max_retests=td.max_retests,
             )
         )
 
@@ -1716,6 +1719,29 @@ async def authorize_retest_plan(session: AsyncSession, cmd: AuthorizeRetestPlanC
 
     await evaluate_policy(session, actor_user_id, action="oos_record.retest_plan", site_id=oos.site_id)
 
+    # Client_Decisions_Neededanswers Topic 3 Q6 (2026-10-02): "the number of permitted retests should
+    # be defined by the applicable test procedure/SOP and should not be unlimited" -- resolved via the
+    # OOS's own source result -> test order -> test definition (the governing procedure/SOP record).
+    # None = no configured cap on that test, matching this codebase's "captured, not silently capped"
+    # precedent for authored-but-unconfigured policy values.
+    source_result = await session.get(QcResult, oos.source_result_id)
+    definition = await session.get(QcTestOrder, source_result.test_order_id) if source_result else None
+    definition = await session.get(QcTestDefinition, definition.test_definition_id) if definition else None
+    if definition is not None and definition.max_retests is not None:
+        prior_retests = (
+            await session.execute(
+                select(func.coalesce(func.sum(OosRetestPlan.number_of_retests), 0)).where(
+                    OosRetestPlan.oos_record_id == oos.id
+                )
+            )
+        ).scalar_one()
+        if prior_retests + cmd.number_of_retests > definition.max_retests:
+            raise RetestNotAuthorizedError(
+                "Retest plan would exceed the test procedure's maximum permitted retests",
+                max_retests=definition.max_retests, already_authorized=prior_retests,
+                requested=cmd.number_of_retests,
+            )
+
     plan = OosRetestPlan(
         oos_record_id=oos.id, justification=cmd.justification, number_of_retests=cmd.number_of_retests,
         method_ref=cmd.method_ref, analyst_criteria=cmd.analyst_criteria, instrument_criteria=cmd.instrument_criteria,
@@ -2013,6 +2039,157 @@ async def close_oos(session: AsyncSession, cmd: CloseOosCommand, actor_user_id: 
         command_id=receipt.id, aggregate_id=oos.id, resulting_version=oos.version,
         audit_event_id=audit_event.id, signature_id=signature_id, correlation_id=correlation_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# ReopenOos / LinkOosChangeControl -- Client_Decisions_Neededanswers Topic 3 Q4/Q5 (2026-10-02,
+# project-owner-directed): closes SG-074's "reopen" and "CAPA/Change Control link" gaps. Reopen is
+# unsigned/RBAC-gated only, same precedent as reopen_oot/reopen_capa (neither has a Document 106 row
+# either); no independence check either, matching those two. Q4's "the appropriate investigation step"
+# is a caller-chosen target (bounded to a validated set of real pre-approval states), not a single
+# hardcoded landing point this pass would otherwise have to guess.
+# ---------------------------------------------------------------------------
+
+
+OOS_REOPEN_TARGET_STATES = ("lab_investigation", "qa_review", "extended_investigation", "final_disposition")
+
+
+class ReopenOosCommand(CommandEnvelope):
+    oos_record_id: uuid.UUID
+    expected_version: int
+    reason: str
+    new_evidence: str
+    target_state: str  # one of OOS_REOPEN_TARGET_STATES
+
+
+async def reopen_oos(session: AsyncSession, cmd: ReopenOosCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(select(OosRecord).where(OosRecord.id == cmd.oos_record_id).with_for_update())
+    oos = result.scalar_one_or_none()
+    if oos is None:
+        raise NotFoundError("OOS record not found")
+    if oos.version != cmd.expected_version:
+        raise StaleVersionError(
+            "OOS record was modified since it was read",
+            expected_version=cmd.expected_version, current_version=oos.version,
+        )
+    if oos.state != "closed":
+        raise InvalidTransitionError("Only a closed OOS record can be reopened", current_status=oos.state)
+    if cmd.target_state not in OOS_REOPEN_TARGET_STATES:
+        raise ValidationFailedError(
+            "target_state must be one of the OOS investigation's own pre-approval states",
+            allowed=list(OOS_REOPEN_TARGET_STATES),
+        )
+    if not cmd.reason.strip() or not cmd.new_evidence.strip():
+        raise ValidationFailedError("reason and new_evidence are required to reopen a closed OOS record")
+
+    await evaluate_policy(session, actor_user_id, action="oos_record.reopen", site_id=oos.site_id)
+
+    old_state = oos.state
+    oos.reopen_history = [
+        *oos.reopen_history,
+        {
+            "previous_closed_at": oos.closed_at.isoformat() if oos.closed_at else None,
+            "target_state": cmd.target_state, "reason": cmd.reason, "new_evidence": cmd.new_evidence,
+            "reopened_by": str(actor_user_id), "reopened_at": datetime.now(timezone.utc).isoformat(),
+        },
+    ]
+    oos.state = cmd.target_state
+    oos.closed_at = None
+    oos.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=oos.site_id, aggregate_type="oos_record", aggregate_id=oos.id, aggregate_version=oos.version,
+        action="Changed", actor_id=actor_user_id, correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"state": old_state}, new_value={"state": oos.state},
+    )
+    await write_outbox_event(
+        session, event_type="OOSReopened", aggregate_type="oos_record", aggregate_id=oos.id,
+        aggregate_version=oos.version, payload={"id": str(oos.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=oos.site_id, command_type="ReopenOos", aggregate_type="oos_record", aggregate_id=oos.id,
+        expected_version=cmd.expected_version, resulting_version=oos.version, idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash, actor_user_id=actor_user_id, payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=oos.id, resulting_version=oos.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+class LinkOosChangeControlCommand(CommandEnvelope):
+    oos_record_id: uuid.UUID
+    expected_version: int
+    change_control_id: uuid.UUID
+
+
+async def link_oos_change_control(
+    session: AsyncSession, cmd: LinkOosChangeControlCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(select(OosRecord).where(OosRecord.id == cmd.oos_record_id).with_for_update())
+    oos = result.scalar_one_or_none()
+    if oos is None:
+        raise NotFoundError("OOS record not found")
+    if oos.version != cmd.expected_version:
+        raise StaleVersionError(
+            "OOS record was modified since it was read",
+            expected_version=cmd.expected_version, current_version=oos.version,
+        )
+    if (await session.get(ChangeControl, cmd.change_control_id)) is None:
+        raise NotFoundError("Change control record not found", change_control_id=str(cmd.change_control_id))
+
+    await evaluate_policy(session, actor_user_id, action="oos_record.link_change_control", site_id=oos.site_id)
+
+    old_change_control_id = oos.change_control_id
+    oos.change_control_id = cmd.change_control_id
+    oos.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=oos.site_id, aggregate_type="oos_record", aggregate_id=oos.id, aggregate_version=oos.version,
+        action="Changed", actor_id=actor_user_id, correlation_id=correlation_id,
+        old_value={"change_control_id": str(old_change_control_id) if old_change_control_id else None},
+        new_value={"change_control_id": str(cmd.change_control_id)},
+    )
+    await write_outbox_event(
+        session, event_type="OOSChangeControlLinked", aggregate_type="oos_record", aggregate_id=oos.id,
+        aggregate_version=oos.version, payload={"id": str(oos.id), "change_control_id": str(cmd.change_control_id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=oos.site_id, command_type="LinkOosChangeControl", aggregate_type="oos_record",
+        aggregate_id=oos.id, expected_version=cmd.expected_version, resulting_version=oos.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=oos.id, resulting_version=oos.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+async def get_oos_linked_capas(session: AsyncSession, oos_record_id: uuid.UUID) -> list[dict]:
+    """Q5's OOS->CAPA direction needs no new column: CapaRecord.source_type=='oos'/source_id already
+    covers it (app/modules/qms/capa_models.py). A reverse query, not a stored link."""
+    from app.modules.qms.capa_models import CapaRecord
+
+    rows = (
+        await session.execute(
+            select(CapaRecord).where(CapaRecord.source_type == "oos", CapaRecord.source_id == oos_record_id)
+        )
+    ).scalars().all()
+    return [{"id": str(c.id), "capa_number": c.capa_number, "state": c.state} for c in rows]
 
 
 # ---------------------------------------------------------------------------

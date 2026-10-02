@@ -123,6 +123,10 @@ class QcTestDefinition(Base):
     required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     release_blocking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     review_policy: Mapped[str | None] = mapped_column(String(80))
+    # Client_Decisions_Neededanswers Topic 3 Q6 (2026-10-02, migration 0127): "the number of permitted
+    # retests should be defined by the applicable test procedure/SOP" -- this is that procedure/SOP
+    # entity. None = no configured cap (authorize_retest_plan does not enforce a limit).
+    max_retests: Mapped[int | None] = mapped_column()
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -277,6 +281,14 @@ class OosRecord(Base):
     root_cause_code: Mapped[str | None] = mapped_column(String(100))
     opened_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()
+    # Client_Decisions_Neededanswers Topic 3 (2026-10-02, migration 0127): closes the two still-open
+    # halves of SG-074. reopen_history mirrors OotRecord.reopen_history/CapaRecord.reopen_history
+    # exactly. change_control_id is the OOS->ChangeControl direction of Q5's link (the OOS->CAPA
+    # direction needs no new column -- CapaRecord.source_type=="oos"/source_id already covers it).
+    reopen_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    change_control_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("qms.change_control.id")
+    )
 
 
 class OosInvestigationActivity(Base):

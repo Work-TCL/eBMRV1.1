@@ -6,22 +6,27 @@ import {
   canInvestigateOos,
   canExtendOos,
   canDispositionOos,
+  hasPermission,
   formatDateTime,
   newIdempotencyKey,
   type MutationReceipt,
 } from "@/lib/api";
-import { useApiResource, useMe } from "@/lib/hooks";
-import { RecordDetailShell } from "@/components/shared/RecordDetailShell";
+import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
+import { RecordDetailShell, useCommand } from "@/components/shared/RecordDetailShell";
 import { WorkflowActionButton } from "@/components/shared/WorkflowActionButton";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Tabs } from "@/components/ui/Tabs";
 import { Table } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { WorkflowStatePill, SeverityPill } from "@/components/ui/StatePill";
+import { HistoryPanel } from "@/components/ui/JsonPanel";
 
 interface OosActivity {
   id: string;
@@ -58,6 +63,11 @@ interface OosResamplePlan {
   version: number;
   created_at: string | null;
 }
+interface OosLinkedCapa {
+  id: string;
+  capa_number: string;
+  state: string;
+}
 
 // GET /quality/oos/v1/{id} — app/modules/qc/router.py::get_oos_record
 interface OosDetail {
@@ -77,6 +87,9 @@ interface OosDetail {
   version: number;
   opened_at: string | null;
   closed_at: string | null;
+  change_control_id: string | null;
+  reopen_history: Record<string, unknown>[];
+  linked_capas: OosLinkedCapa[];
   activities: OosActivity[];
   retest_plans: OosRetestPlan[];
   resample_plans: OosResamplePlan[];
@@ -99,8 +112,10 @@ const SIGNED_ALLOWED_FROM: Record<string, SignedAction[]> = {
   final_disposition: ["disposition"],
   qa_approval: ["close"],
 };
-// "closed" is terminal — OOS has no reopen in this build (SG-074's own register entry: oos_record's
-// DDL-frozen schema has no reopen_history column, unlike OOT's flat open/closed model).
+// Client_Decisions_Neededanswers Topic 3 Q4: "closed" is no longer a dead end — reopen_oos()
+// (app/modules/qc/commands.py) lands back on one of OOS_REOPEN_TARGET_STATES below, caller-chosen
+// per investigation rather than one hardcoded target.
+const OOS_REOPEN_TARGET_STATES = ["lab_investigation", "qa_review", "extended_investigation", "final_disposition"] as const;
 
 const SIGNED_LABEL: Record<SignedAction, string> = {
   extended_investigation: "Start extended investigation",
@@ -115,12 +130,15 @@ export default function OosDetailPage({ params }: { params: Promise<{ id: string
   const [sig, setSig] = useState<SignedAction | null>(null);
   const [dispositionClass, setDispositionClass] = useState("");
   const [extNotes, setExtNotes] = useState("");
+  const [reopening, setReopening] = useState(false);
 
   const unsignedAllowed = data ? UNSIGNED_ALLOWED_FROM[data.state] ?? [] : [];
   const signedAllowed = data ? SIGNED_ALLOWED_FROM[data.state] ?? [] : [];
   const investigate = canInvestigateOos(me);
   const extend = canExtendOos(me);
   const disposition = canDispositionOos(me);
+  const canReopen = hasPermission(me, "oos_record.reopen") && data?.state === "closed";
+  const canLinkChangeControl = hasPermission(me, "oos_record.link_change_control");
 
   return (
     <RecordDetailShell
@@ -160,6 +178,12 @@ export default function OosDetailPage({ params }: { params: Promise<{ id: string
                 <Icon name="pen" /> {SIGNED_LABEL.close}
               </Button>
             )}
+            {canReopen && (
+              <Button variant="secondary" onClick={() => setReopening(true)}>
+                Reopen
+              </Button>
+            )}
+            {canLinkChangeControl && <LinkChangeControlButton oos={data} onDone={reload} />}
           </>
         )
       }
@@ -178,6 +202,7 @@ export default function OosDetailPage({ params }: { params: Promise<{ id: string
             <IdFact label="Source result" value={data.source_result_id} />
             {data.batch_id && <IdFact label="Batch" value={data.batch_id} />}
             {data.material_lot_id && <IdFact label="Material lot" value={data.material_lot_id} />}
+            {data.change_control_id && <IdFact label="Linked change control" value={data.change_control_id} />}
           </>
         )
       }
@@ -203,9 +228,17 @@ export default function OosDetailPage({ params }: { params: Promise<{ id: string
               badge: data.resample_plans.length || undefined,
               content: <ResampleTab plans={data.resample_plans} />,
             },
+            {
+              id: "capas",
+              label: "Linked CAPAs",
+              badge: data.linked_capas.length || undefined,
+              content: <LinkedCapasTab capas={data.linked_capas} />,
+            },
           ]}
         />
       )}
+
+      {data && data.reopen_history.length > 0 && <HistoryPanel title="Reopens" entries={data.reopen_history} />}
 
       {data && sig === "extended_investigation" && (
         <SignatureCeremony
@@ -298,7 +331,120 @@ export default function OosDetailPage({ params }: { params: Promise<{ id: string
           }
         />
       )}
+
+      {data && reopening && (
+        <ReopenOosModal oos={data} onClose={() => setReopening(false)} onDone={() => { setReopening(false); reload(); }} />
+      )}
     </RecordDetailShell>
+  );
+}
+
+function ReopenOosModal({ oos, onClose, onDone }: { oos: OosDetail; onClose: () => void; onDone: () => void }) {
+  const { busy, error, run } = useCommand(onDone);
+  const [reason, setReason] = useState("");
+  const [newEvidence, setNewEvidence] = useState("");
+  const [targetState, setTargetState] = useState<string>(OOS_REOPEN_TARGET_STATES[2]);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    run(() =>
+      api.post(`/quality/oos/v1/${oos.id}/reopen`, {
+        idempotency_key: newIdempotencyKey(),
+        oos_record_id: oos.id,
+        expected_version: oos.version,
+        reason,
+        new_evidence: newEvidence,
+        target_state: targetState,
+      })
+    );
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Reopen OOS - ${oos.oos_number}`}>
+      <form onSubmit={submit}>
+        <Field label="Return to investigation step" required hint="The step appropriate for reviewing the new evidence.">
+          <Select value={targetState} onChange={(e) => setTargetState(e.target.value)}>
+            {OOS_REOPEN_TARGET_STATES.map((s) => (
+              <option key={s} value={s}>
+                {s.replace(/_/g, " ")}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Reason" required>
+          <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} required />
+        </Field>
+        <Field label="New evidence" required>
+          <textarea className="input" rows={2} value={newEvidence} onChange={(e) => setNewEvidence(e.target.value)} required />
+        </Field>
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !reason.trim() || !newEvidence.trim()}>
+            {busy ? "Reopening…" : "Reopen"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function LinkChangeControlButton({ oos, onDone }: { oos: OosDetail; onDone: () => void }) {
+  const entities = useEntityOptions();
+  const [changeControlId, setChangeControlId] = useState("");
+  return (
+    <WorkflowActionButton
+      label="Link change control"
+      variant="ghost"
+      title={`Link to Change Control - ${oos.oos_number}`}
+      summary="Links this OOS investigation to a related Change Control record (Client Topic 3 Q5)."
+      confirmLabel="Link"
+      disabled={!changeControlId}
+      onDone={onDone}
+      extraFields={
+        <EntityPickerField
+          label="Change control" required
+          value={changeControlId} onChange={setChangeControlId}
+          options={entities.changeControls} status={entities.changeControlsStatus} kind="change control"
+        />
+      }
+      onConfirm={() =>
+        api.post(`/quality/oos/v1/${oos.id}/change-control`, {
+          idempotency_key: newIdempotencyKey(),
+          oos_record_id: oos.id,
+          expected_version: oos.version,
+          change_control_id: changeControlId,
+        })
+      }
+    />
+  );
+}
+
+function LinkedCapasTab({ capas }: { capas: OosLinkedCapa[] }) {
+  if (capas.length === 0) {
+    return <p className="hint">No CAPA currently names this OOS as its source.</p>;
+  }
+  return (
+    <Table>
+      <thead>
+        <tr>
+          <th>CAPA</th>
+          <th>State</th>
+        </tr>
+      </thead>
+      <tbody>
+        {capas.map((c) => (
+          <tr key={c.id}>
+            <td className="fs-2">{c.capa_number}</td>
+            <td>
+              <WorkflowStatePill state={c.state} />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
   );
 }
 

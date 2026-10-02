@@ -870,3 +870,283 @@ async def test_oos_and_oot_dashboard_and_export(client, seeded, db):
 
     oos_list = (await client.get("/quality/oos/v1", headers=auth_headers(admin_token))).json()
     assert "items" in oos_list and "total" in oos_list
+
+
+# --- Client_Decisions_Neededanswers Topic 3: reopen, CAPA/Change-Control link, retest cap ------------
+
+
+async def _oos_to_extended_investigation(client, db, seeded, tag, max_retests=None):
+    """Mirrors test_full_oos_flow_no_assignable_cause's setup exactly, through the signed
+    extended-investigation transition, parameterized so a retest-cap test can set max_retests on the
+    governing QcTestDefinition. Returns (oos_id, definition_id, qa_reviewer_token, qa_releaser_token)."""
+    op_token = await login(client, "operator1")
+    qa_releaser_token = await login(client, "qa.releaser")
+    qa_reviewer_token = await login(client, "qa.reviewer")
+
+    async with db.begin():
+        product_version = await _seed_product_version(db, seeded, code=f"OOS-PROD-{tag}")
+        await _make_admin(db, seeded, f"admin.oos.{tag}")
+        await _make_user(db, seeded, f"qa.reviewer.oos.{tag}", "QA Reviewer")
+    admin_token = await login(client, f"admin.oos.{tag}")
+    qa_reviewer2_token = await login(client, f"qa.reviewer.oos.{tag}")
+
+    await _author_and_release_rule(
+        client, admin_token, db, rule_id=f"qc-acceptance:oos-{tag}",
+        expression_ast={"op": "lte", "args": [{"var": "value"}, "10.0"]},
+    )
+    spec_id = await _create_and_release_spec(
+        client, qa_releaser_token, product_version.id, acceptance_rule_id=f"qc-acceptance:oos-{tag}",
+        code=f"OOS-SPEC-{tag}", max_retests=max_retests,
+    )
+    definition_id = str(
+        (await db.execute(select(QcTestDefinition.id).where(QcTestDefinition.specification_id == spec_id))).scalars().first()
+    )
+
+    sample_id = (
+        await client.post(
+            "/qc/v1/samples",
+            json={"idempotency_key": idem(), "sample_number": f"OOS-SAMPLE-{tag}", "sample_type": "finished_product", "source_type": "reserve"},
+            headers=auth_headers(op_token),
+        )
+    ).json()["aggregate_id"]
+    await client.post(
+        f"/qc/v1/samples/{sample_id}/receive",
+        json={"idempotency_key": idem(), "sample_id": sample_id, "expected_version": 1},
+        headers=auth_headers(op_token),
+    )
+    order_id = (
+        await client.post(
+            "/qc/v1/test-orders",
+            json={"idempotency_key": idem(), "sample_id": sample_id, "test_definition_id": definition_id},
+            headers=auth_headers(op_token),
+        )
+    ).json()["aggregate_id"]
+    await client.post(
+        f"/qc/v1/test-orders/{order_id}/start",
+        json={"idempotency_key": idem(), "test_order_id": order_id, "expected_version": 1},
+        headers=auth_headers(op_token),
+    )
+    run_id = (
+        await client.post(
+            f"/qc/v1/test-orders/{order_id}/raw-data",
+            json={"idempotency_key": idem(), "test_order_id": order_id},
+            headers=auth_headers(op_token),
+        )
+    ).json()["aggregate_id"]
+    result_id = (
+        await client.post(
+            f"/qc/v1/test-orders/{order_id}/results",
+            json={
+                "idempotency_key": idem(), "test_order_id": order_id, "test_run_id": run_id,
+                "result_type": "numeric_single", "value_decimal": "99.000000000000",
+            },
+            headers=auth_headers(op_token),
+        )
+    ).json()["aggregate_id"]
+
+    oos_id = (
+        await client.post(
+            f"/quality/oos/v1/from-result/{result_id}",
+            json={"idempotency_key": idem(), "source_result_id": result_id, "oos_number": f"OOS-{tag}"},
+            headers=auth_headers(op_token),
+        )
+    ).json()["aggregate_id"]
+
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/lab-investigation",
+        json={
+            "idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 1,
+            "activity_type": "checklist_review", "response_text": "No obvious analyst/instrument error found",
+        },
+        headers=auth_headers(qa_reviewer_token),
+    )
+    assert resp.status_code == 200, resp.text
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/classify-lab-cause",
+        json={"idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 2, "assignable": False},
+        headers=auth_headers(qa_reviewer_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    challenge = (
+        await client.post(f"/quality/oos/v1/{oos_id}/signature-challenges", json={"action": "extended_investigation"}, headers=auth_headers(qa_reviewer2_token))
+    ).json()
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/extended-investigation",
+        json={
+            "idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 3,
+            "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_reviewer2_token),
+    )
+    assert resp.status_code == 200, resp.text
+    return oos_id, definition_id, qa_reviewer_token, qa_releaser_token
+
+
+async def _oos_to_closed(client, db, seeded, tag):
+    """Extends _oos_to_extended_investigation through disposition + close -- returns oos_id."""
+    oos_id, _definition_id, qa_reviewer_token, qa_releaser_token = await _oos_to_extended_investigation(client, db, seeded, tag)
+
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/impact",
+        json={
+            "idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 4,
+            "impact_text": "No confirmed impact to other batches", "hold_status": "hold",
+        },
+        headers=auth_headers(qa_reviewer_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    disp_challenge = (
+        await client.post(f"/quality/oos/v1/{oos_id}/signature-challenges", json={"action": "disposition"}, headers=auth_headers(qa_releaser_token))
+    ).json()
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/disposition",
+        json={
+            "idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 5,
+            "final_classification": "laboratory_error", "challenge_id": disp_challenge["challenge_id"],
+            "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_releaser_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    close_challenge = (
+        await client.post(f"/quality/oos/v1/{oos_id}/signature-challenges", json={"action": "close"}, headers=auth_headers(qa_releaser_token))
+    ).json()
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/close",
+        json={
+            "idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 6,
+            "challenge_id": close_challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_releaser_token),
+    )
+    assert resp.status_code == 200, resp.text
+    return oos_id, qa_releaser_token
+
+
+async def test_reopen_closed_oos_record(client, seeded, db):
+    oos_id, qa_releaser_token = await _oos_to_closed(client, db, seeded, "reopen1")
+
+    oos = await db.get(OosRecord, oos_id)
+    assert oos.state == "closed"
+    assert oos.version == 7
+
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/reopen",
+        json={
+            "idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 7,
+            "reason": "New stability data suggests the original root cause assessment was wrong",
+            "new_evidence": "Stability report STB-2026-044 dated after closure",
+            "target_state": "extended_investigation",
+        },
+        headers=auth_headers(qa_releaser_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    await db.refresh(oos)
+    assert oos.state == "extended_investigation"
+    assert oos.closed_at is None
+    assert len(oos.reopen_history) == 1
+    assert oos.reopen_history[0]["target_state"] == "extended_investigation"
+
+    record = (await client.get(f"/quality/oos/v1/{oos_id}", headers=auth_headers(qa_releaser_token))).json()
+    assert record["state"] == "extended_investigation"
+    assert len(record["reopen_history"]) == 1
+
+
+async def test_reopen_oos_invalid_target_state_rejected(client, seeded, db):
+    oos_id, qa_releaser_token = await _oos_to_closed(client, db, seeded, "reopen2")
+
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/reopen",
+        json={
+            "idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 7,
+            "reason": "x", "new_evidence": "y", "target_state": "closed",
+        },
+        headers=auth_headers(qa_releaser_token),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_reopen_oos_requires_permission(client, seeded, db):
+    oos_id, _qa_releaser_token = await _oos_to_closed(client, db, seeded, "reopen3")
+    op_token = await login(client, "operator1")
+
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/reopen",
+        json={
+            "idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 7,
+            "reason": "x", "new_evidence": "y", "target_state": "extended_investigation",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+
+async def test_link_oos_to_change_control(client, seeded, db):
+    from app.modules.qms.change_models import ChangeControl
+
+    oos_id, _definition_id, qa_reviewer_token, _qa_releaser_token = await _oos_to_extended_investigation(client, db, seeded, "cc1")
+
+    cc = ChangeControl(
+        site_id=seeded["site_id"], change_number="CC-OOS-1", change_type="process", classification="minor",
+        current_state={"note": "as-is"}, proposed_state={"note": "proposed"}, reason="Linked from OOS investigation",
+        owner_subject_id=seeded["users"]["qa.reviewer"].id,
+    )
+    db.add(cc)
+    await db.commit()
+
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/change-control",
+        json={"idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 4, "change_control_id": str(cc.id)},
+        headers=auth_headers(qa_reviewer_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    record = (await client.get(f"/quality/oos/v1/{oos_id}", headers=auth_headers(qa_reviewer_token))).json()
+    assert record["change_control_id"] == str(cc.id)
+
+
+async def test_link_oos_to_nonexistent_change_control_not_found(client, seeded, db):
+    oos_id, _definition_id, qa_reviewer_token, _qa_releaser_token = await _oos_to_extended_investigation(client, db, seeded, "cc2")
+
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/change-control",
+        json={"idempotency_key": idem(), "oos_record_id": oos_id, "expected_version": 4, "change_control_id": str(uuid.uuid4())},
+        headers=auth_headers(qa_reviewer_token),
+    )
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "NOT_FOUND"
+
+
+async def test_retest_plan_within_cap_succeeds_then_exceeding_cap_rejected(client, seeded, db):
+    oos_id, _definition_id, qa_reviewer_token, _qa_releaser_token = await _oos_to_extended_investigation(
+        client, db, seeded, "cap1", max_retests=2
+    )
+
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/retest-plans",
+        json={
+            "idempotency_key": idem(), "oos_record_id": oos_id, "justification": "Confirm assay via retest",
+            "number_of_retests": 2, "method_ref": "HPLC-1",
+        },
+        headers=auth_headers(qa_reviewer_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.post(
+        f"/quality/oos/v1/{oos_id}/retest-plans",
+        json={
+            "idempotency_key": idem(), "oos_record_id": oos_id, "justification": "One more retest needed",
+            "number_of_retests": 1,
+        },
+        headers=auth_headers(qa_reviewer_token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "RETEST_NOT_AUTHORIZED"
+    assert resp.json()["details"]["max_retests"] == 2
+    assert resp.json()["details"]["already_authorized"] == 2
