@@ -917,7 +917,7 @@ ROLE_PERMISSIONS = {
         # signer class for `quality_metric_snapshot/management_review` -> this role holds it.
         "quality_metric.management_review",
         "effectiveness_check.create", "ai_governance.use_case.register", "ai_governance.use_case.assess_risk", "ai_governance.context.build", "ai_governance.advisory.execute", "ai_governance.disposition.record", "ai_governance.evaluation.run", "ai_governance.release_gate.evaluate", "ai_governance.injection.detect", "validation.gate.view", "validation.package.view", "validation.function_risk.approve", "validation.function_risk.view", "validation.traceability.view", "validation.oq.view", "validation.security.view", "validation.performance.view", "validation.exception.view", "validation.periodic_review.decide", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"],
-    "QA Releaser": ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "rules.release", "product.view", "product.release", "product.suspend", "material_spec.view", "material_spec.release", "recipe.view", "recipe.release", "recipe.suspend", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view",
+    "QA Releaser": ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "rules.release", "product.view", "product.release", "product.suspend", "material_spec.view", "material_spec.release", "recipe.view", "recipe.release", "recipe.suspend", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "ddcp_profile.release",
         # Bug fix (2026-09-29): QA Releaser is the sole designated signer of batch.record_export
         # (SIGNATURE_POLICY_FLOOR below, "batch"/"record_export") -- the action that creates the batch
         # record PDF as an evidence object -- but held no evidence.* permission at all, so nobody could
@@ -992,7 +992,12 @@ ROLE_PERMISSIONS = {
     # product.view is required to browse the Product Master picker (GET /products/v1/business-ids)
     # that every DDCP profile-creation form's "Product (Product Master)" field depends on -- without
     # it the field 403s and silently falls back to raw product_version_id text entry.
-    "DDCP Engineer": ["ddcp_profile.author", "ddcp_profile.release", "product.view"],
+    # Client Topic 12 fix (2026-10-03, project-owner-directed): release was wrongly left on the authoring
+    # role -- the client's own answer names "an authorized Quality/QA person or designated qualified
+    # approver" for profile release specifically, the same author!=releaser split already established for
+    # product_version/recipe_version (Process Engineer authors, QA Releaser releases). DDCP Engineer keeps
+    # only ddcp_profile.author; release moves to QA Releaser below.
+    "DDCP Engineer": ["ddcp_profile.author", "product.view"],
     "DDCP Operator": [
         "ddcp_constituent.handoff", "ddcp_constituent.decide", "ddcp_fill.start", "ddcp_fill.record_ipc",
         "ddcp_fill.record_count", "ddcp_fill.record_intervention", "ddcp_fill.complete", "ddcp_device.assemble",
@@ -1362,12 +1367,16 @@ SIGNATURE_POLICY_FLOOR = [
     # WP-08 (Document 54, SPEC-DDCP-001) -- SG-148 Client Topic 12 (project-owner-directed): Document 106
     # has zero rows for any SPEC-DDCP-00x action, so the client's own answer is the authorization to add
     # real signature policy rows here (same "client answer is the authorization" precedent used for
-    # SG-212/SG-076/SG-074/SG-084/SG-083/SG-061 this session). `release` stays RBAC-only (gated on
-    # "DDCP Engineer" at the router, same as before) since no independent role pair was asked for there;
-    # the three execution-time actions require the signing user to hold "DDCP Operator" (role resolved
-    # in `ddcp.commands._resolve_signature`, mirroring `qms.commands._resolve_signature`'s
-    # `required_role_id` pattern). No independence requirement was asked for on any of the 4 actions.
-    ("ddcp_profile_version", "release", "Released", None, False, True, False),
+    # SG-212/SG-076/SG-074/SG-084/SG-083/SG-061 this session). The client's own answer names two distinct
+    # signer classes, not one: "component handoff decision and fill start/complete should be performed and
+    # signed by the authorized manufacturing/operator role" (-> "DDCP Operator") while "profile release
+    # should require approval from an authorized Quality/QA person or designated qualified approver"
+    # (-> "QA Releaser", the same mapping convention used everywhere else this session -- fixed 2026-10-03
+    # after a re-read against the literal answer text found `release` had wrongly been left RBAC-only on
+    # the authoring role "DDCP Engineer"; `ddcp_profile.release` moved off DDCP Engineer onto QA Releaser
+    # in ROLE_PERMISSIONS above, same author!=releaser split product_version/recipe_version already use).
+    # No independence requirement was asked for on any of the 4 actions.
+    ("ddcp_profile_version", "release", "Released", "QA Releaser", False, True, False),
     ("constituent_handoff", "decide", "Approved", "DDCP Operator", False, True, False),
     ("fill_operation", "start", "Performed", "DDCP Operator", False, True, False),
     ("fill_operation", "complete", "Performed", "DDCP Operator", False, True, False),

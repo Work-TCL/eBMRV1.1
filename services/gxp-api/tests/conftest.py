@@ -2168,7 +2168,7 @@ async def seeded(db: AsyncSession) -> dict:
                 # (Document 106 section 9 rows 96/97/107) needs; aligned with scripts/seed.py's own
                 # QA Reviewer grant.
                 "scar.review", "risk.review", "quality_metric.management_review"]),
-            ("QA Releaser", ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "rules.release", "product.view", "product.release", "product.suspend", "material_spec.view", "material_spec.release", "recipe.view", "recipe.release", "recipe.suspend", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view",
+            ("QA Releaser", ["batch.release", "audit.review", "vault.review", "vault.correct", "rules.evaluate", "rules.release", "product.view", "product.release", "product.suspend", "material_spec.view", "material_spec.release", "recipe.view", "recipe.release", "recipe.suspend", "batch_execution.view", "device.view", "genealogy.view", "qa_review.view", "release.evaluate", "release.release", "release.hold", "release.reject", "release.view", "ddcp_profile.release",
                 # Bug fix (2026-09-29): same evidence.download gap fixed in scripts/seed.py -- QA Releaser
                 # is the sole signer of batch.record_export (the action that creates the batch record PDF
                 # as evidence) but held no evidence.* permission to retrieve it afterward.
@@ -2241,7 +2241,9 @@ async def seeded(db: AsyncSession) -> dict:
                 "security_control_matrix.view", "security_threat.accept_risk",
                 "security_exception.request", "security_exception.approve", "security_exception.view",
             ]),
-            ("DDCP Engineer", ["ddcp_profile.author", "ddcp_profile.release", "product.view"]),
+            # Client Topic 12 fix (2026-10-03, project-owner-directed): release moved off the authoring
+            # role onto QA Releaser above -- same mapping convention used everywhere else this session.
+            ("DDCP Engineer", ["ddcp_profile.author", "product.view"]),
             ("DDCP Operator", [
                 "ddcp_constituent.handoff", "ddcp_constituent.decide", "ddcp_fill.start", "ddcp_fill.record_ipc",
                 "ddcp_fill.record_count", "ddcp_fill.record_intervention", "ddcp_fill.complete", "ddcp_device.assemble",

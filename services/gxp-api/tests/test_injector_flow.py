@@ -140,8 +140,12 @@ async def _seed_ddcp_signature_floor(db, *, signed: bool = False) -> None:
     if existing is not None:
         return
     operator_role_id = (await db.execute(select(Role.id).where(Role.name == "DDCP Operator"))).scalar_one()
+    qa_releaser_role_id = (await db.execute(select(Role.id).where(Role.name == "QA Releaser"))).scalar_one()
     db.add_all([
-        SignaturePolicy(record_type="ddcp_profile_version", action="release", meaning="Released", signature_required=signed),
+        SignaturePolicy(
+            record_type="ddcp_profile_version", action="release", meaning="Released",
+            required_role_id=qa_releaser_role_id if signed else None, signature_required=signed,
+        ),
         SignaturePolicy(
             record_type="constituent_handoff", action="decide", meaning="Approved",
             required_role_id=operator_role_id if signed else None, signature_required=signed,

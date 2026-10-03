@@ -208,8 +208,14 @@ async def _seed_ddcp_signature_floor(db, *, signed: bool = False) -> None:
     if existing is not None:
         return
     operator_role_id = (await db.execute(select(Role.id).where(Role.name == "DDCP Operator"))).scalar_one()
+    # Client Topic 12 fix (2026-10-03): release's required signer is QA Releaser, not the authoring role
+    # -- see scripts/seed.py's own comment on this same row for the full rationale.
+    qa_releaser_role_id = (await db.execute(select(Role.id).where(Role.name == "QA Releaser"))).scalar_one()
     db.add_all([
-        SignaturePolicy(record_type="ddcp_profile_version", action="release", meaning="Released", signature_required=signed),
+        SignaturePolicy(
+            record_type="ddcp_profile_version", action="release", meaning="Released",
+            required_role_id=qa_releaser_role_id if signed else None, signature_required=signed,
+        ),
         SignaturePolicy(
             record_type="constituent_handoff", action="decide", meaning="Approved",
             required_role_id=operator_role_id if signed else None, signature_required=signed,
@@ -1106,9 +1112,12 @@ async def test_get_ddcp_change_linkage(seeded, db):
 
 
 async def test_ddcp_profile_release_signature_challenge_round_trip(client, seeded, db):
-    # `release` is RBAC-only (required_role_id=None) -- only the router's own `ddcp_profile.release`
-    # permission check gates who can call this, the same as before this phase; this proves the new
-    # mandatory signature (scripts/seed.py) round-trips over the real HTTP ceremony.
+    # Client Topic 12 fix (2026-10-03): release requires the signer to hold "QA Releaser" -- the client's
+    # own answer names "an authorized Quality/QA person or designated qualified approver" for release
+    # specifically, distinct from the authoring "DDCP Engineer" role that creates the draft. This proves
+    # both halves: the new mandatory signature (scripts/seed.py) round-trips over the real HTTP ceremony,
+    # and the author (who no longer holds ddcp_profile.release at all) is rejected by RBAC before ever
+    # reaching the signature ceremony.
     async with db.begin():
         await _seed_ddcp_signature_floor(db, signed=True)
         product_version = await _create_released_product_version(db, seeded, code="PFS-SIGNED-REL")
@@ -1125,7 +1134,16 @@ async def test_ddcp_profile_release_signature_challenge_round_trip(client, seede
         )
     profile_id = str(receipt.aggregate_id)
 
-    token = await login(client, "ddcp.engineer")
+    engineer_token = await login(client, "ddcp.engineer")
+    denied = await client.post(
+        "/ddcp/v1/prefilled-syringe/signature-challenges",
+        json={"record_type": "ddcp_profile_version", "action": "release", "record_id": profile_id},
+        headers=auth_headers(engineer_token),
+    )
+    assert denied.status_code == 403
+    assert denied.json()["code"] == "ROLE_MISSING"
+
+    token = await login(client, "qa.releaser")
     challenge_resp = await client.post(
         "/ddcp/v1/prefilled-syringe/signature-challenges",
         json={"record_type": "ddcp_profile_version", "action": "release", "record_id": profile_id},

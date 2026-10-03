@@ -100,7 +100,7 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-082 | D | no | Document 20 requirements needing infrastructure this codebase does not have yet: barcode/scanner integration, storage-condition excursion/monitoring integration, label-reprint infrastructure, and ERP reconciliation | — (open) | Platform Architect + Materials module owner |
 | SG-083 | D | no | Document 20's FEFO/FIFO deviation-override path and material-spec-version-scoped eligibility, and alternative-material recipe/deviation compatibility, all need a deviation/change-approval entity and a material-specification-version entity that don't exist (SG-057 family) | — (open) | Data Architect + Materials module owner |
 | SG-084 | D | no | Document 20's cycle-count adjustment (INV-FR-020) has no Document 106 signature-policy row despite spec prose implying approval; physical-count freeze (INV-FR-021) has no entity/operation in Document 20's own API list | — (open) | Data Architect + Materials module owner |
-| SG-085 | D | no | Document 20's container split/merge/transfer provenance (INV-FR-030) -- PARTIALLY RESOLVED 2026-09-23: SPLIT_FROM wired; merge has no confirmed edge type (still open); transfer confirmed out of scope for genealogy. True cross-site inter-site transfer (INV-FR-009) still not built | split: material/commands.py split_container(); merge/transfer: investigation only | Platform Architect + Materials module owner + Genealogy module owner |
+| SG-085 | D | no | Document 20's container split/merge/transfer provenance (INV-FR-030) -- RESOLVED_APPROVED: SPLIT_FROM wired 2026-09-23; merge RESOLVED_APPROVED 2026-10-02 via Client Topic 2 (MERGED_FROM-equivalent genealogy edges wired into merge_containers); transfer confirmed out of scope for genealogy (same-container location change, no new node). True cross-site inter-site transfer (INV-FR-009) still not built, unrelated to Topic 2 | split: material/commands.py split_container(); merge: material/commands.py merge_containers(); transfer: investigation only | Platform Architect + Materials module owner + Genealogy module owner |
 | SG-086 | R | no | `qms.qualification_record` (Document 31) and pre-existing `iam.qualifications` (Document 07) are two stores for what looks like the same real-world concept; authority/reconciliation unresolved | — (open) | Data Architect + IAM module owner + QMS module owner |
 | SG-087 | D | no | Document 31's TRN-FR-007 "attempt rules" has no numeric max-attempt or backoff policy anywhere in the baseline | — (open) | Quality/Training process owner |
 | SG-088 | D | no | Document 31's TRN-FR-016/010 platform-wide training/qualification execution gate is not wired into any other module's Mutation Gateway calls | — (open) | Platform Architect + every module owner |
@@ -10574,16 +10574,17 @@ description: >
   **Update (2026-10-03), Client Topic 12, project-owner-directed:** item (2)'s signature gap is now
   resolved. The client's own answer in `Client_Decisions_Neededanswers (2).txt` is the authorization for
   four new Document 106 rows (same "client answer is the authorization" precedent this session already
-  used for SG-212/SG-076/SG-074/SG-084/SG-083/SG-061): `ddcp_profile_version/release` stays RBAC-only
-  (gated on the existing "DDCP Engineer" role at the router, no independent signer role exists for it);
-  `constituent_handoff/decide`, `fill_operation/start` and `fill_operation/complete` now require a real
-  Part 11 signature from a signer holding the "DDCP Operator" role -- enforced in
-  `ddcp/commands.py::_resolve_signature()`, which now reads `policy.required_role_id` the same way
-  `qms.commands._resolve_signature()` already does for `deviation_record` (no independence requirement
-  was asked for on any of the four actions). A new generic `POST /ddcp/v1/prefilled-syringe/signature-
-  challenges` endpoint (`router.py`) resolves a challenge for all four (record_type, action) pairs,
-  dispatching on the pair to find the right record/hash shape (profile/handoff/fill_operation, or a
-  synthetic `{batch_id}` hash at version 0 for `fill_operation/start`'s pre-creation signature, the same
+  used for SG-212/SG-076/SG-074/SG-084/SG-083/SG-061). The answer names **two distinct signer classes**:
+  "component handoff decision and fill start/complete should be performed and signed by the authorized
+  manufacturing/operator role" (-> "DDCP Operator") while "profile release should require approval from
+  an authorized Quality/QA person or designated qualified approver" (-> "QA Releaser", the same mapping
+  convention used everywhere else this session). All four actions require a real Part 11 signature,
+  enforced in `ddcp/commands.py::_resolve_signature()`, which now reads `policy.required_role_id` the
+  same way `qms.commands._resolve_signature()` already does for `deviation_record` (no independence
+  requirement was asked for on any of the four actions). A new generic `POST /ddcp/v1/prefilled-syringe/
+  signature-challenges` endpoint (`router.py`) resolves a challenge for all four (record_type, action)
+  pairs, dispatching on the pair to find the right record/hash shape (profile/handoff/fill_operation, or
+  a synthetic `{batch_id}` hash at version 0 for `fill_operation/start`'s pre-creation signature, the same
   shape SG-092 already established). `scripts/seed.py`'s `SIGNATURE_POLICY_FLOOR` and the live demo DB
   were both updated (idempotent upsert, no destructive reseed); `tests/conftest.py`'s equivalent global
   floor rows were removed in favour of each affected test file seeding its own local floor (mirroring the
@@ -10596,6 +10597,20 @@ description: >
   (53/53) -- all passing, 0 regressions. Live demo DB migrated to head and its four rows updated; API/
   frontend pm2 processes restarted. See SG-180 for Client Topic 13 (tracker sync + release gate), the
   companion decision from the same client answer.
+
+  **Self-correction, same day:** the first pass of this update wrongly left `ddcp_profile_version/release`
+  RBAC-only on the authoring role "DDCP Engineer" with `required_role_id=None`, missing that the client's
+  answer names a *different* role for release than for the other three actions (quoted above). Caught on
+  re-reading the literal answer text against the implementation. Fixed: `ddcp_profile.release` moved off
+  "DDCP Engineer" (which keeps only `ddcp_profile.author`) onto "QA Releaser" in `ROLE_PERMISSIONS`
+  (`scripts/seed.py` and `tests/conftest.py`, both updated -- known duplication, see
+  [[project_ebmr_new_sterile_profile_fix]]-class lesson), and the `(ddcp_profile_version, release)`
+  policy row's `required_role_id` now resolves to "QA Releaser" -- the same author!=releaser split
+  `product_version`/`recipe_version` already use elsewhere in this codebase. Test fixed:
+  `test_ddcp_flow.py::test_ddcp_profile_release_signature_challenge_round_trip` now also asserts the
+  author is rejected with `ROLE_MISSING` before the QA Releaser successfully signs. Re-verified:
+  `test_ddcp_flow.py`/`test_inhalation_flow.py`/`test_injector_flow.py`/`test_coated_device_flow.py`
+  62/62 passed. Live demo DB and pm2 processes re-synced after this correction.
 source_documents:
   - Document 54 (SPEC-DDCP-001)
   - Document 112 (Entity Schema Completion Addendum, approved DDL for this module's 9 entities)
