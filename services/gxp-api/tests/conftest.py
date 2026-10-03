@@ -1542,6 +1542,7 @@ async def seeded(db: AsyncSession) -> dict:
             ("packaging.execute", "execute", "packaging_run"),
             ("supplier_qualification.approve", "approve", "supplier_qualification"),
             ("qms_deviation.create", "create", "deviation_record"),
+            ("qms_deviation.preapprove", "preapprove", "deviation_record"),
             ("qms_deviation.triage", "triage", "deviation_record"),
             ("qms_deviation.contain", "contain", "deviation_record"),
             ("qms_deviation.investigate", "investigate", "deviation_record"),
@@ -2006,7 +2007,7 @@ async def seeded(db: AsyncSession) -> dict:
                     "qa_review.create", "qa_review.execute", "qa_review.view",
                     "release.evaluate", "release.release", "release.hold", "release.reject", "release.view",
                     "packaging.execute", "supplier_qualification.approve", "supplier.suspend", "supplier.reinstate",
-                    "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "qms_deviation.investigate",
+                    "qms_deviation.create", "qms_deviation.preapprove", "qms_deviation.triage", "qms_deviation.contain", "qms_deviation.investigate",
                     "qms_deviation.impact", "qms_deviation.disposition", "qms_deviation.extend", "qms_deviation.close",
                     "qms_deviation.reopen", "qms_deviation.view",
                     "capa.create", "capa.plan", "capa.action.add", "capa.action.complete", "capa.effectiveness",
@@ -2170,7 +2171,7 @@ async def seeded(db: AsyncSession) -> dict:
                 # SG-138 policy-data half (2026-09-10) -- QMS signing codes, aligned with scripts/seed.py's
                 # own QA Releaser grant so an independent QA Releaser can actually reach the signed QMS
                 # transitions Document 106 section 9 rows 80-107 now require.
-                "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen",
+                "qms_deviation.preapprove", "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen",
                 # SG-065 (2026-09-22) -- plan/extend are now independently QA-Releaser-signed too (Document
                 # 27's own prose, CAPA-FR-021); Supervisor keeps its existing capa.plan/capa.extend grant
                 # for unsigned deployments, this is additive so the signer can also invoke the endpoint.

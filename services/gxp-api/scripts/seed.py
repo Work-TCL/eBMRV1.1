@@ -363,6 +363,11 @@ PERMISSION_CATALOG = [
     # modules (whose GETs are unauthenticated reads), QMS records carry investigation and complainant
     # detail, so their reads are permission-gated.
     ("qms_deviation.create", "create", "deviation_record", "Raise a deviation / quality event (Document 26)"),
+    # Client Topic 11 (SG-061, project-owner-directed): a planned deviation requires formal QA Releaser
+    # pre-approval before it can be used (any forward-pipeline transition) -- no Document 106 row names
+    # this action, same client-decision-adds-a-signature precedent as every other new signature this
+    # session.
+    ("qms_deviation.preapprove", "preapprove", "deviation_record", "Pre-approve a planned deviation before it can be used (Client Topic 11)"),
     ("qms_deviation.triage", "triage", "deviation_record", "Triage a deviation's severity and ownership (Document 26)"),
     ("qms_deviation.contain", "contain", "deviation_record", "Record immediate correction and containment (Document 26)"),
     ("qms_deviation.investigate", "investigate", "deviation_record", "Record investigation plan and root cause (Document 26)"),
@@ -725,9 +730,9 @@ QMS_VIEW_CODES = [
 
 # Every WP-05 QMS mutating code, for the Admin grant below.
 QMS_WRITE_CODES = [
-    "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "qms_deviation.investigate",
-    "qms_deviation.impact", "qms_deviation.disposition", "qms_deviation.extend", "qms_deviation.close",
-    "qms_deviation.reopen",
+    "qms_deviation.create", "qms_deviation.preapprove", "qms_deviation.triage", "qms_deviation.contain",
+    "qms_deviation.investigate", "qms_deviation.impact", "qms_deviation.disposition", "qms_deviation.extend",
+    "qms_deviation.close", "qms_deviation.reopen",
     "capa.create", "capa.plan", "capa.action.add", "capa.action.complete", "capa.effectiveness",
     "capa.extend", "capa.close", "capa.reopen",
     "ncr.create", "ncr.segregate", "ncr.evaluate", "ncr.disposition", "ncr.verify", "ncr.close",
@@ -915,7 +920,7 @@ ROLE_PERMISSIONS = {
         # code QA Reviewer already holds for the same "view what this role's own actions produce" reason.
         "evidence.download",
         *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
-        "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oos_record.reopen", "oos_record.link_change_control", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "inventory_reservation.approve_override", "inventory_reservation.reject_override", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.plan", "capa.effectiveness", "capa.extend", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "supplier.suspend", "supplier.reinstate", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
+        "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oos_record.reopen", "oos_record.link_change_control", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "inventory_reservation.approve_override", "inventory_reservation.reject_override", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.preapprove", "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.plan", "capa.effectiveness", "capa.extend", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "supplier.suspend", "supplier.reinstate", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
     # SG-157 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): closest existing real role to Document
     # 106's "QA Manager/Head of Quality per record class" text for regulatory_report.approve -- QA Releaser
     # is this codebase's actual highest quality-release-authority role (batch/recipe/product release).
@@ -1523,6 +1528,10 @@ SIGNATURE_POLICY_FLOOR = [
     # disposition_rationale/conclusion fields, no separate `reason` param needed.
     ("deviation_record", "disposition", "Released", "QA Releaser", True, True, True),
     ("deviation_record", "close", "Approved", "QA Releaser", True, True, True),
+    # Client Topic 11 (SG-061, project-owner-directed): same role/independence shape as disposition/
+    # close above -- no Document 106 row names this action either, but the client's own answer is the
+    # authorization to require a signature here too.
+    ("deviation_record", "preapprove", "Approved", "QA Releaser", True, True, True),
     # qa_review_package/complete -- Document 106 row 29 (SPEC-EBMR-005), resolved 2026-09-09
     # project-owner-directed (hit live on the QA Review page's "Complete review" action; same "as per the
     # ebmr-edhr docs" instruction as the deviation resolution above): meaning `Reviewed`, signer "QA

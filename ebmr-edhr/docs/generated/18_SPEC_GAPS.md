@@ -3946,6 +3946,42 @@ resolution_document: "— (open)"
 status: OPEN
 ```
 
+**PARTIALLY RESOLVED_APPROVED 2026-10-02, project-owner-directed via Client_Decisions_Neededanswers
+Topic 11 (Q17), the pre-approval piece only.** The client's answer: "A planned deviation should require
+formal pre-approval before it can be used. The deviation should be reviewed and approved by an
+authorized Quality/QA person, with the approval, date, reason, scope, and effective time period
+recorded. The system should prevent the planned deviation from being used until the required approval
+has been completed."
+
+No separate DRAFT->PREAPPROVED->ACTIVE state track is added -- this entry's own original reasoning
+(Document 26's own 9-op API list has no operation to drive those states, and inventing one risks
+mismatching whatever a real Document 113 addendum eventually defines) still holds and is not overridden
+by the client's answer, which describes an approval gate, not a new state machine. A planned deviation
+stays in the normal OPEN..CLOSED pipeline; pre-approval is instead a precondition every forward-pipeline
+transition already checks for the end-date gate (`_assert_not_expired_planned`) -- a new
+`_assert_planned_deviation_preapproved_and_effective` sits alongside it at all 6 call sites
+(triage/contain/investigation/impact/disposition/close), blocking with `PLANNED_DEVIATION_NOT_
+PREAPPROVED` until pre-approval completes, and `PLANNED_DEVIATION_NOT_YET_EFFECTIVE` if today is still
+before `planned_scope.start_date` -- a field captured at creation (DEV-FR-001) but never read by any
+code path until now, the other half of the "effective time period" the client's answer names (the
+end-date half was already built).
+
+New signed `preapprove_deviation()` command (QA Releaser, independent of the record's own
+investigator_subject_id/owner_subject_id -- same `_resolve_signature` shape disposition/close already
+use; no Document 106 row names this action either, but the client's own answer is the authorization to
+require one, same precedent as every other client-decision-adds-a-signature case this session) records
+`preapproved_by_user_id`/`preapproved_at`/`preapproval_signature_id` -- the literal "approval, date...
+and effective time period recorded" the client asked for (reason and scope were already captured in
+`planned_scope`/the signature's own `reason` field).
+
+**DEV-FR-021 (recurrence search) and DEV-FR-024 (export) are not addressed by Topic 11 at all and
+remain exactly as open as this entry originally recorded.**
+
+```yaml
+resolution_document: "services/gxp-api/app/modules/qms/commands.py (_assert_planned_deviation_preapproved_and_effective, PreapproveDeviationCommand/preapprove_deviation), app/modules/qms/models.py (DeviationRecord.preapproved_by_user_id/preapproved_at/preapproval_signature_id), app/modules/qms/router.py (POST /qms/v1/deviations/{id}/preapprove, DEVIATION_SIGNATURE_ACTIONS), app/mutation/errors.py (PlannedDeviationNotPreapprovedError, PlannedDeviationNotYetEffectiveError), migrations/versions/f3a5c7e9b1d4_0131_deviation_preapproval.py, scripts/seed.py + tests/conftest.py (qms_deviation.preapprove permission + signature policy row, QA Releaser), tests/test_qms_deviation.py (7 new tests), frontend/src/app/deviations/[id]/page.tsx (Pre-approve action + SignatureCeremony), frontend/src/lib/api.ts (Deviation.preapproved_by_user_id/preapproved_at). DEV-FR-021/024 remain open (no client decision covers them)."
+status: RESOLVED_APPROVED  # DEV-FR-016 pre-approval piece only; DEV-FR-021/024 remain open, not blocking
+```
+
 ### SG-062 — DEV-FR-023: no notification/escalation worker infrastructure exists anywhere in this codebase yet
 
 DEV-FR-023 ("Critical/overdue deviation notifications/escalation") requires a background process that

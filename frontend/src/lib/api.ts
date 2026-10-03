@@ -692,6 +692,10 @@ export interface Deviation extends QmsRecordBase {
   owner_subject_id: string | null;
   investigator_subject_id: string | null;
   planned: boolean;
+  // Client Topic 11 (SG-061): a planned deviation cannot be used (any forward-pipeline transition)
+  // until an authorized Quality/QA person pre-approves it.
+  preapproved_by_user_id: string | null;
+  preapproved_at: string | null;
   disposition_code: string | null;
   capa_required: boolean | null;
   change_control_required: boolean;

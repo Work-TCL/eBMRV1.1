@@ -16,6 +16,7 @@ from app.modules.qms.commands import (
     ExtendCommand,
     ImpactCommand,
     InvestigationCommand,
+    PreapproveDeviationCommand,
     ReopenCommand,
     TriageDeviationCommand,
     assess_impact,
@@ -24,6 +25,7 @@ from app.modules.qms.commands import (
     create_deviation,
     disposition_deviation,
     extend_deviation,
+    preapprove_deviation,
     record_investigation,
     reopen_deviation,
     triage_deviation,
@@ -36,7 +38,7 @@ from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/qms/v1/deviations", tags=["qms-deviations"])
 
-DEVIATION_SIGNATURE_ACTIONS = ("disposition", "close")
+DEVIATION_SIGNATURE_ACTIONS = ("disposition", "close", "preapprove")
 
 
 @router.post("", response_model=MutationReceipt)
@@ -48,6 +50,26 @@ async def post_create(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="qms_deviation.create", site_id=cmd.site_id)
         return await create_deviation(session, cmd, actor.user_id)
+
+
+# Client Topic 11 (SG-061, project-owner-directed): a planned deviation's formal QA Releaser
+# pre-approval, gating every forward-pipeline transition below (_assert_planned_deviation_preapproved_
+# and_effective in commands.py).
+@router.post("/{deviation_id}/preapprove", response_model=MutationReceipt)
+async def post_preapprove(
+    deviation_id: uuid.UUID,
+    cmd: PreapproveDeviationCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.deviation_id != deviation_id:
+        raise ValidationFailedError("deviation_id in path and body must match")
+    async with session.begin():
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.preapprove", site_id=deviation.site_id)
+        return await preapprove_deviation(session, cmd, actor.user_id)
 
 
 @router.post("/{deviation_id}/triage", response_model=MutationReceipt)
@@ -232,6 +254,10 @@ def _deviation_dict(record: DeviationRecord) -> dict:
         "owner_subject_id": sid(record.owner_subject_id),
         "investigator_subject_id": sid(record.investigator_subject_id),
         "planned": record.planned,
+        # Client Topic 11 (SG-061): surfaced at the list level too, since "pending pre-approval" is a
+        # status an operator or QA Releaser needs to see without opening every planned deviation.
+        "preapproved_by_user_id": sid(record.preapproved_by_user_id),
+        "preapproved_at": iso(record.preapproved_at),
         "disposition_code": record.disposition_code,
         "capa_required": record.capa_required,
         "change_control_required": record.change_control_required,

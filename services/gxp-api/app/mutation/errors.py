@@ -233,6 +233,16 @@ class PlannedDeviationExpiredError(GxPError):
     status_code = 409
 
 
+class PlannedDeviationNotPreapprovedError(GxPError):
+    code = "PLANNED_DEVIATION_NOT_PREAPPROVED"
+    status_code = 409
+
+
+class PlannedDeviationNotYetEffectiveError(GxPError):
+    code = "PLANNED_DEVIATION_NOT_YET_EFFECTIVE"
+    status_code = 409
+
+
 class QaClosureRequiredError(GxPError):
     code = "QA_CLOSURE_REQUIRED"
     status_code = 409

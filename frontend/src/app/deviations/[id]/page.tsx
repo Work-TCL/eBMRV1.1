@@ -151,11 +151,17 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
   const { me } = useMe();
   const entities = useEntityOptions();
   const [pending, setPending] = useState<Transition | null>(null);
+  // Client Topic 11 (SG-061): pre-approval isn't a pipeline Transition (it doesn't change `state`) --
+  // a planned deviation sits wherever it already is and simply unblocks once this completes.
+  const [preapproving, setPreapproving] = useState(false);
   const { data, loading, error, reload } = useApiResource<DeviationDetail>(`/qms/v1/deviations/${id}`);
 
   const allowed = data ? (ALLOWED_FROM[data.state] ?? []) : [];
+  const canPreapprove =
+    !!data && data.planned && !data.preapproved_at && hasPermission(me, "qms_deviation.preapprove");
 
   function canDo(t: Transition): boolean {
+    if (data?.planned && !data.preapproved_at) return false;
     return allowed.includes(t) && hasPermission(me, PERMISSION_FOR_TRANSITION[t]);
   }
 
@@ -169,6 +175,13 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
       loading={loading}
       error={error}
       actions={[
+        ...(canPreapprove
+          ? [
+              <Button key="preapprove" variant="primary" onClick={() => setPreapproving(true)}>
+                <Icon name="pen" /> Pre-approve
+              </Button>,
+            ]
+          : []),
         ...(Object.keys(TRANSITION_LABEL) as Transition[])
           .filter(canDo)
           .map((t) => (
@@ -199,6 +212,11 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
               <SeverityPill severity={data.severity} />
             </Fact>
             <Fact label="Planned">{data.planned ? "Yes" : "No"}</Fact>
+            {data.planned && (
+              <Fact label="Pre-approval">
+                {data.preapproved_at ? `Approved ${formatDateTime(data.preapproved_at)}` : "Pending"}
+              </Fact>
+            )}
             <Fact label="Due date">
               <span className={isOverdue(data.due_date) && data.state !== "CLOSED" ? "error-text" : undefined}>
                 {formatDate(data.due_date)}
@@ -231,10 +249,16 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
     >
       {data && (
         <>
+          {data.planned && !data.preapproved_at && (
+            <Banner tone="critical" title="Awaiting pre-approval">
+              This planned deviation cannot be advanced through the pipeline until an authorized
+              Quality/QA person pre-approves it (Client Topic 11).
+            </Banner>
+          )}
           {data.planned && data.planned_scope != null && (
             <Banner tone="warn" title="Planned deviation">
-              This record has a declared end date. Once it passes, the deviation can no longer be advanced
-              through the pipeline.
+              This record has a declared effective time period. It cannot be used before its start date
+              or after its end date passes.
             </Banner>
           )}
 
@@ -346,6 +370,33 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
                 setPending(null);
                 reload();
               }}
+            />
+          )}
+
+          {preapproving && (
+            <SignatureCeremony
+              open
+              onClose={() => setPreapproving(false)}
+              onDone={() => {
+                setPreapproving(false);
+                reload();
+              }}
+              challengePath={`/qms/v1/deviations/${data.id}/signature-challenges`}
+              action="preapprove"
+              title={`Pre-approve - ${data.deviation_number}`}
+              summary="Formally approves this planned deviation's declared scope and effective time period before it can be used. This is a quality decision - signer should be independent of the record's investigator and owner."
+              submitLabel="Sign & pre-approve"
+              reason="required"
+              onSign={(p) =>
+                api.post(`/qms/v1/deviations/${data.id}/preapprove`, {
+                  idempotency_key: p.idempotency_key,
+                  deviation_id: data.id,
+                  expected_version: data.version,
+                  challenge_id: p.challenge_id,
+                  reauth_password: p.reauth_password,
+                  reason: p.reason,
+                })
+              }
             />
           )}
         </>
