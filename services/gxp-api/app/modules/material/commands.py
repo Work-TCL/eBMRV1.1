@@ -2402,6 +2402,42 @@ class CreateInventoryReservationCommand(CommandEnvelope):
     site_id: uuid.UUID
     quantity: Decimal
     uom: str
+    # Client Topic 8 (SG-083, project-owner-directed): a documented, justified exception to the default
+    # oldest-approved-stock-first rotation. Supplying override_lot_id skips FEFO in favor of this lot, but
+    # the reservation lands in "override_pending" -- no stock is actually held -- until a QA Releaser
+    # approves it via approve_reservation_override (see below).
+    override_lot_id: uuid.UUID | None = None
+    override_reason: str | None = None
+
+
+async def _fefo_default_candidate(
+    session: AsyncSession, *, material_id: uuid.UUID, site_id: uuid.UUID, quantity: Decimal, today
+) -> uuid.UUID | None:
+    """What the unmodified oldest-approved-stock-first rule would pick -- used both as the normal
+    selection path and, when overridden, as the audit-trail record of the forgone default (Topic 8)."""
+    candidates = (
+        await session.execute(
+            select(MaterialLot, MaterialContainer, InventoryBalanceProjection, Supplier.status)
+            .join(MaterialContainer, MaterialContainer.material_lot_id == MaterialLot.id)
+            .join(
+                InventoryBalanceProjection,
+                (InventoryBalanceProjection.material_lot_id == MaterialLot.id)
+                & (InventoryBalanceProjection.container_id == MaterialContainer.id),
+            )
+            .outerjoin(Supplier, Supplier.id == MaterialLot.supplier_id)
+            .where(
+                MaterialLot.material_id == material_id,
+                MaterialLot.site_id == site_id,
+                MaterialContainer.container_status == "active",
+                InventoryBalanceProjection.available >= quantity,
+            )
+            .order_by(MaterialLot.expiry_date.asc().nullslast(), MaterialLot.received_at.asc())
+        )
+    ).all()
+    for lot, container, _balance, supplier_status in candidates:
+        if _is_eligible(lot, container, today, supplier_status):
+            return lot.id
+    return None
 
 
 async def create_inventory_reservation(
@@ -2420,6 +2456,112 @@ async def create_inventory_reservation(
         raise NotFoundError("Batch not found")
 
     today = datetime.now(timezone.utc).date()
+
+    if cmd.override_lot_id is not None:
+        if not cmd.override_reason or not cmd.override_reason.strip():
+            raise ValidationFailedError("override_reason is required to override the FEFO rotation (Client Topic 8)")
+
+        overridden_lot = await session.get(MaterialLot, cmd.override_lot_id)
+        if overridden_lot is None or overridden_lot.material_id != cmd.material_id or overridden_lot.site_id != cmd.site_id:
+            raise NotFoundError("Override lot not found for this material/site")
+
+        eligible_candidate = (
+            await session.execute(
+                select(MaterialContainer, InventoryBalanceProjection, Supplier.status)
+                .join(
+                    InventoryBalanceProjection,
+                    (InventoryBalanceProjection.material_lot_id == MaterialContainer.material_lot_id)
+                    & (InventoryBalanceProjection.container_id == MaterialContainer.id),
+                )
+                .outerjoin(Supplier, Supplier.id == overridden_lot.supplier_id)
+                .where(
+                    MaterialContainer.material_lot_id == overridden_lot.id,
+                    MaterialContainer.container_status == "active",
+                    InventoryBalanceProjection.available >= cmd.quantity,
+                )
+            )
+        ).first()
+        if eligible_candidate is None or not _is_eligible(overridden_lot, eligible_candidate[0], today, eligible_candidate[2]):
+            raise ValidationFailedError(
+                "Override lot is not eligible (released/non-expired/non-retest-due) or lacks sufficient "
+                "available quantity"
+            )
+        chosen_container, balance_row, _supplier_status = eligible_candidate
+
+        fefo_default_lot_id = await _fefo_default_candidate(
+            session, material_id=cmd.material_id, site_id=cmd.site_id, quantity=cmd.quantity, today=today
+        )
+
+        cmd_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
+        reservation = InventoryReservation(
+            site_id=cmd.site_id,
+            batch_id=cmd.batch_id,
+            material_id=cmd.material_id,
+            material_lot_id=overridden_lot.id,
+            container_id=chosen_container.id,
+            location_id=balance_row.location_id,
+            quantity=cmd.quantity,
+            uom=cmd.uom,
+            uom_id=cmd_uom_id,
+            status="override_pending",
+            fefo_overridden=True,
+            override_reason=cmd.override_reason,
+            fefo_default_lot_id=fefo_default_lot_id,
+            requested_by_user_id=actor_user_id,
+            version=1,
+        )
+        session.add(reservation)
+        await session.flush()
+
+        correlation_id = uuid.uuid4()
+        audit_event = await write_audit_event(
+            session,
+            site_id=cmd.site_id,
+            aggregate_type="inventory_reservation",
+            aggregate_id=reservation.id,
+            aggregate_version=1,
+            action="Created",
+            actor_id=actor_user_id,
+            correlation_id=correlation_id,
+            new_value={
+                "material_lot_id": str(overridden_lot.id),
+                "container_id": str(chosen_container.id),
+                "quantity": str(cmd.quantity),
+                "fefo_overridden": True,
+                "fefo_default_lot_id": str(fefo_default_lot_id) if fefo_default_lot_id else None,
+            },
+            reason=cmd.override_reason,
+        )
+        await write_outbox_event(
+            session,
+            event_type="InventoryReservationOverrideRequested",
+            aggregate_type="inventory_reservation",
+            aggregate_id=reservation.id,
+            aggregate_version=1,
+            payload={"id": str(reservation.id), "batch_id": str(cmd.batch_id), "quantity": str(cmd.quantity)},
+            correlation_id=correlation_id,
+        )
+        receipt = await record_command_receipt(
+            session,
+            site_id=cmd.site_id,
+            command_type="CreateInventoryReservation",
+            aggregate_type="inventory_reservation",
+            aggregate_id=reservation.id,
+            expected_version=None,
+            resulting_version=1,
+            idempotency_key=cmd.idempotency_key,
+            command_hash=payload_hash,
+            actor_user_id=actor_user_id,
+            payload_hash=payload_hash,
+        )
+        return MutationReceipt(
+            command_id=receipt.id,
+            aggregate_id=reservation.id,
+            resulting_version=1,
+            audit_event_id=audit_event.id,
+            correlation_id=correlation_id,
+        )
+
     candidates = (
         await session.execute(
             select(MaterialLot, MaterialContainer, InventoryBalanceProjection, Supplier.status)
@@ -2703,6 +2845,284 @@ async def release_inventory_reservation(
         session,
         site_id=site_id,
         command_type="ReleaseInventoryReservation",
+        aggregate_type="inventory_reservation",
+        aggregate_id=reservation.id,
+        expected_version=cmd.expected_version,
+        resulting_version=reservation.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=reservation.id,
+        resulting_version=reservation.version,
+        audit_event_id=audit_event.id,
+        signature_id=signature_id,
+        correlation_id=correlation_id,
+    )
+
+
+# ApproveReservationOverride/RejectReservationOverride -- Client Topic 8 (SG-083, project-owner-directed):
+# "approval from an authorized Quality/QA person or designated quality approver" -- same QA Releaser,
+# independent-of-requester, signed shape `release_inventory_reservation` (Document 106 row 46) already
+# uses, applied to a new application-level signature-policy row (no Document 106 row names this action
+# either, but the client's own answer is the authorization to require one, same precedent as every other
+# client-decision-adds-a-signature case this session). Approval is where the actual stock hold happens --
+# an unapproved override never touched the ledger.
+class ApproveReservationOverrideCommand(CommandEnvelope):
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID
+    reauth_password: str
+
+
+async def approve_reservation_override(
+    session: AsyncSession,
+    reservation_id: uuid.UUID,
+    cmd: ApproveReservationOverrideCommand,
+    actor_user_id: uuid.UUID,
+    site_id: uuid.UUID,
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(
+        select(InventoryReservation).where(InventoryReservation.id == reservation_id).with_for_update()
+    )
+    reservation = result.scalar_one_or_none()
+    if reservation is None:
+        raise NotFoundError("Inventory reservation not found")
+    if reservation.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Inventory reservation was modified by another actor since it was read",
+            expected_version=cmd.expected_version,
+            current_version=reservation.version,
+        )
+    if reservation.status != "override_pending":
+        raise InvalidTransitionError(
+            "Only a pending FEFO override can be approved", current_status=reservation.status
+        )
+
+    await evaluate_policy(session, actor_user_id, action="inventory_reservation.approve_override", site_id=site_id)
+    if actor_user_id == reservation.requested_by_user_id:
+        raise ValidationFailedError(
+            "Approver must be independent of the requester of this override (Client Topic 8)"
+        )
+
+    policy = await signature_service.resolve_signature_requirement(
+        session, record_type="inventory_reservation", action="approve_override"
+    )
+    if policy.reason_required and not cmd.reason:
+        raise ValidationFailedError("reason is required to approve this FEFO override")
+    signature_id = None
+    if policy.signature_required:
+        actor = await session.get(User, actor_user_id)
+        if actor is None or not verify_password(cmd.reauth_password, actor.password_hash):
+            raise MissingSignatureError("Fresh step-up authentication failed")
+        challenge = await signature_service.consume_challenge(
+            session,
+            challenge_id=cmd.challenge_id,
+            user_id=actor_user_id,
+            record_version=reservation.version,
+            record_hash=reservation_record_hash(reservation),
+        )
+        signature = await signature_service.sign(
+            session, challenge=challenge, auth_context={"method": "password_reauth"}
+        )
+        signature_id = signature.id
+
+    balance = await _lock_or_create_balance(
+        session,
+        site_id=site_id,
+        material_lot_id=reservation.material_lot_id,
+        container_id=reservation.container_id,
+        location_id=reservation.location_id,
+    )
+    if balance.available < reservation.quantity:
+        raise ValidationFailedError(
+            "Available quantity changed since the override was requested; reject and resubmit",
+            available=str(balance.available),
+            requested=str(reservation.quantity),
+        )
+    balance.reserved += reservation.quantity
+    balance.available -= reservation.quantity
+    balance.version += 1
+
+    txn = InventoryTransaction(
+        site_id=site_id,
+        material_lot_id=reservation.material_lot_id,
+        container_id=reservation.container_id,
+        transaction_type="RESERVE",
+        quantity=reservation.quantity,
+        uom=reservation.uom,
+        uom_id=reservation.uom_id,
+        to_location_id=reservation.location_id,
+        reference_type="batch",
+        reference_id=reservation.batch_id,
+        actor_type="human",
+        actor_id=str(actor_user_id),
+    )
+    session.add(txn)
+    await session.flush()
+    balance.last_transaction_id = txn.id
+
+    old_status = reservation.status
+    reservation.status = "active"
+    reservation.override_approved_by_user_id = actor_user_id
+    reservation.override_approved_at = datetime.now(timezone.utc)
+    reservation.override_signature_id = signature_id
+    reservation.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=site_id,
+        aggregate_type="inventory_reservation",
+        aggregate_id=reservation.id,
+        aggregate_version=reservation.version,
+        action="Approved",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        old_value={"status": old_status},
+        new_value={"status": reservation.status},
+        signature_id=signature_id,
+        reason=cmd.reason,
+    )
+    await write_outbox_event(
+        session,
+        event_type="InventoryReservationOverrideApproved",
+        aggregate_type="inventory_reservation",
+        aggregate_id=reservation.id,
+        aggregate_version=reservation.version,
+        payload={"id": str(reservation.id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=site_id,
+        command_type="ApproveReservationOverride",
+        aggregate_type="inventory_reservation",
+        aggregate_id=reservation.id,
+        expected_version=cmd.expected_version,
+        resulting_version=reservation.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=reservation.id,
+        resulting_version=reservation.version,
+        audit_event_id=audit_event.id,
+        signature_id=signature_id,
+        correlation_id=correlation_id,
+    )
+
+
+class RejectReservationOverrideCommand(CommandEnvelope):
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID
+    reauth_password: str
+
+
+async def reject_reservation_override(
+    session: AsyncSession,
+    reservation_id: uuid.UUID,
+    cmd: RejectReservationOverrideCommand,
+    actor_user_id: uuid.UUID,
+    site_id: uuid.UUID,
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(
+        select(InventoryReservation).where(InventoryReservation.id == reservation_id).with_for_update()
+    )
+    reservation = result.scalar_one_or_none()
+    if reservation is None:
+        raise NotFoundError("Inventory reservation not found")
+    if reservation.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Inventory reservation was modified by another actor since it was read",
+            expected_version=cmd.expected_version,
+            current_version=reservation.version,
+        )
+    if reservation.status != "override_pending":
+        raise InvalidTransitionError(
+            "Only a pending FEFO override can be rejected", current_status=reservation.status
+        )
+
+    await evaluate_policy(session, actor_user_id, action="inventory_reservation.reject_override", site_id=site_id)
+    if actor_user_id == reservation.requested_by_user_id:
+        raise ValidationFailedError(
+            "Rejecter must be independent of the requester of this override (Client Topic 8)"
+        )
+
+    policy = await signature_service.resolve_signature_requirement(
+        session, record_type="inventory_reservation", action="reject_override"
+    )
+    if policy.reason_required and not cmd.reason:
+        raise ValidationFailedError("reason is required to reject this FEFO override")
+    signature_id = None
+    if policy.signature_required:
+        actor = await session.get(User, actor_user_id)
+        if actor is None or not verify_password(cmd.reauth_password, actor.password_hash):
+            raise MissingSignatureError("Fresh step-up authentication failed")
+        challenge = await signature_service.consume_challenge(
+            session,
+            challenge_id=cmd.challenge_id,
+            user_id=actor_user_id,
+            record_version=reservation.version,
+            record_hash=reservation_record_hash(reservation),
+        )
+        signature = await signature_service.sign(
+            session, challenge=challenge, auth_context={"method": "password_reauth"}
+        )
+        signature_id = signature.id
+
+    old_status = reservation.status
+    reservation.status = "override_rejected"
+    reservation.override_approved_by_user_id = actor_user_id
+    reservation.override_approved_at = datetime.now(timezone.utc)
+    reservation.override_signature_id = signature_id
+    reservation.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=site_id,
+        aggregate_type="inventory_reservation",
+        aggregate_id=reservation.id,
+        aggregate_version=reservation.version,
+        action="Rejected",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        old_value={"status": old_status},
+        new_value={"status": reservation.status},
+        signature_id=signature_id,
+        reason=cmd.reason,
+    )
+    await write_outbox_event(
+        session,
+        event_type="InventoryReservationOverrideRejected",
+        aggregate_type="inventory_reservation",
+        aggregate_id=reservation.id,
+        aggregate_version=reservation.version,
+        payload={"id": str(reservation.id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=site_id,
+        command_type="RejectReservationOverride",
         aggregate_type="inventory_reservation",
         aggregate_id=reservation.id,
         expected_version=cmd.expected_version,

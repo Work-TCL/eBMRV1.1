@@ -13,6 +13,7 @@ from app.modules.batch_execution.models import Batch
 from app.modules.iam.models import User
 from app.modules.material.commands import (
     ApproveInventoryAdjustmentRequestCommand,
+    ApproveReservationOverrideCommand,
     CancelDispensingCommand,
     CollectSampleCommand,
     CompleteDispensingCommand,
@@ -42,6 +43,7 @@ from app.modules.material.commands import (
     RecordReturnCommand,
     RejectInventoryAdjustmentRequestCommand,
     RejectMaterialLotCommand,
+    RejectReservationOverrideCommand,
     ReleaseInventoryReservationCommand,
     ReleaseMaterialLotCommand,
     RetestMaterialLotCommand,
@@ -52,6 +54,7 @@ from app.modules.material.commands import (
     UpdateMaterialCommand,
     VerifyDispensingCommand,
     approve_inventory_adjustment_request,
+    approve_reservation_override,
     cancel_dispensing,
     collect_sample,
     complete_dispensing,
@@ -91,6 +94,7 @@ from app.modules.material.commands import (
     record_return,
     reject_inventory_adjustment_request,
     reject_material_lot,
+    reject_reservation_override,
     release_inventory_reservation,
     release_material_lot,
     reservation_record_hash,
@@ -119,7 +123,7 @@ from app.modules.material.models import (
 from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.signature.service import create_challenge
 from app.modules.supplier_quality.models import Supplier
-from app.mutation.errors import NotFoundError, ValidationFailedError
+from app.mutation.errors import NotFoundError, RoleMissingError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/materials", tags=["material"])
@@ -914,6 +918,14 @@ async def post_create_reservation(
         return await create_inventory_reservation(session, cmd, actor.user_id)
 
 
+_RESERVATION_CHALLENGE_MEANINGS = {
+    "release": "Released",
+    # Client Topic 8 (SG-083): QA Releaser approval/rejection of a non-FEFO lot override.
+    "approve_override": "Approved",
+    "reject_override": "Rejected",
+}
+
+
 class ReservationSignatureChallengeRequest(BaseModel):
     action: str = "release"
 
@@ -929,7 +941,8 @@ async def post_reservation_signature_challenge(
         reservation = await session.get(InventoryReservation, reservation_id)
         if reservation is None:
             raise NotFoundError("Inventory reservation not found")
-        if body.action != "release":
+        meaning = _RESERVATION_CHALLENGE_MEANINGS.get(body.action)
+        if meaning is None:
             raise ValidationFailedError("Unknown action", action=body.action)
         challenge = await create_challenge(
             session,
@@ -938,7 +951,7 @@ async def post_reservation_signature_challenge(
             record_id=reservation.id,
             record_version=reservation.version,
             record_hash=reservation_record_hash(reservation),
-            meaning="Released",
+            meaning=meaning,
         )
         return {
             "challenge_id": str(challenge.id),
@@ -961,6 +974,114 @@ async def post_release_reservation(
         if reservation is None:
             raise NotFoundError("Inventory reservation not found")
         return await release_inventory_reservation(session, cmd, actor.user_id, reservation.site_id)
+
+
+@inventory_v1_router.post("/reservations/{reservation_id}/approve-override", response_model=MutationReceipt)
+async def post_approve_reservation_override(
+    reservation_id: uuid.UUID,
+    cmd: ApproveReservationOverrideCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        reservation = await session.get(InventoryReservation, reservation_id)
+        if reservation is None:
+            raise NotFoundError("Inventory reservation not found")
+        return await approve_reservation_override(session, reservation_id, cmd, actor.user_id, reservation.site_id)
+
+
+@inventory_v1_router.post("/reservations/{reservation_id}/reject-override", response_model=MutationReceipt)
+async def post_reject_reservation_override(
+    reservation_id: uuid.UUID,
+    cmd: RejectReservationOverrideCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        reservation = await session.get(InventoryReservation, reservation_id)
+        if reservation is None:
+            raise NotFoundError("Inventory reservation not found")
+        return await reject_reservation_override(session, reservation_id, cmd, actor.user_id, reservation.site_id)
+
+
+RESERVATION_SORTABLE = {"created_at": InventoryReservation.created_at, "status": InventoryReservation.status}
+
+
+def _reservation_dict(
+    r: InventoryReservation, internal_lot: str | None, material_code: str, location_code: str | None, requested_by: str
+) -> dict:
+    return {
+        "id": str(r.id),
+        "batch_id": str(r.batch_id),
+        "material_id": str(r.material_id),
+        "material_code": material_code,
+        "material_lot_id": str(r.material_lot_id) if r.material_lot_id else None,
+        "internal_lot": internal_lot,
+        "container_id": str(r.container_id) if r.container_id else None,
+        "location_id": str(r.location_id) if r.location_id else None,
+        "location_code": location_code,
+        "quantity": str(r.quantity),
+        "uom": r.uom,
+        "status": r.status,
+        "fefo_overridden": r.fefo_overridden,
+        "override_reason": r.override_reason,
+        "fefo_default_lot_id": str(r.fefo_default_lot_id) if r.fefo_default_lot_id else None,
+        "requested_by": requested_by,
+        "requested_by_user_id": str(r.requested_by_user_id),
+        "override_approved_by_user_id": str(r.override_approved_by_user_id) if r.override_approved_by_user_id else None,
+        "override_approved_at": r.override_approved_at.isoformat() if r.override_approved_at else None,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "version": r.version,
+    }
+
+
+# Client Topic 8 (SG-083): a browsable queue so a QA Releaser can discover and approve/reject a pending
+# FEFO override without going to the database -- same "read alongside the mutating set, no signature/
+# authority implication of its own" precedent as list_adjustment_requests above, built with the
+# actor/site-scope check that endpoint was itself just found missing.
+@inventory_v1_router.get("/reservations")
+async def list_reservations(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+    params: PageParams = Depends(page_params),
+    status: str | None = None,
+    fefo_overridden: bool | None = None,
+    site_id: uuid.UUID | None = None,
+) -> dict:
+    # QA Releaser holds inventory_reservation.approve_override but not .create -- the requester and the
+    # approver need the same read, so either grant admits this queue.
+    try:
+        site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="inventory_reservation.create")
+    except RoleMissingError:
+        site_scope = await resolve_site_scope(
+            session, actor.user_id, site_id, action="inventory_reservation.approve_override"
+        )
+    stmt = (
+        select(
+            InventoryReservation, MaterialLot.internal_lot, Material.code,
+            WarehouseLocation.location_code, User.username,
+        )
+        .join(Material, Material.id == InventoryReservation.material_id)
+        .outerjoin(MaterialLot, MaterialLot.id == InventoryReservation.material_lot_id)
+        .outerjoin(WarehouseLocation, WarehouseLocation.id == InventoryReservation.location_id)
+        .join(User, User.id == InventoryReservation.requested_by_user_id)
+        .where(InventoryReservation.site_id.in_(site_scope))
+    )
+    if status:
+        stmt = stmt.where(InventoryReservation.status == status)
+    if fefo_overridden is not None:
+        stmt = stmt.where(InventoryReservation.fefo_overridden == fefo_overridden)
+    if params.q:
+        needle = f"%{params.q}%"
+        stmt = stmt.where(or_(MaterialLot.internal_lot.ilike(needle), Material.code.ilike(needle)))
+
+    rows, envelope = await paginate(
+        session, stmt, params, sortable=RESERVATION_SORTABLE, default_sort=InventoryReservation.created_at
+    )
+    return {
+        **envelope,
+        "items": [_reservation_dict(r, lot, code, loc, user) for r, lot, code, loc, user in rows],
+    }
 
 
 @inventory_v1_router.post("/transfers", response_model=MutationReceipt)
@@ -1470,9 +1591,17 @@ def _adjustment_dict(
 @inventory_v1_router.get("/adjustments")
 async def list_adjustment_requests(
     session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
     params: PageParams = Depends(page_params),
     status: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> dict:
+    # Client Topic 15 class fix (found while building the Topic 8 FEFO-override queue below, same
+    # unauthenticated/unscoped-read defect the earlier security sweep fixed elsewhere in this router):
+    # this endpoint had no actor dependency or evaluate_policy() call at all. inventory_adjustment_
+    # request.create is held by every role that can also see this queue (Operator/Supervisor who can
+    # raise one, QA Releaser who can approve/reject).
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="inventory_adjustment_request.create")
     stmt = (
         select(
             InventoryAdjustmentRequest, MaterialLot.internal_lot, Material.code,
@@ -1482,6 +1611,7 @@ async def list_adjustment_requests(
         .join(Material, Material.id == MaterialLot.material_id)
         .join(WarehouseLocation, WarehouseLocation.id == InventoryAdjustmentRequest.location_id)
         .join(User, User.id == InventoryAdjustmentRequest.requested_by_user_id)
+        .where(InventoryAdjustmentRequest.site_id.in_(site_scope))
     )
     if status:
         stmt = stmt.where(InventoryAdjustmentRequest.status == status)

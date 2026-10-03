@@ -228,6 +228,10 @@ PERMISSION_CATALOG = [
     ("warehouse_location.lock", "lock", "warehouse_location", "Lock/unlock a warehouse location during a physical count (Client Topic 7)"),
     ("inventory_reservation.create", "create", "inventory_reservation", "Reserve material for a batch (Document 20)"),
     ("inventory_reservation.release", "release", "inventory_reservation", "Release (give back) a material reservation (Document 20)"),
+    # Client Topic 8 (SG-083, project-owner-directed): a non-FEFO lot override request/approve/reject,
+    # mirroring inventory_adjustment_request's own create/approve/reject shape.
+    ("inventory_reservation.approve_override", "approve_override", "inventory_reservation", "Independently approve a non-FEFO lot override (Client Topic 8)"),
+    ("inventory_reservation.reject_override", "reject_override", "inventory_reservation", "Independently reject a non-FEFO lot override (Client Topic 8)"),
     ("inventory_transaction.transfer", "transfer", "inventory_transaction", "Transfer a lot/container between warehouse locations (Document 20)"),
     # Client Topic 15 fix (2026-10-02, project-owner-directed): GET .../availability had no `actor`
     # dependency or evaluate_policy() call at all -- a genuinely unauthenticated read.
@@ -778,7 +782,7 @@ ROLE_PERMISSIONS = {
         "material_lot.collect_sample", "material_lot.release", "material_lot.reject", "material_lot.retest",
         *MATERIAL_VIEW_CODES,
         "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire", "warehouse_location.lock",
-        "inventory_reservation.create", "inventory_reservation.release", "inventory_transaction.transfer",
+        "inventory_reservation.create", "inventory_reservation.release", "inventory_reservation.approve_override", "inventory_reservation.reject_override", "inventory_transaction.transfer",
         "material_container.split", "material_container.merge", "inventory_cycle_count.execute",
         "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start",
         "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.verify",
@@ -911,7 +915,7 @@ ROLE_PERMISSIONS = {
         # code QA Reviewer already holds for the same "view what this role's own actions produce" reason.
         "evidence.download",
         *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
-        "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oos_record.reopen", "oos_record.link_change_control", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.plan", "capa.effectiveness", "capa.extend", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "supplier.suspend", "supplier.reinstate", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
+        "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oos_record.reopen", "oos_record.link_change_control", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "inventory_reservation.approve_override", "inventory_reservation.reject_override", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.plan", "capa.effectiveness", "capa.extend", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "supplier.suspend", "supplier.reinstate", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
     # SG-157 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): closest existing real role to Document
     # 106's "QA Manager/Head of Quality per record class" text for regulatory_report.approve -- QA Releaser
     # is this codebase's actual highest quality-release-authority role (batch/recipe/product release).
@@ -1230,6 +1234,12 @@ SIGNATURE_POLICY_FLOOR = [
     # Document 106 row 46 (SPEC-MAT-002B) -- reason_required=True per Document 106's own Reason column,
     # fixed this pass (SG-086) since this is code I wrote and own outright.
     ("inventory_reservation", "release", "Released", "QA Releaser", True, True, True),
+    # Client Topic 8 (SG-083, project-owner-directed): same role/independence shape as release above, for
+    # the new non-FEFO lot override approve/reject pair -- no Document 106 row names this action either,
+    # but the client's own answer is the authorization to require a signature (same precedent as every
+    # other client-decision-adds-a-signature case this session).
+    ("inventory_reservation", "approve_override", "Approved", "QA Releaser", True, True, True),
+    ("inventory_reservation", "reject_override", "Rejected", "QA Releaser", True, True, True),
     # Document 106 rows 47-54 (SPEC-MAT-002C) -- row 47 (order creation) is intentionally absent: it has
     # no policy row because create_dispensing_order is unsigned/RBAC-gated (SG-087), not because the
     # signature is optional -- resolve_signature_requirement's fail-closed behavior would otherwise apply

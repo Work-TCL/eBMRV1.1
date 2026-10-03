@@ -25,23 +25,24 @@ from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 from tests.test_inventory_flow import _create_material, _put_away, _receive_and_examine, _release_lot
 
 
-async def _receive_lot_for_material(client, db, token, site_id, material_id, internal_lot, quantity="100.000000"):
+async def _receive_lot_for_material(
+    client, db, token, site_id, material_id, internal_lot, quantity="100.000000", expiry_date=None
+):
     """Like Document 20's `_receive_and_examine`, but against an *existing* material (needed for
     multi-lot dispensing, DSP-FR-017, where two lots share one material identity)."""
+    receipt_body = {
+        "idempotency_key": idem(),
+        "site_id": str(site_id),
+        "receipt_number": f"RCPT-{internal_lot}",
+        "material_id": material_id,
+        "received_gross_quantity": quantity,
+        "accepted_quantity": quantity,
+        "uom": "kg",
+    }
+    if expiry_date is not None:
+        receipt_body["expiry_date"] = expiry_date
     receipt_id = (
-        await client.post(
-            "/materials/v1/receipts",
-            json={
-                "idempotency_key": idem(),
-                "site_id": str(site_id),
-                "receipt_number": f"RCPT-{internal_lot}",
-                "material_id": material_id,
-                "received_gross_quantity": quantity,
-                "accepted_quantity": quantity,
-                "uom": "kg",
-            },
-            headers=auth_headers(token),
-        )
+        await client.post("/materials/v1/receipts", json=receipt_body, headers=auth_headers(token))
     ).json()["aggregate_id"]
     resp = await client.post(
         f"/materials/v1/receipts/{receipt_id}/examine",

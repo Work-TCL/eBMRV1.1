@@ -61,6 +61,23 @@ interface LedgerRow {
   occurred_at?: string;
 }
 
+// GET /inventory/v1/reservations — services/gxp-api/app/modules/material/router.py::list_reservations
+// Client Topic 8 (SG-083): a non-FEFO lot override pending QA Releaser approval.
+interface ReservationOverrideRow {
+  id: string;
+  material_code: string;
+  internal_lot: string | null;
+  location_code: string | null;
+  quantity: string;
+  uom: string;
+  status: string;
+  fefo_overridden: boolean;
+  override_reason: string | null;
+  requested_by: string;
+  created_at: string | null;
+  version: number;
+}
+
 // GET /inventory/v1/adjustments — services/gxp-api/app/modules/material/router.py::list_adjustment_requests
 interface AdjustmentRequestRow {
   id: string;
@@ -184,6 +201,92 @@ function adjustmentColumns(
   ];
 }
 
+const RESERVATION_OVERRIDE_STATUS: Record<string, { state: "missing" | "accepted" | "failed"; label: string }> = {
+  override_pending: { state: "missing", label: "Pending approval" },
+  active: { state: "accepted", label: "Approved - active" },
+  override_rejected: { state: "failed", label: "Rejected" },
+};
+
+function reservationOverrideColumns(
+  canApprove: boolean,
+  myUsername: string | null,
+  onApprove: (row: ReservationOverrideRow) => void,
+  onReject: (row: ReservationOverrideRow) => void
+): DataTableColumn<ReservationOverrideRow>[] {
+  return [
+    {
+      key: "internal_lot",
+      header: "Lot requested",
+      sortable: true,
+      render: (r) => (
+        <span className="tabular fs-2">
+          {r.internal_lot ?? "—"} - <span className="text-muted">{r.material_code}</span>
+        </span>
+      ),
+    },
+    { key: "location_code", header: "Location", render: (r) => <span className="fs-2">{r.location_code ?? "—"}</span> },
+    {
+      key: "quantity",
+      header: "Quantity",
+      align: "right",
+      render: (r) => (
+        <span className="tabular">
+          {r.quantity} {r.uom}
+        </span>
+      ),
+    },
+    {
+      key: "override_reason",
+      header: "Override reason",
+      render: (r) => (
+        <span className="fs-2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          {r.override_reason}
+        </span>
+      ),
+    },
+    { key: "requested_by", header: "Requested by", render: (r) => <span className="fs-2">{r.requested_by}</span> },
+    {
+      key: "created_at",
+      header: "Requested",
+      sortable: true,
+      render: (r) => <span className="tabular fs-2">{r.created_at ? formatDateTime(r.created_at) : "—"}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (r) => {
+        const s = RESERVATION_OVERRIDE_STATUS[r.status] ?? { state: "missing" as const, label: r.status };
+        const icon = r.status === "active" ? "check-circle" : r.status === "override_rejected" ? "alert-triangle" : "clock";
+        return (
+          <StatePill state={s.state} icon={icon}>
+            {s.label}
+          </StatePill>
+        );
+      },
+    },
+    {
+      key: "actions",
+      header: "",
+      render: (r) => {
+        if (r.status !== "override_pending") return null;
+        if (!canApprove) return null;
+        const isSelf = myUsername != null && r.requested_by === myUsername;
+        const title = isSelf ? "You requested this - an independent QA Releaser must approve or reject it" : undefined;
+        return (
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="secondary" disabled={isSelf} onClick={() => onReject(r)} title={title}>
+              Reject
+            </Button>
+            <Button size="sm" variant="primary" disabled={isSelf} onClick={() => onApprove(r)} title={title}>
+              Approve
+            </Button>
+          </div>
+        );
+      },
+    },
+  ];
+}
+
 type Action = "reserve" | "transfer" | "cycle_count" | "adjustment";
 
 const ACTION_LABEL: Record<Action, string> = {
@@ -208,6 +311,8 @@ export default function InventoryPage() {
   const [reloadToken, setReloadToken] = useState(0);
   const [approvingAdjustment, setApprovingAdjustment] = useState<AdjustmentRequestRow | null>(null);
   const [rejectingAdjustment, setRejectingAdjustment] = useState<AdjustmentRequestRow | null>(null);
+  const [approvingOverride, setApprovingOverride] = useState<ReservationOverrideRow | null>(null);
+  const [rejectingOverride, setRejectingOverride] = useState<ReservationOverrideRow | null>(null);
   const [locations, setLocations] = useState<WarehouseLocation[]>([]);
   const [newLocationOpen, setNewLocationOpen] = useState(false);
   const [splittingContainer, setSplittingContainer] = useState<AvailabilityRow | null>(null);
@@ -222,6 +327,7 @@ export default function InventoryPage() {
   // Operator/Supervisor-only canMove bundle above) -- audit finding 2026-09-18: "Request adjustment" was
   // gated on canMove and hid the button from QA Releaser despite holding this exact permission.
   const canRequestAdjustment = hasPermission(me, "inventory_adjustment_request.create");
+  const canApproveOverride = hasPermission(me, "inventory_reservation.approve_override");
 
   // Populated once for the material picker; Phase 1 row counts sit well inside listAll's 100 cap.
   useEffect(() => {
@@ -577,6 +683,39 @@ export default function InventoryPage() {
               </div>
             ),
           },
+          {
+            id: "fefo-overrides",
+            label: "FEFO overrides",
+            content: (
+              <div>
+                <Card pad className="mb-4">
+                  <p className="fact-k mb-2">Client Topic 8 — oldest-stock-first override</p>
+                  <p className="hint mb-3">
+                    Reserving a specific lot instead of the system&apos;s oldest-approved-stock-first choice
+                    is a documented exception - request it from the Reserve form, with a reason. No
+                    stock is held until an authorized Quality/QA person approves it here.
+                  </p>
+                  {!canApproveOverride && (
+                    <p className="hint">Approving an override requires QA Releaser - you can request one but not approve it.</p>
+                  )}
+                </Card>
+
+                <Card>
+                  <CardHeader title="Override requests" />
+                  <DataTable
+                    columns={reservationOverrideColumns(canApproveOverride, me?.username ?? null, setApprovingOverride, setRejectingOverride)}
+                    fetchPage={pagedFetcher<ReservationOverrideRow>("/inventory/v1/reservations", () => ({ fefo_overridden: "true" }))}
+                    rowKey={(r) => r.id}
+                    searchPlaceholder="Search by lot or material…"
+                    emptyIcon="scale"
+                    emptyMessage="No FEFO overrides yet."
+                    defaultSort={{ by: "created_at", dir: "desc" }}
+                    reloadToken={reloadToken}
+                  />
+                </Card>
+              </div>
+            ),
+          },
         ]}
       />
 
@@ -669,6 +808,69 @@ export default function InventoryPage() {
         />
       )}
 
+      {approvingOverride && (
+        <SignatureCeremony
+          open
+          onClose={() => setApprovingOverride(null)}
+          onDone={() => {
+            setApprovingOverride(null);
+            setReloadToken((n) => n + 1);
+          }}
+          challengePath={`/inventory/v1/reservations/${approvingOverride.id}/signature-challenges`}
+          action="approve_override"
+          title={`Approve FEFO override - ${approvingOverride.internal_lot ?? approvingOverride.material_code}`}
+          summary={
+            <>
+              Approving this reserves <strong>{approvingOverride.quantity} {approvingOverride.uom}</strong> of{" "}
+              <strong>{approvingOverride.internal_lot ?? approvingOverride.material_code}</strong> instead of the
+              system&apos;s default oldest-approved-stock-first choice, requested by{" "}
+              <strong>{approvingOverride.requested_by}</strong>: “{approvingOverride.override_reason}”.
+            </>
+          }
+          reason="required"
+          onSign={(p) =>
+            api.post<MutationReceipt>(`/inventory/v1/reservations/${approvingOverride.id}/approve-override`, {
+              idempotency_key: p.idempotency_key,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+              expected_version: approvingOverride.version,
+              reason: p.reason,
+            })
+          }
+        />
+      )}
+
+      {rejectingOverride && (
+        <SignatureCeremony
+          open
+          onClose={() => setRejectingOverride(null)}
+          onDone={() => {
+            setRejectingOverride(null);
+            setReloadToken((n) => n + 1);
+          }}
+          challengePath={`/inventory/v1/reservations/${rejectingOverride.id}/signature-challenges`}
+          action="reject_override"
+          title={`Reject FEFO override - ${rejectingOverride.internal_lot ?? rejectingOverride.material_code}`}
+          summary={
+            <>
+              Rejecting this leaves no stock reserved - the requester must either accept the default
+              oldest-approved-stock lot or submit a new override request. Requested by{" "}
+              <strong>{rejectingOverride.requested_by}</strong>: “{rejectingOverride.override_reason}”.
+            </>
+          }
+          reason="required"
+          onSign={(p) =>
+            api.post<MutationReceipt>(`/inventory/v1/reservations/${rejectingOverride.id}/reject-override`, {
+              idempotency_key: p.idempotency_key,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+              expected_version: rejectingOverride.version,
+              reason: p.reason,
+            })
+          }
+        />
+      )}
+
       {newLocationOpen && (
         <NewLocationModal
           siteId={siteId}
@@ -736,6 +938,13 @@ function ActionModal({
   const [expectedQuantity, setExpectedQuantity] = useState("");
   const [observedQuantity, setObservedQuantity] = useState("");
   const [reason, setReason] = useState("");
+  // Client Topic 8 (SG-083): a documented exception to the default FEFO ordering -- picking a specific
+  // lot requires a reason and lands the reservation in "override_pending" until a QA Releaser approves
+  // it (server-enforced; this is the request half only).
+  const [overrideFefo, setOverrideFefo] = useState(false);
+  const [overrideLotId, setOverrideLotId] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
+  const materialLotOptions = materialLots.filter((l) => l.material_id === materialId && l.status === "released");
 
   // Transfer/Cycle count/Adjustment all reference an existing material lot, container and warehouse
   // location by UUID — none of those UUIDs are printed anywhere in the UI, so every one of these three
@@ -809,6 +1018,7 @@ function ActionModal({
             site_id: siteId,
             quantity,
             uom,
+            ...(overrideFefo ? { override_lot_id: overrideLotId, override_reason: overrideReason } : {}),
           });
         case "transfer":
           return api.post("/inventory/v1/transfers", {
@@ -876,6 +1086,52 @@ function ActionModal({
               </Field>
               <UomSelect value={uom} onChange={setUom} required />
             </div>
+            <label className="flex items-center gap-2 fs-2 mb-3 mt-2">
+              <input
+                type="checkbox"
+                checked={overrideFefo}
+                onChange={(e) => {
+                  setOverrideFefo(e.target.checked);
+                  if (!e.target.checked) {
+                    setOverrideLotId("");
+                    setOverrideReason("");
+                  }
+                }}
+              />
+              Override oldest-stock-first selection (requires QA Releaser approval)
+            </label>
+            {overrideFefo && (
+              <>
+                <Banner tone="warn" title="FEFO override">
+                  This picks a specific lot instead of the system&apos;s default oldest-approved-stock-first
+                  choice. The reservation stays pending until an authorized Quality/QA person approves it
+                  - no stock is held until then.
+                </Banner>
+                <Field
+                  label="Lot to use instead"
+                  required
+                  hint={!materialId ? "Select a material first." : materialLotOptions.length === 0 ? "No released lots found for this material." : undefined}
+                >
+                  <Select value={overrideLotId} onChange={(e) => setOverrideLotId(e.target.value)} required disabled={!materialId}>
+                    <option value="">Select a lot…</option>
+                    {materialLotOptions.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.internal_lot} - expiry {l.expiry_date ?? "—"}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Reason for override" required>
+                  <textarea
+                    className="input"
+                    rows={2}
+                    value={overrideReason}
+                    onChange={(e) => setOverrideReason(e.target.value)}
+                    required
+                  />
+                </Field>
+              </>
+            )}
           </>
         )}
 
@@ -1064,7 +1320,11 @@ function ActionModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={busy || (action === "reserve" && overrideFefo && (!overrideLotId || !overrideReason.trim()))}
+          >
             {busy ? "Saving…" : ACTION_LABEL[action]}
           </Button>
         </div>

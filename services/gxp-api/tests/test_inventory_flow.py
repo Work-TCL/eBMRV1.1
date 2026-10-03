@@ -14,6 +14,7 @@ from sqlalchemy.exc import DBAPIError
 from app.modules.genealogy import service as genealogy_service
 from app.modules.material.models import (
     InventoryAdjustmentRequest,
+    InventoryReservation,
     InventoryTransaction,
     MaterialContainer,
     MaterialLot,
@@ -83,6 +84,47 @@ async def _receive_and_examine(
         .all()
     )
     return material_id, str(lot.id), [str(c.id) for c in containers]
+
+
+async def _receive_lot_for_material(client, db, token, site_id, material_id, internal_lot, quantity="100.000000", expiry_date=None):
+    """Like `_receive_and_examine` above, but against an *existing* material -- needed for the Client
+    Topic 8 FEFO-override tests, where two lots of the same material are compared by expiry date."""
+    receipt_body = {
+        "idempotency_key": idem(),
+        "site_id": str(site_id),
+        "receipt_number": f"RCPT-{internal_lot}",
+        "material_id": material_id,
+        "received_gross_quantity": quantity,
+        "accepted_quantity": quantity,
+        "uom": "kg",
+    }
+    if expiry_date is not None:
+        receipt_body["expiry_date"] = expiry_date
+    receipt_id = (
+        await client.post("/materials/v1/receipts", json=receipt_body, headers=auth_headers(token))
+    ).json()["aggregate_id"]
+    resp = await client.post(
+        f"/materials/v1/receipts/{receipt_id}/examine",
+        json={
+            "idempotency_key": idem(),
+            "receipt_id": receipt_id,
+            "expected_version": 1,
+            "labeling_ok": True,
+            "damage_observed": False,
+            "seal_broken": False,
+            "contamination_observed": False,
+            "identity_confirmed": True,
+            "internal_lot": internal_lot,
+            "container_count": 1,
+        },
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    lot = (await db.execute(select(MaterialLot).where(MaterialLot.internal_lot == internal_lot))).scalar_one()
+    container = (
+        await db.execute(select(MaterialContainer).where(MaterialContainer.material_lot_id == lot.id))
+    ).scalar_one()
+    return str(lot.id), str(container.id)
 
 
 async def _release_lot(client, token, lot_id, expected_version=1):
@@ -522,6 +564,262 @@ async def test_reservation_excludes_expired_lot(client, db, seeded):
     )
     assert resp.status_code == 422
     assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+# --- Client Topic 8 (SG-083) FEFO override ----------------------------------------------------------
+
+
+async def test_fefo_override_requires_reason_then_pending_until_approved(client, db, seeded):
+    """Client Topic 8: a non-FEFO lot override is recorded with a reason, but does not touch the ledger
+    (no stock actually held) until a QA Releaser approves it."""
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    site_id = seeded["site_id"]
+    released_location_id = str(seeded["locations"]["RELEASED-01"].id)
+
+    material_id = await _create_material(client, site_id, code="RM-FEFO1", name="FEFO override material")
+    older_lot_id, older_container_id = await _receive_lot_for_material(
+        client, db, op_token, site_id, material_id, "LOT-FEFO1-OLD", expiry_date="2027-01-01"
+    )
+    await _release_lot(client, qa_token, older_lot_id)
+    await _put_away(client, op_token, older_lot_id, older_container_id, released_location_id, "100.000000")
+    newer_lot_id, newer_container_id = await _receive_lot_for_material(
+        client, db, op_token, site_id, material_id, "LOT-FEFO1-NEW", expiry_date="2028-01-01"
+    )
+    await _release_lot(client, qa_token, newer_lot_id)
+    await _put_away(client, op_token, newer_lot_id, newer_container_id, released_location_id, "100.000000")
+
+    batch_id = await _create_batch(client, op_token, site_id, "FEFO1")
+
+    no_reason_resp = await client.post(
+        "/inventory/v1/reservations",
+        json={
+            "idempotency_key": idem(),
+            "batch_id": batch_id,
+            "material_id": material_id,
+            "site_id": str(site_id),
+            "quantity": "10.000000",
+            "uom": "kg",
+            "override_lot_id": newer_lot_id,
+        },
+        headers=auth_headers(op_token),
+    )
+    assert no_reason_resp.status_code == 422, no_reason_resp.text
+    assert no_reason_resp.json()["code"] == "VALIDATION_FAILED"
+
+    resp = await client.post(
+        "/inventory/v1/reservations",
+        json={
+            "idempotency_key": idem(),
+            "batch_id": batch_id,
+            "material_id": material_id,
+            "site_id": str(site_id),
+            "quantity": "10.000000",
+            "uom": "kg",
+            "override_lot_id": newer_lot_id,
+            "override_reason": "Oldest lot temporarily inaccessible in the warehouse",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+    reservation_id = resp.json()["aggregate_id"]
+
+    reservation = await db.get(InventoryReservation, uuid.UUID(reservation_id))
+    assert reservation.status == "override_pending"
+    assert reservation.fefo_overridden is True
+    assert reservation.override_reason == "Oldest lot temporarily inaccessible in the warehouse"
+    assert str(reservation.material_lot_id) == newer_lot_id
+    assert str(reservation.fefo_default_lot_id) == older_lot_id
+
+    # nothing reserved yet -- both lots show their full available quantity
+    availability = (
+        await client.get(
+            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)},
+            headers=auth_headers(op_token),
+        )
+    ).json()
+    assert {row["available"] for row in availability["items"]} == {"100.00000000"}
+
+    # Independence check: no demo role holds both inventory_reservation.create and .approve_override, so
+    # a genuine self-approval violation (same person as requester and approver) is exercised by
+    # constructing a second override request directly with requested_by_user_id = the QA Releaser demo
+    # user, then attempting approval as that same user via the real HTTP endpoint -- same technique
+    # `test_reservation_release_requires_independence_from_requester` already uses for `.release`.
+    from app.modules.material import commands as material_commands
+
+    qa_releaser_user = seeded["users"]["qa.releaser"]
+    await material_commands.create_inventory_reservation(
+        db,
+        material_commands.CreateInventoryReservationCommand(
+            idempotency_key=idem(),
+            batch_id=batch_id,
+            material_id=material_id,
+            site_id=site_id,
+            quantity=Decimal("5.000000"),
+            uom="kg",
+            override_lot_id=uuid.UUID(newer_lot_id),
+            override_reason="Self-approval independence check",
+        ),
+        qa_releaser_user.id,
+    )
+    await db.commit()
+    self_requested_reservation = (
+        (await db.execute(select(InventoryReservation).where(InventoryReservation.requested_by_user_id == qa_releaser_user.id)))
+        .scalars()
+        .one()
+    )
+    self_approve_resp = await client.post(
+        f"/inventory/v1/reservations/{self_requested_reservation.id}/approve-override",
+        json={
+            "idempotency_key": idem(), "expected_version": 1, "reason": "self",
+            "challenge_id": str(uuid.uuid4()), "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert self_approve_resp.status_code == 422, self_approve_resp.text
+
+    challenge = (
+        await client.post(
+            f"/inventory/v1/reservations/{reservation_id}/signature-challenges",
+            json={"action": "approve_override"},
+            headers=auth_headers(qa_token),
+        )
+    ).json()
+    approve_resp = await client.post(
+        f"/inventory/v1/reservations/{reservation_id}/approve-override",
+        json={
+            "idempotency_key": idem(),
+            "expected_version": 1,
+            "reason": "Confirmed exception, approved",
+            "challenge_id": challenge["challenge_id"],
+            "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert approve_resp.status_code == 200, approve_resp.text
+    assert approve_resp.json()["signature_id"] is not None
+
+    reservation = await db.get(InventoryReservation, uuid.UUID(reservation_id))
+    await db.refresh(reservation)
+    assert reservation.status == "active"
+    assert reservation.override_approved_by_user_id == seeded["users"]["qa.releaser"].id
+
+    availability_after = (
+        await client.get(
+            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)},
+            headers=auth_headers(op_token),
+        )
+    ).json()
+    by_lot = {row["material_lot_id"]: row["available"] for row in availability_after["items"]}
+    assert by_lot[newer_lot_id] == "90.00000000"
+    assert by_lot[older_lot_id] == "100.00000000"
+
+
+async def test_fefo_override_rejected_leaves_ledger_untouched(client, db, seeded):
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    site_id = seeded["site_id"]
+    released_location_id = str(seeded["locations"]["RELEASED-01"].id)
+
+    material_id = await _create_material(client, site_id, code="RM-FEFO2", name="FEFO reject material")
+    older_lot_id, older_container_id = await _receive_lot_for_material(
+        client, db, op_token, site_id, material_id, "LOT-FEFO2-OLD", quantity="50.000000", expiry_date="2027-01-01"
+    )
+    await _release_lot(client, qa_token, older_lot_id)
+    await _put_away(client, op_token, older_lot_id, older_container_id, released_location_id, "50.000000")
+
+    batch_id = await _create_batch(client, op_token, site_id, "FEFO2")
+    resp = await client.post(
+        "/inventory/v1/reservations",
+        json={
+            "idempotency_key": idem(),
+            "batch_id": batch_id,
+            "material_id": material_id,
+            "site_id": str(site_id),
+            "quantity": "10.000000",
+            "uom": "kg",
+            "override_lot_id": older_lot_id,
+            "override_reason": "Testing the reject path",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+    reservation_id = resp.json()["aggregate_id"]
+
+    challenge = (
+        await client.post(
+            f"/inventory/v1/reservations/{reservation_id}/signature-challenges",
+            json={"action": "reject_override"},
+            headers=auth_headers(qa_token),
+        )
+    ).json()
+    reject_resp = await client.post(
+        f"/inventory/v1/reservations/{reservation_id}/reject-override",
+        json={
+            "idempotency_key": idem(),
+            "expected_version": 1,
+            "reason": "Not a valid exception",
+            "challenge_id": challenge["challenge_id"],
+            "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert reject_resp.status_code == 200, reject_resp.text
+    assert reject_resp.json()["signature_id"] is not None
+
+    reservation = await db.get(InventoryReservation, uuid.UUID(reservation_id))
+    assert reservation.status == "override_rejected"
+
+    availability = (
+        await client.get(
+            "/inventory/v1/availability", params={"material_id": material_id, "site_id": str(site_id)},
+            headers=auth_headers(op_token),
+        )
+    ).json()
+    assert availability["items"][0]["available"] == "50.00000000"
+
+
+async def test_fefo_override_queue_listed_for_approval(client, db, seeded):
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    site_id = seeded["site_id"]
+    released_location_id = str(seeded["locations"]["RELEASED-01"].id)
+
+    material_id = await _create_material(client, site_id, code="RM-FEFO3", name="FEFO queue material")
+    lot_id, container_id = await _receive_lot_for_material(
+        client, db, op_token, site_id, material_id, "LOT-FEFO3", quantity="20.000000", expiry_date="2027-01-01"
+    )
+    await _release_lot(client, qa_token, lot_id)
+    await _put_away(client, op_token, lot_id, container_id, released_location_id, "20.000000")
+
+    batch_id = await _create_batch(client, op_token, site_id, "FEFO3")
+    resp = await client.post(
+        "/inventory/v1/reservations",
+        json={
+            "idempotency_key": idem(),
+            "batch_id": batch_id,
+            "material_id": material_id,
+            "site_id": str(site_id),
+            "quantity": "5.000000",
+            "uom": "kg",
+            "override_lot_id": lot_id,
+            "override_reason": "Queue visibility test",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+    reservation_id = resp.json()["aggregate_id"]
+
+    queue = (
+        await client.get(
+            "/inventory/v1/reservations", params={"status": "override_pending"}, headers=auth_headers(qa_token)
+        )
+    ).json()
+    ids = [item["id"] for item in queue["items"]]
+    assert reservation_id in ids
+    row = next(item for item in queue["items"] if item["id"] == reservation_id)
+    assert row["fefo_overridden"] is True
+    assert row["override_reason"] == "Queue visibility test"
 
 
 # --- INV-FR-023/024 container split / merge -----------------------------------------------------------

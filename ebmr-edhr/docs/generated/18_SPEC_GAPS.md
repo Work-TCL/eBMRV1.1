@@ -5539,6 +5539,37 @@ resolution_document: "— (open)"
 status: OPEN
 ```
 
+**PARTIALLY RESOLVED_APPROVED 2026-10-02, project-owner-directed via Client_Decisions_Neededanswers
+Topic 8 (Q15), INV-FR-012's deviation-from-rotation piece only.** The client's answer: "An override of
+the oldest-approved-stock-first rule should be allowed only for documented, justified exceptions. The
+reason for the override should be recorded, and the decision should require approval from an authorized
+Quality/QA person... The system should maintain an audit trail of the material selected, the reason for
+the override, and the approval." This is itself the missing "deviation/change-approval" authority this
+entry said no entity existed for -- rather than invent a separate, generic deviation/change-control
+entity (still correctly out of scope, no such module exists), the override/approval fields and workflow
+are added directly onto `inventory_reservation`, the one entity INV-FR-012 actually concerns.
+
+`create_inventory_reservation` gains optional `override_lot_id`/`override_reason`: supplying them skips
+the default FEFO ordering for the (still itself eligibility-checked) requested lot, but the reservation
+lands in a new `override_pending` status -- no stock is actually reserved -- until a QA Releaser signs
+approval via new `approve_reservation_override`/`reject_reservation_override` commands (same role/
+independence/signed shape `release_inventory_reservation`, Document 106 row 46, already established;
+no Document 106 row names this new action either, but the client's own answer is the authorization to
+require one, same precedent as every other client-decision-adds-a-signature case this session). The
+audit trail the client asked for is literal: `fefo_default_lot_id` records what the unmodified rule
+would have picked, alongside `override_reason` and `override_approved_by_user_id/at/signature_id`.
+
+**SG-057 (the other blocker this entry named) is no longer a blocker for INV-FR-017/018** --
+`MaterialSpecificationVersion` was built in an earlier pass (confirmed in production use throughout
+Documents 21/25's own commands) -- but Topic 8 does not answer INV-FR-017 (spec-version-scoped
+eligibility) or INV-FR-018 (alternative-material substitution) at all, so both remain exactly as open as
+this entry originally recorded; only INV-FR-012 is resolved.
+
+```yaml
+resolution_document: "services/gxp-api/app/modules/material/commands.py (_fefo_default_candidate, create_inventory_reservation override branch, approve_reservation_override, reject_reservation_override), app/modules/material/models.py (InventoryReservation.fefo_overridden/override_reason/fefo_default_lot_id/override_approved_by_user_id/override_approved_at/override_signature_id), app/modules/material/router.py (POST .../reservations/{id}/approve-override, .../reject-override, GET /inventory/v1/reservations queue), migrations/versions/e1f3a5c7d9b2_0130_inventory_reservation_fefo_override.py, scripts/seed.py + tests/conftest.py (inventory_reservation.approve_override/reject_override permissions + signature policy rows, QA Releaser), tests/test_inventory_flow.py (3 new tests). INV-FR-017/018 remain open (no client decision covers them)."
+status: RESOLVED_APPROVED  # INV-FR-012 only; INV-FR-017/018 remain open, not blocking
+```
+
 ### SG-084 — Document 20's cycle-count adjustment has no Document 106 signature row despite spec prose implying approval; physical-count freeze has no operation
 
 INV-FR-020 ("Perform controlled inventory counts, discrepancies and adjustment approval...") reads as

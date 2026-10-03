@@ -885,6 +885,32 @@ async def seeded(db: AsyncSession) -> dict:
                 policy_source="PLATFORM_FLOOR",
             )
         )
+        # Client Topic 8 (SG-083, project-owner-directed): same role/independence shape as release above,
+        # for the new non-FEFO lot override approve/reject pair.
+        db.add(
+            SignaturePolicy(
+                record_type="inventory_reservation",
+                action="approve_override",
+                meaning="Approved",
+                required_role_id=roles["QA Releaser"].id,
+                requires_independent_signer=True,
+                signature_required=True,
+                reason_required=True,
+                policy_source="PLATFORM_FLOOR",
+            )
+        )
+        db.add(
+            SignaturePolicy(
+                record_type="inventory_reservation",
+                action="reject_override",
+                meaning="Rejected",
+                required_role_id=roles["QA Releaser"].id,
+                requires_independent_signer=True,
+                signature_required=True,
+                reason_required=True,
+                policy_source="PLATFORM_FLOOR",
+            )
+        )
         # Document 106 rows 47-54 (SPEC-MAT-002C) -- row 47 (order creation) intentionally has no row
         # here either, matching scripts/seed.py: create_dispensing_order is unsigned/RBAC-gated (SG-087).
         for record_type, action, meaning, role_name, independent, reason_required in (
@@ -1618,6 +1644,8 @@ async def seeded(db: AsyncSession) -> dict:
             ("warehouse_location.lock", "lock", "warehouse_location"),
             ("inventory_reservation.create", "create", "inventory_reservation"),
             ("inventory_reservation.release", "release", "inventory_reservation"),
+            ("inventory_reservation.approve_override", "approve_override", "inventory_reservation"),
+            ("inventory_reservation.reject_override", "reject_override", "inventory_reservation"),
             ("inventory_transaction.transfer", "transfer", "inventory_transaction"),
             ("inventory_availability.view", "view", "inventory_balance"),
             ("material_container.split", "split", "material_container"),
@@ -1997,7 +2025,7 @@ async def seeded(db: AsyncSession) -> dict:
                     "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
                     "material_lot.collect_sample", "material_lot.release", "material_lot.reject", "material_lot.retest",
                     "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire", "warehouse_location.lock",
-                    "inventory_reservation.create", "inventory_reservation.release", "inventory_transaction.transfer",
+                    "inventory_reservation.create", "inventory_reservation.release", "inventory_reservation.approve_override", "inventory_reservation.reject_override", "inventory_transaction.transfer",
                     "material_container.split", "material_container.merge", "inventory_cycle_count.execute",
                     "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start",
                     "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.verify",
@@ -2138,7 +2166,7 @@ async def seeded(db: AsyncSession) -> dict:
                 # as evidence) but held no evidence.* permission to retrieve it afterward.
                 "evidence.download",
                 "material.view", "warehouse_location.view", "inventory_availability.view", "material_receipt.view", "equipment_asset.view", "equipment_area.view",
-                "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oos_record.reopen", "oos_record.link_change_control", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", "security_incident.close",
+                "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oos_record.reopen", "oos_record.link_change_control", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "inventory_reservation.approve_override", "inventory_reservation.reject_override", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", "security_incident.close",
                 # SG-138 policy-data half (2026-09-10) -- QMS signing codes, aligned with scripts/seed.py's
                 # own QA Releaser grant so an independent QA Releaser can actually reach the signed QMS
                 # transitions Document 106 section 9 rows 80-107 now require.

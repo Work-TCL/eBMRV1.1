@@ -423,8 +423,11 @@ class InventoryBalanceProjection(Base):
 class InventoryReservation(Base):
     """Document 20 `inventory_reservation` -- INV-FR-010/011. Phase-1 scope: batch material requirement
     only -- the spec's prose "order" has no order entity anywhere in this codebase (same scope-narrowing
-    precedent as every prior document). The signed `release` action (Document 106 row 46) is the only
-    Document 20 signature -- see `release_inventory_reservation`."""
+    precedent as every prior document). The signed `release` action (Document 106 row 46) was the only
+    Document 20 signature until Client Topic 8 (SG-083, project-owner-directed) added a second: a
+    non-FEFO lot override now requires QA Releaser approval before the reservation actually holds stock
+    -- see `request_reservation_override`/`approve_reservation_override`/`reject_reservation_override`.
+    `status` gains `override_pending`/`override_rejected` alongside `active`/`released`."""
 
     __tablename__ = "inventory_reservations"
     __table_args__ = (
@@ -458,6 +461,15 @@ class InventoryReservation(Base):
     released_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     released_at: Mapped[datetime | None] = mapped_column()
     release_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    # Client Topic 8 (SG-083): FEFO override audit trail -- "the material selected, the reason for the
+    # override, and the approval." fefo_default_lot_id records what the unmodified oldest-stock-first
+    # rule would have chosen, so both the override and the forgone default are on the record.
+    fefo_overridden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    override_reason: Mapped[str | None] = mapped_column(String(1000))
+    fefo_default_lot_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    override_approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
+    override_approved_at: Mapped[datetime | None] = mapped_column()
+    override_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
