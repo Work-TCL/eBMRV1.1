@@ -5,12 +5,50 @@ tests/test_material_flow.py.
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 from sqlalchemy.exc import DBAPIError
 
+from app.modules.batch_execution.models import Batch
 from app.modules.equipment.models import EquipmentUseLog
+from app.modules.product_master.models import ProductVersion
+from app.modules.recipe_master.models import RecipeFamily, RecipeVersion
 from tests.conftest import auth_headers, idem, login
+
+
+async def _create_batch(db, seeded, *, batch_number: str) -> Batch:
+    # Same minimal direct-insert pattern test_ddcp_flow.py's own _create_batch() uses -- equipment's
+    # reservation feature only needs a real batch_id to satisfy EquipmentUseLog's FK, not a full
+    # product/recipe/batch command flow.
+    site_id = seeded["site_id"]
+    pv = ProductVersion(
+        product_business_id=f"PB-{batch_number}", version_no=1, product_code=f"PROD-{batch_number}",
+        name="Test Equipment Reservation Product", manufacturing_profile_code="pharma",
+        lifecycle_state="released", site_id=site_id,
+    )
+    db.add(pv)
+    await db.flush()
+    rf = RecipeFamily(
+        product_business_id=pv.product_business_id, recipe_code=f"RCP-{batch_number}", site_id=site_id,
+        manufacturing_profile_code="pharma",
+    )
+    db.add(rf)
+    await db.flush()
+    rv = RecipeVersion(
+        recipe_family_id=rf.id, version_no=1, product_version_id=pv.id, site_id=site_id,
+        lifecycle_state="released",
+    )
+    db.add(rv)
+    await db.flush()
+    batch = Batch(
+        site_id=site_id, batch_number=batch_number, product_version_id=pv.id, recipe_version_id=rv.id,
+        target_qty=Decimal("1000"), target_uom="EA", state="in_execution", version=1,
+    )
+    db.add(batch)
+    await db.flush()
+    return batch
 
 
 async def _create_equipment_class(client):
@@ -727,3 +765,173 @@ async def test_create_area_unauthenticated_rejected(client, seeded):
         json={"idempotency_key": idem(), "site_id": str(seeded["site_id"]), "area_code": "AREA-TEST-003"},
     )
     assert resp.status_code == 401
+
+
+# =======================================================================================================
+# Client Topic 14 (SG-112, project-owner-directed): reserve / retire / relocate -- EQP-FR-016/026/027 had
+# no operation in Document 38's own declared 9-op API list; the client's own answer is the authorization.
+# =======================================================================================================
+
+
+async def _reserve(client, token, asset_id, batch_id, start_at, end_at, reason=None):
+    return await client.post(
+        f"/equipment/v1/{asset_id}/reserve",
+        json={
+            "idempotency_key": idem(), "asset_id": asset_id, "batch_id": batch_id,
+            "start_at": start_at.isoformat(), "end_at": end_at.isoformat(), "reason": reason,
+        },
+        headers=auth_headers(token),
+    )
+
+
+async def test_reserve_equipment_shows_batch_user_period_and_prevents_overlap(client, seeded, db):
+    admin_token = await login(client, "equipment.admin")
+    site_id = seeded["site_id"]
+    asset_id = await _create_asset(client, admin_token, site_id)
+    async with db.begin():
+        batch = await _create_batch(db, seeded, batch_number="BATCH-EQP-RESERVE-1")
+    batch_id = str(batch.id)
+
+    start_at = datetime.now(timezone.utc) + timedelta(days=1)
+    end_at = start_at + timedelta(hours=4)
+    resp = await _reserve(client, admin_token, asset_id, batch_id, start_at, end_at, reason="PM batch window")
+    assert resp.status_code == 200, resp.text
+
+    history = (await client.get(f"/equipment/v1/{asset_id}/history", headers=auth_headers(admin_token))).json()
+    reservations = [u for u in history["use_log"] if u["log_type"] == "reservation"]
+    assert len(reservations) == 1
+    assert reservations[0]["batch_id"] == batch_id
+    assert reservations[0]["operator_user_id"] is not None
+    assert reservations[0]["ended_at"] is not None
+
+    # Overlapping window on the same asset is rejected.
+    overlap_start = start_at + timedelta(hours=1)
+    overlap_end = overlap_start + timedelta(hours=4)
+    conflict = await _reserve(client, admin_token, asset_id, batch_id, overlap_start, overlap_end)
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["code"] == "EQUIPMENT_RESERVATION_CONFLICT"
+
+    # A non-overlapping window after the first reservation ends succeeds.
+    later_start = end_at + timedelta(hours=1)
+    later_end = later_start + timedelta(hours=2)
+    ok = await _reserve(client, admin_token, asset_id, batch_id, later_start, later_end)
+    assert ok.status_code == 200, ok.text
+
+
+async def test_reserve_equipment_rejects_end_before_start(client, seeded, db):
+    admin_token = await login(client, "equipment.admin")
+    site_id = seeded["site_id"]
+    asset_id = await _create_asset(client, admin_token, site_id)
+    async with db.begin():
+        batch = await _create_batch(db, seeded, batch_number="BATCH-EQP-RESERVE-2")
+
+    start_at = datetime.now(timezone.utc) + timedelta(days=1)
+    resp = await _reserve(client, admin_token, asset_id, str(batch.id), start_at, start_at - timedelta(hours=1))
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+async def _retire(client, token, asset_id, expected_version, challenge_id, reauth_password="ChangeMe123!", reason="End of useful life"):
+    return await client.post(
+        f"/equipment/v1/{asset_id}/retire",
+        json={
+            "idempotency_key": idem(), "asset_id": asset_id, "expected_version": expected_version,
+            "reason": reason, "challenge_id": challenge_id, "reauth_password": reauth_password,
+        },
+        headers=auth_headers(token),
+    )
+
+
+async def test_retire_equipment_requires_signature_and_supervisor_role(client, seeded):
+    admin_token = await login(client, "equipment.admin")
+    supervisor_token = await login(client, "supervisor1")
+    site_id = seeded["site_id"]
+    asset_id = await _create_asset(client, admin_token, site_id)
+
+    # Equipment Administrator does not hold equipment_asset.retire at all -- RBAC denies before any
+    # signature ceremony is even attempted.
+    resp = await client.post(
+        f"/equipment/v1/{asset_id}/retire",
+        json={
+            "idempotency_key": idem(), "asset_id": asset_id, "expected_version": 1, "reason": "x",
+            "challenge_id": str(uuid.uuid4()), "reauth_password": "ChangeMe123!",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+    # Supervisor holds the permission and the required signing role; missing/wrong signature still
+    # blocks it (MISSING_SIGNATURE for a bogus challenge), then a real challenge + password succeeds.
+    bogus = await _retire(client, supervisor_token, asset_id, 1, challenge_id=str(uuid.uuid4()), reauth_password="wrong-password")
+    assert bogus.status_code in (428, 409)
+
+    challenge = (
+        await client.post(
+            f"/equipment/v1/{asset_id}/signature-challenges", json={"action": "retire"}, headers=auth_headers(supervisor_token),
+        )
+    ).json()
+    resp = await _retire(client, supervisor_token, asset_id, 1, challenge_id=challenge["challenge_id"])
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is not None
+
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(admin_token))).json()
+    assert detail["state"] == "RETIRED"
+
+    # Retained historical record, no further mutation possible (same guard every other command path uses).
+    challenge2 = (
+        await client.post(
+            f"/equipment/v1/{asset_id}/signature-challenges", json={"action": "retire"}, headers=auth_headers(supervisor_token),
+        )
+    ).json()
+    resp2 = await _retire(client, supervisor_token, asset_id, 2, challenge_id=challenge2["challenge_id"])
+    assert resp2.status_code == 409
+    assert resp2.json()["code"] == "INVALID_TRANSITION"
+
+
+async def _relocate(client, token, asset_id, expected_version, new_location_id, reason=None):
+    return await client.post(
+        f"/equipment/v1/{asset_id}/relocate",
+        json={
+            "idempotency_key": idem(), "asset_id": asset_id, "expected_version": expected_version,
+            "new_location_id": new_location_id, "reason": reason,
+        },
+        headers=auth_headers(token),
+    )
+
+
+async def test_relocate_equipment_blocks_use_until_requalified(client, seeded):
+    admin_token = await login(client, "equipment.admin")
+    site_id = seeded["site_id"]
+    asset_id = await _create_asset(client, admin_token, site_id)
+    await _qualify(client, admin_token, asset_id, expected_version=1, qualified=True)
+
+    eligibility = (await client.get(f"/equipment/v1/{asset_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert eligibility["eligible"] is True
+
+    resp = await _relocate(client, admin_token, asset_id, expected_version=2, new_location_id=str(uuid.uuid4()), reason="Moved to Suite B")
+    assert resp.status_code == 200, resp.text
+
+    detail = (await client.get(f"/equipment/v1/assets/{asset_id}", headers=auth_headers(admin_token))).json()
+    assert detail["state"] == "QUALIFICATION_PENDING"
+    assert detail["qualification_status"] is None
+
+    eligibility = (await client.get(f"/equipment/v1/{asset_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert eligibility["eligible"] is False
+    assert any(r["code"] == "EQUIPMENT_NOT_QUALIFIED" for r in eligibility["reasons"])
+
+    # A fresh qualification clears it again, same mechanism every other qualification gap already uses.
+    await _qualify(client, admin_token, asset_id, expected_version=3, qualified=True)
+    eligibility = (await client.get(f"/equipment/v1/{asset_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert eligibility["eligible"] is True
+
+
+async def test_relocate_equipment_requires_permission(client, seeded):
+    admin_token = await login(client, "equipment.admin")
+    op_token = await login(client, "operator1")
+    site_id = seeded["site_id"]
+    asset_id = await _create_asset(client, admin_token, site_id)
+
+    resp = await _relocate(client, op_token, asset_id, expected_version=1, new_location_id=str(uuid.uuid4()))
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "ROLE_MISSING"

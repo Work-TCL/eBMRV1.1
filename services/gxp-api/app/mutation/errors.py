@@ -2085,3 +2085,11 @@ class AIRegulatedDecisionBoundaryError(GxPError):
 
     code = "AI_REGULATED_DECISION_BOUNDARY"
     status_code = 403
+
+
+class EquipmentReservationConflictError(GxPError):
+    """Client Topic 14 (SG-112, project-owner-directed), EQP-FR-016: the requested reservation window
+    overlaps an existing reservation for the same equipment asset."""
+
+    code = "EQUIPMENT_RESERVATION_CONFLICT"
+    status_code = 409

@@ -608,6 +608,9 @@ export const canCalibrateEquipment = (me: Me | null) => hasPermission(me, "equip
 export const canMaintainEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.maintain");
 export const canHoldEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.hold");
 export const canReturnEquipmentToService = (me: Me | null) => hasPermission(me, "equipment_asset.return_to_service");
+export const canReserveEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.reserve");
+export const canRetireEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.retire");
+export const canRelocateEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.relocate");
 
 // OOS/OOT (Document 25). canInvestigateOos gates 5 buttons (lab investigation / classify lab cause /
 // retest plan / resample plan / impact) that scripts/seed.py grants as one identical bundle to
@@ -888,6 +891,7 @@ export interface EquipmentAsset {
   manufacturer: string | null;
   model: string | null;
   serial_no: string | null;
+  location_id: string | null;
   state: string;
   qualification_status: string | null;
   calibration_status: string | null;

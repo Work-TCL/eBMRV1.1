@@ -7420,6 +7420,55 @@ description: >
   captured only at asset creation (`create_equipment_asset`) with no dedicated transfer command
   re-evaluating requalification/change/cleaning triggers; and `RETIRED` is modeled but has no command that
   transitions an asset into it.
+
+  **Update (2026-10-03), Client Topic 14, project-owner-directed:** all three now resolved. The client's
+  own answer in `Client_Decisions_Neededanswers (2).txt` is the authorization for the 3 new operations
+  (same "client answer is the authorization" precedent used throughout this session) and for Document
+  106's missing retire policy row (option A's own precondition).
+
+  **EQP-FR-016 (reserve)**: "allow specific equipment to be reserved for a particular batch and/or time
+  window... show the equipment, batch, user, and reserved period to prevent scheduling conflicts." No 5th
+  table is added -- `equipment_use_log.log_type`'s existing `"reservation"` value (USE_LOG_TYPES, this
+  module's own frozen-4-entity discipline) already carries every field the client asked for
+  (`batch_id`/`operator_user_id`/`occurred_at`/`ended_at`). New `reserve_equipment()` writes one such row
+  after checking for an overlapping reservation on the same asset (`EquipmentReservationConflictError`,
+  new, 409). Unsigned -- the client asked for conflict prevention, not an approval. The existing
+  `get_equipment_history()` `use_log` serializer was additionally fixed to actually return
+  `batch_id`/`ended_at`/`operator_user_id`/`event_reference` (same GET-serializer-drops-field bug class
+  found repeatedly elsewhere this session) -- without that fix the reservation would have been written
+  but never visible.
+
+  **EQP-FR-027 (retire)**: "approval and electronic sign-off from an authorized supervisor or designated
+  responsible person... retain the equipment's historical records and record the reason, date, and person
+  who approved." New Document 106 row (`equipment_asset`/`retire`, meaning "Approved", required role
+  "Supervisor" per the client's own literal wording, independent=False, reason_required=True). New
+  `retire_equipment()` reuses the exact `hold_equipment()` signature-ceremony shape (challenge + password
+  reauth + `signature_service.sign()`) plus a role check mirroring `qms.commands._resolve_signature`'s
+  `required_role_id` pattern (not previously used anywhere in this module). `RETIRED` was already modeled
+  and `_load_asset_for_update()` already rejected any further mutation once an asset reached it -- this is
+  simply the first command that ever writes it, so "retains historical records" was already true by
+  construction, not newly built.
+
+  **EQP-FR-026 (relocate)**: "flag it as requiring any applicable re-qualification, verification... before
+  it can be used again. The equipment should remain unavailable for use until the required checks are
+  completed and documented." No new `requires_requalification` column was added: `relocate_equipment()`
+  clears `qualification_status`/`qualification_expiry_date` and sets `state = "QUALIFICATION_PENDING"` --
+  the exact same fields `record_qualification(qualified=False)` already writes -- so
+  `_ineligibility_reasons()`/`get_eligibility()` correctly report the asset unavailable through the
+  identical path every other qualification gap in this module already uses, until a fresh
+  `record_qualification(qualified=True)` clears it. Cleaning is deliberately NOT reset or gated --
+  Document 39's cleaning enforcement does not exist yet (SG-110); inventing a cleaning-block here would be
+  guessing a dependency this pass has no authority to build (same restraint the original gap's own
+  options list already named). Unsigned -- the client asked for an automatic availability flag, not an
+  approval on the move itself.
+
+  Role mapping: `equipment_asset.reserve` granted to Operator/Supervisor/Equipment Administrator/Admin
+  (ordinary operational action, no restriction asked); `equipment_asset.retire` granted to
+  Supervisor/Admin only (the client named the role); `equipment_asset.relocate` granted to
+  Supervisor/Equipment Administrator/Admin. Verified: `tests/test_equipment_flow.py` 33/33 passed (5 new
+  tests covering overlap conflict, validation, signature/role enforcement, retired-immutability, and the
+  relocate-then-requalify round trip); 0 regressions. Live demo DB SignaturePolicy row + permission codes
+  applied; api pm2 process restarted.
 source_documents:
   - Document 38 (SPEC-EQP-001) §3, §4, §6
 source_requirement_ids:
@@ -7453,8 +7502,8 @@ options:
     fail-closed resolver would need an explicit policy row either way).
 blocking: false
 owner: Platform Architect + Equipment module owner + Quality owner (Document 106 policy)
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "Client Topic 14 (2026-10-03, project-owner-directed): services/gxp-api/app/modules/equipment/{commands.py,router.py,models.py}, services/gxp-api/app/mutation/errors.py (EquipmentReservationConflictError), services/gxp-api/scripts/seed.py, services/gxp-api/tests/{conftest.py,test_equipment_flow.py} -- 33/33 passed, 0 regressions. Live demo DB updated, api pm2 process restarted."
+status: RESOLVED_APPROVED_2026-10-03
 ```
 
 ```yaml

@@ -16,6 +16,9 @@ from app.modules.equipment.commands import (
     RecordCalibrationCommand,
     RecordMaintenanceCommand,
     RecordQualificationCommand,
+    RelocateEquipmentCommand,
+    ReserveEquipmentCommand,
+    RetireEquipmentCommand,
     ReturnToServiceCommand,
     create_equipment_area,
     create_equipment_asset,
@@ -27,6 +30,9 @@ from app.modules.equipment.commands import (
     record_calibration,
     record_maintenance,
     record_qualification,
+    relocate_equipment,
+    reserve_equipment,
+    retire_equipment,
     return_to_service,
 )
 from app.modules.equipment.models import EquipmentAsset
@@ -270,7 +276,7 @@ class EquipmentSignatureChallengeRequest(BaseModel):
     action: str = "hold"
 
 
-_EQUIPMENT_CHALLENGE_MEANINGS = {"hold": "Performed"}
+_EQUIPMENT_CHALLENGE_MEANINGS = {"hold": "Performed", "retire": "Approved"}
 
 
 @router.post("/{asset_id}/signature-challenges")
@@ -330,6 +336,57 @@ async def post_return_to_service(
             raise NotFoundError("Equipment asset not found")
         await evaluate_policy(session, actor.user_id, action="equipment_asset.return_to_service", site_id=asset.site_id)
         return await return_to_service(session, cmd, actor.user_id)
+
+
+@router.post("/{asset_id}/reserve", response_model=MutationReceipt)
+async def post_reserve_equipment(
+    asset_id: uuid.UUID,
+    cmd: ReserveEquipmentCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.asset_id != asset_id:
+        raise ValidationFailedError("asset_id in path and body must match")
+    async with session.begin():
+        asset = await session.get(EquipmentAsset, asset_id)
+        if asset is None:
+            raise NotFoundError("Equipment asset not found")
+        await evaluate_policy(session, actor.user_id, action="equipment_asset.reserve", site_id=asset.site_id)
+        return await reserve_equipment(session, cmd, actor.user_id)
+
+
+@router.post("/{asset_id}/retire", response_model=MutationReceipt)
+async def post_retire_equipment(
+    asset_id: uuid.UUID,
+    cmd: RetireEquipmentCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.asset_id != asset_id:
+        raise ValidationFailedError("asset_id in path and body must match")
+    async with session.begin():
+        asset = await session.get(EquipmentAsset, asset_id)
+        if asset is None:
+            raise NotFoundError("Equipment asset not found")
+        await evaluate_policy(session, actor.user_id, action="equipment_asset.retire", site_id=asset.site_id)
+        return await retire_equipment(session, cmd, actor.user_id)
+
+
+@router.post("/{asset_id}/relocate", response_model=MutationReceipt)
+async def post_relocate_equipment(
+    asset_id: uuid.UUID,
+    cmd: RelocateEquipmentCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.asset_id != asset_id:
+        raise ValidationFailedError("asset_id in path and body must match")
+    async with session.begin():
+        asset = await session.get(EquipmentAsset, asset_id)
+        if asset is None:
+            raise NotFoundError("Equipment asset not found")
+        await evaluate_policy(session, actor.user_id, action="equipment_asset.relocate", site_id=asset.site_id)
+        return await relocate_equipment(session, cmd, actor.user_id)
 
 
 @router.get("/{asset_id}/eligibility")

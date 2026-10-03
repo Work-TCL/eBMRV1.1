@@ -265,6 +265,11 @@ PERMISSION_CATALOG = [
     ("equipment_asset.maintain", "maintain", "equipment_asset", "Create/continue/verify an equipment maintenance work order (Document 38)"),
     ("equipment_asset.hold", "hold", "equipment_asset", "Place an equipment asset on hold (Document 38, Document 106 row 108)"),
     ("equipment_asset.return_to_service", "return_to_service", "equipment_asset", "Return an equipment asset to service (Document 38)"),
+    # Client Topic 14 (SG-112, project-owner-directed): EQP-FR-016/026/027 had no operation in Document
+    # 38's own declared 9-op API list -- the client's own answer is the authorization to add all three now.
+    ("equipment_asset.reserve", "reserve", "equipment_asset", "Reserve equipment for a batch/time window (Document 38, EQP-FR-016, Client Topic 14)"),
+    ("equipment_asset.retire", "retire", "equipment_asset", "Permanently retire an equipment asset (Document 38, EQP-FR-027, Client Topic 14)"),
+    ("equipment_asset.relocate", "relocate", "equipment_asset", "Record an equipment asset's physical relocation (Document 38, EQP-FR-026, Client Topic 14)"),
     # Client Topic 15 fix (2026-10-02, project-owner-directed): list_assets/get_asset held an `actor`
     # dependency but never called evaluate_policy() -- any authenticated actor, any role, any site,
     # could read any other site's equipment. Supersedes this router's prior "no RBAC gate here, same
@@ -797,6 +802,7 @@ ROLE_PERMISSIONS = {
         "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate",
         "equipment_asset.create", "equipment_asset.qualify", "equipment_asset.calibrate",
         "equipment_asset.maintain", "equipment_asset.hold", "equipment_asset.return_to_service",
+        "equipment_asset.reserve", "equipment_asset.retire", "equipment_asset.relocate",
         "equipment_area.create",
         *EQUIPMENT_VIEW_CODES,
         "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify",
@@ -886,7 +892,7 @@ ROLE_PERMISSIONS = {
         *QMS_WRITE_CODES, *QMS_VIEW_CODES,
     ],
     # `validation.pq.manage` deliberately NOT here (found + fixed 2026-09-10, SG-172 gap-fixing pass): Document 85's own function catalogue names `createPQScenario()` as "Validation/Process SME" and `assignPQParticipants()` as "Validation Admin", never Operator/"Representative users" -- only `executePQScenario()` is "Representative users", matching `validation.pq.execute` below. The rest of this role's `validation.*` block (test_execution.complete, iq.complete, etc. -- genuine "qualified performer" actions) is unrelated and unaudited by this pass.
-    "Operator": ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.execute", "batch_execution.view", "device.execute", "device.view", "genealogy.view", "evidence.upload", "evidence.download", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
+    "Operator": ["batch_step.start", "rules.evaluate", "product.view", "recipe.view", "batch_execution.execute", "batch_execution.view", "device.execute", "device.view", "genealogy.view", "evidence.upload", "evidence.download", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "equipment_asset.reserve", *EQUIPMENT_VIEW_CODES,
         # 2026-09-18, project-owner-directed: QC execution ("performer") class — matches Operator's
         # existing dispensing/cleaning/batch-execution "performs" pattern; QC Reviewer stays the
         # separate reviewer role (qc_test_order.review/qc_result.correct).
@@ -894,7 +900,7 @@ ROLE_PERMISSIONS = {
         "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
         *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
         "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "equipment_asset.hold", "cleaning_execution.create", "cleaning_execution.complete", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "ncr.create", "complaint.create", "training.assignment.complete", "validation.plan.manage", "validation.gate.view", "validation.package.view", "validation.intended_use.manage", "validation.function_risk.manage", "validation.function_risk.view", "validation.requirement.manage", "validation.trace_link.manage", "validation.baseline.manage", "validation.traceability.view", "validation.test_definition.manage", "validation.test_execution.manage", "validation.test_execution.complete", "validation.iq.manage", "validation.iq.complete", "validation.oq.manage", "validation.oq.view", "validation.infrastructure.manage", "validation.part11.manage", "validation.data_integrity.manage", "validation.interface.manage", "validation.dr.manage", "validation.security.manage", "validation.security.view", "validation.performance.manage", "validation.performance.view", "validation.exception.view", "validation.change_impact.manage", "validation.periodic_review.manage", "validation.periodic_review.decide", "validation.state_baseline.decommission", "validation.pq.execute", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view"],
-    "Supervisor": ["batch_step.start", "batch_step.role_override", "batch_step.correct", "rules.evaluate", "product.view", "recipe.view", "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view", "device.create", "device.execute", "device.view", "genealogy.view", "evidence.upload", "evidence.download", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
+    "Supervisor": ["batch_step.start", "batch_step.role_override", "batch_step.correct", "rules.evaluate", "product.view", "recipe.view", "batch_execution.create", "batch_execution.issue", "batch_execution.execute", "batch_execution.view", "device.create", "device.execute", "device.view", "genealogy.view", "evidence.upload", "evidence.download", "qa_review.view", "release.view", "packaging.execute", "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order", "equipment_asset.reserve", "equipment_asset.retire", "equipment_asset.relocate", *EQUIPMENT_VIEW_CODES,
         # 2026-09-18, project-owner-directed: same QC execution class as Operator above.
         "qc_sample.create", "qc_sample.receive", "qc_test_order.create", "qc_test_order.start",
         "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
@@ -936,7 +942,7 @@ ROLE_PERMISSIONS = {
     # Document 39/40/41/42 actor roles below (2026-10-02, Client Topic 15 fix, project-owner-directed):
     # they all act on equipment/areas already (create/calibrate/maintain/clean/etc.) so they need to be
     # able to read the one(s) they're acting on, same "view travels with write" pattern as elsewhere.
-    "Equipment Administrator": ["equipment_asset.create", "equipment_asset.qualify", "machine_command.submit", "equipment_area.create", *EQUIPMENT_VIEW_CODES],
+    "Equipment Administrator": ["equipment_asset.create", "equipment_asset.qualify", "machine_command.submit", "equipment_area.create", "equipment_asset.reserve", "equipment_asset.relocate", *EQUIPMENT_VIEW_CODES],
     "Engineering Manager": ["equipment_asset.return_to_service", *EQUIPMENT_VIEW_CODES],
     "Calibration Technician": ["equipment_asset.calibrate", *EQUIPMENT_VIEW_CODES],
     "Maintenance Technician": ["equipment_asset.maintain", *EQUIPMENT_VIEW_CODES],
@@ -1271,6 +1277,10 @@ SIGNATURE_POLICY_FLOOR = [
     # pair rather than one dedicated role, so `required_role_name=None` (same treatment as
     # destruction_record.execute above); reason_required=True per Document 106's own Reason column.
     ("equipment_asset", "hold", "Performed", None, False, True, True),
+    # Client Topic 14 (SG-112, project-owner-directed): "approval and electronic sign-off from an
+    # authorized supervisor or designated responsible person" -- the client's own literal wording names
+    # the role, same "client answer is the authorization" precedent used throughout this session.
+    ("equipment_asset", "retire", "Approved", "Supervisor", False, True, True),
     # Document 106 rows 109-111 (SPEC-EQP-002) — rows 109/111's Reason column says "required unless
     # flagged critical", a per-record conditional this flat boolean can't express; reason_required=False
     # here and cleaning_commands.py enforces it conditionally on the record's own `critical` flag instead.

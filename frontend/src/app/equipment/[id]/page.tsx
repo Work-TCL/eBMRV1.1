@@ -10,6 +10,9 @@ import {
   canReturnEquipmentToService,
   canCreateEquipment,
   canOperateEvidence,
+  canReserveEquipment,
+  canRetireEquipment,
+  canRelocateEquipment,
   downloadEvidence,
   formatDate,
   formatDateTime,
@@ -80,14 +83,24 @@ interface WorkOrder {
   technician_user_id: string;
 }
 
+interface UseLogEntry {
+  id: string;
+  log_type: string;
+  occurred_at: string;
+  ended_at: string | null;
+  batch_id: string | null;
+  operator_user_id: string | null;
+  event_reference: string | null;
+}
+
 interface History {
   asset_id: string;
   calibrations: Calibration[];
   maintenance_work_orders: WorkOrder[];
-  use_log: { id: string; log_type: string; occurred_at: string }[];
+  use_log: UseLogEntry[];
 }
 
-type PendingAction = "qualification" | "calibration" | "maintenance" | "hold" | "return_to_service";
+type PendingAction = "qualification" | "calibration" | "maintenance" | "hold" | "return_to_service" | "reserve" | "retire" | "relocate";
 
 export default function EquipmentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -142,35 +155,60 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
             <LinkButton href="/equipment" variant="secondary">
               <Icon name="arrow-left" /> Back
             </LinkButton>
-            {canCreateEquipment(me) && (
-              <Button variant="secondary" onClick={() => setPending("qualification")}>
-                Record qualification
-              </Button>
-            )}
-            {canCalibrateEquipment(me) && (
-              <Button variant="secondary" onClick={() => setPending("calibration")}>
-                Record calibration
-              </Button>
-            )}
-            {canMaintainEquipment(me) && (
-              <Button variant="secondary" onClick={() => setPending("maintenance")}>
-                Record maintenance
-              </Button>
-            )}
-            {a.hold_flag
-              ? canReturnEquipmentToService(me) && (
-                  <Button variant="success" onClick={() => setPending("return_to_service")}>
-                    Return to service
-                  </Button>
-                )
-              : canHoldEquipment(me) && (
-                  <Button variant="danger" onClick={() => setPending("hold")}>
-                    <Icon name="lock" /> Place on hold
+            {a.state !== "RETIRED" && (
+              <>
+                {canCreateEquipment(me) && (
+                  <Button variant="secondary" onClick={() => setPending("qualification")}>
+                    Record qualification
                   </Button>
                 )}
+                {canCalibrateEquipment(me) && (
+                  <Button variant="secondary" onClick={() => setPending("calibration")}>
+                    Record calibration
+                  </Button>
+                )}
+                {canMaintainEquipment(me) && (
+                  <Button variant="secondary" onClick={() => setPending("maintenance")}>
+                    Record maintenance
+                  </Button>
+                )}
+                {canReserveEquipment(me) && (
+                  <Button variant="secondary" onClick={() => setPending("reserve")}>
+                    <Icon name="calendar" /> Reserve
+                  </Button>
+                )}
+                {canRelocateEquipment(me) && (
+                  <Button variant="secondary" onClick={() => setPending("relocate")}>
+                    Relocate
+                  </Button>
+                )}
+                {a.hold_flag
+                  ? canReturnEquipmentToService(me) && (
+                      <Button variant="success" onClick={() => setPending("return_to_service")}>
+                        Return to service
+                      </Button>
+                    )
+                  : canHoldEquipment(me) && (
+                      <Button variant="danger" onClick={() => setPending("hold")}>
+                        <Icon name="lock" /> Place on hold
+                      </Button>
+                    )}
+                {canRetireEquipment(me) && (
+                  <Button variant="danger" onClick={() => setPending("retire")}>
+                    Retire
+                  </Button>
+                )}
+              </>
+            )}
           </div>
         }
       />
+
+      {a.state === "RETIRED" && (
+        <Banner tone="critical" title="This asset is retired" icon="lock">
+          Retired equipment is kept for historical record only and can no longer be modified or used.
+        </Banner>
+      )}
 
       {a.hold_flag && (
         <Banner tone="critical" title="This asset is on hold" icon="lock">
@@ -201,6 +239,7 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
           <Fact label="Maintenance">{a.maintenance_status ?? "—"}</Fact>
           <Fact label="Maintenance due">{formatDate(a.next_maintenance_due_date)}</Fact>
           <Fact label="Cleanliness">{a.cleanliness_status ?? "—"}</Fact>
+          <Fact label="Location">{a.location_id ?? "—"}</Fact>
           <Fact label="Dedicated">{a.dedicated ? "Yes" : "No"}</Fact>
           <Fact label="Firmware">{a.firmware_version ?? "—"}</Fact>
           <Fact label="Record version">{a.version}</Fact>
@@ -488,7 +527,7 @@ function CompleteMaintenanceModal({
   );
 }
 
-function UseLogTab({ entries }: { entries: { id: string; log_type: string; occurred_at: string }[] }) {
+function UseLogTab({ entries }: { entries: UseLogEntry[] }) {
   if (entries.length === 0) {
     return <EmptyState icon="history">No use log entries for this asset.</EmptyState>;
   }
@@ -499,14 +538,20 @@ function UseLogTab({ entries }: { entries: { id: string; log_type: string; occur
         <thead>
           <tr>
             <th>Occurred</th>
+            <th>Until</th>
             <th>Type</th>
+            <th>Batch</th>
+            <th>Note</th>
           </tr>
         </thead>
         <tbody>
           {entries.map((entry) => (
             <tr key={entry.id}>
               <td className="tabular">{formatDateTime(entry.occurred_at)}</td>
+              <td className="tabular">{entry.ended_at ? formatDateTime(entry.ended_at) : "—"}</td>
               <td>{entry.log_type}</td>
+              <td className="fs-2 tabular">{entry.batch_id ?? "—"}</td>
+              <td className="fs-2">{entry.event_reference ?? "—"}</td>
             </tr>
           ))}
         </tbody>
@@ -762,11 +807,14 @@ const ACTION_TITLE: Record<PendingAction, string> = {
   maintenance: "Record maintenance",
   hold: "Place asset on hold",
   return_to_service: "Return asset to service",
+  reserve: "Reserve equipment",
+  retire: "Retire equipment",
+  relocate: "Relocate equipment",
 };
 
-/** One modal for all five equipment commands. Only `hold` requires a signature ceremony (Document 106
- * row 108), so the challenge is requested lazily on open for that action alone rather than for every
- * write. */
+/** One modal for all eight equipment commands. `hold` and `retire` require a signature ceremony
+ * (Document 106 rows 108 and, for `retire`, the new Client Topic 14 row), so the challenge is requested
+ * lazily on open for those two actions alone rather than for every write. */
 function ActionModal({
   asset,
   action,
@@ -806,6 +854,51 @@ function ActionModal({
   const [workPerformed, setWorkPerformed] = useState("");
   const [nextDueDate, setNextDueDate] = useState("");
   const [verified, setVerified] = useState(false);
+
+  // Reserve (Client Topic 14 / SG-112)
+  const [reserveBatchId, setReserveBatchId] = useState("");
+  const [reserveStartAt, setReserveStartAt] = useState("");
+  const [reserveEndAt, setReserveEndAt] = useState("");
+
+  // Relocate (Client Topic 14 / SG-112)
+  const [newLocationId, setNewLocationId] = useState("");
+
+  if (action === "retire") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`/equipment/v1/${asset.id}/signature-challenges`}
+        action="retire"
+        title={
+          <span className="flex items-center gap-2">
+            <Icon name="pen" /> {ACTION_TITLE.retire} - {asset.equipment_code}
+          </span>
+        }
+        summary="Permanently retiring this equipment is a Part 11 electronic signature attributable to you. Retired equipment is kept for historical record only and can never be modified or used again."
+        submitLabel="Sign and retire"
+        submitVariant="danger"
+        reason="none"
+        extraFields={
+          <Field label="Retirement reason" required hint="Recorded with the date and person who approved the retirement.">
+            <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} required />
+          </Field>
+        }
+        disabled={!reason.trim()}
+        onSign={(p) =>
+          api.post<MutationReceipt>(`/equipment/v1/${asset.id}/retire`, {
+            idempotency_key: p.idempotency_key,
+            asset_id: asset.id,
+            expected_version: asset.version,
+            reason,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+          })
+        }
+      />
+    );
+  }
 
   if (action === "hold") {
     return (
@@ -887,6 +980,21 @@ function ActionModal({
           verified,
           reason: reason || null,
         });
+      } else if (action === "reserve") {
+        await api.post<MutationReceipt>(`/equipment/v1/${asset.id}/reserve`, {
+          idempotency_key: base.idempotency_key,
+          asset_id: asset.id,
+          batch_id: reserveBatchId,
+          start_at: new Date(reserveStartAt).toISOString(),
+          end_at: new Date(reserveEndAt).toISOString(),
+          reason: reason || null,
+        });
+      } else if (action === "relocate") {
+        await api.post<MutationReceipt>(`/equipment/v1/${asset.id}/relocate`, {
+          ...base,
+          new_location_id: newLocationId,
+          reason: reason || null,
+        });
       } else {
         await api.post<MutationReceipt>(`/equipment/v1/${asset.id}/return-to-service`, {
           ...base,
@@ -904,7 +1012,9 @@ function ActionModal({
   const canSubmit =
     !busy &&
     (action !== "calibration" ||
-      (!!dueDate && !!performedDate && (calibrationType !== "external" || !!providerName.trim())));
+      (!!dueDate && !!performedDate && (calibrationType !== "external" || !!providerName.trim()))) &&
+    (action !== "reserve" || (!!reserveBatchId && !!reserveStartAt && !!reserveEndAt)) &&
+    (action !== "relocate" || !!newLocationId);
 
   return (
     <Modal
@@ -1052,6 +1162,45 @@ function ActionModal({
               <input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} />
               Post-maintenance verification complete
             </label>
+          </>
+        )}
+
+        {action === "reserve" && (
+          <>
+            <EntityPickerField
+              label="Batch"
+              hint="The batch this reservation is for."
+              value={reserveBatchId}
+              onChange={setReserveBatchId}
+              options={entities.batches}
+              status={entities.batchesStatus}
+              kind="batch"
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Reserved from" required>
+                <Input type="datetime-local" value={reserveStartAt} onChange={(e) => setReserveStartAt(e.target.value)} required />
+              </Field>
+              <Field label="Reserved until" required>
+                <Input type="datetime-local" value={reserveEndAt} onChange={(e) => setReserveEndAt(e.target.value)} required />
+              </Field>
+            </div>
+          </>
+        )}
+
+        {action === "relocate" && (
+          <>
+            <Banner tone="warn" title="Equipment becomes unavailable">
+              The asset will require re-qualification before it can be used again at the new location.
+            </Banner>
+            <EntityPickerField
+              label="New location"
+              hint="The equipment area this asset is being moved to."
+              value={newLocationId}
+              onChange={setNewLocationId}
+              options={entities.areas}
+              status={entities.areasStatus}
+              kind="area"
+            />
           </>
         )}
 

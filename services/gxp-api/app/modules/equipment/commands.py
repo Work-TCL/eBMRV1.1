@@ -31,7 +31,8 @@ from app.modules.equipment.models import (
     EquipmentUseLog,
     MaintenanceWorkOrder,
 )
-from app.modules.iam.models import User
+from app.modules.iam.models import Role, User
+from app.modules.policy.service import effective_role_names
 from app.modules.qms.change_commands import CreateChangeCommand, create_change
 from app.modules.recipe_master.service import list_equipment_classes
 from app.modules.qms.change_models import CHANGE_CLASSIFICATIONS
@@ -42,10 +43,12 @@ from app.mutation.errors import (
     CleaningRequiredError,
     EquipmentNotQualifiedError,
     EquipmentOutOfServiceError,
+    EquipmentReservationConflictError,
     InvalidTransitionError,
     MissingSignatureError,
     NotFoundError,
     PostMaintenanceVerificationRequiredError,
+    RoleMissingError,
     StaleVersionError,
     ValidationFailedError,
 )
@@ -747,10 +750,224 @@ async def return_to_service(
 
 
 # ---------------------------------------------------------------------------
-# Retirement is out of Document 38's declared 9-op API list (§6 doesn't name a retire operation despite
-# EQP-FR-027 describing it) — same "no invented endpoint" discipline. RETIRED is reachable only via a
-# direct DB migration/data-repair path today; raised as a SPEC_GAP, not guessed onto an existing endpoint.
+# ReserveEquipment -- EQP-FR-016, Client Topic 14 (SG-112, project-owner-directed): "allow specific
+# equipment to be reserved for a particular batch and/or time window ... show the equipment, batch, user,
+# and reserved period to prevent scheduling conflicts." No dedicated reservation entity is added -- Document
+# 38's frozen 4-entity data model (models.py's own module docstring) already declares exactly the "no 5th
+# table" discipline SG-112 itself names, and `equipment_use_log.log_type` already carries a `"reservation"`
+# value (USE_LOG_TYPES) for exactly this, with no command that ever wrote one until now. Unsigned -- the
+# client asked for conflict prevention, not an approval/signature on reserving -- RBAC-gated only, same
+# "no Document 106 row = unsigned" precedent as every other not-yet-signed action in this module.
 # ---------------------------------------------------------------------------
+
+
+class ReserveEquipmentCommand(CommandEnvelope):
+    asset_id: uuid.UUID
+    batch_id: uuid.UUID
+    start_at: datetime
+    end_at: datetime
+    reason: str | None = None
+
+
+async def reserve_equipment(
+    session: AsyncSession, cmd: ReserveEquipmentCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if cmd.end_at <= cmd.start_at:
+        raise ValidationFailedError("end_at must be after start_at")
+
+    asset = await session.get(EquipmentAsset, cmd.asset_id)
+    if asset is None:
+        raise NotFoundError("Equipment asset not found")
+    if asset.state == "RETIRED":
+        raise InvalidTransitionError("Equipment is retired and can no longer be reserved", current_state=asset.state)
+
+    # EQP-FR-016's own "prevent scheduling conflicts": any existing reservation-type log row for this
+    # asset whose [occurred_at, ended_at) window overlaps the requested one blocks the new request.
+    overlapping = (
+        await session.execute(
+            select(EquipmentUseLog).where(
+                EquipmentUseLog.equipment_asset_id == cmd.asset_id,
+                EquipmentUseLog.log_type == "reservation",
+                EquipmentUseLog.occurred_at < cmd.end_at,
+                EquipmentUseLog.ended_at > cmd.start_at,
+            )
+        )
+    ).scalars().all()
+    if overlapping:
+        raise EquipmentReservationConflictError(
+            "The requested reservation window overlaps an existing reservation for this equipment",
+            conflicting_reservation_ids=[str(r.id) for r in overlapping],
+        )
+
+    log = EquipmentUseLog(
+        equipment_asset_id=asset.id, site_id=asset.site_id, log_type="reservation", batch_id=cmd.batch_id,
+        operator_user_id=actor_user_id, source="manual", event_reference=cmd.reason,
+        occurred_at=cmd.start_at, ended_at=cmd.end_at,
+    )
+    session.add(log)
+    await session.flush()
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=asset.site_id, aggregate_type="equipment_use_log", aggregate_id=log.id,
+        aggregate_version=1, action="Created", actor_id=actor_user_id, correlation_id=correlation_id,
+        reason=cmd.reason, old_value=None,
+        new_value={
+            "equipment_asset_id": str(asset.id), "batch_id": str(cmd.batch_id),
+            "start_at": cmd.start_at.isoformat(), "end_at": cmd.end_at.isoformat(),
+        },
+    )
+    await write_outbox_event(
+        session, event_type="EquipmentReserved", aggregate_type="equipment_use_log", aggregate_id=log.id,
+        aggregate_version=1,
+        payload={"id": str(log.id), "equipment_asset_id": str(asset.id), "batch_id": str(cmd.batch_id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=asset.site_id, command_type="ReserveEquipment", aggregate_type="equipment_use_log",
+        aggregate_id=log.id, expected_version=None, resulting_version=1,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=log.id, resulting_version=1,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# RetireEquipment -- EQP-FR-027, Client Topic 14 (SG-112, project-owner-directed): "approval and
+# electronic sign-off from an authorized supervisor or designated responsible person ... retain the
+# equipment's historical records and record the reason, date, and person who approved." RETIRED is
+# already modeled in EQUIPMENT_STATES and `_load_asset_for_update()` already rejects any further mutation
+# once an asset reaches it -- this is the one command that ever writes it. New Document 106 row
+# (`equipment_asset`/`retire`, meaning "Approved", required role "Supervisor" per the client's own literal
+# wording, no independence requirement asked for) -- the client's own answer is the authorization for this
+# row, same "client answer is the authorization" precedent used throughout this session.
+# ---------------------------------------------------------------------------
+
+
+class RetireEquipmentCommand(CommandEnvelope):
+    asset_id: uuid.UUID
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID
+    reauth_password: str
+
+
+async def retire_equipment(
+    session: AsyncSession, cmd: RetireEquipmentCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.reason.strip():
+        raise ValidationFailedError("reason is required to retire equipment")
+
+    asset = await _load_asset_for_update(session, cmd.asset_id, cmd.expected_version)
+    old_state = asset.state
+
+    policy = await signature_service.resolve_signature_requirement(session, record_type="equipment_asset", action="retire")
+    signature_id = None
+    if policy.signature_required:
+        if policy.required_role_id is not None:
+            required_role_name = await session.scalar(select(Role.name).where(Role.id == policy.required_role_id))
+            if required_role_name not in await effective_role_names(session, actor_user_id, asset.site_id):
+                raise RoleMissingError(
+                    "Retiring equipment requires the signing role named by the signature policy",
+                    action="equipment_asset.retire", required_role=required_role_name,
+                )
+        actor = await session.get(User, actor_user_id)
+        if actor is None or not verify_password(cmd.reauth_password, actor.password_hash):
+            raise MissingSignatureError("Fresh step-up authentication failed")
+        challenge = await signature_service.consume_challenge(
+            session, challenge_id=cmd.challenge_id, user_id=actor_user_id, record_version=asset.version,
+            record_hash=equipment_record_hash(asset),
+        )
+        signature = await signature_service.sign(session, challenge=challenge, auth_context={"method": "password_reauth"})
+        signature_id = signature.id
+
+    asset.state = "RETIRED"
+    asset.version += 1
+
+    await _write_use_log(session, asset=asset, log_type="use", actor_user_id=actor_user_id, event_reference="retirement")
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=asset.site_id, aggregate_type="equipment_asset", aggregate_id=asset.id,
+        aggregate_version=asset.version, action="StatusChanged", actor_id=actor_user_id, correlation_id=correlation_id,
+        reason=cmd.reason, old_value={"state": old_state}, new_value={"state": asset.state}, signature_id=signature_id,
+    )
+    await write_outbox_event(
+        session, event_type="EquipmentRetired", aggregate_type="equipment_asset", aggregate_id=asset.id,
+        aggregate_version=asset.version, payload={"id": str(asset.id), "state": asset.state}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=asset.site_id, command_type="RetireEquipment", aggregate_type="equipment_asset",
+        aggregate_id=asset.id, expected_version=cmd.expected_version, resulting_version=asset.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=asset.id, resulting_version=asset.version,
+        audit_event_id=audit_event.id, signature_id=signature_id, correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# RelocateEquipment -- EQP-FR-026, Client Topic 14 (SG-112, project-owner-directed): "flag it as requiring
+# any applicable re-qualification, verification ... before it can be used again. The equipment should
+# remain unavailable for use until the required checks are completed and documented." Reuses the exact
+# qualification_status/state mechanism `record_qualification()` already enforces -- no new column (e.g. a
+# separate `requires_requalification` flag) is added: clearing `qualification_status` and moving `state`
+# back to `QUALIFICATION_PENDING` makes `_ineligibility_reasons()`/`get_eligibility()` correctly report the
+# asset unavailable through the exact same path every other qualification gap already uses, until a fresh
+# `record_qualification(qualified=True)` clears it. Cleaning is deliberately NOT reset -- Document 39's
+# cleaning enforcement does not exist yet (SG-110); inventing a cleaning-block here would be guessing a
+# dependency this pass has no authority to build. Unsigned -- the client asked for an automatic
+# availability flag, not an approval/signature on the move itself.
+# ---------------------------------------------------------------------------
+
+
+class RelocateEquipmentCommand(CommandEnvelope):
+    asset_id: uuid.UUID
+    expected_version: int
+    new_location_id: uuid.UUID
+    reason: str | None = None
+
+
+async def relocate_equipment(
+    session: AsyncSession, cmd: RelocateEquipmentCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    asset = await _load_asset_for_update(session, cmd.asset_id, cmd.expected_version)
+    old_state = asset.state
+
+    asset.location_id = cmd.new_location_id
+    asset.qualification_status = None
+    asset.qualification_expiry_date = None
+    asset.state = "QUALIFICATION_PENDING"
+    asset.version += 1
+
+    await _write_use_log(session, asset=asset, log_type="use", actor_user_id=actor_user_id, event_reference="relocation")
+
+    return await _write_receipt(
+        session, cmd=cmd, payload_hash=payload_hash, asset=asset, action="Changed", actor_user_id=actor_user_id,
+        reason=cmd.reason, old_state=old_state, event_type="EquipmentRelocated",
+        event_payload={"id": str(asset.id), "location_id": str(asset.location_id), "state": asset.state},
+        expected_version=cmd.expected_version, command_type="RelocateEquipment",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -839,7 +1056,13 @@ async def get_equipment_history(session: AsyncSession, asset_id: uuid.UUID) -> d
             for w in work_orders
         ],
         "use_log": [
-            {"id": str(u.id), "log_type": u.log_type, "occurred_at": u.occurred_at.isoformat()}
+            {
+                "id": str(u.id), "log_type": u.log_type, "occurred_at": u.occurred_at.isoformat(),
+                "ended_at": u.ended_at.isoformat() if u.ended_at else None,
+                "batch_id": str(u.batch_id) if u.batch_id else None,
+                "operator_user_id": str(u.operator_user_id) if u.operator_user_id else None,
+                "event_reference": u.event_reference,
+            }
             for u in use_logs
         ],
     }
