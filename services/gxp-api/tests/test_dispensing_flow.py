@@ -622,6 +622,54 @@ async def test_complete_critical_material_requires_verification_first(client, db
     assert complete_resp.status_code == 200, complete_resp.text
 
 
+async def test_locked_location_blocks_dispensing_completion(client, db, seeded):
+    """Client Topic 7 Q14 (SG-084): a location locked for a physical count blocks the stock movement
+    `complete_dispensing` performs, the same choke point `create_inventory_transfer` already enforces."""
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    supervisor_token = await login(client, "supervisor1")
+    site_id = seeded["site_id"]
+    released_location_id = str(seeded["locations"]["RELEASED-01"].id)
+
+    material_id, lot_id, container_id = await _prepared_lot(client, db, op_token, qa_token, site_id, "MAT-LOCKDSP", "LOT-LOCKDSP")
+    await _put_away(client, op_token, lot_id, container_id, released_location_id, "100.000000")
+    batch_id, batch_step_id = await _create_batch_with_requirement(client, op_token, site_id, "LOCKDSP", material_id)
+    order_id = await _create_order(client, op_token, site_id, batch_id, batch_step_id, material_id)
+    select_resp = await _select_source(client, op_token, order_id, 1, lot_id, container_id=container_id)
+    assert select_resp.status_code == 200, select_resp.text
+    start_resp = await _start(client, op_token, order_id, 2)
+    assert start_resp.status_code == 200, start_resp.text
+    reading_resp = await _manual_reading(client, op_token, order_id, 3, "30.000000")
+    assert reading_resp.status_code == 200, reading_resp.text
+
+    lock_resp = await client.post(
+        f"/inventory/v1/warehouse-locations/{released_location_id}/lock",
+        json={"idempotency_key": idem(), "expected_version": 1, "reason": "physical count"},
+        headers=auth_headers(supervisor_token),
+    )
+    assert lock_resp.status_code == 200, lock_resp.text
+
+    from app.modules.material.models import DispensingSource
+
+    src = (
+        await db.execute(select(DispensingSource).where(DispensingSource.dispensing_order_id == order_id))
+    ).scalar_one()
+
+    blocked_resp = await _complete(client, op_token, order_id, 3, str(src.id), "30.000000", "DISP-LOCKDSP-CTR")
+    assert blocked_resp.status_code == 409, blocked_resp.text
+    assert blocked_resp.json()["code"] == "LOCATION_LOCKED"
+
+    unlock_resp = await client.post(
+        f"/inventory/v1/warehouse-locations/{released_location_id}/unlock",
+        json={"idempotency_key": idem(), "expected_version": 2, "reason": "count complete"},
+        headers=auth_headers(supervisor_token),
+    )
+    assert unlock_resp.status_code == 200, unlock_resp.text
+
+    complete_resp = await _complete(client, op_token, order_id, 3, str(src.id), "30.000000", "DISP-LOCKDSP-CTR")
+    assert complete_resp.status_code == 200, complete_resp.text
+
+
 async def test_cancel_requires_reason(client, db, seeded):
     op_token = await login(client, "operator1")
     qa_token = await login(client, "qa.releaser")

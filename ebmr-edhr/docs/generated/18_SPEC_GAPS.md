@@ -5592,6 +5592,46 @@ resolution_document: "— (open)"
 status: OPEN
 ```
 
+**RESOLVED_APPROVED 2026-10-02, project-owner-directed via Client_Decisions_Neededanswers Topic 7.**
+Q13's exact answer: "Inventory count adjustments should require a second authorized person's review and
+electronic approval before the correction is finalized. The system should record the original quantity,
+counted quantity, adjustment made, reason, and both users involved." Q14: "allow a location or specific
+inventory item to be temporarily locked during a physical count... lock and unlock actions should be
+recorded for traceability."
+
+**Q13 (cycle-count approval) -- no new Document 106 row invented; the already-resolved row 55 is reused
+for this.** This entry's own original reasoning (no Document 106 row names a cycle-count signature) still
+holds and is not overridden -- what changed is that the client's answer describes exactly the same
+captured-fields/second-person shape `inventory_adjustment_request` (CON-FR-013/014, Document 22,
+Document 106 row 55, already signed and already independence-checked) was built for. Rather than invent a
+parallel signed flow for materially the same action, `create_cycle_count` now opens an
+`InventoryAdjustmentRequest` whenever the counted quantity differs from on-hand (`reason` becomes
+mandatory for that case, CON-FR-013), and the ledger is only touched once `approve_inventory_adjustment_
+request` runs -- same signature, same `requester != approver` check, already built. A matching count
+(no variance) still records a plain unsigned "Counted" audit event, since there's nothing to approve. This
+reads the client's "second person review and electronic approval" as satisfied by the existing Part-11
+ceremony, not as a mandate for a second, independent signature row Document 106 never named.
+
+**Q14 (location lock) -- built as new, additive columns on `warehouse_locations`**: `locked`/
+`lock_reason`/`locked_by_user_id`/`locked_at` (migration `d9f1b3a5c7e8`/0129), with new unsigned, RBAC-
+gated (`warehouse_location.lock`, Admin+Supervisor -- same shape as `warehouse_location.create/update/
+retire`) `lock_location`/`unlock_location` commands. "Lock... recorded for traceability" is read as an
+audited action, not a Part-11 approval -- Document 106 has no row for this either, and the client didn't
+ask for a signature, only a record. Checked at the two real stock-movement choke points,
+`create_inventory_transfer` (both `from_location_id`/`to_location_id`) and `complete_dispensing` (the
+resolved `InventoryBalanceProjection.location_id` being debited) -- raises the new `LOCATION_LOCKED`
+error. Deliberately NOT checked in `create_cycle_count`/`create_inventory_adjustment_request`'s own
+create/approve path, since the count that justifies the lock must itself remain possible while it's
+active -- a lock that blocked the counting activity it exists to protect would defeat its own purpose.
+"Specific inventory item" (vs. "a location") is read as the already-available scoping a lock naturally
+gets from being per-`WarehouseLocation` rather than global -- a dedicated per-lot/per-container lock
+entity was considered and rejected as unnecessary complexity the client's wording doesn't require.
+
+```yaml
+resolution_document: "Q13: services/gxp-api/app/modules/material/commands.py (create_cycle_count delegates its variance branch to create_inventory_adjustment_request; reuses the pre-existing approve_inventory_adjustment_request/Document 106 row 55 signature, CON-FR-013/014). Q14: app/modules/material/models.py (WarehouseLocation.locked/lock_reason/locked_by_user_id/locked_at), app/modules/material/commands.py (LockLocationCommand/lock_location, UnlockLocationCommand/unlock_location, _assert_location_unlocked, wired into create_inventory_transfer and complete_dispensing), app/modules/material/router.py (POST .../warehouse-locations/{id}/lock, .../unlock), app/mutation/errors.py (LocationLockedError), migrations/versions/d9f1b3a5c7e8_0129_warehouse_location_lock.py, scripts/seed.py + tests/conftest.py (warehouse_location.lock permission, Admin+Supervisor), tests/test_inventory_flow.py + tests/test_dispensing_flow.py (new tests)."
+status: RESOLVED_APPROVED
+```
+
 ### SG-085 — Document 20's genealogy wiring and true cross-site inter-site transfer are not built this pass
 
 INV-FR-030 ("Inventory transactions create/maintain lot/container provenance used by Document 13") is

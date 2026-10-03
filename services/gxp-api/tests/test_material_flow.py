@@ -8,8 +8,8 @@ all, and duplicated `RecordConsumption` (via Dispensing) with a second, disconne
 against the real dispensing flow instead (`select_dispensing_source`/`complete_dispensing`)."""
 
 from tests.conftest import auth_headers, idem, login
-from tests.test_dispensing_flow import _create_order, _select_source
-from tests.test_inventory_flow import _create_batch, _put_away, _receive_and_examine
+from tests.test_dispensing_flow import _create_batch_with_requirement, _create_order, _select_source
+from tests.test_inventory_flow import _put_away, _receive_and_examine
 
 
 async def _create_material(client, site_id, code="RM-1", name="Raw Material 1", uom="kg"):
@@ -184,8 +184,10 @@ async def test_issue_from_quarantine_lot_rejected(client, db, seeded):
     quarantine_location_id = str(seeded["locations"]["QUARANTINE-01"].id)
     material_id, lot_id, containers = await _receive_and_examine(client, db, op_token, site_id, "RM-MAT1", "LOT-MAT1")
     await _put_away(client, op_token, lot_id, containers[0], quarantine_location_id, "100.000000")
-    batch_id = await _create_batch(client, op_token, site_id, "MAT1")
-    order_id = await _create_order(client, op_token, site_id, batch_id, material_id, target_qty="5.000000", low="1.000000", high="10.000000")
+    batch_id, batch_step_id = await _create_batch_with_requirement(
+        client, op_token, site_id, "MAT1", material_id, target_qty="5.000000", low="1.000000", high="10.000000"
+    )
+    order_id = await _create_order(client, op_token, site_id, batch_id, batch_step_id, material_id)
 
     resp = await _select_source(client, op_token, order_id, 1, lot_id, container_id=containers[0], quantity="5.000000")
     assert resp.status_code == 409, resp.text
@@ -217,11 +219,11 @@ async def test_full_material_genealogy_flow(client, seeded, db):
     )
     await _release_lot(client, releaser_token, lot_id)
     await _put_away(client, op_token, lot_id, containers[0], released_location_id, "50.000000")
-    batch_id = await _create_batch(client, op_token, site_id, "MAT2")
-
-    order_id = await _create_order(
-        client, op_token, site_id, batch_id, material_id, target_qty="12.500000", low="12.000000", high="13.000000"
+    batch_id, batch_step_id = await _create_batch_with_requirement(
+        client, op_token, site_id, "MAT2", material_id, target_qty="12.500000", low="12.000000", high="13.000000"
     )
+
+    order_id = await _create_order(client, op_token, site_id, batch_id, batch_step_id, material_id)
     select_resp = await _select_source(client, op_token, order_id, 1, lot_id, container_id=containers[0], quantity="12.500000")
     assert select_resp.status_code == 200, select_resp.text
     assert (await _start(client, op_token, order_id, 2)).status_code == 200
@@ -306,9 +308,11 @@ async def test_over_dispense_source_selection_rejected(client, db, seeded):
     )
     await _release_lot(client, releaser_token, lot_id)
     await _put_away(client, op_token, lot_id, containers[0], released_location_id, "10.000000")
-    batch_id = await _create_batch(client, op_token, site_id, "OVER")
+    batch_id, batch_step_id = await _create_batch_with_requirement(
+        client, op_token, site_id, "OVER", material_id, target_qty="10.000000", low="1.000000", high="999.000000"
+    )
 
-    order_id = await _create_order(client, op_token, site_id, batch_id, material_id, target_qty="10.000000", low="1.000000", high="999.000000")
+    order_id = await _create_order(client, op_token, site_id, batch_id, batch_step_id, material_id)
     resp = await _select_source(client, op_token, order_id, 1, lot_id, container_id=containers[0], quantity="999.000000")
     assert resp.status_code == 422, resp.text
     assert resp.json()["code"] == "SOURCE_QUANTITY_INSUFFICIENT"

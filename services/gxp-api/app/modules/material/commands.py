@@ -25,7 +25,6 @@ from app.modules.material.models import (
     Material,
     MaterialConsumption,
     MaterialContainer,
-    MaterialIssue,
     MaterialLot,
     MaterialQualityDisposition,
     MaterialReceipt,
@@ -55,6 +54,7 @@ from app.mutation.errors import (
     ContainerIneligibleError,
     DestructionNotAuthorizedError,
     InvalidTransitionError,
+    LocationLockedError,
     LotIneligibleError,
     MissingSignatureError,
     NotFoundError,
@@ -2133,6 +2133,136 @@ async def retire_warehouse_location(
     )
 
 
+# LockLocation/UnlockLocation -- Client Topic 7 Q14 (SG-084, project-owner-directed): "temporarily lock a
+# location or specific inventory item so that no one can move stock in or out of it while a physical
+# count is being done... lock and unlock actions should be recorded for traceability." No signature --
+# the client asked for traceability (an audited action), not a Part-11 approval, and Document 106 has no
+# row for this (consistent with warehouse_location.create/update/retire, all unsigned RBAC-gated master-
+# data actions). Checked at the stock-movement choke points (create_inventory_transfer,
+# complete_dispensing) -- deliberately NOT at create_cycle_count/create_inventory_adjustment_request,
+# since the count that justifies the lock must itself remain possible while it's active.
+class LockLocationCommand(CommandEnvelope):
+    expected_version: int
+    reason: str
+
+
+async def lock_location(
+    session: AsyncSession, location_id: uuid.UUID, cmd: LockLocationCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    location = await session.get(WarehouseLocation, location_id)
+    if location is None:
+        raise NotFoundError("Warehouse location not found")
+    if location.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Warehouse location was modified by another actor since it was read",
+            expected_version=cmd.expected_version, current_version=location.version,
+        )
+    if location.locked:
+        raise InvalidTransitionError("Location is already locked", current_status="locked")
+    if not cmd.reason.strip():
+        raise ValidationFailedError("reason is required to lock a warehouse location")
+
+    location.locked = True
+    location.lock_reason = cmd.reason
+    location.locked_by_user_id = actor_user_id
+    location.locked_at = datetime.now(timezone.utc)
+    location.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=location.site_id, aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, action="StatusChanged", actor_id=actor_user_id,
+        correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"locked": False}, new_value={"locked": True, "lock_reason": cmd.reason},
+    )
+    await write_outbox_event(
+        session, event_type="WarehouseLocationLocked", aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, payload={"id": str(location.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=location.site_id, command_type="LockLocation", aggregate_type="warehouse_location",
+        aggregate_id=location.id, expected_version=cmd.expected_version, resulting_version=location.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=location.id, resulting_version=location.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+class UnlockLocationCommand(CommandEnvelope):
+    expected_version: int
+    reason: str
+
+
+async def unlock_location(
+    session: AsyncSession, location_id: uuid.UUID, cmd: UnlockLocationCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    location = await session.get(WarehouseLocation, location_id)
+    if location is None:
+        raise NotFoundError("Warehouse location not found")
+    if location.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Warehouse location was modified by another actor since it was read",
+            expected_version=cmd.expected_version, current_version=location.version,
+        )
+    if not location.locked:
+        raise InvalidTransitionError("Location is not locked", current_status="unlocked")
+    if not cmd.reason.strip():
+        raise ValidationFailedError("reason is required to unlock a warehouse location")
+
+    old_lock_reason = location.lock_reason
+    location.locked = False
+    location.lock_reason = None
+    location.locked_by_user_id = None
+    location.locked_at = None
+    location.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=location.site_id, aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, action="StatusChanged", actor_id=actor_user_id,
+        correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"locked": True, "lock_reason": old_lock_reason}, new_value={"locked": False},
+    )
+    await write_outbox_event(
+        session, event_type="WarehouseLocationUnlocked", aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, payload={"id": str(location.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=location.site_id, command_type="UnlockLocation", aggregate_type="warehouse_location",
+        aggregate_id=location.id, expected_version=cmd.expected_version, resulting_version=location.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=location.id, resulting_version=location.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+async def _assert_location_unlocked(session: AsyncSession, location_id: uuid.UUID | None) -> None:
+    if location_id is None:
+        return
+    location = await session.get(WarehouseLocation, location_id)
+    if location is not None and location.locked:
+        raise LocationLockedError(
+            "Location is locked for a physical count; stock cannot move in or out until it is unlocked (SG-084)",
+            location_id=str(location_id), lock_reason=location.lock_reason,
+        )
+
+
 # Section 6 selection algorithm's zone-compatibility rule (INV-FR-002/008): ordinary engineering decision
 # -- the spec gives no explicit status->zone_type compatibility table. A zone_type not in this map (return/
 # destruction/controlled_temperature/sterile_component/other) has no additional constraint.
@@ -2639,6 +2769,8 @@ async def create_inventory_transfer(
             "True inter-site transfer with destination-site re-identification is not built this pass "
             "(SG-085) -- destination location must be at the lot's own site"
         )
+    await _assert_location_unlocked(session, cmd.to_location_id)
+    await _assert_location_unlocked(session, cmd.from_location_id)
 
     effective_status = _effective_status(lot, container)
     required_zone = _ZONE_STATUS_COMPAT.get(effective_status)
@@ -3120,9 +3252,15 @@ async def merge_containers(
 
 
 # ---------------------------------------------------------------------------
-# CreateCycleCount — INV-FR-020/022. No Document 106 row resolves an "adjustment approval" signature
-# despite the spec's own prose implying one -- built unsigned/RBAC-gated only (SG-084), matching this
-# project's hard "no Document 106 row = unsigned" precedent rather than guessing a role/meaning.
+# CreateCycleCount — INV-FR-020/022. Client Topic 7 Q13 (SG-084, project-owner-directed): "Inventory count
+# adjustments should require a second authorized person's review and electronic approval before the
+# correction is finalized. The system should record the original quantity, counted quantity, adjustment
+# made, reason, and both users involved." Rather than invent a parallel signed approval flow (there is no
+# Document 106 row for "cycle count approval" specifically), a counted quantity that differs from on-hand
+# now opens an `InventoryAdjustmentRequest` -- the already-built, already-signed (Document 106 row 55,
+# CON-FR-013/014 independence-checked) request/approve path that already captures exactly the fields the
+# client asked for. A matching count (no variance) still records a plain unsigned "Counted" audit event,
+# since there is nothing to approve.
 # ---------------------------------------------------------------------------
 
 
@@ -3155,34 +3293,22 @@ async def create_cycle_count(
 
     old_on_hand = balance.on_hand
     delta = cmd.counted_quantity - old_on_hand
-    txn = None
     if delta != 0:
-        new_available = balance.available + delta
-        if new_available < 0:
+        if not cmd.reason:
             raise ValidationFailedError(
-                "Counted quantity is less than the quantity currently reserved at this location",
-                available_after_count=str(new_available),
+                "reason is required when the counted quantity differs from on-hand (CON-FR-013)"
             )
-        txn = InventoryTransaction(
-            site_id=site_id,
+        adjustment_cmd = CreateInventoryAdjustmentRequestCommand(
+            idempotency_key=cmd.idempotency_key,
             material_lot_id=cmd.material_lot_id,
             container_id=cmd.container_id,
-            transaction_type="ADJUST_POSITIVE" if delta > 0 else "ADJUST_NEGATIVE",
-            quantity=abs(delta),
-            uom="unit",
-            uom_id=await _resolve_uom_id(session, "unit"),
-            to_location_id=cmd.location_id if delta > 0 else None,
-            from_location_id=cmd.location_id if delta < 0 else None,
-            reference_type="cycle_count",
-            actor_type="human",
-            actor_id=str(actor_user_id),
+            location_id=cmd.location_id,
+            expected_quantity=old_on_hand,
+            observed_quantity=cmd.counted_quantity,
+            reason=cmd.reason,
+            evidence={"source": "cycle_count"},
         )
-        session.add(txn)
-        await session.flush()
-        balance.on_hand = cmd.counted_quantity
-        balance.available = new_available
-        balance.last_transaction_id = txn.id
-        balance.version += 1
+        return await create_inventory_adjustment_request(session, adjustment_cmd, actor_user_id, site_id)
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
@@ -3191,20 +3317,20 @@ async def create_cycle_count(
         aggregate_type="inventory_balance_projection",
         aggregate_id=balance.id,
         aggregate_version=balance.version,
-        action="Adjusted" if delta != 0 else "Counted",
+        action="Counted",
         actor_id=actor_user_id,
         correlation_id=correlation_id,
         old_value={"on_hand": str(old_on_hand)},
-        new_value={"on_hand": str(balance.on_hand), "delta": str(delta)},
+        new_value={"on_hand": str(balance.on_hand), "delta": "0"},
         reason=cmd.reason,
     )
     await write_outbox_event(
         session,
-        event_type="InventoryAdjusted" if delta != 0 else "InventoryCounted",
+        event_type="InventoryCounted",
         aggregate_type="inventory_balance_projection",
         aggregate_id=balance.id,
         aggregate_version=balance.version,
-        payload={"balance_id": str(balance.id), "delta": str(delta)},
+        payload={"balance_id": str(balance.id), "delta": "0"},
         correlation_id=correlation_id,
     )
     receipt = await record_command_receipt(
@@ -4236,6 +4362,7 @@ async def complete_dispensing(
             raise SourceQuantityInsufficientError(
                 "No location holds sufficient available quantity for this source", source_id=str(source.id)
             )
+        await _assert_location_unlocked(session, balance.location_id)
 
         reservation_qty = Decimal("0")
         if source.reservation_id is not None:

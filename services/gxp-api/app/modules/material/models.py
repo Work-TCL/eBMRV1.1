@@ -327,6 +327,15 @@ class WarehouseLocation(Base):
     zone_type: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
     environment_profile_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    # Client Topic 7 Q14 (SG-084, project-owner-directed): temporary lock during a physical count --
+    # "nobody else can move stock in or out" -- checked at the stock-movement choke points
+    # (create_inventory_transfer, complete_dispensing), deliberately NOT at create_cycle_count/
+    # create_inventory_adjustment_request, since the count/adjustment that justifies the lock must
+    # itself remain possible while it's active.
+    locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    lock_reason: Mapped[str | None] = mapped_column(String(1000))
+    locked_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
+    locked_at: Mapped[datetime | None] = mapped_column()
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 

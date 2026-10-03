@@ -4,6 +4,7 @@ signed operation (release, Document 106 row 46, INV-FR-010/011), transfer betwee
 container split/merge (INV-FR-023/024), cycle count (INV-FR-020/022), and the read-only availability/
 ledger/reconciliation endpoints (INV-FR-003/029/028)."""
 
+import uuid
 from decimal import Decimal
 
 import pytest
@@ -11,9 +12,15 @@ from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 
 from app.modules.genealogy import service as genealogy_service
-from app.modules.material.models import InventoryTransaction, MaterialContainer, MaterialLot
+from app.modules.material.models import (
+    InventoryAdjustmentRequest,
+    InventoryTransaction,
+    MaterialContainer,
+    MaterialLot,
+    WarehouseLocation,
+)
 from app.modules.supplier_quality.models import Supplier
-from tests.conftest import auth_headers, idem, login
+from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 from tests.test_material_receipt_flow import _create_receipt, _examine_clean
 from tests.test_qms_scar import _create_supplier, _make_admin
 
@@ -736,7 +743,42 @@ async def test_merge_containers_wires_merged_from_genealogy_edge(client, db, see
 # --- INV-FR-020/022 cycle count -------------------------------------------------------------------
 
 
-async def test_cycle_count_records_discrepancy_and_preserves_history(client, db, seeded):
+async def test_cycle_count_no_variance_recorded_without_approval(client, db, seeded):
+    """A count that matches on-hand has nothing to approve -- no InventoryAdjustmentRequest is created."""
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    site_id = seeded["site_id"]
+    released_location_id = str(seeded["locations"]["RELEASED-01"].id)
+
+    material_id, lot_id, containers = await _receive_and_examine(
+        client, db, op_token, site_id, "MAT-CYCLEMATCH", "LOT-CYCLEMATCH"
+    )
+    await _release_lot(client, qa_token, lot_id)
+    await _put_away(client, op_token, lot_id, containers[0], released_location_id, "100.000000")
+
+    resp = await client.post(
+        "/inventory/v1/cycle-counts",
+        json={
+            "idempotency_key": idem(),
+            "material_lot_id": lot_id,
+            "container_id": containers[0],
+            "location_id": released_location_id,
+            "counted_quantity": "100.000000",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    ledger = (await client.get(f"/inventory/v1/lots/{lot_id}/ledger", headers=auth_headers(qa_token))).json()
+    types = [row["transaction_type"] for row in ledger["items"]]
+    assert "ADJUST_NEGATIVE" not in types and "ADJUST_POSITIVE" not in types
+
+
+async def test_cycle_count_variance_requires_reason_and_second_person_approval(client, db, seeded):
+    """Client Topic 7 Q13 (SG-084, project-owner-directed): a counted quantity that differs from on-hand
+    opens an InventoryAdjustmentRequest instead of mutating the ledger directly -- the ledger only
+    changes once a second, independent person approves it (same Document 106 row 55 signature
+    CON-FR-013/014 already enforces for the pre-existing adjustment-request flow)."""
     op_token = await login(client, "operator1")
     qa_token = await login(client, "qa.releaser")
     site_id = seeded["site_id"]
@@ -747,6 +789,21 @@ async def test_cycle_count_records_discrepancy_and_preserves_history(client, db,
     )
     await _release_lot(client, qa_token, lot_id)
     await _put_away(client, op_token, lot_id, containers[0], released_location_id, "100.000000")
+
+    # reason is required once there's a variance
+    no_reason_resp = await client.post(
+        "/inventory/v1/cycle-counts",
+        json={
+            "idempotency_key": idem(),
+            "material_lot_id": lot_id,
+            "container_id": containers[0],
+            "location_id": released_location_id,
+            "counted_quantity": "97.500000",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert no_reason_resp.status_code == 422, no_reason_resp.text
+    assert no_reason_resp.json()["code"] == "VALIDATION_FAILED"
 
     resp = await client.post(
         "/inventory/v1/cycle-counts",
@@ -761,6 +818,38 @@ async def test_cycle_count_records_discrepancy_and_preserves_history(client, db,
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 200, resp.text
+    request_id = resp.json()["aggregate_id"]
+
+    request = await db.get(InventoryAdjustmentRequest, uuid.UUID(request_id))
+    assert request.status == "requested"
+    assert request.expected_quantity == Decimal("100.000000")
+    assert request.observed_quantity == Decimal("97.500000")
+    assert request.requested_by_user_id == seeded["users"]["operator1"].id
+
+    # ledger is untouched until approved
+    ledger_before = (await client.get(f"/inventory/v1/lots/{lot_id}/ledger", headers=auth_headers(qa_token))).json()
+    assert "ADJUST_NEGATIVE" not in [row["transaction_type"] for row in ledger_before["items"]]
+
+    challenge = (
+        await client.post(
+            f"/inventory/v1/adjustments/{request_id}/signature-challenges",
+            json={"action": "approve"},
+            headers=auth_headers(qa_token),
+        )
+    ).json()
+    approve_resp = await client.post(
+        f"/inventory/v1/adjustments/{request_id}/approve",
+        json={
+            "idempotency_key": idem(),
+            "expected_version": 1,
+            "reason": "confirmed by second count",
+            "challenge_id": challenge["challenge_id"],
+            "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert approve_resp.status_code == 200, approve_resp.text
+    assert approve_resp.json()["signature_id"] is not None
 
     ledger = (await client.get(f"/inventory/v1/lots/{lot_id}/ledger", headers=auth_headers(qa_token))).json()
     types = [row["transaction_type"] for row in ledger["items"]]
@@ -793,6 +882,132 @@ async def test_cycle_count_negative_counted_quantity_rejected(client, db, seeded
     )
     assert resp.status_code == 422
     assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+# --- Client Topic 7 Q14 (SG-084) location lock during a physical count --------------------------------
+
+
+async def test_lock_location_requires_rbac_and_reason(client, db, seeded):
+    op_token = await login(client, "operator1")
+    supervisor_token = await login(client, "supervisor1")
+    location_id = str(seeded["locations"]["QUARANTINE-01"].id)
+
+    forbidden_resp = await client.post(
+        f"/inventory/v1/warehouse-locations/{location_id}/lock",
+        json={"idempotency_key": idem(), "expected_version": 1, "reason": "physical count"},
+        headers=auth_headers(op_token),
+    )
+    assert forbidden_resp.status_code == 403, forbidden_resp.text
+
+    no_reason_resp = await client.post(
+        f"/inventory/v1/warehouse-locations/{location_id}/lock",
+        json={"idempotency_key": idem(), "expected_version": 1, "reason": "   "},
+        headers=auth_headers(supervisor_token),
+    )
+    assert no_reason_resp.status_code == 422, no_reason_resp.text
+
+    lock_resp = await client.post(
+        f"/inventory/v1/warehouse-locations/{location_id}/lock",
+        json={"idempotency_key": idem(), "expected_version": 1, "reason": "physical count"},
+        headers=auth_headers(supervisor_token),
+    )
+    assert lock_resp.status_code == 200, lock_resp.text
+
+    supervisor_id = seeded["users"]["supervisor1"].id
+    location = await db.get(WarehouseLocation, uuid.UUID(location_id))
+    await db.refresh(location)
+    assert location.locked is True
+    assert location.lock_reason == "physical count"
+    assert location.locked_by_user_id == supervisor_id
+
+    # already-locked lock attempt is rejected
+    already_locked_resp = await client.post(
+        f"/inventory/v1/warehouse-locations/{location_id}/lock",
+        json={"idempotency_key": idem(), "expected_version": 2, "reason": "again"},
+        headers=auth_headers(supervisor_token),
+    )
+    assert already_locked_resp.status_code == 409, already_locked_resp.text
+    assert already_locked_resp.json()["code"] == "INVALID_TRANSITION"
+
+    unlock_resp = await client.post(
+        f"/inventory/v1/warehouse-locations/{location_id}/unlock",
+        json={"idempotency_key": idem(), "expected_version": 2, "reason": "count complete"},
+        headers=auth_headers(supervisor_token),
+    )
+    assert unlock_resp.status_code == 200, unlock_resp.text
+
+    await db.refresh(location)
+    assert location.locked is False
+    assert location.lock_reason is None
+
+
+async def test_locked_location_blocks_transfer_in_and_out(client, db, seeded):
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    supervisor_token = await login(client, "supervisor1")
+    site_id = seeded["site_id"]
+    released_location_id = str(seeded["locations"]["RELEASED-01"].id)
+    quarantine_location_id = str(seeded["locations"]["QUARANTINE-01"].id)
+
+    material_id, lot_id, containers = await _receive_and_examine(
+        client, db, op_token, site_id, "MAT-LOCK", "LOT-LOCK"
+    )
+    await _release_lot(client, qa_token, lot_id)
+
+    lock_resp = await client.post(
+        f"/inventory/v1/warehouse-locations/{released_location_id}/lock",
+        json={"idempotency_key": idem(), "expected_version": 1, "reason": "physical count"},
+        headers=auth_headers(supervisor_token),
+    )
+    assert lock_resp.status_code == 200, lock_resp.text
+
+    blocked_resp = await client.post(
+        "/inventory/v1/transfers",
+        json={
+            "idempotency_key": idem(),
+            "material_lot_id": lot_id,
+            "container_id": containers[0],
+            "from_location_id": None,
+            "to_location_id": released_location_id,
+            "quantity": "100.000000",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert blocked_resp.status_code == 409, blocked_resp.text
+    assert blocked_resp.json()["code"] == "LOCATION_LOCKED"
+
+    unlock_resp = await client.post(
+        f"/inventory/v1/warehouse-locations/{released_location_id}/unlock",
+        json={"idempotency_key": idem(), "expected_version": 2, "reason": "count complete"},
+        headers=auth_headers(supervisor_token),
+    )
+    assert unlock_resp.status_code == 200, unlock_resp.text
+
+    put_away_resp = await _put_away(client, op_token, lot_id, containers[0], released_location_id, "100.000000")
+    assert put_away_resp["aggregate_id"]
+
+    # now lock the location the stock is actually in and confirm a transfer OUT is blocked too
+    lock_resp_2 = await client.post(
+        f"/inventory/v1/warehouse-locations/{released_location_id}/lock",
+        json={"idempotency_key": idem(), "expected_version": 3, "reason": "physical count again"},
+        headers=auth_headers(supervisor_token),
+    )
+    assert lock_resp_2.status_code == 200, lock_resp_2.text
+
+    blocked_out_resp = await client.post(
+        "/inventory/v1/transfers",
+        json={
+            "idempotency_key": idem(),
+            "material_lot_id": lot_id,
+            "container_id": containers[0],
+            "from_location_id": released_location_id,
+            "to_location_id": quarantine_location_id,
+            "quantity": "10.000000",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert blocked_out_resp.status_code == 409, blocked_out_resp.text
+    assert blocked_out_resp.json()["code"] == "LOCATION_LOCKED"
 
 
 # --- INV-FR-006/section 8: direct UPDATE/DELETE on the immutable ledger is refused ---------------------

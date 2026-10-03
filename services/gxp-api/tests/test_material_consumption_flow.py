@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 
+from app.modules.batch_execution.models import Batch, BatchStep
 from app.modules.material.models import (
     DestructionRecord,
     DispensedContainer,
@@ -24,9 +25,12 @@ from app.modules.material.models import (
     MaterialReconciliation,
     MaterialReturn,
 )
+from app.modules.material_specification.models import MaterialSpecificationVersion
+from app.modules.recipe_master.models import RecipeMaterialRequirement, RecipeStep
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 from tests.test_dispensing_flow import (
     _complete,
+    _create_batch_with_requirement,
     _create_order,
     _manual_reading,
     _prepared_lot,
@@ -45,9 +49,11 @@ async def _build_dispensed_container(client, db, seeded, op_token, qc_token, qa_
 
     material_id, lot_id, container_id = await _prepared_lot(client, db, op_token, qa_token, site_id, code, lot_code)
     await _put_away(client, op_token, lot_id, container_id, released_location_id, "100.000000")
-    batch_id = await _create_batch(client, op_token, site_id, code)
+    batch_id, batch_step_id = await _create_batch_with_requirement(
+        client, op_token, site_id, code, material_id, target_qty=qty, low="1.000000", high="200.000000"
+    )
 
-    order_id = await _create_order(client, op_token, site_id, batch_id, material_id, target_qty=qty, low="1.000000", high="200.000000")
+    order_id = await _create_order(client, op_token, site_id, batch_id, batch_step_id, material_id)
     select_resp = await _select_source(client, op_token, order_id, 1, lot_id, container_id=container_id, quantity=qty)
     assert select_resp.status_code == 200, select_resp.text
     start_resp = await _start(client, op_token, order_id, 2)
@@ -70,21 +76,49 @@ async def _build_dispensed_container(client, db, seeded, op_token, qc_token, qa_
 
 
 async def consume_material_into_existing_batch(
-    client, db, seeded, op_token, qc_token, qa_token, batch_id, code, lot_code, qty="1.000000"
+    client, db, seeded, op_token, qc_token, qa_token, batch_id, batch_step_id, code, lot_code, qty="1.000000"
 ):
-    """Like `_build_dispensed_container` above, but dispenses against a batch the caller already created
-    (rather than making a new one) and immediately records a real consumption -- for tests elsewhere that
-    just need one genuine `MaterialConsumption` row against an existing batch (e.g. the Batch Record
+    """Like `_build_dispensed_container` above, but dispenses against a batch (and one of its already-
+    existing `BatchStep`s) the caller already created, rather than making a new one -- for tests elsewhere
+    that just need one genuine `MaterialConsumption` row against an existing batch (e.g. the Batch Record
     view's "materials consumed" section). 2026-09-22: replaces the old pattern of hand-inserting a
     `MaterialIssue` row directly via the ORM, which stopped working once `record_service.py` was fixed to
-    read the real consumption ledger instead of that retired, never-written-by-any-UI table."""
+    read the real consumption ledger instead of that retired, never-written-by-any-UI table. SG-094
+    (Topic 5, Phase 6): `create_dispensing_order` now derives its target/tolerance from a released
+    `RecipeMaterialRequirement` -- the caller's batch/step predates this material, so one is inserted here
+    directly against the step's underlying `RecipeStep`, the same shape
+    `_create_batch_with_requirement` builds for a brand-new batch."""
     site_id = seeded["site_id"]
     released_location_id = str(seeded["locations"]["RELEASED-01"].id)
 
     material_id, lot_id, container_id = await _prepared_lot(client, db, op_token, qa_token, site_id, code, lot_code, quantity=qty)
     await _put_away(client, op_token, lot_id, container_id, released_location_id, qty)
 
-    order_id = await _create_order(client, op_token, site_id, batch_id, material_id, target_qty=qty, low="0.000001", high="999999.000000")
+    batch_step = await db.get(BatchStep, uuid.UUID(batch_step_id))
+    batch = await db.get(Batch, uuid.UUID(batch_id))
+    recipe_step = (
+        await db.execute(
+            select(RecipeStep).where(
+                RecipeStep.recipe_version_id == batch.recipe_version_id,
+                RecipeStep.stable_step_code == batch_step.recipe_step_code,
+            )
+        )
+    ).scalar_one()
+    spec = MaterialSpecificationVersion(
+        material_spec_business_id=f"SPEC-{lot_code}", version_no=1, material_id=uuid.UUID(material_id),
+        name=f"Spec {lot_code}", lifecycle_state="released", site_id=site_id,
+    )
+    db.add(spec)
+    await db.flush()
+    db.add(
+        RecipeMaterialRequirement(
+            step_id=recipe_step.id, material_spec_version_id=spec.id,
+            target_value=Decimal(qty), min_value=Decimal("0.000001"), max_value=Decimal("999999.000000"), uom="kg",
+        )
+    )
+    await db.commit()
+
+    order_id = await _create_order(client, op_token, site_id, batch_id, batch_step_id, material_id)
     select_resp = await _select_source(client, op_token, order_id, 1, lot_id, container_id=container_id, quantity=qty)
     assert select_resp.status_code == 200, select_resp.text
     assert (await _start(client, op_token, order_id, 2)).status_code == 200

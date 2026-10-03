@@ -12,7 +12,6 @@ from app.modules.equipment.models import EquipmentAsset, EquipmentUseLog
 from app.modules.equipment.sterilization_models import ProcessCycle
 from app.modules.evidence.models import EvidenceObject
 from app.modules.iam.models import User
-from tests.test_material_consumption_flow import consume_material_into_existing_batch
 from app.modules.qc.models import QcResult, QcSample, QcTestDefinition, QcTestOrder, QcTestRun, QcTestSpecification
 from app.modules.qms.capa_models import CapaRecord
 from app.modules.qms.models import DeviationRecord
@@ -24,6 +23,7 @@ from tests.test_batch_execution import (
     _released_pair,
     _sign_step,
 )
+from tests.test_material_consumption_flow import consume_material_into_existing_batch
 
 
 async def _complete_step(client, token, batch_id, step_id, expected_version):
@@ -66,7 +66,7 @@ async def test_batch_record_aggregates_execution_history_and_generates_pdf(clien
     qc_token = await login(client, "qc.reviewer")
     qa_releaser_token = await login(client, "qa.releaser")
     lot_id, _dc_id = await consume_material_into_existing_batch(
-        client, db, seeded, op_token, qc_token, qa_releaser_token, batch_id, "RM-REC1", f"LOT-REC1-{uuid.uuid4().hex[:6]}"
+        client, db, seeded, op_token, qc_token, qa_releaser_token, batch_id, step_id, "RM-REC1", f"LOT-REC1-{uuid.uuid4().hex[:6]}"
     )
     # The helper above ran plain reads through the shared `db` fixture session (e.g. looking up the
     # DispensingSource row), which autobegins a transaction that stays open until closed explicitly --

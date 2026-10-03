@@ -31,6 +31,7 @@ from app.modules.material.commands import (
     EvaluateMaterialReconciliationCommand,
     ExamineReceiptCommand,
     ExecuteDestructionCommand,
+    LockLocationCommand,
     MergeContainersCommand,
     OverrideDispensingOrderTargetCommand,
     ReceiveMaterialLotCommand,
@@ -47,6 +48,7 @@ from app.modules.material.commands import (
     SelectDispensingSourceCommand,
     SplitContainerCommand,
     StartDispensingCommand,
+    UnlockLocationCommand,
     UpdateMaterialCommand,
     VerifyDispensingCommand,
     approve_inventory_adjustment_request,
@@ -76,6 +78,7 @@ from app.modules.material.commands import (
     get_quality_status,
     get_release_readiness,
     inventory_adjustment_request_record_hash,
+    lock_location,
     lot_record_hash,
     merge_containers,
     override_dispensing_order_target,
@@ -95,6 +98,7 @@ from app.modules.material.commands import (
     select_dispensing_source,
     split_container,
     start_dispensing,
+    unlock_location,
     update_material,
     verify_dispensing,
 )
@@ -809,6 +813,12 @@ def _warehouse_location_dict(loc: WarehouseLocation) -> dict:
         "location_code": loc.location_code,
         "zone_type": loc.zone_type,
         "status": loc.status,
+        "version": loc.version,
+        # Client Topic 7 Q14 (SG-084): temporary count lock.
+        "locked": loc.locked,
+        "lock_reason": loc.lock_reason,
+        "locked_by_user_id": str(loc.locked_by_user_id) if loc.locked_by_user_id else None,
+        "locked_at": loc.locked_at.isoformat() if loc.locked_at else None,
     }
 
 
@@ -843,6 +853,40 @@ async def post_create_warehouse_location(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="warehouse_location.create", site_id=cmd.site_id)
         return await create_warehouse_location(session, cmd, actor.user_id)
+
+
+# Client Topic 7 Q14 (SG-084, project-owner-directed): lock/unlock a location during a physical count so
+# stock cannot move in/out of it -- same unsigned/RBAC-gated, Admin+Supervisor-only shape as
+# warehouse_location.create/update/retire above (no Document 106 row; the client asked for traceability,
+# not a Part-11 approval).
+@inventory_v1_router.post("/warehouse-locations/{location_id}/lock", response_model=MutationReceipt)
+async def post_lock_location(
+    location_id: uuid.UUID,
+    cmd: LockLocationCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        location = await session.get(WarehouseLocation, location_id)
+        if location is None:
+            raise NotFoundError("Warehouse location not found")
+        await evaluate_policy(session, actor.user_id, action="warehouse_location.lock", site_id=location.site_id)
+        return await lock_location(session, location_id, cmd, actor.user_id)
+
+
+@inventory_v1_router.post("/warehouse-locations/{location_id}/unlock", response_model=MutationReceipt)
+async def post_unlock_location(
+    location_id: uuid.UUID,
+    cmd: UnlockLocationCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        location = await session.get(WarehouseLocation, location_id)
+        if location is None:
+            raise NotFoundError("Warehouse location not found")
+        await evaluate_policy(session, actor.user_id, action="warehouse_location.lock", site_id=location.site_id)
+        return await unlock_location(session, location_id, cmd, actor.user_id)
 
 
 # Client Topic 15 fix (2026-10-02, project-owner-directed): same "no actor dependency at all" gap as

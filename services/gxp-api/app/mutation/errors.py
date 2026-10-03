@@ -512,6 +512,11 @@ class BalanceIneligibleError(GxPError):
     status_code = 409
 
 
+class LocationLockedError(GxPError):
+    code = "LOCATION_LOCKED"
+    status_code = 409
+
+
 class ReadingUnstableError(GxPError):
     code = "READING_UNSTABLE"
     status_code = 409

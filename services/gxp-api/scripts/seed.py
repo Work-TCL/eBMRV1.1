@@ -221,6 +221,11 @@ PERMISSION_CATALOG = [
     # Client Topic 15 fix (2026-10-02, project-owner-directed): GET .../warehouse-locations had no
     # `actor` dependency or evaluate_policy() call at all -- a genuinely unauthenticated read.
     ("warehouse_location.view", "view", "warehouse_location", "Read warehouse/zone/bin locations (Client Topic 15 fix)"),
+    # Client Topic 7 Q14 (SG-084, project-owner-directed): temporarily lock/unlock a location during a
+    # physical count so stock cannot move in/out of it. Unsigned, audited -- same shape as
+    # warehouse_location.create/update/retire (no Document 106 row; client asked for traceability, not
+    # a Part-11 approval).
+    ("warehouse_location.lock", "lock", "warehouse_location", "Lock/unlock a warehouse location during a physical count (Client Topic 7)"),
     ("inventory_reservation.create", "create", "inventory_reservation", "Reserve material for a batch (Document 20)"),
     ("inventory_reservation.release", "release", "inventory_reservation", "Release (give back) a material reservation (Document 20)"),
     ("inventory_transaction.transfer", "transfer", "inventory_transaction", "Transfer a lot/container between warehouse locations (Document 20)"),
@@ -772,7 +777,7 @@ ROLE_PERMISSIONS = {
         "material_receipt.create", "material_receipt.examine", "material_lot.sampling_order",
         "material_lot.collect_sample", "material_lot.release", "material_lot.reject", "material_lot.retest",
         *MATERIAL_VIEW_CODES,
-        "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire",
+        "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire", "warehouse_location.lock",
         "inventory_reservation.create", "inventory_reservation.release", "inventory_transaction.transfer",
         "material_container.split", "material_container.merge", "inventory_cycle_count.execute",
         "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start",
@@ -885,7 +890,7 @@ ROLE_PERMISSIONS = {
         "qc_sample.create", "qc_sample.receive", "qc_test_order.create", "qc_test_order.start",
         "qc_test_order.record_raw_data", "qc_result.record", "qc_test_order.complete",
         *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
-        "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "dispensing_order.override_target", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
+        "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire", "warehouse_location.lock", "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "dispensing_order.override_target", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate", *QMS_VIEW_CODES, "qms_deviation.create", "qms_deviation.triage", "qms_deviation.contain", "ncr.create", "ncr.segregate", "complaint.create", "change.create", "change.task.add", "change.implement", "training.requirement.create", "training.assignment.create"],
     "QA Reviewer": ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation", "oos_record.link_change_control",
         # 2026-09-18, project-owner-directed: QC investigation class — mirrors qms_deviation.investigate
         # (also QA Reviewer) plus QC Reviewer since this is QC-domain investigation work.
