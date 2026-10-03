@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.modules.batch_execution.models import Batch
 from app.modules.ddcp import commands as ddcp_commands
@@ -20,6 +20,7 @@ from app.modules.ddcp.models import (
     ProductionCountLedger,
 )
 from app.modules.equipment.cleaning_models import LineClearance
+from app.modules.iam.models import Role
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.equipment.sterilization_models import ProcessCycle, ProcessCycleProfileVersion, SterileFilterUse, SterilizationLoadItem
 from app.modules.material.models import Material, MaterialLot
@@ -40,11 +41,12 @@ from app.mutation.errors import (
     PfsReconciliationFailedError,
     ProfileReleaseBlockedError,
     ReworkRouteRequiredError,
+    RoleMissingError,
     SodConflictError,
     SterileComponentIneligibleError,
     ValidationFailedError,
 )
-from tests.conftest import auth_headers, idem, login
+from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 
 IPC_RULE_ID = "ddcp-fill-ipc-tolerance"
 IPC_RULE_AST = {
@@ -192,7 +194,40 @@ async def _create_released_product_version(
     return pv
 
 
+async def _seed_ddcp_signature_floor(db, *, signed: bool = False) -> None:
+    """SG-148 Client Topic 12 (project-owner-directed): production (scripts/seed.py) now requires a real
+    signature for all 4 DDCP actions below, so -- same test-file-local-only precedent `_release_rule`
+    above already uses for `rule`/`release` -- this file seeds its own local floor instead of relying on
+    a global `conftest.py` row. Unlike `_release_rule`, this checks for an existing row first rather than
+    tracking "seeded once" via a caller-supplied flag: it is called from several different helper/test
+    call sites within the same test and must tolerate being called more than once.
+    """
+    existing = (
+        await db.execute(select(SignaturePolicy.id).where(SignaturePolicy.record_type == "ddcp_profile_version", SignaturePolicy.action == "release"))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return
+    operator_role_id = (await db.execute(select(Role.id).where(Role.name == "DDCP Operator"))).scalar_one()
+    db.add_all([
+        SignaturePolicy(record_type="ddcp_profile_version", action="release", meaning="Released", signature_required=signed),
+        SignaturePolicy(
+            record_type="constituent_handoff", action="decide", meaning="Approved",
+            required_role_id=operator_role_id if signed else None, signature_required=signed,
+        ),
+        SignaturePolicy(
+            record_type="fill_operation", action="start", meaning="Performed",
+            required_role_id=operator_role_id if signed else None, signature_required=signed,
+        ),
+        SignaturePolicy(
+            record_type="fill_operation", action="complete", meaning="Performed",
+            required_role_id=operator_role_id if signed else None, signature_required=signed,
+        ),
+    ])
+    await db.flush()
+
+
 async def _create_and_release_profile(db, seeded, actor_id, *, profile_code: str) -> DdcpProfileVersion:
+    await _seed_ddcp_signature_floor(db)
     product_version = await _create_released_product_version(db, seeded, code=profile_code)
     receipt = await ddcp_commands.create_injectable_profile_version(
         db,
@@ -240,6 +275,7 @@ async def test_create_profile_and_release_requires_constituent_requirements(seed
 
 
 async def test_constituent_handoff_requires_released_source_then_accepts(seeded, db):
+    await _seed_ddcp_signature_floor(db)
     actor_id = seeded["users"]["ddcp.operator"].id
     batch = await _create_batch(db, seeded, batch_number="BATCH-HANDOFF-1")
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-DRUG-1")
@@ -456,6 +492,7 @@ async def test_device_assembly_requires_independent_verifier(seeded, db):
 
 
 async def test_functional_test_and_release_readiness_and_evidence_package(seeded, db):
+    await _seed_ddcp_signature_floor(db)
     actor_id = seeded["users"]["ddcp.operator"].id
     batch = await _create_batch(db, seeded, batch_number="BATCH-RELEASE-1")
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-DRUG-5")
@@ -662,6 +699,7 @@ async def test_decide_handoff_profile_aware_checks_type_prep_and_attributes(seed
     PFS-FR-016 (declared attribute presence) and PFS-FR-028 (no implicit constituent_type equivalency),
     all gated behind the new optional `profile_version_id` on DecideConstituentHandoffCommand."""
 
+    await _seed_ddcp_signature_floor(db)
     actor_id = seeded["users"]["ddcp.operator"].id
     site_id = seeded["site_id"]
 
@@ -1057,3 +1095,212 @@ async def test_get_ddcp_change_linkage(seeded, db):
 
     no_linkage = await ddcp_commands.get_ddcp_change_linkage(db, "ddcp_profile_version", uuid.uuid4())
     assert no_linkage["changes"] == []
+
+
+# =======================================================================================================
+# SG-148 Client Topic 12 (project-owner-directed): the 4 DDCP actions above are unsigned everywhere in
+# this file (signed=False, the default) because production behavior for every *other* test is what this
+# file exists to prove. These two tests flip the local floor to signed=True and prove the real signature
+# ceremony -- role enforcement plus the HTTP challenge round trip -- actually works end to end.
+# =======================================================================================================
+
+
+async def test_ddcp_profile_release_signature_challenge_round_trip(client, seeded, db):
+    # `release` is RBAC-only (required_role_id=None) -- only the router's own `ddcp_profile.release`
+    # permission check gates who can call this, the same as before this phase; this proves the new
+    # mandatory signature (scripts/seed.py) round-trips over the real HTTP ceremony.
+    async with db.begin():
+        await _seed_ddcp_signature_floor(db, signed=True)
+        product_version = await _create_released_product_version(db, seeded, code="PFS-SIGNED-REL")
+        engineer_id = seeded["users"]["ddcp.engineer"].id
+        receipt = await ddcp_commands.create_injectable_profile_version(
+            db,
+            ddcp_commands.CreateInjectableProfileVersionCommand(
+                idempotency_key=idem(), site_id=seeded["site_id"], product_version_id=product_version.id,
+                profile_code="PFS-SIGNED-REL", constituent_architecture={"drug": "biologic"},
+                required_controls={"sterileProcess": {"aseptic": True}},
+                constituent_requirements=[{"constituent_type": "DRUG", "component_role": "bulk_drug", "required_state": "RELEASED"}],
+            ),
+            engineer_id,
+        )
+    profile_id = str(receipt.aggregate_id)
+
+    token = await login(client, "ddcp.engineer")
+    challenge_resp = await client.post(
+        "/ddcp/v1/prefilled-syringe/signature-challenges",
+        json={"record_type": "ddcp_profile_version", "action": "release", "record_id": profile_id},
+        headers=auth_headers(token),
+    )
+    assert challenge_resp.status_code == 200, challenge_resp.text
+    body = challenge_resp.json()
+    assert body["meaning"] == "Released"
+
+    resp = await client.post(
+        f"/ddcp/v1/prefilled-syringe/profiles/{profile_id}/release",
+        json={
+            "idempotency_key": idem(), "profile_id": profile_id, "expected_version": 1,
+            "challenge_id": body["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is not None
+
+
+async def test_ddcp_constituent_handoff_decide_signature_requires_role_and_round_trips(client, seeded, db):
+    async with db.begin():
+        await _seed_ddcp_signature_floor(db, signed=True)
+        operator_id = seeded["users"]["ddcp.operator"].id
+        batch = await _create_batch(db, seeded, batch_number="BATCH-SIGNED-DECIDE-1")
+        bulk_batch = await _create_batch(db, seeded, batch_number="BULK-SIGNED-DECIDE-1")
+        bulk_batch.state = "released"
+        await db.flush()
+        handoff_receipt = await ddcp_commands.record_constituent_handoff(
+            db,
+            ddcp_commands.RecordConstituentHandoffCommand(
+                idempotency_key=idem(), batch_id=batch.id, from_constituent="DRUG", to_constituent="bulk_drug",
+                source_batch_reference={"batch_id": str(bulk_batch.id)},
+            ),
+            operator_id,
+        )
+
+        # Role-check failure: a QA Releaser does not hold "DDCP Operator" -- called directly (bypassing
+        # RBAC entirely), same direct-command-call isolation technique as
+        # test_reservation_release_requires_independence_from_requester (test_inventory_flow.py). The role
+        # check in `_resolve_signature` runs before the challenge_id/reauth_password check, so this raises
+        # RoleMissingError without needing a real challenge.
+        qa_releaser_id = seeded["users"]["qa.releaser"].id
+        raised = None
+        try:
+            await ddcp_commands.decide_constituent_handoff(
+                db,
+                ddcp_commands.DecideConstituentHandoffCommand(
+                    idempotency_key=idem(), handoff_id=handoff_receipt.aggregate_id, expected_version=1, decision="ACCEPTED",
+                ),
+                qa_releaser_id,
+            )
+        except RoleMissingError as exc:
+            raised = exc
+        assert raised is not None
+
+    handoff_id = str(handoff_receipt.aggregate_id)
+    token = await login(client, "ddcp.operator")
+    challenge_resp = await client.post(
+        "/ddcp/v1/prefilled-syringe/signature-challenges",
+        json={"record_type": "constituent_handoff", "action": "decide", "record_id": handoff_id},
+        headers=auth_headers(token),
+    )
+    assert challenge_resp.status_code == 200, challenge_resp.text
+    body = challenge_resp.json()
+    assert body["meaning"] == "Approved"
+
+    resp = await client.post(
+        f"/ddcp/v1/prefilled-syringe/constituent-handoffs/{handoff_id}/decide",
+        json={
+            "idempotency_key": idem(), "handoff_id": handoff_id, "expected_version": 1, "decision": "ACCEPTED",
+            "challenge_id": body["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is not None
+
+
+async def test_ddcp_fill_start_and_complete_signature_challenge_round_trip(client, seeded, db):
+    # Profile creation/release happens unsigned here (signed=False floor) purely to build the fixture
+    # this test needs; the signed=True floor is set only after, matching the "set the floor once, flip
+    # it, keep going" pattern -- `_seed_ddcp_signature_floor`'s own idempotent check-first design means
+    # a later call in the same test is a safe no-op once a row already exists, so the two profile-release
+    # signature tests above (which flip to signed=True from the start) and this one (which needs an
+    # unsigned setup step first) can each pick their own order without colliding.
+    async with db.begin():
+        operator_id = seeded["users"]["ddcp.operator"].id
+        profile = await _create_and_release_profile(db, seeded, operator_id, profile_code="PFS-SIGNED-FILL")
+        batch = await _create_batch(db, seeded, batch_number="BATCH-SIGNED-FILL-1")
+        bulk_batch = await _create_batch(db, seeded, batch_number="BULK-SIGNED-FILL-1")
+        bulk_batch.state = "released"
+        lot = await _create_material_lot(db, seeded, code="BARREL-SIGNED-FILL-1", actor_id=operator_id)
+        area = seeded["areas"]["AREA-GRADE-A"]
+        await _clear_line(db, seeded, area.id)
+        asset = await _create_equipment_asset(db, seeded, code="FILLER-SIGNED-1")
+        await db.flush()
+        for from_c, to_c, ref in (("DRUG", "bulk_drug", {"batch_id": str(bulk_batch.id)}), ("DEVICE", "barrel", {"lot_id": str(lot.id)})):
+            receipt = await ddcp_commands.record_constituent_handoff(
+                db,
+                ddcp_commands.RecordConstituentHandoffCommand(
+                    idempotency_key=idem(), batch_id=batch.id, from_constituent=from_c, to_constituent=to_c, source_batch_reference=ref,
+                ),
+                operator_id,
+            )
+            await ddcp_commands.decide_constituent_handoff(
+                db,
+                ddcp_commands.DecideConstituentHandoffCommand(idempotency_key=idem(), handoff_id=receipt.aggregate_id, expected_version=1, decision="ACCEPTED"),
+                operator_id,
+            )
+
+        # Flip only the fill_operation rows to signed, now that the (unsigned) profile/handoff setup
+        # above is done -- `_seed_ddcp_signature_floor` is check-first/idempotent, so it cannot flip an
+        # already-seeded row; this test is the one case needing an unsigned setup step before the signed
+        # ceremony it actually exercises, so it updates the two rows directly instead.
+        operator_role_id = (await db.execute(select(Role.id).where(Role.name == "DDCP Operator"))).scalar_one()
+        await db.execute(
+            update(SignaturePolicy)
+            .where(SignaturePolicy.record_type == "fill_operation")
+            .values(signature_required=True, required_role_id=operator_role_id)
+        )
+
+    batch_id = str(batch.id)
+    token = await login(client, "ddcp.operator")
+
+    start_challenge_resp = await client.post(
+        "/ddcp/v1/prefilled-syringe/signature-challenges",
+        json={"record_type": "fill_operation", "action": "start", "batch_id": batch_id},
+        headers=auth_headers(token),
+    )
+    assert start_challenge_resp.status_code == 200, start_challenge_resp.text
+    start_body = start_challenge_resp.json()
+    assert start_body["meaning"] == "Performed"
+
+    start_resp = await client.post(
+        "/ddcp/v1/prefilled-syringe/fill-operations",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "profile_version_id": str(profile.id),
+            "line_id": str(area.id), "filler_equipment_id": str(asset.id), "fill_program_id": "PROG-SIGNED-1",
+            "fill_program_version": "v1", "product_contact_path": {"path": "single-use"},
+            "target_fill": "1.0", "target_fill_uom": "mL",
+            "challenge_id": start_body["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(token),
+    )
+    assert start_resp.status_code == 200, start_resp.text
+    assert start_resp.json()["signature_id"] is not None
+    fill_operation_id = start_resp.json()["aggregate_id"]
+
+    async with db.begin():
+        await ddcp_commands.record_syringe_unit_or_count(
+            db,
+            ddcp_commands.RecordSyringeUnitOrCountCommand(
+                idempotency_key=idem(), batch_id=batch.id, count_type="FILLED", source="MACHINE", quantity=100,
+            ),
+            operator_id,
+        )
+
+    complete_challenge_resp = await client.post(
+        "/ddcp/v1/prefilled-syringe/signature-challenges",
+        json={"record_type": "fill_operation", "action": "complete", "record_id": fill_operation_id},
+        headers=auth_headers(token),
+    )
+    assert complete_challenge_resp.status_code == 200, complete_challenge_resp.text
+    complete_body = complete_challenge_resp.json()
+    assert complete_body["meaning"] == "Performed"
+
+    complete_resp = await client.post(
+        f"/ddcp/v1/prefilled-syringe/fill-operations/{fill_operation_id}/complete",
+        json={
+            "idempotency_key": idem(), "fill_operation_id": fill_operation_id, "expected_version": 1,
+            "challenge_id": complete_body["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(token),
+    )
+    assert complete_resp.status_code == 200, complete_resp.text
+    assert complete_resp.json()["signature_id"] is not None

@@ -16,6 +16,7 @@ from app.modules.ddcp import coated_device_commands
 from app.modules.ddcp import commands as ddcp_commands
 from app.modules.ddcp.models import DdcpProcessOperation, DdcpProfileVersion, DdcpUnitBinding, DeviceAssemblyRecord, DeviceFunctionalTestLink
 from app.modules.equipment.models import EquipmentAsset
+from app.modules.iam.models import Role
 from app.modules.material.models import Material, MaterialLot
 from app.modules.product_master.models import ProductVersion
 from app.modules.qms import change_commands
@@ -131,7 +132,37 @@ async def _create_released_product_version(
     return pv
 
 
+async def _seed_ddcp_signature_floor(db, *, signed: bool = False) -> None:
+    """SG-148 Client Topic 12 (project-owner-directed): same test-file-local-only floor as
+    `test_ddcp_flow.py::_seed_ddcp_signature_floor` -- see that function's docstring for the full
+    rationale. Idempotent per test since it is called from multiple helper/test call sites.
+    """
+    existing = (
+        await db.execute(select(SignaturePolicy.id).where(SignaturePolicy.record_type == "ddcp_profile_version", SignaturePolicy.action == "release"))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return
+    operator_role_id = (await db.execute(select(Role.id).where(Role.name == "DDCP Operator"))).scalar_one()
+    db.add_all([
+        SignaturePolicy(record_type="ddcp_profile_version", action="release", meaning="Released", signature_required=signed),
+        SignaturePolicy(
+            record_type="constituent_handoff", action="decide", meaning="Approved",
+            required_role_id=operator_role_id if signed else None, signature_required=signed,
+        ),
+        SignaturePolicy(
+            record_type="fill_operation", action="start", meaning="Performed",
+            required_role_id=operator_role_id if signed else None, signature_required=signed,
+        ),
+        SignaturePolicy(
+            record_type="fill_operation", action="complete", meaning="Performed",
+            required_role_id=operator_role_id if signed else None, signature_required=signed,
+        ),
+    ])
+    await db.flush()
+
+
 async def _create_and_release_profile(db, seeded, actor_id, *, profile_code: str) -> DdcpProfileVersion:
+    await _seed_ddcp_signature_floor(db)
     product_version = await _create_released_product_version(db, seeded, code=profile_code)
     receipt = await coated_device_commands.create_coated_device_profile_version(
         db,
@@ -153,6 +184,7 @@ async def _create_and_release_profile(db, seeded, actor_id, *, profile_code: str
 
 
 async def _accept_constituents(db, seeded, actor_id, batch, substrate_lot, coating_drug_batch):
+    await _seed_ddcp_signature_floor(db)
     for from_c, to_c, ref in (("DEVICE", "substrate", {"lot_id": str(substrate_lot.id)}), ("DRUG", "coating_solution", {"batch_id": str(coating_drug_batch.id)})):
         receipt = await ddcp_commands.record_constituent_handoff(
             db, ddcp_commands.RecordConstituentHandoffCommand(idempotency_key=idem(), batch_id=batch.id, from_constituent=from_c, to_constituent=to_c, source_batch_reference=ref), actor_id,
@@ -393,6 +425,7 @@ async def test_environment_gate_blocks_readiness_when_not_ready(seeded, db):
     INH-FR-018 (never a baked-in threshold, Document 57 §7: 'No generic sterilization assumption is
     allowed' -- the same restraint extends to the environment gate)."""
 
+    await _seed_ddcp_signature_floor(db)
     actor_id = seeded["users"]["ddcp.operator"].id
     env_product = await _create_released_product_version(db, seeded, code="COAT-ENV-1")
     profile_receipt = await coated_device_commands.create_coated_device_profile_version(

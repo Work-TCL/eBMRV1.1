@@ -1349,14 +1349,18 @@ SIGNATURE_POLICY_FLOOR = [
     # app/modules/yield_reconciliation/commands.py::verify_record).
     ("manufacturing_calculation", "verify", "Verified", None, True, True, False),
     ("reconciliation_record", "verify", "Verified", None, True, True, False),
-    # WP-08 (Document 54, SPEC-DDCP-001) -- SG-148: Document 106 has zero rows for any SPEC-DDCP-00x
-    # action. Explicit signature_required=False resolutions, same "record the deliberate resolution"
-    # discipline as the erp_instance/erp_external_mapping rows above -- `meaning`/`required_role_name`
-    # are unused placeholders whenever signature_required=False.
-    ("ddcp_profile_version", "release", "Released", None, False, False, False),
-    ("constituent_handoff", "decide", "Approved", None, False, False, False),
-    ("fill_operation", "start", "Performed", None, False, False, False),
-    ("fill_operation", "complete", "Performed", None, False, False, False),
+    # WP-08 (Document 54, SPEC-DDCP-001) -- SG-148 Client Topic 12 (project-owner-directed): Document 106
+    # has zero rows for any SPEC-DDCP-00x action, so the client's own answer is the authorization to add
+    # real signature policy rows here (same "client answer is the authorization" precedent used for
+    # SG-212/SG-076/SG-074/SG-084/SG-083/SG-061 this session). `release` stays RBAC-only (gated on
+    # "DDCP Engineer" at the router, same as before) since no independent role pair was asked for there;
+    # the three execution-time actions require the signing user to hold "DDCP Operator" (role resolved
+    # in `ddcp.commands._resolve_signature`, mirroring `qms.commands._resolve_signature`'s
+    # `required_role_id` pattern). No independence requirement was asked for on any of the 4 actions.
+    ("ddcp_profile_version", "release", "Released", None, False, True, False),
+    ("constituent_handoff", "decide", "Approved", "DDCP Operator", False, True, False),
+    ("fill_operation", "start", "Performed", "DDCP Operator", False, True, False),
+    ("fill_operation", "complete", "Performed", "DDCP Operator", False, True, False),
     # WP-09 (Document 59, SPEC-PM-002) -- Document 106 rows 123/125/126/127/128 name "Regulatory Affairs
     # authorized submitter"; role_name is the new "Postmarket Regulatory Affairs" role (Document 58's own
     # RBAC work), reason_required=True per each row's own Reason column ("yes"). Rows 124

@@ -1203,21 +1203,11 @@ async def seeded(db: AsyncSession) -> dict:
                 )
             )
 
-        # WP-08 (Document 54, SPEC-DDCP-001) -- SG-148: Document 106 has zero rows for any SPEC-DDCP-00x
-        # action. Same "record the deliberate resolution" discipline as the erp_instance rows above.
-        for record_type, action, meaning in (
-            ("ddcp_profile_version", "release", "Released"),
-            ("constituent_handoff", "decide", "Approved"),
-            ("fill_operation", "start", "Performed"),
-            ("fill_operation", "complete", "Performed"),
-        ):
-            db.add(
-                SignaturePolicy(
-                    record_type=record_type, action=action, meaning=meaning, required_role_id=None,
-                    requires_independent_signer=False, signature_required=False, reason_required=False,
-                    policy_source="PLATFORM_FLOOR",
-                )
-            )
+        # WP-08 (Document 54, SPEC-DDCP-001) -- SG-148 Client Topic 12 (project-owner-directed): these 4
+        # rows are now real signed actions in production (scripts/seed.py), so they are deliberately NOT
+        # seeded in this global floor -- same test-file-local-only precedent `deviation_record`/`rule`
+        # already use (see test_ddcp_flow.py::_release_rule's own comment). Each of the 4 affected test
+        # files seeds its own local row via `_seed_ddcp_signature_floor()`.
 
         # Document 47 (SPEC-EDGE-005) -- Document 106 has zero rows for any SPEC-EDGE-005 action, same
         # rows scripts/seed.py upserts. SG-127 (signal_mapping.release, QA Releaser, independent of the

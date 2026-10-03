@@ -8,6 +8,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.batch_execution.models import Batch, BatchStep
+from app.modules.ddcp.models import ConstituentHandoff, DeviceAssemblyRecord, FillOperation
 from app.modules.equipment import commands as equipment_commands
 from app.modules.equipment.em_models import EmSampleOrReading
 from app.modules.equipment.models import EquipmentUseLog
@@ -242,6 +243,64 @@ async def _material_signals(session: AsyncSession, batch_id: uuid.UUID) -> list[
         )
         for lot in lots
     ]
+
+
+async def _ddcp_signals(session: AsyncSession, batch_id: uuid.UUID) -> list[dict]:
+    """Client Topic 13 (SG-180, project-owner-directed): release must also block whenever DDCP's own
+    execution trackers show incomplete work, not only the generic `gxp_batch_step` chain `production_complete`
+    already reflects above -- that was exactly SG-180's root complaint (a batch reviewed/released while
+    DDCP-side work was still open). There is still no `ebmr.batches -> ddcp_profile_version` linkage column
+    (SG-148's own module docstring, `ddcp/commands.py`) and no way to tell which of the 4 WP-08 families
+    (PFS/inhalation/injector/coated device) a batch belongs to, so this deliberately does NOT call any of
+    the 4 family-specific `evaluate_*_release_readiness()` functions -- each assumes its own family's
+    component_roles/subtypes and would misclassify a batch from a *different* family (or a non-DDCP batch
+    with zero rows in any of these tables) as blocked. Instead it reads only the plain terminal states of
+    the 3 tables Documents 54/55/56/57 all share (`ddcp/models.py`'s own "no family/document-type column of
+    its own" note) -- a handoff still PENDING, a fill operation not yet COMPLETE, or a device assembly
+    result that isn't PASS. A batch with no rows in any of these tables is unaffected.
+    """
+    blockers: list[dict] = []
+
+    pending_handoffs = (
+        await session.execute(
+            select(ConstituentHandoff.id).where(ConstituentHandoff.batch_id == batch_id, ConstituentHandoff.state == "PENDING")
+        )
+    ).scalars().all()
+    blockers.extend(
+        _blocker(
+            "DDCP_HANDOFF_PENDING", "CRITICAL", "constituent_handoff", str(handoff_id),
+            "release.blocker.ddcp_handoff_pending", "DECIDE_CONSTITUENT_HANDOFF",
+        )
+        for handoff_id in pending_handoffs
+    )
+
+    incomplete_fills = (
+        await session.execute(
+            select(FillOperation.id).where(FillOperation.batch_id == batch_id, FillOperation.state != "COMPLETE")
+        )
+    ).scalars().all()
+    blockers.extend(
+        _blocker(
+            "DDCP_FILL_OPERATION_INCOMPLETE", "CRITICAL", "fill_operation", str(fill_id),
+            "release.blocker.ddcp_fill_incomplete", "COMPLETE_FILLING_STAGE",
+        )
+        for fill_id in incomplete_fills
+    )
+
+    failed_assembly = (
+        await session.execute(
+            select(DeviceAssemblyRecord.id).where(DeviceAssemblyRecord.batch_id == batch_id, DeviceAssemblyRecord.result != "PASS")
+        )
+    ).scalars().all()
+    blockers.extend(
+        _blocker(
+            "DDCP_DEVICE_ASSEMBLY_NOT_PASSED", "CRITICAL", "device_assembly_record", str(record_id),
+            "release.blocker.ddcp_assembly_not_passed", "RESOLVE_DEVICE_ASSEMBLY",
+        )
+        for record_id in failed_assembly
+    )
+
+    return blockers
 
 
 async def _em_signals(session: AsyncSession, batch_id: uuid.UUID) -> tuple[list[dict], list[dict]]:
@@ -519,6 +578,7 @@ async def evaluate_eligibility(session: AsyncSession, batch: Batch) -> tuple[lis
     blockers.extend(qc_blockers)
     warnings.extend(qc_warnings)
     blockers.extend(await _material_signals(session, batch.id))
+    blockers.extend(await _ddcp_signals(session, batch.id))
     em_blockers, em_warnings = await _em_signals(session, batch.id)
     blockers.extend(em_blockers)
     warnings.extend(em_warnings)

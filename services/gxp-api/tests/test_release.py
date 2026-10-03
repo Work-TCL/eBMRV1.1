@@ -985,3 +985,93 @@ async def test_release_fails_closed_pending_signature_policy(client, seeded, db)
     )
     assert resp.status_code == 409, resp.text
     assert resp.json()["code"] == "SIGNATURE_POLICY_UNRESOLVED"
+
+
+async def test_evaluate_blocked_by_ddcp_signals(client, seeded, db):
+    """Client Topic 13 (SG-180, project-owner-directed): release blocks while DDCP's own trackers
+    (shared constituent_handoff/fill_operation/device_assembly_record tables) show incomplete work, even
+    though the generic batch_step chain is already production_complete. Uses the 3 shared entities
+    directly (no DDCP profile/recipe setup needed) since `_ddcp_signals` only reads their plain states."""
+    import uuid as uuid_mod
+    from datetime import datetime, timezone
+
+    from app.modules.ddcp.models import ConstituentHandoff, DeviceAssemblyRecord, FillOperation
+    from app.modules.equipment.models import EquipmentAsset
+
+    admin_token, batch_id = await _setup(db, client, seeded, "ddcp1")
+
+    async with db.begin():
+        handoff = ConstituentHandoff(
+            site_id=seeded["site_id"], batch_id=uuid_mod.UUID(batch_id), from_constituent="DRUG",
+            to_constituent="bulk_drug", source_batch_reference={}, attributes={}, state="PENDING",
+        )
+        db.add(handoff)
+        await db.flush()
+        handoff_id = handoff.id
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    scope_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert detail["scope"]["state"] == "blocked"
+    blockers = [b for b in detail["evaluation"]["blockers"] if b["code"] == "DDCP_HANDOFF_PENDING"]
+    assert len(blockers) == 1
+    assert blockers[0]["source_id"] == str(handoff_id)
+
+    # Decide the handoff -- the blocker clears, but an incomplete fill operation takes its place.
+    async with db.begin():
+        h = await db.get(ConstituentHandoff, handoff_id)
+        h.state = "ACCEPTED"
+        asset = EquipmentAsset(
+            site_id=seeded["site_id"], equipment_code="FILLER-REL-DDCP1",
+            state="QUALIFIED_AVAILABLE", qualification_status="QUALIFIED", version=1,
+        )
+        db.add(asset)
+        await db.flush()
+        fill_op = FillOperation(
+            site_id=seeded["site_id"], batch_id=uuid_mod.UUID(batch_id), line_id=seeded["areas"]["AREA-GRADE-A"].id,
+            filler_equipment_id=asset.id, fill_program_id="P1", fill_program_version="v1",
+            product_contact_path={}, target_fill="1.0", target_fill_uom="mL", line_readiness_reference={},
+            state="EXECUTION", started_at=datetime.now(timezone.utc),
+        )
+        db.add(fill_op)
+        await db.flush()
+        fill_op_id = fill_op.id
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert not any(b["code"] == "DDCP_HANDOFF_PENDING" for b in detail["evaluation"]["blockers"])
+    fill_blockers = [b for b in detail["evaluation"]["blockers"] if b["code"] == "DDCP_FILL_OPERATION_INCOMPLETE"]
+    assert len(fill_blockers) == 1
+    assert fill_blockers[0]["source_id"] == str(fill_op_id)
+
+    # Complete the fill operation -- fully clear, except a failed device assembly result.
+    async with db.begin():
+        f = await db.get(FillOperation, fill_op_id)
+        f.state = "COMPLETE"
+        db.add(
+            DeviceAssemblyRecord(
+                site_id=seeded["site_id"], batch_id=uuid_mod.UUID(batch_id), assembly_step="assemble",
+                component_lot_reference={}, result="FAIL", occurred_at=f.started_at,
+            )
+        )
+
+    resp = await client.post(
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    detail = (await client.get(f"/release/v1/scopes/{scope_id}/eligibility", headers=auth_headers(admin_token))).json()
+    assert not any(b["code"] == "DDCP_FILL_OPERATION_INCOMPLETE" for b in detail["evaluation"]["blockers"])
+    assert any(b["code"] == "DDCP_DEVICE_ASSEMBLY_NOT_PASSED" for b in detail["evaluation"]["blockers"])

@@ -10521,10 +10521,37 @@ description: >
   `e7b3f9a2c6d4_0051_batch_genealogy_recipe_product_uom_expand`'s own docstring). Composing PFS-FR-020
   against either table's `batch_id` for the other's rows would silently join across two disjoint id
   spaces -- not attempted.
+
+  **Update (2026-10-03), Client Topic 12, project-owner-directed:** item (2)'s signature gap is now
+  resolved. The client's own answer in `Client_Decisions_Neededanswers (2).txt` is the authorization for
+  four new Document 106 rows (same "client answer is the authorization" precedent this session already
+  used for SG-212/SG-076/SG-074/SG-084/SG-083/SG-061): `ddcp_profile_version/release` stays RBAC-only
+  (gated on the existing "DDCP Engineer" role at the router, no independent signer role exists for it);
+  `constituent_handoff/decide`, `fill_operation/start` and `fill_operation/complete` now require a real
+  Part 11 signature from a signer holding the "DDCP Operator" role -- enforced in
+  `ddcp/commands.py::_resolve_signature()`, which now reads `policy.required_role_id` the same way
+  `qms.commands._resolve_signature()` already does for `deviation_record` (no independence requirement
+  was asked for on any of the four actions). A new generic `POST /ddcp/v1/prefilled-syringe/signature-
+  challenges` endpoint (`router.py`) resolves a challenge for all four (record_type, action) pairs,
+  dispatching on the pair to find the right record/hash shape (profile/handoff/fill_operation, or a
+  synthetic `{batch_id}` hash at version 0 for `fill_operation/start`'s pre-creation signature, the same
+  shape SG-092 already established). `scripts/seed.py`'s `SIGNATURE_POLICY_FLOOR` and the live demo DB
+  were both updated (idempotent upsert, no destructive reseed); `tests/conftest.py`'s equivalent global
+  floor rows were removed in favour of each affected test file seeding its own local floor (mirroring the
+  `deviation_record`/`rule` test-file-local-only precedent), since production and tests must now disagree
+  deliberately (signed vs. unsigned) on these four rows. Frontend: `catalog.ts` gained a `signedAction`
+  field read by `ddcp/page.tsx`'s `ExecutionCard`/`ProfileCard` to route Submit/Release through the shared
+  `SignatureCeremony` component instead of posting unsigned. Verified: `test_ddcp_flow.py` (21/21, 3 new
+  signed-ceremony/role-enforcement tests), `test_inhalation_flow.py` (14/14), `test_injector_flow.py`
+  (14/14), `test_coated_device_flow.py` (13/13), `test_ddcp_step_mapping.py`+`test_batch_execution.py`
+  (53/53) -- all passing, 0 regressions. Live demo DB migrated to head and its four rows updated; API/
+  frontend pm2 processes restarted. See SG-180 for Client Topic 13 (tracker sync + release gate), the
+  companion decision from the same client answer.
 source_documents:
   - Document 54 (SPEC-DDCP-001)
   - Document 112 (Entity Schema Completion Addendum, approved DDL for this module's 9 entities)
-  - Document 106 (Signature Policy Baseline, zero rows for this module)
+  - Document 106 (Signature Policy Baseline, zero rows for this module at the time this gap was opened --
+    now 4 rows, Client Topic 12)
   - Document 70 (SPEC-DATA-002, universal aggregate baseline -- site_id/tenant_id precedent)
 source_requirement_ids:
   - PFS-FR-001
@@ -10579,8 +10606,8 @@ options:
 blocking: false
 owner: Platform Architect + Document 54/112 owner (QC-pipeline-vs-rules-engine reconciliation for IPC is a
   candidate follow-up if a future pass needs IPC results to feed the same LIMS reporting QC results do)
-resolution_document: "services/gxp-api/app/modules/ddcp/{models.py,commands.py,router.py}, migrations/versions/{f8c3d7a1b5e9_0052_ddcp_prefilled_syringe_schema.py,a1c4e8f2d6b3_0054_ddcp_fill_operation_filter_use_binding.py}, contracts/openapi/spec-ddcp-001.yaml, services/gxp-api/tests/test_ddcp_flow.py -- 29/30 PFS-FR requirements now have real test evidence (all except PFS-FR-020, see SG-149); last full isolated run 2026-08-29"
-status: OPEN
+resolution_document: "services/gxp-api/app/modules/ddcp/{models.py,commands.py,router.py}, migrations/versions/{f8c3d7a1b5e9_0052_ddcp_prefilled_syringe_schema.py,a1c4e8f2d6b3_0054_ddcp_fill_operation_filter_use_binding.py}, contracts/openapi/spec-ddcp-001.yaml, services/gxp-api/tests/test_ddcp_flow.py -- 29/30 PFS-FR requirements now have real test evidence (all except PFS-FR-020, see SG-149); last full isolated run 2026-08-29. Client Topic 12 signature resolution (2026-10-03): services/gxp-api/app/modules/ddcp/{commands.py,router.py}, services/gxp-api/scripts/seed.py, services/gxp-api/tests/{conftest.py,test_ddcp_flow.py,test_inhalation_flow.py,test_injector_flow.py,test_coated_device_flow.py}, frontend/src/{app/ddcp/page.tsx,components/ddcp/catalog.ts} -- 100/100 across the 5 affected backend suites, 0 regressions; PFS-FR-020/SG-149 remains the only open item for this gap."
+status: PARTIALLY_RESOLVED_2026-10-03 (item 2's signature gap RESOLVED_APPROVED, project-owner-directed via Client Topic 12; items 1/3/4/5/6-14 already implemented as documented decisions, not reopened; PFS-FR-020/SG-149 remains open)
 ```
 
 
@@ -13538,9 +13565,9 @@ resolution_document: "2026-09-11, project-owner-directed (Phase 4 / wp16-phase4-
   batch_step actions is ever revised to allow an unsigned case, the mapping mechanism is ready to extend
   into a real write-side sync at that point. Verified: tests/test_ddcp_step_mapping.py 6/6 passed (new
   file)."
-status: PARTIALLY RESOLVED (declarative mapping + read-only sync-visibility built, taking option B's
-  direction; the write-side auto-completion option B originally implied is deliberately NOT built — see
-  resolution note for why it would be permanently inert under current Document 106 policy)
+status: RESOLVED_APPROVED_2026-10-03 (Client Topic 13, project-owner-directed: write-side sync built as a
+  chained second signature, not option B's auto-completion — see the 2026-10-03 note below for the full
+  resolution, including the release-gate half and known limitations)
 ```
 
 **SG-180 further partially resolved 2026-09-17, project-owner-directed (hit live: a user reviewed and
@@ -13571,6 +13598,56 @@ module control. Docs updated: `docs/testing/Batch_Create_Execution_Process_Guide
 and `docs/testing/DDCP_Client_Demo_Guide_Gujarati.md` new §22 (both note the generic-chain-only scope of
 this check and give real, code-verified data for driving `RCP-MJ-PFS-V1` v1's single `FILL-01` step to
 completion before Release can succeed on a DDCP-linked batch).
+
+**SG-180 further resolved 2026-10-03, Client Topic 13, project-owner-directed.** A prior session asked the
+project owner this exact fork directly: the matching generic step's own signature can't be bypassed, and
+DDCP's signature can't be treated as interchangeable with it (SIG-FR-016 — a signature cannot be
+transferred between records). The project owner's answer, asked again this session with that context
+restated: **chain a second real signature** — right after a DDCP action is signed, the UI immediately
+prompts the same user to sign the matching generic step too. Two real independent Part 11 signatures, one
+combined user flow, no compliance compromise, and the "permanently inert" problem from the 2026-09-11 note
+never applies here, since nothing auto-completes anything — both signatures are always real and
+independently obtained.
+
+Built on top of the already-existing `gxp_ddcp_step_mapping` + `step-sync-status` + `DdcpCompleteStepModal`
+(2026-09-17 note above already anticipated exactly this — see that function's own "enough to call the
+*existing* signed batch_execution complete-step flow directly from this view" comment,
+`ddcp/commands.py::get_batch_ddcp_sync_status`). `ddcp/page.tsx`'s `ExecutionCard` now auto-triggers that
+existing modal immediately after a signed `constituent_handoff/decide` (when `decision=="ACCEPTED"`) or
+`fill_operation/complete` action succeeds, resolved against the backend's own `DDCP_MAPPABLE_ACTIONS`
+tuple (`constituent_handoff.accept`/`filling_stage.complete` — the only two pairs a generic step can ever
+map to; `release`/`start` never map to anything, so never chain). The chain check uses the batch id the
+operator already supplied to the page's own "look up records for this batch" field (`lookupBatchId`) —
+the one batch id this card reliably knows for an op whose own fields never carry one — and is best-effort:
+if that field is empty (the operator never looked up by batch) it silently does nothing, exactly as before
+this change, rather than guessing a batch id.
+
+The companion half — closing "`/release` reads neither tracker" from this gap's own original description
+— is also done: `release/service.py` gained `_ddcp_signals()`, a new release-eligibility blocker reading
+the plain terminal states of the 3 shared DDCP tables directly (`constituent_handoff.state == "PENDING"`,
+`fill_operation.state != "COMPLETE"`, `device_assembly_record.result != "PASS"`) rather than calling any
+of the 4 family-specific `evaluate_*_release_readiness()` functions — SG-148 item 3's "no
+`ebmr.batches -> ddcp_profile_version` linkage column" gap still stands, so there is still no way to tell
+which family a batch belongs to, and calling a family-specific evaluator on the wrong family's batch (or a
+non-DDCP batch with zero rows in any of the three tables) would misclassify it as blocked. Reading the
+shared tables' own plain states sidesteps that without guessing a family. A batch with zero DDCP activity
+recorded is completely unaffected by this blocker.
+
+**Known limitation, not attempted this pass:** only the PFS family's frontend (`catalog.ts`'s `pfs`
+family) has `constituent-handoffs`/`fill-operations` ops at all — the other three families (autoinjector,
+inhalation, coated device) have no handoff-record/decide UI in `catalog.ts` today, a pre-existing gap
+unrelated to signatures (their own backend routers do reuse `decide_constituent_handoff` correctly, per
+their own test files), so the chain only ever fires for PFS today. Also unresolved: `device_assembly.verify`
+is in `DDCP_MAPPABLE_ACTIONS` but was not made part of this signature pass (SG-148 Client Topic 12 named
+only 4 actions) — no chain was wired for it.
+
+Files changed: `app/modules/release/service.py` (`_ddcp_signals`), `app/modules/ddcp/{commands.py,
+router.py}`, `scripts/seed.py`, `tests/{conftest.py, test_ddcp_flow.py, test_inhalation_flow.py,
+test_injector_flow.py, test_coated_device_flow.py, test_release.py}`, `frontend/src/{app/ddcp/page.tsx,
+components/ddcp/catalog.ts}`. Verified: `test_release.py`+`test_release_gate.py` 21/21 (1 new test,
+`test_evaluate_blocked_by_ddcp_signals`, proving all 3 blockers fire and clear in sequence), plus the 100/
+100 DDCP suite total cited under SG-148's own 2026-10-03 update — 0 regressions across all 7 affected
+files.
 
 ### SG-181 — `qa_review_package`/`complete` and `release_scope`/`release`+`hold`+`reject` had no Document 106 signature policy row and no signature-challenges endpoint — same defect class as SG-138, different work package
 

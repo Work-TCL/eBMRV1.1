@@ -5,6 +5,7 @@ this module's operations are genuinely public, matching its own §4 function cat
 import uuid
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,7 +23,9 @@ from app.modules.ddcp.models import (
 )
 from app.modules.policy.service import evaluate_policy
 from app.modules.recipe_master.models import RecipeVersion
+from app.modules.signature.service import create_challenge, resolve_signature_requirement
 from app.mutation.errors import NotFoundError, ValidationFailedError
+from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/ddcp/v1/prefilled-syringe", tags=["ddcp-prefilled-syringe"])
@@ -82,6 +85,82 @@ async def get_profile(profile_id: uuid.UUID, session: AsyncSession = Depends(get
         if profile is None:
             raise NotFoundError("Injectable profile version not found")
         return _profile_summary_dict(profile)
+
+
+# --- Signature challenges (SG-148 Client Topic 12, project-owner-directed) ------------------------------
+# One generic endpoint for the 4 now-signed DDCP actions, mirroring the "obtain a challenge_id" step every
+# other signing module exposes (see e.g. app/modules/qms/signature_support.py) -- `ddcp.commands` itself
+# computes the identical record_version/record_hash values at mutation time, so the challenge created here
+# must match exactly or `consume_challenge()` rejects it as "record changed after the signature challenge
+# was created" (SIG-FR-014). `fill_operation`/`start` is the one case where the signed record does not
+# exist yet (same shape SG-092's `fill_operation/start` already resolved): the challenge binds to
+# `batch_id` at a synthetic version=0, not to a FillOperation row.
+_DDCP_SIGNABLE_ACTIONS = {
+    ("ddcp_profile_version", "release"): "ddcp_profile.release",
+    ("constituent_handoff", "decide"): "ddcp_constituent.decide",
+    ("fill_operation", "start"): "ddcp_fill.start",
+    ("fill_operation", "complete"): "ddcp_fill.complete",
+}
+
+
+class DdcpSignatureChallengeRequest(BaseModel):
+    record_type: str
+    action: str
+    record_id: uuid.UUID | None = None
+    batch_id: uuid.UUID | None = None
+
+
+@router.post("/signature-challenges")
+async def post_signature_challenge(
+    body: DdcpSignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    required_action = _DDCP_SIGNABLE_ACTIONS.get((body.record_type, body.action))
+    if required_action is None:
+        raise ValidationFailedError("Unknown record_type/action for a DDCP signature challenge", record_type=body.record_type, action=body.action)
+
+    async with session.begin():
+        if body.record_type == "ddcp_profile_version":
+            if body.record_id is None:
+                raise ValidationFailedError("record_id is required")
+            profile = await session.get(DdcpProfileVersion, body.record_id)
+            if profile is None:
+                raise NotFoundError("Injectable profile version not found")
+            site_id, record_version = profile.site_id, profile.version
+            record_hash = sha256_hex({"id": str(profile.id), "version": profile.version, "state": profile.state})
+        elif body.record_type == "constituent_handoff":
+            if body.record_id is None:
+                raise ValidationFailedError("record_id is required")
+            handoff = await session.get(ConstituentHandoff, body.record_id)
+            if handoff is None:
+                raise NotFoundError("Constituent handoff not found")
+            site_id, record_version = handoff.site_id, handoff.version
+            record_hash = sha256_hex({"id": str(handoff.id), "state": handoff.state})
+        elif body.record_type == "fill_operation" and body.action == "start":
+            if body.batch_id is None:
+                raise ValidationFailedError("batch_id is required to start a filling stage")
+            batch = await session.get(Batch, body.batch_id)
+            if batch is None:
+                raise NotFoundError("Batch not found")
+            site_id, record_version = batch.site_id, 0
+            record_hash = sha256_hex({"batch_id": str(body.batch_id)})
+        else:
+            if body.record_id is None:
+                raise ValidationFailedError("record_id is required")
+            fill_op = await session.get(FillOperation, body.record_id)
+            if fill_op is None:
+                raise NotFoundError("Fill operation not found")
+            site_id, record_version = fill_op.site_id, fill_op.version
+            record_hash = sha256_hex({"id": str(fill_op.id), "state": fill_op.state})
+
+        await evaluate_policy(session, actor.user_id, action=required_action, site_id=site_id)
+        policy = await resolve_signature_requirement(session, record_type=body.record_type, action=body.action)
+        challenge = await create_challenge(
+            session, user_id=actor.user_id, record_type=body.record_type,
+            record_id=body.record_id or body.batch_id, record_version=record_version,
+            record_hash=record_hash, meaning=policy.meaning,
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
 
 
 # Read-only list — lets the frontend offer a "pick a profile" selector instead of requiring the operator

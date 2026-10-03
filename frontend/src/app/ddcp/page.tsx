@@ -247,6 +247,8 @@ function ProfileCard({
   const [changeRef, setChangeRef] = useState("");
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [releaseResult, setReleaseResult] = useState<{ ok: boolean; text: string } | null>(null);
+  // Client Topic 12 (SG-148, project-owner-directed): release now requires a real Part 11 signature.
+  const [releasing, setReleasing] = useState(false);
 
   const [lookupId, setLookupId] = useState("");
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
@@ -312,20 +314,23 @@ function ProfileCard({
     }
   }
 
-  async function release(e: React.FormEvent) {
+  function release(e: React.FormEvent) {
     e.preventDefault();
-    setReleaseBusy(true);
     setReleaseResult(null);
+    setReleasing(true);
+  }
+
+  async function performRelease(extra: { challenge_id: string; reauth_password: string }) {
+    setReleaseBusy(true);
     try {
       await api.post<MutationReceipt>(`${family.prefix}/profiles/${releaseId.trim()}/release`, {
         idempotency_key: newIdempotencyKey(),
         profile_id: releaseId.trim(),
         expected_version: Number(expectedVersion),
         change_ref: changeRef.trim() || null,
+        ...extra,
       });
       setReleaseResult({ ok: true, text: "Profile released." });
-    } catch (err) {
-      setReleaseResult({ ok: false, text: friendlyDdcpError(err, "Couldn't release the profile.") });
     } finally {
       setReleaseBusy(false);
     }
@@ -433,6 +438,24 @@ function ProfileCard({
           </RowButtonSlot>
         </form>
         {releaseResult && <p className={releaseResult.ok ? "fs-2 mt-2" : "error-text mt-2"}>{releaseResult.text}</p>}
+        <SignatureCeremony
+          open={releasing}
+          onClose={() => setReleasing(false)}
+          onDone={() => setReleasing(false)}
+          challengePath={`${family.prefix}/signature-challenges`}
+          action="release"
+          challengeBody={{ record_type: "ddcp_profile_version", action: "release", record_id: releaseId.trim() }}
+          title={
+            <span className="flex items-center gap-2">
+              <Icon name="check-circle" /> Release profile version
+            </span>
+          }
+          summary="Releasing this profile version is a Part 11 electronic signature attributable to you, bound to this exact version. The profile becomes usable by execution and the previously released version (if any) is superseded."
+          submitLabel="Sign & release"
+          submitVariant="success"
+          reason="none"
+          onSign={(payload) => performRelease({ challenge_id: payload.challenge_id, reauth_password: payload.reauth_password })}
+        />
       </div>
 
       {family.hasProfileGet && (
@@ -872,6 +895,17 @@ function ExecutionCard({
   const [state, setState] = useState<DdcpFormState>(() => seedState(op));
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  // Client Topic 12 (SG-148, project-owner-directed): `op.signedAction` means Submit opens this
+  // ceremony instead of posting directly — see `performSubmit`'s own comment for why the two paths
+  // share one implementation.
+  const [signing, setSigning] = useState(false);
+  // Client Topic 13 (SG-180, project-owner-directed): "chain a second real signature" — after a signed
+  // decide(ACCEPTED)/complete succeeds, if this op's mapped generic step is reachable (via the batch id
+  // the operator used to look up records, the only batch id this card reliably knows for an op whose own
+  // fields never carry one), prompt the exact same signed batch-execution complete-step ceremony
+  // `DdcpCompleteStepModal` already provides from the Batch card above — one combined flow, two real
+  // independent signatures, never reusing or skipping either.
+  const [chainMapping, setChainMapping] = useState<DdcpStepSyncMapping | null>(null);
   // family.ops in the order catalog.ts declares them, bucketed by each op's `group` (first appearance
   // sets the bucket's position) — turns one long flat list into a handful of labelled clusters for step 1.
   const opGroups: { name: string; items: { op: DdcpOp; index: number }[] }[] = [];
@@ -984,33 +1018,74 @@ function ExecutionCard({
     });
   }
 
+  // Client Topic 12 (SG-148, project-owner-directed): shared by both the unsigned path (`doSubmit`
+  // calls this with no `extra`) and the signed path (the `SignatureCeremony` below calls this from
+  // `onSign` with `{challenge_id, reauth_password}`) — one implementation, so the bookkeeping after a
+  // successful submit (recordVersions/recentRecords tracking, Topic 13's chain check) never drifts
+  // between the two.
+  async function performSubmit(extra?: Record<string, unknown>) {
+    // Every DDCP sub-action that names an id in its URL (handoff_id, fill_operation_id, record_id)
+    // also requires that same id in the body — the backend checks the two match — so the body is
+    // built from every field, path id included, never filtered down.
+    const payload = buildPayload(op.fields, state);
+    const filledPath = op.path.replace(/\{(\w+)\}/g, (_, name) => encodeURIComponent(((state[name] as string) ?? "").trim()));
+    const receipt = await api.post<MutationReceipt>(`${family.prefix}/${filledPath}`, {
+      idempotency_key: newIdempotencyKey(),
+      ...payload,
+      ...(extra ?? {}),
+    });
+    setResult({ ok: true, text: `Recorded successfully. Record ID: ${receipt.aggregate_id}` });
+    // aggregate_id/resulting_version are this same record's id and its version *after* this op's own
+    // mutation — true whether this op just created the record or updated an existing one (decide/ipc/
+    // interventions/complete/verify all mutate the id they were given), so this one line keeps the
+    // tracker correct for both cases.
+    setRecordVersions((v) => ({ ...v, [receipt.aggregate_id]: receipt.resulting_version }));
+    if (op.producesRecordKind) {
+      const kind = op.producesRecordKind;
+      const option: SelectOption = {
+        value: receipt.aggregate_id,
+        label: `${receipt.aggregate_id.slice(0, 8)}… - ${op.label} (${new Date().toLocaleTimeString()})`,
+      };
+      setRecentRecords((r) => ({ ...r, [kind]: [option, ...(r[kind] ?? [])] }));
+    }
+    await maybeChainStepSignature();
+  }
+
+  // Client Topic 13's "chain a second real signature": only the 2 (recordType, action) pairs
+  // `DDCP_MAPPABLE_ACTIONS` (backend) actually recognises as completing a mapped generic step —
+  // `constituent_handoff`/`decide` when the decision was ACCEPTED, and `fill_operation`/`complete` —
+  // ever have a step to chain onto; `ddcp_profile_version`/`release` and `fill_operation`/`start` never
+  // map to anything, matching the backend's own `DDCP_MAPPABLE_ACTIONS` tuple.
+  async function maybeChainStepSignature() {
+    const sa = op.signedAction;
+    if (!sa) return;
+    const ddcpAction =
+      sa.recordType === "constituent_handoff" && sa.action === "decide" && state.decision === "ACCEPTED"
+        ? "constituent_handoff.accept"
+        : sa.recordType === "fill_operation" && sa.action === "complete"
+          ? "filling_stage.complete"
+          : null;
+    if (!ddcpAction || !lookupBatchId.trim()) return;
+    try {
+      const status = await api.get<DdcpStepSyncStatus>(`${family.prefix}/batches/${lookupBatchId.trim()}/step-sync-status`);
+      const mapping = status.mappings.find(
+        (m) => m.ddcp_action === ddcpAction && m.generic_step_state && m.generic_step_state !== "complete" && m.batch_step_id,
+      );
+      if (mapping) setChainMapping(mapping);
+    } catch {
+      // Best-effort only — never blocks or fails the action that already succeeded above.
+    }
+  }
+
   async function doSubmit() {
+    if (op.signedAction) {
+      setSigning(true);
+      return;
+    }
     setBusy(true);
     setResult(null);
     try {
-      // Every DDCP sub-action that names an id in its URL (handoff_id, fill_operation_id, record_id)
-      // also requires that same id in the body — the backend checks the two match — so the body is
-      // built from every field, path id included, never filtered down.
-      const payload = buildPayload(op.fields, state);
-      const filledPath = op.path.replace(/\{(\w+)\}/g, (_, name) => encodeURIComponent(((state[name] as string) ?? "").trim()));
-      const receipt = await api.post<MutationReceipt>(`${family.prefix}/${filledPath}`, {
-        idempotency_key: newIdempotencyKey(),
-        ...payload,
-      });
-      setResult({ ok: true, text: `Recorded successfully. Record ID: ${receipt.aggregate_id}` });
-      // aggregate_id/resulting_version are this same record's id and its version *after* this op's own
-      // mutation — true whether this op just created the record or updated an existing one (decide/ipc/
-      // interventions/complete/verify all mutate the id they were given), so this one line keeps the
-      // tracker correct for both cases.
-      setRecordVersions((v) => ({ ...v, [receipt.aggregate_id]: receipt.resulting_version }));
-      if (op.producesRecordKind) {
-        const kind = op.producesRecordKind;
-        const option: SelectOption = {
-          value: receipt.aggregate_id,
-          label: `${receipt.aggregate_id.slice(0, 8)}… - ${op.label} (${new Date().toLocaleTimeString()})`,
-        };
-        setRecentRecords((r) => ({ ...r, [kind]: [option, ...(r[kind] ?? [])] }));
-      }
+      await performSubmit();
     } catch (err) {
       setResult({ ok: false, text: friendlyDdcpError(err, "That action failed.") });
     } finally {
@@ -1280,6 +1355,38 @@ function ExecutionCard({
           </div>
         )}
       </form>
+      {op.signedAction && (
+        <SignatureCeremony
+          open={signing}
+          onClose={() => setSigning(false)}
+          onDone={() => setSigning(false)}
+          challengePath={`${family.prefix}/signature-challenges`}
+          action={op.signedAction.action}
+          challengeBody={{
+            record_type: op.signedAction.recordType,
+            action: op.signedAction.action,
+            ...(op.signedAction.idField ? { record_id: state[op.signedAction.idField] } : {}),
+            ...(op.signedAction.batchIdField ? { batch_id: state[op.signedAction.batchIdField] } : {}),
+          }}
+          title={
+            <span className="flex items-center gap-2">
+              <Icon name="check-circle" /> {op.label}
+            </span>
+          }
+          summary={`This is a Part 11 electronic signature attributable to you, bound to this exact record and version.`}
+          submitLabel="Sign & submit"
+          reason="none"
+          onSign={(payload) => performSubmit({ challenge_id: payload.challenge_id, reauth_password: payload.reauth_password })}
+        />
+      )}
+      {chainMapping && lookupBatchId.trim() && (
+        <DdcpCompleteStepModal
+          batchId={lookupBatchId.trim()}
+          mapping={chainMapping}
+          onClose={() => setChainMapping(null)}
+          onDone={() => setChainMapping(null)}
+        />
+      )}
     </Card>
   );
 }
