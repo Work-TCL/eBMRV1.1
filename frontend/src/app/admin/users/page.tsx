@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   api,
   ApiError,
@@ -22,12 +23,14 @@ import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
+import { OnboardingReturnLink } from "@/components/admin/OnboardingReturnLink";
 
 const fetchUsers = pagedFetcher<User>("/users");
 
 export default function UsersAdminPage() {
   const { isAdmin } = useRequireAdmin();
   const { sites } = useSites();
+  const router = useRouter();
 
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -36,6 +39,8 @@ export default function UsersAdminPage() {
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
+  const [createSiteId, setCreateSiteId] = useState("");
+  const [createRoleId, setCreateRoleId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -74,17 +79,30 @@ export default function UsersAdminPage() {
     setBusy(true);
     setError(null);
     try {
-      await api.post<MutationReceipt>("/users", {
+      const receipt = await api.post<MutationReceipt>("/users", {
         idempotency_key: newIdempotencyKey(),
         username,
         email,
         full_name: fullName,
         password,
       });
+      // Optional, same two commands the "Assign role" card below calls separately -- chaining them
+      // here just saves a trip back to this page for the common case of assigning a role at creation
+      // time. Leaving either blank skips this and the user can still be assigned later down below.
+      if (createSiteId && createRoleId) {
+        await api.post<MutationReceipt>(`/users/${receipt.aggregate_id}/roles`, {
+          idempotency_key: newIdempotencyKey(),
+          user_id: receipt.aggregate_id,
+          site_id: createSiteId,
+          role_id: createRoleId,
+        });
+      }
       setUsername("");
       setEmail("");
       setFullName("");
       setPassword("");
+      setCreateSiteId("");
+      setCreateRoleId("");
       setModalOpen(false);
       setReloadToken((n) => n + 1);
     } catch (err) {
@@ -194,9 +212,15 @@ export default function UsersAdminPage() {
         title="Users"
         subtitle="Create users and assign roles per site."
         action={
-          <Button variant="primary" onClick={() => setModalOpen(true)}>
-            <Icon name="plus" /> New user
-          </Button>
+          <div className="flex gap-2">
+            <OnboardingReturnLink />
+            <Button variant="secondary" onClick={() => router.push("/import/users")}>
+              <Icon name="clipboard" /> Bulk import
+            </Button>
+            <Button variant="primary" onClick={() => setModalOpen(true)}>
+              <Icon name="plus" /> New user
+            </Button>
+          </div>
         }
       />
 
@@ -270,6 +294,28 @@ export default function UsersAdminPage() {
           <Field label="Password" required error={error}>
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
           </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Site" hint="Leave blank to assign a role later from the Assign role section below.">
+              <Select value={createSiteId} onChange={(e) => setCreateSiteId(e.target.value)}>
+                <option value="">— Assign later —</option>
+                {sites.map((s: Site) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.code})
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Role" hint="Both Site and Role are needed to assign now.">
+              <Select value={createRoleId} onChange={(e) => setCreateRoleId(e.target.value)}>
+                <option value="">— Assign later —</option>
+                {allRoles.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
           <div className="flex justify-between gap-3 mt-4">
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
               Cancel

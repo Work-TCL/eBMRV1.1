@@ -262,6 +262,7 @@ PERMISSION_CATALOG = [
     ("equipment_asset.create", "create", "equipment_asset", "Create an equipment asset (Document 38)"),
     ("equipment_asset.qualify", "qualify", "equipment_asset", "Record an equipment qualification event (Document 38)"),
     ("equipment_asset.calibrate", "calibrate", "equipment_asset", "Record an equipment calibration event (Document 38)"),
+    ("equipment_asset.approve_calibration", "approve_calibration", "equipment_asset", "Review/approve an existing equipment calibration, independent of who performed it (Client gap-analysis Phase 4, 2026-10-05)"),
     ("equipment_asset.maintain", "maintain", "equipment_asset", "Create/continue/verify an equipment maintenance work order (Document 38)"),
     ("equipment_asset.hold", "hold", "equipment_asset", "Place an equipment asset on hold (Document 38, Document 106 row 108)"),
     ("equipment_asset.return_to_service", "return_to_service", "equipment_asset", "Return an equipment asset to service (Document 38)"),
@@ -801,6 +802,7 @@ ROLE_PERMISSIONS = {
         "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject",
         "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate",
         "equipment_asset.create", "equipment_asset.qualify", "equipment_asset.calibrate",
+        "equipment_asset.approve_calibration",
         "equipment_asset.maintain", "equipment_asset.hold", "equipment_asset.return_to_service",
         "equipment_asset.reserve", "equipment_asset.retire", "equipment_asset.relocate",
         "equipment_area.create",
@@ -926,7 +928,7 @@ ROLE_PERMISSIONS = {
         # code QA Reviewer already holds for the same "view what this role's own actions produce" reason.
         "evidence.download",
         *MATERIAL_VIEW_CODES, *EQUIPMENT_VIEW_CODES,
-        "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oos_record.reopen", "oos_record.link_change_control", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "inventory_reservation.approve_override", "inventory_reservation.reject_override", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.preapprove", "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.plan", "capa.effectiveness", "capa.extend", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "supplier.suspend", "supplier.reinstate", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
+        "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oos_record.reopen", "oos_record.link_change_control", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "inventory_reservation.approve_override", "inventory_reservation.reject_override", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "equipment_asset.approve_calibration", "edge_gateway.certificate_rotation", "signal_mapping.release", *QMS_VIEW_CODES, "qms_deviation.preapprove", "qms_deviation.disposition", "qms_deviation.close", "qms_deviation.reopen", "capa.plan", "capa.effectiveness", "capa.extend", "capa.close", "capa.reopen", "ncr.disposition", "ncr.close", "change.approve", "change.make_effective", "change.close", "document.release", "document.make_effective", "document.obsolete", "document.controlled_copy.issue", "training.assignment.assess", "training.qualification.create", "training.waiver.create", "risk.accept", "scar.effectiveness", "scar.close", "supplier.suspend", "supplier.reinstate", "internal_audit.finding.verify", "internal_audit.close", "complaint.reportability", "complaint.response", "complaint.close", "field_action.reportability", "field_action.approve", "field_action.effectiveness", "field_action.close",
     # SG-157 RESOLVED_APPROVED 2026-09-14 (project-owner-directed): closest existing real role to Document
     # 106's "QA Manager/Head of Quality per record class" text for regulatory_report.approve -- QA Releaser
     # is this codebase's actual highest quality-release-authority role (batch/recipe/product release).
@@ -964,7 +966,11 @@ ROLE_PERMISSIONS = {
     "Process Engineer": ["product.author", "product.view", "material_spec.author", "material_spec.view", "recipe.author", "recipe.view", "rules.evaluate", "training.qualification_code.list",
         # 2026-09-18, project-owner-directed: Supplier/Material master creation — same "master-data
         # technical author" class as product.author/material_spec.author above.
-        "material.create", "material.update", "material.view", "supplier.create", "supplier_qualification.create",
+        # supplier.view added 2026-10-06 (real gap found while testing supplier edit/delete): Process
+        # Engineer held supplier.create/supplier_qualification.create but no supplier.view at all — they
+        # could register a supplier and then never see it again (list or detail both 403'd), unlike
+        # material.view's own presence right next to material.create/update above.
+        "material.create", "material.update", "material.view", "supplier.create", "supplier.view", "supplier_qualification.create",
         # Known-limitations fix (docs/testing/demo-gujarati/10 §10.4 note / 11 §11.6 item 4),
         # project-owner-directed 2026-09-18: a Process Engineer previously had no way to see a deviation
         # or CAPA implicating their own recipe/process, not even read-only. Read-only view only —

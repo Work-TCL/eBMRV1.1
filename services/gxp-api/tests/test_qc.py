@@ -23,6 +23,7 @@ from app.modules.qc.models import (
     QcTestSpecification,
 )
 from app.modules.signature.models import SignaturePolicy
+from app.modules.supplier_quality.models import Supplier
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 
 
@@ -1118,7 +1119,7 @@ async def test_release_coa_reliance_requires_approved_supplier_and_coa_on_file(c
         f"/materials/v1/receipts/{receipt_id}/examine",
         json={
             "idempotency_key": idem(), "receipt_id": receipt_id, "expected_version": 1,
-            "labeling_ok": True, "damage_observed": False, "seal_broken": False, "contamination_observed": False,
+            "labeling_ok": True, "shipping_damage_observed": False, "container_damage_observed": False, "seal_broken": False,
             "identity_confirmed": True, "internal_lot": "LOT-GATE-COA", "container_count": 1,
         },
         headers=auth_headers(admin_token),
@@ -1161,3 +1162,73 @@ async def test_release_coa_reliance_requires_approved_supplier_and_coa_on_file(c
     assert released_lot.status == "released"
     assert released_lot.coa_reliance is True
     assert released_lot.coa_reliance_reason == "Supplier COA reviewed, meets specification"
+
+
+async def test_create_test_order_with_external_provider(client, seeded, db):
+    """Client gap-analysis Phase 6 (2026-10-05): a test order can record which Supplier (role_type
+    "service_provider"/"both") performed it when sent to an external lab, and a report hash. A Supplier
+    with the wrong role_type is rejected."""
+    import uuid
+
+    op_token = await login(client, "operator1")
+    async with db.begin():
+        provider = Supplier(supplier_code="SVC-QC-1", legal_name="Contract QC Labs Inc.", role_type="service_provider", status="approved")
+        wrong_role_provider = Supplier(supplier_code="SUP-QC-WRONG-1", legal_name="Just A Supplier", role_type="supplier", status="approved")
+        db.add_all([provider, wrong_role_provider])
+        await db.flush()
+        spec = QcTestSpecification(
+            spec_code="SPEC-EXT-PROVIDER-1", version_no=1, scope_type="product",
+            scope_version_id=uuid.uuid4(), status="released", version=1,
+        )
+        db.add(spec)
+        await db.flush()
+        definition = QcTestDefinition(
+            specification_id=spec.id, test_code="ASSAY", test_name="Assay",
+            result_data_type="numeric_single", required=True, release_blocking=True,
+        )
+        db.add(definition)
+        await db.flush()
+        definition_id, provider_id, wrong_role_provider_id = definition.id, provider.id, wrong_role_provider.id
+
+    sample_resp = await client.post(
+        "/qc/v1/samples",
+        json={
+            "idempotency_key": idem(), "sample_number": "SAMPLE-EXT-PROVIDER-1",
+            "sample_type": "finished_product", "source_type": "reserve",
+        },
+        headers=auth_headers(op_token),
+    )
+    sample_id = sample_resp.json()["aggregate_id"]
+    receive_resp = await client.post(
+        f"/qc/v1/samples/{sample_id}/receive",
+        json={"idempotency_key": idem(), "sample_id": sample_id, "expected_version": 1},
+        headers=auth_headers(op_token),
+    )
+    assert receive_resp.status_code == 200, receive_resp.text
+
+    bad_resp = await client.post(
+        "/qc/v1/test-orders",
+        json={
+            "idempotency_key": idem(), "sample_id": sample_id, "test_definition_id": str(definition_id),
+            "external_provider_id": str(wrong_role_provider_id),
+        },
+        headers=auth_headers(op_token),
+    )
+    assert bad_resp.status_code == 422, bad_resp.text
+    assert bad_resp.json()["code"] == "VALIDATION_FAILED"
+
+    good_resp = await client.post(
+        "/qc/v1/test-orders",
+        json={
+            "idempotency_key": idem(), "sample_id": sample_id, "test_definition_id": str(definition_id),
+            "external_provider_id": str(provider_id), "external_report_hash": "abc123",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert good_resp.status_code == 200, good_resp.text
+
+    detail = await client.get(f"/qc/v1/samples/{sample_id}/record", headers=auth_headers(op_token))
+    assert detail.status_code == 200, detail.text
+    order = detail.json()["test_orders"][0]
+    assert order["external_provider_id"] == str(provider_id)
+    assert order["external_report_hash"] == "abc123"

@@ -790,6 +790,25 @@ class CalibrationOotImpactRequiredError(GxPError):
     status_code = 409
 
 
+class CalibrationApprovalPendingError(GxPError):
+    """Client gap-analysis Phase 4 (2026-10-05): the most recent calibration has a recorded result but
+    has not yet been reviewed/approved by someone independent of the performer (SoD) -- a separate gate
+    from CALIBRATION_OOT_IMPACT_REQUIRED/CALIBRATION_EXPIRED above."""
+
+    code = "CALIBRATION_APPROVAL_PENDING"
+    status_code = 409
+
+
+class RecalibrationRequiredError(GxPError):
+    """Client gap-analysis Phase 7 (2026-10-05): a breakdown maintenance event defaults to requiring
+    recalibration before the equipment is eligible for use again, unless the work order was flagged
+    non-critical. Cleared only when a new calibration is recorded AND approved (same two-step bar as
+    CALIBRATION_APPROVAL_PENDING above) -- the verified maintenance work order alone is not enough."""
+
+    code = "RECALIBRATION_REQUIRED"
+    status_code = 409
+
+
 class EquipmentClassMismatchError(GxPError):
     code = "EQUIPMENT_CLASS_MISMATCH"
     status_code = 422

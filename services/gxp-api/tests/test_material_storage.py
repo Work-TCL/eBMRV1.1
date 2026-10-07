@@ -125,8 +125,8 @@ async def test_examine_receipt_sets_lot_storage_fields(client, seeded):
         f"/materials/v1/receipts/{receipt_id}/examine",
         json={
             "idempotency_key": idem(), "receipt_id": receipt_id, "expected_version": 1,
-            "labeling_ok": True, "damage_observed": False, "seal_broken": False,
-            "contamination_observed": False, "identity_confirmed": True, "internal_lot": "LOT-STORAGE-7",
+            "labeling_ok": True, "shipping_damage_observed": False, "container_damage_observed": False, "seal_broken": False,
+            "identity_confirmed": True, "internal_lot": "LOT-STORAGE-7",
             "container_count": 1, "storage_location_id": location_id, "storage_condition": "controlled_temperature",
         },
         headers=auth_headers(op_token),

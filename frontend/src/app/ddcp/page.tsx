@@ -89,6 +89,10 @@ export default function DdcpPage() {
   // any ddcp_* permission (their submits 403'd despite the form being shown) — see
   // docs/testing/DDCP_Manual_Test_Guide_Gujarati.md §4.3/§17 for how this was found.
   const canAuthorProfile = hasPermission(me, "ddcp_profile.author");
+  // Moved off QA Releaser to its own code (2026-10-03, seed.py) -- a DDCP Engineer authors but a QA
+  // Releaser (who holds neither ddcp_profile.author nor ddcp_constituent.handoff) releases, so the
+  // "Profile designer" tab below must stay reachable on this permission too, not just authoring.
+  const canReleaseProfile = hasPermission(me, "ddcp_profile.release");
   // Entry permission for the whole DDCP Operator execution surface (handoff/fill/device/release).
   const canExecute = hasPermission(me, "ddcp_constituent.handoff");
   const entities = useDdcpEntityOptions();
@@ -161,13 +165,20 @@ export default function DdcpPage() {
       <Tabs
         initial="batch"
         tabs={[
-          ...(canAuthorProfile
+          ...(canAuthorProfile || canReleaseProfile
             ? [
                 {
                   id: "profile",
                   label: "Profile designer",
                   content: (
-                    <ProfileCard key={`profile-${family.key}`} family={family} entities={entities} onProfileCreated={setLastProfileId} />
+                    <ProfileCard
+                      key={`profile-${family.key}`}
+                      family={family}
+                      entities={entities}
+                      onProfileCreated={setLastProfileId}
+                      canAuthor={canAuthorProfile}
+                      canRelease={canReleaseProfile}
+                    />
                   ),
                 },
               ]
@@ -227,10 +238,14 @@ function ProfileCard({
   family,
   entities,
   onProfileCreated,
+  canAuthor,
+  canRelease,
 }: {
   family: DdcpFamily;
   entities: EntityCtx; // profile fields never render a batch/equipment picker; passed through only for a uniform DdcpFieldsGrid call.
   onProfileCreated: (id: string) => void;
+  canAuthor: boolean;
+  canRelease: boolean;
 }) {
   const { siteId } = useSiteId();
   const [state, setState] = useState<DdcpFormState>(() => initState(family.profileFields));
@@ -356,6 +371,7 @@ function ProfileCard({
         Define this product&rsquo;s recipe before any batch can use it - what constituents it needs, and what state each must be
         in. A profile starts as a DRAFT you can still edit; releasing it locks it and makes it available to batches.
       </p>
+      {canAuthor && (
       <form onSubmit={submitCreate}>
         <DdcpFieldsGrid fields={family.profileFields} state={state} onChange={setField} entities={entities} profilePrefix={family.prefix} />
         <div className="mt-2">
@@ -369,6 +385,7 @@ function ProfileCard({
           </Button>
         </div>
       </form>
+      )}
 
       {duplicateConfirm && (
         <Modal
@@ -401,6 +418,7 @@ function ProfileCard({
         </Modal>
       )}
 
+      {canRelease && (
       <div className="mt-4" style={{ borderTop: "1px solid var(--border-hairline)", paddingTop: "var(--space-3)" }}>
         <p className="fs-1 text-muted mb-1">Release a profile version</p>
         <p className="fs-2 text-muted mb-2">
@@ -457,6 +475,7 @@ function ProfileCard({
           onSign={(payload) => performRelease({ challenge_id: payload.challenge_id, reauth_password: payload.reauth_password })}
         />
       </div>
+      )}
 
       {family.hasProfileGet && (
         <div className="mt-4" style={{ borderTop: "1px solid var(--border-hairline)", paddingTop: "var(--space-3)" }}>

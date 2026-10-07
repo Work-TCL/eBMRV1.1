@@ -621,7 +621,9 @@ async def test_material_and_equipment_requirements_round_trip(client, seeded, db
     mat_spec_resp = await client.post(
         "/material-specifications/v1/drafts",
         json={
-            "idempotency_key": idem(), "material_spec_business_id": "RCPMAT-REQ-1", "version_no": 1,
+            # Client gap-analysis Phase 5 (2026-10-05): material_spec_business_id/version_no are no
+            # longer caller-supplied -- derived server-side from the material's own code.
+            "idempotency_key": idem(),
             "material_id": str(material_id), "name": "Recipe Req Material Spec", "site_id": str(seeded["site_id"]),
         },
         headers=auth_headers(admin_token),
@@ -692,7 +694,9 @@ async def test_version_detail_resolves_referenced_names_and_surfaces_raw_ids(cli
     mat_spec_resp = await client.post(
         "/material-specifications/v1/drafts",
         json={
-            "idempotency_key": idem(), "material_spec_business_id": "RCPMAT-NAMES-1", "version_no": 1,
+            # Client gap-analysis Phase 5 (2026-10-05): material_spec_business_id/version_no are no
+            # longer caller-supplied -- derived server-side from the material's own code.
+            "idempotency_key": idem(),
             "material_id": str(material_id), "name": "Recipe Names Material Spec", "site_id": str(seeded["site_id"]),
         },
         headers=auth_headers(admin_token),
@@ -730,7 +734,7 @@ async def test_version_detail_resolves_referenced_names_and_surfaces_raw_ids(cli
     assert detail["site_name"] == "Test Site"
 
     mreq = detail["material_requirements"][0]
-    assert mreq["material_spec_business_id"] == "RCPMAT-NAMES-1"
+    assert mreq["material_spec_business_id"] == "MAT-RCP-NAMES-1-SPEC"  # auto-derived from material.code
     assert mreq["material_name"] == "Recipe Names Material Spec"
 
     ereq = detail["equipment_requirements"][0]
@@ -780,7 +784,9 @@ async def test_update_draft_replaces_material_and_equipment_requirements(client,
     mat_spec_resp = await client.post(
         "/material-specifications/v1/drafts",
         json={
-            "idempotency_key": idem(), "material_spec_business_id": "RCPMAT-REQ-3", "version_no": 1,
+            # Client gap-analysis Phase 5 (2026-10-05): material_spec_business_id/version_no are no
+            # longer caller-supplied -- derived server-side from the material's own code.
+            "idempotency_key": idem(),
             "material_id": str(material_id), "name": "Recipe Req Material Spec 3", "site_id": str(seeded["site_id"]),
         },
         headers=auth_headers(admin_token),

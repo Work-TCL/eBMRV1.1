@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.reference_resolution import build_code_index
 from app.core.security import verify_password
 from app.modules.audit.models import AuditEvent
 from app.modules.codegen import service as codegen_service
@@ -257,7 +258,13 @@ async def create_product_family(
 
 
 class CreateProductDraftCommand(CommandEnvelope):
-    product_business_id: str
+    # Client gap-analysis Phase 8 (2026-10-05, project-owner-directed): removed from the create-product
+    # form entirely -- auto-generated server-side for a brand-new product (version_no == 1), same
+    # optional-auto-gen pattern product_code already used. Unlike product_code, there is no fallback to a
+    # "prior version's" value for version_no > 1: a caller adding a further version to an *existing*
+    # product must still supply that product's own product_business_id (the frontend's dedicated "New
+    # version" action does this by reading it from the existing record, never by free-text entry).
+    product_business_id: str | None = None
     product_code: str | None = None
     name: str
     version_no: int
@@ -282,10 +289,25 @@ async def create_draft(session: AsyncSession, cmd: CreateProductDraftCommand, ac
     if existing is not None:
         return _receipt_from_existing(existing)
 
+    # Client gap-analysis Phase 8: product_business_id auto-generates only for the first version of a
+    # brand-new product, same shape product_code already used below. A further version of an existing
+    # product must supply its established product_business_id -- there is no "prior version" fallback
+    # the way product_code has one, since the whole point of this field is identifying *which* existing
+    # product a new version belongs to.
+    if cmd.product_business_id:
+        product_business_id = cmd.product_business_id
+    elif cmd.version_no == 1:
+        product_business_id = await codegen_service.next_code(session, entity_type="PRODUCT_BUSINESS_ID", prefix="PRDB")
+    else:
+        raise ValidationFailedError(
+            "product_business_id is required when adding a version to an existing product",
+            version_no=cmd.version_no,
+        )
+
     conflict = (
         await session.execute(
             select(ProductVersion).where(
-                ProductVersion.product_business_id == cmd.product_business_id,
+                ProductVersion.product_business_id == product_business_id,
                 ProductVersion.version_no == cmd.version_no,
             )
         )
@@ -293,12 +315,11 @@ async def create_draft(session: AsyncSession, cmd: CreateProductDraftCommand, ac
     if conflict is not None:
         raise ValidationFailedError(
             "A draft or released version already exists at this product_business_id/version_no",
-            product_business_id=cmd.product_business_id,
+            product_business_id=product_business_id,
             version_no=cmd.version_no,
         )
 
-    # Client requirement #1: product_code auto-generates only for the first version of a new product
-    # (product_business_id stays caller-supplied always -- it's the stable ERP-style identity key).
+    # Client requirement #1: product_code auto-generates only for the first version of a new product.
     # Later versions of an already-known product_business_id reuse its established product_code, exactly
     # as a caller-supplied product_code always had to match today.
     if cmd.product_code:
@@ -309,14 +330,14 @@ async def create_draft(session: AsyncSession, cmd: CreateProductDraftCommand, ac
         prior_code = (
             await session.execute(
                 select(ProductVersion.product_code)
-                .where(ProductVersion.product_business_id == cmd.product_business_id)
+                .where(ProductVersion.product_business_id == product_business_id)
                 .order_by(ProductVersion.version_no.desc())
             )
         ).scalars().first()
         if prior_code is None:
             raise ValidationFailedError(
                 "product_code is required when no prior version exists for this product_business_id",
-                product_business_id=cmd.product_business_id,
+                product_business_id=product_business_id,
             )
         product_code = prior_code
 
@@ -352,7 +373,7 @@ async def create_draft(session: AsyncSession, cmd: CreateProductDraftCommand, ac
         )
 
     version = ProductVersion(
-        product_business_id=cmd.product_business_id,
+        product_business_id=product_business_id,
         version_no=cmd.version_no,
         product_code=product_code,
         name=cmd.name,
@@ -1121,3 +1142,181 @@ async def supersede_product_version(
         extra_updates=_resolve_supersession,
         independence_reference="author",
     )
+
+
+# ---------------------------------------------------------------------------
+# BulkImportProduct — Client gap-analysis Phase 8 (2026-10-05): client explicitly confirmed this ask
+# ("like we give an Excel-sheet option for Users, should we give one for Product too?" -> "Yes yes").
+# Same preview/all-or-nothing-commit shape as Phase 1's bulk_import_users and Phase 7's
+# bulk_import_equipment, reusing create_draft() per row rather than bypassing its validation.
+# `product_family_code` (not a raw id) mirrors the same "business code, not a UUID" choice those two made.
+# Always creates version 1 of a brand-new product (product_business_id auto-generated, same as a manual
+# single-row create with no business id supplied) -- this is a first-time bulk-onboarding tool, like its
+# two precedents, not a bulk version-adder; constituents (a nested list on the single-row command) has no
+# flat CSV-row equivalent, so bulk-imported drafts start with none, same as every other optional field this
+# row intentionally excludes (sterile_profile_id, device_model_code, pmoa_reference, part4_profile_code,
+# finished_tracking_strategy, udi_applicable) -- edited afterward via the normal single-record UI if needed.
+# ---------------------------------------------------------------------------
+
+
+class BulkImportProductRow(BaseModel):
+    product_code: str | None = None
+    name: str
+    manufacturing_profile_code: str
+    product_family_code: str | None = None
+    combination_product_type: str | None = None
+    strength_value: Decimal | None = None
+    strength_uom: str | None = None
+
+
+class BulkImportProductRowValidation(BaseModel):
+    row_index: int
+    product_code: str | None
+    ok: bool
+    error: str | None = None
+
+
+async def validate_bulk_import_product_rows(
+    session: AsyncSession, rows: list[BulkImportProductRow]
+) -> list[BulkImportProductRowValidation]:
+    """Read-only. Used by both the preview endpoint and (defense in depth) bulk_import_products itself
+    right before committing, since rows can go stale between a client's preview call and its commit call."""
+    results: list[BulkImportProductRowValidation] = []
+    seen_codes: set[str] = set()
+    family_codes = set(build_code_index(await product_master_service.list_product_families(session), "family_code"))
+    candidate_codes = {row.product_code for row in rows if row.product_code}
+    existing_codes = (
+        {
+            c
+            for c in (
+                await session.execute(
+                    select(ProductVersion.product_code).where(
+                        ProductVersion.product_code.in_(candidate_codes), ProductVersion.version_no == 1
+                    )
+                )
+            ).scalars().all()
+        }
+        if candidate_codes
+        else set()
+    )
+
+    for idx, row in enumerate(rows):
+        if row.manufacturing_profile_code not in product_master_service.SUPPORTED_MANUFACTURING_PROFILES:
+            results.append(
+                BulkImportProductRowValidation(
+                    row_index=idx, product_code=row.product_code, ok=False,
+                    error=f"unknown manufacturing_profile_code '{row.manufacturing_profile_code}'",
+                )
+            )
+            continue
+        if row.product_family_code and row.product_family_code not in family_codes:
+            results.append(
+                BulkImportProductRowValidation(
+                    row_index=idx, product_code=row.product_code, ok=False,
+                    error=f"unknown product_family_code '{row.product_family_code}'",
+                )
+            )
+            continue
+        if row.product_code:
+            if row.product_code in seen_codes:
+                results.append(
+                    BulkImportProductRowValidation(
+                        row_index=idx, product_code=row.product_code, ok=False,
+                        error="duplicate product_code within this import",
+                    )
+                )
+                continue
+            seen_codes.add(row.product_code)
+            if row.product_code in existing_codes:
+                results.append(
+                    BulkImportProductRowValidation(
+                        row_index=idx, product_code=row.product_code, ok=False,
+                        error="product_code is already in use at version 1",
+                    )
+                )
+                continue
+        results.append(BulkImportProductRowValidation(row_index=idx, product_code=row.product_code, ok=True))
+    return results
+
+
+class BulkImportProductCommand(CommandEnvelope):
+    site_id: uuid.UUID
+    rows: list[BulkImportProductRow]
+
+
+class BulkImportedProduct(BaseModel):
+    row_index: int
+    product_version_id: uuid.UUID
+    product_business_id: str
+    product_code: str
+
+
+class BulkImportProductResult(BaseModel):
+    command_id: uuid.UUID
+    correlation_id: uuid.UUID
+    created: list[BulkImportedProduct]
+
+
+async def bulk_import_products(
+    session: AsyncSession, cmd: BulkImportProductCommand, actor_user_id: uuid.UUID
+) -> BulkImportProductResult:
+    if not cmd.rows:
+        raise ValidationFailedError("No rows to import")
+
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing_receipt = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing_receipt is not None:
+        return BulkImportProductResult(command_id=existing_receipt.id, correlation_id=existing_receipt.id, created=[])
+
+    validations = await validate_bulk_import_product_rows(session, cmd.rows)
+    errors = [v for v in validations if not v.ok]
+    if errors:
+        raise ValidationFailedError(
+            "One or more rows failed validation -- no products were created",
+            errors=[{"row_index": e.row_index, "product_code": e.product_code, "error": e.error} for e in errors],
+        )
+
+    family_by_code = build_code_index(await product_master_service.list_product_families(session), "family_code")
+
+    correlation_id = uuid.uuid4()
+    created: list[BulkImportedProduct] = []
+    for idx, row in enumerate(cmd.rows):
+        family = family_by_code[row.product_family_code] if row.product_family_code else None
+        receipt = await create_draft(
+            session,
+            CreateProductDraftCommand(
+                idempotency_key=f"{cmd.idempotency_key}:row-{idx}",
+                product_code=row.product_code,
+                name=row.name,
+                version_no=1,
+                site_id=cmd.site_id,
+                manufacturing_profile_code=row.manufacturing_profile_code,
+                product_family_id=family.id if family else None,
+                combination_product_type=row.combination_product_type,
+                strength_value=row.strength_value,
+                strength_uom=row.strength_uom,
+            ),
+            actor_user_id,
+        )
+        version = await session.get(ProductVersion, receipt.aggregate_id)
+        created.append(
+            BulkImportedProduct(
+                row_index=idx, product_version_id=receipt.aggregate_id,
+                product_business_id=version.product_business_id, product_code=version.product_code,
+            )
+        )
+
+    receipt = await record_command_receipt(
+        session,
+        site_id=cmd.site_id,
+        command_type="BulkImportProducts",
+        aggregate_type="product_bulk_import",
+        aggregate_id=uuid.uuid4(),
+        expected_version=None,
+        resulting_version=1,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return BulkImportProductResult(command_id=receipt.id, correlation_id=correlation_id, created=created)

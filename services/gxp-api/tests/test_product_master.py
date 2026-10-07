@@ -105,6 +105,93 @@ async def test_create_draft_without_product_code_auto_generates_at_version_1(cli
     assert detail2["product_code"] != detail["product_code"]
 
 
+async def test_create_draft_without_business_id_auto_generates_at_version_1(client, seeded, db):
+    """Client gap-analysis Phase 8 (2026-10-05, project-owner-directed): product_business_id is no longer
+    a field the frontend collects -- auto-generated server-side the same shape product_code already was,
+    for a brand-new product (version_no == 1)."""
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.product.autobiz")
+    admin_token = await login(client, "admin.product.autobiz")
+
+    body = _draft_body(seeded["site_id"], "unused")
+    body.pop("product_business_id")
+    body.pop("product_code")
+    resp = await client.post("/products/v1/drafts", json=body, headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    version_id = resp.json()["aggregate_id"]
+    detail = (await client.get(f"/products/v1/{version_id}", headers=auth_headers(admin_token))).json()
+    assert detail["product_business_id"].startswith("PRDB-")
+
+    body2 = _draft_body(seeded["site_id"], "unused")
+    body2.pop("product_business_id")
+    body2.pop("product_code")
+    resp2 = await client.post("/products/v1/drafts", json=body2, headers=auth_headers(admin_token))
+    assert resp2.status_code == 200, resp2.text
+    detail2 = (
+        await client.get(f"/products/v1/{resp2.json()['aggregate_id']}", headers=auth_headers(admin_token))
+    ).json()
+    assert detail2["product_business_id"] != detail["product_business_id"]
+
+
+async def test_create_draft_version_2_without_business_id_rejected(client, seeded, db):
+    """There is no "prior version" fallback for product_business_id the way product_code has one -- a
+    further version of an existing product must say which product it belongs to."""
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.product.nobiz2")
+    admin_token = await login(client, "admin.product.nobiz2")
+
+    body = _draft_body(seeded["site_id"], "unused", version_no=2)
+    body.pop("product_business_id")
+    body.pop("product_code")
+    resp = await client.post("/products/v1/drafts", json=body, headers=auth_headers(admin_token))
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_bulk_import_products_preview_and_commit(client, seeded, db):
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.product.bulk")
+    admin_token = await login(client, "admin.product.bulk")
+    site_id = seeded["site_id"]
+
+    rows = [
+        {"name": "Bulk Tablet A", "manufacturing_profile_code": "pharma"},
+        {"name": "Bulk Device B", "manufacturing_profile_code": "not_a_real_profile"},
+    ]
+    preview = await client.post(
+        "/products/v1/drafts/bulk-import/preview", json={"rows": rows}, headers=auth_headers(admin_token)
+    )
+    assert preview.status_code == 200, preview.text
+    outcomes = preview.json()
+    assert outcomes[0]["ok"] is True
+    assert outcomes[1]["ok"] is False
+    assert "not_a_real_profile" in outcomes[1]["error"]
+
+    # All-or-nothing: committing the same batch (one bad row) creates nothing.
+    bad_commit = await client.post(
+        "/products/v1/drafts/bulk-import/commit",
+        json={"idempotency_key": idem(), "site_id": str(site_id), "rows": rows},
+        headers=auth_headers(admin_token),
+    )
+    assert bad_commit.status_code == 422, bad_commit.text
+
+    good_rows = [{"name": "Bulk Tablet A", "manufacturing_profile_code": "pharma"}]
+    commit = await client.post(
+        "/products/v1/drafts/bulk-import/commit",
+        json={"idempotency_key": idem(), "site_id": str(site_id), "rows": good_rows},
+        headers=auth_headers(admin_token),
+    )
+    assert commit.status_code == 200, commit.text
+    created = commit.json()["created"]
+    assert len(created) == 1
+    assert created[0]["product_business_id"].startswith("PRDB-")
+    detail = (
+        await client.get(f"/products/v1/{created[0]['product_version_id']}", headers=auth_headers(admin_token))
+    ).json()
+    assert detail["name"] == "Bulk Tablet A"
+    assert detail["product_code"] == created[0]["product_code"]
+
+
 async def test_create_draft_rejects_duplicate_product_code_under_a_different_business_id(client, seeded, db):
     """ProductVersion carries two independent UniqueConstraints -- (product_business_id, version_no) and
     (product_code, version_no) (migration d5d48a66187f). Only the first was pre-checked in application

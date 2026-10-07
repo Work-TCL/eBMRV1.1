@@ -158,10 +158,12 @@ export default function DispensingPage() {
       title="Material transaction operations"
         subtitle="What happens to a dispensed quantity afterward - consumed, returned, lost, or requested for destruction."
         root="/materials/v1"
+        me={me}
         ops={[
           {
             path: "consumptions",
             label: "Record a consumption",
+            requiredPermission: "material_consumption.create",
             fields: [
               { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
               { name: "step_id", label: "Step ID", hint: "Optional - the batch step this consumption belongs to." },
@@ -176,6 +178,7 @@ export default function DispensingPage() {
           {
             path: "returns",
             label: "Record a return",
+            requiredPermission: "material_return.create",
             fields: [
               { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
               { name: "dispensed_container_id", label: "Dispensed container ID", type: "dispensedContainerSelect", required: true },
@@ -191,6 +194,7 @@ export default function DispensingPage() {
           {
             path: "losses",
             label: "Record a loss / spill / sample",
+            requiredPermission: "material_loss.create",
             about: "One command covers sample, reject, spill and approved-loss transaction types.",
             fields: [
               { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
@@ -206,6 +210,7 @@ export default function DispensingPage() {
           {
             path: "destructions",
             label: "Request a destruction",
+            requiredPermission: "destruction_record.create",
             about: "Set exactly one of material lot, container, or dispensed container as the destruction's scope.",
             fields: [
               { name: "material_lot_id", label: "Material lot ID", hint: "One of the three scope fields." },
@@ -228,12 +233,14 @@ export default function DispensingPage() {
         title="Execute a destruction - signed"
         subtitle="Only a requested destruction can be executed."
         root="/materials/v1"
+        me={me}
         ops={[
           {
             postPath: "destructions/{destruction_id}/execute",
             challengePath: "destructions/{destruction_id}/signature-challenges",
             action: "execute",
             label: "Execute a destruction",
+            requiredPermission: "destruction_record.execute",
             fields: [
               { name: "destruction_id", label: "Destruction record ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },

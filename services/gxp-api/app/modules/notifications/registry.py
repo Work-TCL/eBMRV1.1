@@ -19,7 +19,15 @@ Scope, narrowed then generalized (project-owner-directed):
     draft -> [under_review ->] released pattern with an author != releaser signature gate, and none of
     them were in Pass 1/2's scope even though they are exactly this registry's shape: Material
     Specification release, Product Master release, Recipe Master release.
-Not covered: everything outside these ~18 aggregate types (validation, DDCP, postmarket, security
+  Pass 4 (client gap-analysis Phase 4, 2026-10-05 -- a new equipment_asset.approve_calibration step was
+    added with no reviewer notification) -- equipment_asset, keyed on the purpose-built
+    `calibration_status` column rather than the asset's own overloaded `state`, since a calibration
+    pending review ("pending_approval") has no relationship to the qualification/maintenance states
+    `state` otherwise tracks. No SIGNATURE_POLICY_FLOOR row exists for "approve_calibration" (checked
+    scripts/seed.py: only "hold"/"retire" have equipment_asset rows), so signature_record_type/
+    signature_action are left None -- the same no-signature-pointer precedent risk_record's
+    "risk.accept" category already set above.
+Not covered: everything outside these ~19 aggregate types (validation, DDCP, postmarket, security
 incidents, and more each have their own signature-gated actions Document 106 lists -- see
 scripts/seed.py's SIGNATURE_POLICY_FLOOR for the full ~150-row catalogue) -- extending further means the
 same per-module due diligence this file's history already shows, not a bulk guess.
@@ -49,6 +57,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.models import AuditEvent
 from app.modules.batch_execution.models import Batch
+from app.modules.equipment.models import EquipmentAsset
 from app.modules.material.models import MaterialLot
 from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.product_master.models import ProductVersion
@@ -370,10 +379,9 @@ async def _load_supplier_qualification(session: AsyncSession, entity_id: uuid.UU
         )
     ).first()
     label = f"Supplier qualification -- {supplier_row.legal_name}" if supplier_row else f"Supplier qualification {qualification.id}"
-    # /suppliers already opens a supplier's detail modal on a row click, keyed by supplier id
-    # (frontend/src/app/suppliers/page.tsx `selected` state) -- `?supplier_id=<id>` deep-links straight
-    # into that same modal instead of the bare list.
-    link_path = f"/suppliers?supplier_id={supplier_row.id}" if supplier_row else "/suppliers"
+    # Client follow-up (2026-10-06): the supplier detail view moved from a modal keyed by a `?supplier_id=`
+    # query param to its own route, frontend/src/app/suppliers/[id]/page.tsx -- link straight to it.
+    link_path = f"/suppliers/{supplier_row.id}" if supplier_row else "/suppliers"
     # SupplierQualification carries no site_id of its own (only supplier_site_id), and the real
     # `evaluate_policy(action="supplier_qualification.approve", site_id=None)` call site (commands.py)
     # already treats this as platform-wide, not site-scoped -- site_id=None here matches that exactly,
@@ -461,6 +469,22 @@ async def _load_recipe_version(session: AsyncSession, entity_id: uuid.UUID) -> E
 
 async def _list_recipe_version_ids(session: AsyncSession) -> list[uuid.UUID]:
     return list((await session.execute(select(RecipeVersion.id))).scalars().all())
+
+
+async def _load_equipment_asset(session: AsyncSession, entity_id: uuid.UUID) -> EntitySnapshot | None:
+    asset = await session.get(EquipmentAsset, entity_id, populate_existing=True)
+    if asset is None:
+        return None
+    last_actor = await _last_actor(session, aggregate_type="equipment_asset", aggregate_id=entity_id)
+    # calibration_status, not state -- see this file's module docstring (Pass 4).
+    return EntitySnapshot(
+        state=asset.calibration_status or "", site_id=asset.site_id, entity_label=f"Equipment {asset.equipment_code}",
+        link_path=f"/equipment/{asset.id}", last_actor_id=last_actor,
+    )
+
+
+async def _list_equipment_asset_ids(session: AsyncSession) -> list[uuid.UUID]:
+    return list((await session.execute(select(EquipmentAsset.id))).scalars().all())
 
 
 WORKFLOW_SPECS: dict[str, WorkflowNotificationSpec] = {
@@ -797,6 +821,21 @@ WORKFLOW_SPECS: dict[str, WorkflowNotificationSpec] = {
         },
         loader=_load_recipe_version,
         list_all_ids=_list_recipe_version_ids,
+    ),
+    "equipment_asset": WorkflowNotificationSpec(
+        aggregate_type="equipment_asset",
+        nats_subject="gxp.v1.equipment_asset.>",
+        pending_states={
+            # equipment/commands.py record_calibration() creation branch: a passing calibration sets
+            # asset.calibration_status = "pending_approval" (not yet reviewed), resolved by the same
+            # command's approval branch, permission "equipment_asset.approve_calibration".
+            "pending_approval": PendingStateRule(
+                category="equipment_calibration_approval_pending",
+                required_permission_code="equipment_asset.approve_calibration",
+            ),
+        },
+        loader=_load_equipment_asset,
+        list_all_ids=_list_equipment_asset_ids,
     ),
 }
 

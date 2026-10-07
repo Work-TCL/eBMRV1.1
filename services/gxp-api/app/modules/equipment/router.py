@@ -10,6 +10,10 @@ from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.equipment.cleaning_models import EquipmentArea
 from app.modules.equipment.commands import (
+    BulkImportEquipmentCommand,
+    BulkImportEquipmentResult,
+    BulkImportEquipmentRow,
+    BulkImportEquipmentRowValidation,
     CreateEquipmentAreaCommand,
     CreateEquipmentAssetCommand,
     HoldEquipmentCommand,
@@ -20,6 +24,7 @@ from app.modules.equipment.commands import (
     ReserveEquipmentCommand,
     RetireEquipmentCommand,
     ReturnToServiceCommand,
+    bulk_import_equipment,
     create_equipment_area,
     create_equipment_asset,
     equipment_record_hash,
@@ -34,6 +39,7 @@ from app.modules.equipment.commands import (
     reserve_equipment,
     retire_equipment,
     return_to_service,
+    validate_bulk_import_equipment_rows,
 )
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.policy.service import evaluate_policy, resolve_site_scope
@@ -76,6 +82,8 @@ def _asset_dict(asset: EquipmentAsset) -> dict:
         "hold_source": asset.hold_source,
         "dedicated": asset.dedicated,
         "firmware_version": asset.firmware_version,
+        "is_computer_operated": asset.is_computer_operated,
+        "recalibration_required": asset.recalibration_required,
         "change_control_id": str(asset.change_control_id) if asset.change_control_id else None,
         "version": asset.version,
     }
@@ -90,6 +98,35 @@ async def post_create_asset(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="equipment_asset.create", site_id=cmd.site_id)
         return await create_equipment_asset(session, cmd, actor.user_id)
+
+
+class BulkImportEquipmentPreviewRequest(BaseModel):
+    rows: list[BulkImportEquipmentRow]
+
+
+@router.post("/assets/bulk-import/preview")
+async def post_bulk_import_equipment_preview(
+    body: BulkImportEquipmentPreviewRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[BulkImportEquipmentRowValidation]:
+    """Read-only -- validates every row (unknown equipment_class_code, duplicate/existing equipment_code)
+    and reports per-row errors without creating anything, same shape as the user bulk-import preview."""
+    await evaluate_policy(session, actor.user_id, action="equipment_asset.create", site_id=None)
+    return await validate_bulk_import_equipment_rows(session, body.rows)
+
+
+@router.post("/assets/bulk-import/commit", response_model=BulkImportEquipmentResult)
+async def post_bulk_import_equipment_commit(
+    cmd: BulkImportEquipmentCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> BulkImportEquipmentResult:
+    """All-or-nothing: if any row fails validation the whole batch is rejected with the per-row reasons
+    and nothing is created."""
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="equipment_asset.create", site_id=cmd.site_id)
+        return await bulk_import_equipment(session, cmd, actor.user_id)
 
 
 # Client Topic 15 fix (2026-10-02, project-owner-directed): this router's reads held an `actor`
@@ -251,7 +288,11 @@ async def post_record_calibration(
         asset = await session.get(EquipmentAsset, asset_id)
         if asset is None:
             raise NotFoundError("Equipment asset not found")
-        await evaluate_policy(session, actor.user_id, action="equipment_asset.calibrate", site_id=asset.site_id)
+        # Client gap-analysis Phase 4: approving/rejecting an existing calibration is a distinct
+        # authority from recording one in the first place (the whole point is SoD between the two) --
+        # gate it on its own permission, held by QA Releaser, not Calibration Technician.
+        action = "equipment_asset.approve_calibration" if cmd.calibration_id is not None else "equipment_asset.calibrate"
+        await evaluate_policy(session, actor.user_id, action=action, site_id=asset.site_id)
         return await record_calibration(session, cmd, actor.user_id)
 
 

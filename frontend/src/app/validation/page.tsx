@@ -57,10 +57,12 @@ export default function ValidationPage() {
           <FormConsole
             title="VMP · intended use · traceability (Docs 79–81)"
             root="/validation/v1"
+            me={me}
             ops={[
               {
                 path: "master-plans",
                 label: "Create or update a validation master plan",
+                requiredPermission: "validation.plan.manage",
                 about: "Leave Plan ID blank to create a new plan; set it (with its expected version) to update an existing draft.",
                 fields: [
                   { name: "plan_id", label: "Plan ID", hint: "Leave blank to create a new plan." },
@@ -88,6 +90,7 @@ export default function ValidationPage() {
               {
                 path: "intended-use",
                 label: "Record intended use",
+                requiredPermission: "validation.intended_use.manage",
                 fields: [
                   { name: "scope_ref", label: "Scope reference", required: true },
                   { name: "scope_version", label: "Scope version", required: true },
@@ -100,6 +103,7 @@ export default function ValidationPage() {
               {
                 path: "function-risks",
                 label: "Add a function risk assessment",
+                requiredPermission: "validation.function_risk.manage",
                 fields: [
                   { name: "function_ref", label: "Function reference", required: true },
                   { name: "function_version", label: "Function version", required: true },
@@ -117,6 +121,7 @@ export default function ValidationPage() {
               {
                 path: "requirements:ingest",
                 label: "Ingest requirements",
+                requiredPermission: "validation.requirement.manage",
                 fields: [
                   {
                     name: "requirements", label: "Requirements", type: "repeat", required: true, itemLabel: "Requirement",
@@ -135,6 +140,7 @@ export default function ValidationPage() {
               {
                 path: "trace-links",
                 label: "Add a trace link",
+                requiredPermission: "validation.trace_link.manage",
                 fields: [
                   { name: "source_type", label: "Source type", required: true },
                   { name: "source_id", label: "Source ID", required: true },
@@ -148,6 +154,7 @@ export default function ValidationPage() {
               {
                 path: "baselines",
                 label: "Freeze a requirement baseline",
+                requiredPermission: "validation.baseline.manage",
                 fields: [
                   { name: "release_scope", label: "Release scope", required: true },
                   { name: "customer_scope", label: "Customer scope" },
@@ -169,15 +176,17 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="VMP · function risk - signed approvals" root="/validation/v1" ops={VMP_SIGNED_OPS} />
+          <SignedJsonForm title="VMP · function risk - signed approvals" root="/validation/v1" me={me} ops={VMP_SIGNED_OPS} />
 
           <FormConsole
             title="Test library · IQ · OQ (Docs 82–84)"
             root="/validation/v1"
+            me={me}
             ops={[
               {
                 path: "tests",
                 label: "Create a test",
+                requiredPermission: "validation.test_definition.manage",
                 about: "Adds a test definition to the library (not yet approved for execution).",
                 fields: [
                   { name: "test_code", label: "Test code", required: true, placeholder: "e.g. T-BATCH-001" },
@@ -198,6 +207,7 @@ export default function ValidationPage() {
               {
                 path: "executions",
                 label: "Start a test execution",
+                requiredPermission: "validation.test_execution.manage",
                 fields: [
                   { name: "test_definition_id", label: "Test definition ID", required: true },
                   { name: "environment_fingerprint", label: "Environment fingerprint", type: "kv" },
@@ -208,6 +218,7 @@ export default function ValidationPage() {
               {
                 path: "automated-evidence",
                 label: "Attach automated evidence",
+                requiredPermission: "validation.test_execution.manage",
                 fields: [
                   { name: "execution_id", label: "Execution ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -223,6 +234,7 @@ export default function ValidationPage() {
               {
                 path: "iq/protocols",
                 label: "Create an IQ protocol",
+                requiredPermission: "validation.iq.manage",
                 fields: [
                   { name: "environment", label: "Environment", required: true },
                   { name: "release_ref", label: "Release reference", required: true },
@@ -241,6 +253,7 @@ export default function ValidationPage() {
               {
                 path: "iq/executions",
                 label: "Start an IQ execution",
+                requiredPermission: "validation.iq.manage",
                 fields: [
                   { name: "protocol_id", label: "IQ protocol ID", required: true },
                   { name: "installed_inventory", label: "Installed inventory", type: "kv", required: true },
@@ -255,6 +268,7 @@ export default function ValidationPage() {
               {
                 path: "oq:suites",
                 label: "Create an OQ suite",
+                requiredPermission: "validation.oq.manage",
                 fields: [
                   { name: "baseline_id", label: "Requirement baseline ID", required: true },
                   {
@@ -275,6 +289,7 @@ export default function ValidationPage() {
               {
                 path: "oq/executions",
                 label: "Record an OQ execution",
+                requiredPermission: "validation.oq.manage",
                 fields: [
                   { name: "suite_id", label: "OQ suite ID", required: true },
                   {
@@ -292,15 +307,17 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="Test · IQ · OQ - signed completions & approvals" root="/validation/v1" ops={TEST_IQ_OQ_SIGNED_OPS} />
+          <SignedJsonForm title="Test · IQ · OQ - signed completions & approvals" root="/validation/v1" me={me} ops={TEST_IQ_OQ_SIGNED_OPS} />
 
           <FormConsole
             title="Infrastructure · Part 11 · data integrity · interfaces (Docs 86, 88–90)"
             root="/validation/v1"
+            me={me}
             ops={[
               {
                 path: "infrastructure/profiles",
                 label: "Create an infrastructure profile",
+                requiredPermission: "validation.infrastructure.manage",
                 fields: [
                   { name: "deployment_profile", label: "Deployment profile", required: true },
                   { name: "provider", label: "Provider", required: true },
@@ -322,6 +339,7 @@ export default function ValidationPage() {
               {
                 path: "infrastructure/fingerprints",
                 label: "Record an environment fingerprint",
+                requiredPermission: "validation.infrastructure.manage",
                 fields: [
                   { name: "profile_id", label: "Infrastructure profile ID", required: true },
                   { name: "captured_versions", label: "Captured versions", type: "kv", required: true },
@@ -334,6 +352,7 @@ export default function ValidationPage() {
               {
                 path: "infrastructure/tests",
                 label: "Record an infrastructure control test",
+                requiredPermission: "validation.infrastructure.manage",
                 fields: [
                   { name: "fingerprint_id", label: "Environment fingerprint ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -342,6 +361,7 @@ export default function ValidationPage() {
               {
                 path: "part11/assessments",
                 label: "Create a Part 11 assessment",
+                requiredPermission: "validation.part11.manage",
                 fields: [
                   { name: "record_or_signature_type", label: "Record or signature type", required: true },
                   { name: "predicate_use", label: "Predicate use", required: true },
@@ -354,6 +374,7 @@ export default function ValidationPage() {
               {
                 path: "part11/{assessment_id}/test-suite",
                 label: "Attach a Part 11 test suite",
+                requiredPermission: "validation.part11.manage",
                 fields: [
                   { name: "assessment_id", label: "Part 11 assessment ID", required: true },
                   { name: "control_citations", label: "Control citations", type: "stringList", required: true, itemLabel: "Citation", placeholder: "e.g. 11.10(a), 11.10(e), 11.50" },
@@ -362,6 +383,7 @@ export default function ValidationPage() {
               {
                 path: "part11/control-results",
                 label: "Record a Part 11 control result",
+                requiredPermission: "validation.part11.manage",
                 fields: [
                   { name: "control_evidence_id", label: "Control evidence ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -379,6 +401,7 @@ export default function ValidationPage() {
               {
                 path: "data-integrity/suites",
                 label: "Create a data-integrity suite",
+                requiredPermission: "validation.data_integrity.manage",
                 fields: [
                   { name: "data_class", label: "Data class", required: true },
                   { name: "lifecycle", label: "Lifecycle", required: true },
@@ -390,6 +413,7 @@ export default function ValidationPage() {
               {
                 path: "data-integrity/tamper-tests",
                 label: "Record a tamper test",
+                requiredPermission: "validation.data_integrity.manage",
                 fields: [
                   { name: "profile_id", label: "Data-integrity profile ID", required: true },
                   { name: "isolated_snapshot_ref", label: "Isolated snapshot reference", required: true },
@@ -402,6 +426,7 @@ export default function ValidationPage() {
               {
                 path: "interfaces/profiles",
                 label: "Create an interface profile",
+                requiredPermission: "validation.interface.manage",
                 fields: [
                   { name: "provider_or_device", label: "Provider or device", required: true },
                   { name: "contract_ref", label: "Contract reference", required: true },
@@ -416,6 +441,7 @@ export default function ValidationPage() {
               {
                 path: "interfaces/tests",
                 label: "Record an interface contract test",
+                requiredPermission: "validation.interface.manage",
                 fields: [
                   { name: "profile_id", label: "Interface profile ID", required: true },
                   { name: "scenario", label: "Scenario", required: true },
@@ -429,6 +455,7 @@ export default function ValidationPage() {
               {
                 path: "interfaces/edge-outage-tests",
                 label: "Record an edge-outage test",
+                requiredPermission: "validation.interface.manage",
                 fields: [
                   { name: "profile_id", label: "Interface profile ID", required: true },
                   { name: "scenario", label: "Scenario", default: "edge_outage" },
@@ -441,15 +468,17 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="Infrastructure · Part 11 · data integrity · interfaces - signed approvals" root="/validation/v1" ops={INFRA_SIGNED_OPS} />
+          <SignedJsonForm title="Infrastructure · Part 11 · data integrity · interfaces - signed approvals" root="/validation/v1" me={me} ops={INFRA_SIGNED_OPS} />
 
           <FormConsole
             title="DR · security · performance qualification (Docs 91–93)"
             root="/validation/v1"
+            me={me}
             ops={[
               {
                 path: "dr/scenarios",
                 label: "Create a DR scenario",
+                requiredPermission: "validation.dr.manage",
                 fields: [
                   { name: "failure_type", label: "Failure type", required: true },
                   { name: "components", label: "Components", type: "stringList", required: true, itemLabel: "Component" },
@@ -463,6 +492,7 @@ export default function ValidationPage() {
               {
                 path: "dr/executions",
                 label: "Record a DR execution",
+                requiredPermission: "validation.dr.manage",
                 fields: [
                   { name: "scenario_id", label: "DR scenario ID", required: true },
                   { name: "backup_set_ref", label: "Backup set reference", required: true },
@@ -475,6 +505,7 @@ export default function ValidationPage() {
               {
                 path: "dr/{execution_id}/measure",
                 label: "Measure RPO/RTO for a DR execution",
+                requiredPermission: "validation.dr.manage",
                 fields: [
                   { name: "execution_id", label: "DR execution ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -488,6 +519,7 @@ export default function ValidationPage() {
               {
                 path: "security/suites",
                 label: "Create a security-qualification suite",
+                requiredPermission: "validation.security.manage",
                 fields: [
                   { name: "release_ref", label: "Release reference", required: true },
                   { name: "deployment_profile", label: "Deployment profile", required: true },
@@ -498,6 +530,7 @@ export default function ValidationPage() {
               {
                 path: "security/tests",
                 label: "Record a security test",
+                requiredPermission: "validation.security.manage",
                 fields: [
                   { name: "suite_id", label: "Suite ID", required: true },
                   { name: "control_ref", label: "Control reference", required: true },
@@ -511,6 +544,7 @@ export default function ValidationPage() {
               {
                 path: "security/findings",
                 label: "Record a security finding",
+                requiredPermission: "validation.security.manage",
                 fields: [
                   { name: "suite_id", label: "Suite ID", required: true },
                   { name: "source", label: "Source", required: true, placeholder: "e.g. SAST, SCA, IAC, CONTAINER, PENTEST, MANUAL" },
@@ -521,15 +555,17 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="DR · security · performance - signed operations" root="/validation/v1" ops={DR_SEC_PERF_SIGNED_OPS} />
+          <SignedJsonForm title="DR · security · performance - signed operations" root="/validation/v1" me={me} ops={DR_SEC_PERF_SIGNED_OPS} />
 
           <FormConsole
             title="Exceptions · revalidation (Docs 94, 96)"
             root="/validation/v1"
+            me={me}
             ops={[
               {
                 path: "change-impacts",
                 label: "Record a change impact",
+                requiredPermission: "validation.change_impact.manage",
                 fields: [
                   { name: "change_ref", label: "Change reference", required: true },
                   { name: "change_type", label: "Change type", required: true },
@@ -545,6 +581,7 @@ export default function ValidationPage() {
               {
                 path: "revalidation-plans",
                 label: "Approve a revalidation plan",
+                requiredPermission: "validation.change_impact.manage",
                 about: "Attaches the revalidation plan reference to a change impact.",
                 fields: [
                   { name: "change_impact_id", label: "Change impact ID", required: true },
@@ -555,6 +592,7 @@ export default function ValidationPage() {
               {
                 path: "revalidations",
                 label: "Record a revalidation",
+                requiredPermission: "validation.change_impact.manage",
                 fields: [
                   { name: "change_impact_id", label: "Change impact ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -564,6 +602,7 @@ export default function ValidationPage() {
               {
                 path: "decommission",
                 label: "Record a decommission decision",
+                requiredPermission: "validation.state_baseline.decommission",
                 fields: [
                   { name: "baseline_id", label: "Baseline ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -572,7 +611,7 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="Exceptions · periodic review - signed operations" root="/validation/v1" ops={EXCEPTION_SIGNED_OPS} />
+          <SignedJsonForm title="Exceptions · periodic review - signed operations" root="/validation/v1" me={me} ops={EXCEPTION_SIGNED_OPS} />
         </>
       )}
     </div>
@@ -592,6 +631,7 @@ const VMP_SIGNED_OPS: SignedJsonOp[] = [
     action: "release",
     postPath: "master-plans/{plan_id}/release",
     challengePath: "master-plans/{plan_id}/signature-challenges",
+    requiredPermission: "validation.plan.release",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
       { name: "reason", label: "Reason", type: "textarea", required: true },
@@ -602,6 +642,7 @@ const VMP_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "function-risks/{assessment_id}/approve",
     challengePath: "function-risks/{assessment_id}/signature-challenges",
+    requiredPermission: "validation.function_risk.approve",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
       { name: "reason", label: "Reason", type: "textarea", required: true },
@@ -616,6 +657,7 @@ const TEST_IQ_OQ_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "tests/{test_id}/approve",
     challengePath: "tests/{test_id}/signature-challenges",
+    requiredPermission: "validation.test_definition.approve",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
       { name: "reason", label: "Reason", type: "textarea", required: true },
@@ -626,6 +668,7 @@ const TEST_IQ_OQ_SIGNED_OPS: SignedJsonOp[] = [
     action: "complete",
     postPath: "executions/{execution_id}/complete",
     challengePath: "executions/{execution_id}/signature-challenges",
+    requiredPermission: "validation.test_execution.complete",
     about: "Status is PASS | FAIL | BLOCKED | SKIPPED.",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -648,6 +691,7 @@ const TEST_IQ_OQ_SIGNED_OPS: SignedJsonOp[] = [
     action: "complete",
     postPath: "iq/executions/{execution_id}/complete",
     challengePath: "iq/executions/{execution_id}/signature-challenges",
+    requiredPermission: "validation.iq.complete",
     about: "Result is PASS | FAIL.",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -663,6 +707,7 @@ const TEST_IQ_OQ_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "iq/executions/{execution_id}/approve",
     challengePath: "iq/executions/{execution_id}/signature-challenges",
+    requiredPermission: "validation.iq.approve",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
       { name: "reason", label: "Reason", type: "textarea", required: true },
@@ -673,6 +718,7 @@ const TEST_IQ_OQ_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "oq/{execution_id}/approve",
     challengePath: "oq/{execution_id}/signature-challenges",
+    requiredPermission: "validation.oq.approve",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
       { name: "reason", label: "Reason", type: "textarea", required: true },
@@ -691,6 +737,7 @@ const INFRA_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "infrastructure/{fingerprint_id}/approve",
     challengePath: "infrastructure/{fingerprint_id}/signature-challenges",
+    requiredPermission: "validation.infrastructure.approve",
     fields: APPROVAL_FIELDS,
   },
   {
@@ -698,6 +745,7 @@ const INFRA_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "part11/{assessment_id}/approve",
     challengePath: "part11/{assessment_id}/signature-challenges",
+    requiredPermission: "validation.part11.approve",
     fields: APPROVAL_FIELDS,
   },
   {
@@ -705,6 +753,7 @@ const INFRA_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "data-integrity/{profile_id}/approve",
     challengePath: "data-integrity/{profile_id}/signature-challenges",
+    requiredPermission: "validation.data_integrity.approve",
     fields: APPROVAL_FIELDS,
   },
   {
@@ -712,6 +761,7 @@ const INFRA_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "interfaces/{profile_id}/approve",
     challengePath: "interfaces/{profile_id}/signature-challenges",
+    requiredPermission: "validation.interface.approve",
     fields: APPROVAL_FIELDS,
   },
 ];
@@ -722,6 +772,7 @@ const DR_SEC_PERF_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "dr/{execution_id}/approve",
     challengePath: "dr/{execution_id}/signature-challenges",
+    requiredPermission: "validation.dr.approve",
     fields: APPROVAL_FIELDS,
   },
   {
@@ -729,6 +780,7 @@ const DR_SEC_PERF_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "security/{suite_id}/approve",
     challengePath: "security/{suite_id}/signature-challenges",
+    requiredPermission: "validation.security.approve",
     fields: APPROVAL_FIELDS,
   },
   {
@@ -737,6 +789,7 @@ const DR_SEC_PERF_SIGNED_OPS: SignedJsonOp[] = [
     postPath: "performance/scenarios",
     challengePath: "performance/scenarios/signature-challenges",
     mergeChallengeField: "new_record_id",
+    requiredPermission: "validation.performance.manage",
     about: "The challenge pre-generates the scenario id before you submit.",
     fields: [
       { name: "release_ref", label: "Release reference", required: true },
@@ -752,6 +805,7 @@ const DR_SEC_PERF_SIGNED_OPS: SignedJsonOp[] = [
     postPath: "performance/runs",
     challengePath: "performance/runs/signature-challenges",
     mergeChallengeField: "new_record_id",
+    requiredPermission: "validation.performance.manage",
     about: "The challenge pre-generates the run id before you submit.",
     fields: [
       { name: "scenario_id", label: "Performance scenario ID", required: true },
@@ -767,6 +821,7 @@ const DR_SEC_PERF_SIGNED_OPS: SignedJsonOp[] = [
     action: "evaluate",
     postPath: "performance/{run_id}/evaluate",
     challengePath: "performance/{run_id}/signature-challenges",
+    requiredPermission: "validation.performance.manage",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
       { name: "headroom_basis_points", label: "Headroom (basis points)", type: "number" },
@@ -785,6 +840,7 @@ const EXCEPTION_SIGNED_OPS: SignedJsonOp[] = [
     postPath: "exceptions",
     challengePath: "exceptions/signature-challenges",
     mergeChallengeField: "new_record_id",
+    requiredPermission: "validation.exception.create",
     about: "The signer must be independent of the person who requested this exception.",
     fields: [
       { name: "release_ref", label: "Release reference" },
@@ -804,6 +860,7 @@ const EXCEPTION_SIGNED_OPS: SignedJsonOp[] = [
     action: "triage",
     postPath: "exceptions/{exception_id}/triage",
     challengePath: "exceptions/{exception_id}/signature-challenges",
+    requiredPermission: "validation.exception.triage",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
       { name: "severity", label: "Severity", type: "select", required: true, default: "HIGH", options: FINDING_SEVERITIES },
@@ -817,6 +874,7 @@ const EXCEPTION_SIGNED_OPS: SignedJsonOp[] = [
     action: "retest_plan",
     postPath: "exceptions/{exception_id}/retest-plan",
     challengePath: "exceptions/{exception_id}/signature-challenges",
+    requiredPermission: "validation.exception.retest_plan",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
       { name: "retest_plan", label: "Retest plan", type: "kv", required: true, hint: "Must not be empty - at least one setting is required." },
@@ -828,6 +886,7 @@ const EXCEPTION_SIGNED_OPS: SignedJsonOp[] = [
     action: "disposition",
     postPath: "exceptions/{exception_id}/disposition",
     challengePath: "exceptions/{exception_id}/signature-challenges",
+    requiredPermission: "validation.exception.disposition",
     about: "residual_risk_rationale is required when disposition is ACCEPTED_WITH_RATIONALE.",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -845,6 +904,7 @@ const EXCEPTION_SIGNED_OPS: SignedJsonOp[] = [
     postPath: "periodic-reviews",
     challengePath: "periodic-reviews/signature-challenges",
     mergeChallengeField: "new_record_id",
+    requiredPermission: "validation.periodic_review.manage",
     about: "The challenge pre-generates the review id before you submit.",
     fields: [
       { name: "release_ref", label: "Release reference", required: true },
@@ -858,6 +918,7 @@ const EXCEPTION_SIGNED_OPS: SignedJsonOp[] = [
     action: "decision",
     postPath: "periodic-reviews/{review_id}/decision",
     challengePath: "periodic-reviews/{review_id}/signature-challenges",
+    requiredPermission: "validation.periodic_review.decide",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
       {

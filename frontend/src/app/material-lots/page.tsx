@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import {
   api,
   ApiError,
+  canCollectSample,
+  canCreateMaterialReceipt,
+  canCreateSamplingOrder,
   canReleaseMaterialLotV2,
+  canRetestMaterialLot,
   formatDateTime,
   listAll,
   newIdempotencyKey,
@@ -49,6 +53,10 @@ export default function MaterialLotsPage() {
   const [qualityStatusLot, setQualityStatusLot] = useState<MaterialLot | null>(null);
   const [retestingLot, setRetestingLot] = useState<MaterialLot | null>(null);
   const canReleaseV2 = canReleaseMaterialLotV2(me);
+  const canReceive = canCreateMaterialReceipt(me);
+  const canSample = canCreateSamplingOrder(me);
+  const canRetest = canRetestMaterialLot(me);
+  const canCollect = canCollectSample(me);
 
   // Deep link from the Workflow Actions bell (`?q=<internal_lot>`) -- pre-fills the search box with the
   // lot number so the reader lands on it directly instead of an empty list. Reads window.location
@@ -136,12 +144,12 @@ export default function MaterialLotsPage() {
           <Button size="sm" variant="ghost" onClick={() => setQualityStatusLot(l)}>
             <Icon name="info" /> Quality status
           </Button>
-          {(l.status === "quarantine" || l.status === "sampling") && (
+          {(l.status === "quarantine" || l.status === "sampling") && canSample && (
             <Button size="sm" variant="secondary" onClick={() => setSamplingLot(l)}>
               <Icon name="flask" /> Sample
             </Button>
           )}
-          {l.status === "quarantine" && (
+          {l.status === "quarantine" && canRetest && (
             <Button size="sm" variant="secondary" onClick={() => setRetestingLot(l)}>
               <Icon name="refresh" /> Retest
             </Button>
@@ -167,9 +175,11 @@ export default function MaterialLotsPage() {
         title="Material lots"
         subtitle="Every received lot, its QC disposition status, and remaining quantity."
         action={
-          <Button variant="primary" onClick={() => setReceiveOpen(true)}>
-            <Icon name="plus" /> Receive lot
-          </Button>
+          canReceive && (
+            <Button variant="primary" onClick={() => setReceiveOpen(true)}>
+              <Icon name="plus" /> Receive lot
+            </Button>
+          )
         }
       />
 
@@ -255,6 +265,7 @@ export default function MaterialLotsPage() {
       {collectingOrder && (
         <CollectSampleModal
           order={collectingOrder}
+          canCollect={canCollect}
           onClose={() => setCollectingOrder(null)}
           onDone={() => {
             setCollectingOrder(null);
@@ -665,10 +676,12 @@ function CollectSampleModal({
   order,
   onClose,
   onDone,
+  canCollect,
 }: {
   order: { id: string; version: number };
   onClose: () => void;
   onDone: () => void;
+  canCollect: boolean;
 }) {
   const [orderId, setOrderId] = useState(order.id);
   const [expectedVersion, setExpectedVersion] = useState(String(order.version));
@@ -705,6 +718,12 @@ function CollectSampleModal({
           the id and version below come from the order you just created, or can be entered directly if
           already known.
         </p>
+        {!canCollect && (
+          <p className="fs-2 text-muted mb-3">
+            The order was created. You don&apos;t have permission to record the collection yourself - a QC Reviewer
+            or Admin will need to do this.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Sampling order ID" required>
             <Input value={orderId} onChange={(e) => setOrderId(e.target.value)} required />
@@ -722,13 +741,15 @@ function CollectSampleModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Not yet - collect later
           </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={busy || !orderId.trim() || !expectedVersion.trim() || !sampleQuantity.trim() || !sampleUom.trim()}
-          >
-            {busy ? "Recording…" : "Record collection"}
-          </Button>
+          {canCollect && (
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={busy || !orderId.trim() || !expectedVersion.trim() || !sampleQuantity.trim() || !sampleUom.trim()}
+            >
+              {busy ? "Recording…" : "Record collection"}
+            </Button>
+          )}
         </div>
       </form>
     </Modal>

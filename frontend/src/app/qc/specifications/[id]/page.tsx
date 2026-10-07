@@ -8,7 +8,7 @@ import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 
 interface TestDefinition {
@@ -17,6 +17,11 @@ interface TestDefinition {
   test_name: string;
   result_data_type: string;
   uom: string | null;
+}
+
+interface ScopeRecord {
+  label: string;
+  href: string;
 }
 
 // GET /qc/v1/specifications/{id} — app/modules/qc/router.py::get_specification
@@ -29,6 +34,10 @@ interface SpecificationDetail {
   scope_version_id: string;
   version: number;
   test_definitions: TestDefinition[];
+  // Resolved server-side from scope_type/scope_version_id (product/device -> product_master, material ->
+  // material_specification, in_process -> recipe_master) -- null if the scope type isn't one of those
+  // three, or the record it pointed to no longer resolves. See _resolve_scope_label in the router.
+  scope_record: ScopeRecord | null;
 }
 
 export default function SpecificationDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -62,7 +71,17 @@ export default function SpecificationDetailPage({ params }: { params: Promise<{ 
             <Fact label="Scope type">{data.scope_type}</Fact>
             <Fact label="Test definitions">{data.test_definitions.length}</Fact>
             <Fact label="Record version">{data.version}</Fact>
-            <IdFact label="Scope version" value={data.scope_version_id} />
+            <IdFact
+              label="Scope version"
+              value={data.scope_version_id}
+              action={
+                data.scope_record && (
+                  <LinkButton href={data.scope_record.href} variant="secondary" size="sm">
+                    {data.scope_record.label} <Icon name="arrow-right" />
+                  </LinkButton>
+                )
+              }
+            />
           </>
         )
       }

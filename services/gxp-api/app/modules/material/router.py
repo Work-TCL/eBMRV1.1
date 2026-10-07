@@ -520,6 +520,8 @@ def _receipt_dict(
         "state": receipt_row.state,
         "labeling_ok": receipt_row.labeling_ok,
         "damage_observed": receipt_row.damage_observed,
+        "shipping_damage_observed": receipt_row.shipping_damage_observed,
+        "container_damage_observed": receipt_row.container_damage_observed,
         "seal_broken": receipt_row.seal_broken,
         "contamination_observed": receipt_row.contamination_observed,
         "examination_notes": receipt_row.examination_notes,

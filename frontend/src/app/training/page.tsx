@@ -5,6 +5,7 @@ import {
   api,
   canAssessTraining,
   canAssignTraining,
+  canCompleteTraining,
   canCreateQualification,
   canQualifyTraining,
   formatDate,
@@ -283,6 +284,7 @@ export default function TrainingPage() {
                   <SubjectRecord
                     status={subject.data}
                     canAssess={canAssessTraining(me)}
+                    canComplete={canCompleteTraining(me)}
                     onChanged={() => {
                       subject.reload();
                       setReloadToken((n) => n + 1);
@@ -341,10 +343,12 @@ export default function TrainingPage() {
 function SubjectRecord({
   status,
   canAssess,
+  canComplete,
   onChanged,
 }: {
   status: SubjectStatus;
   canAssess: boolean;
+  canComplete: boolean;
   onChanged: () => void;
 }) {
   const [acting, setActing] = useState<{ assignment: Assignment; action: "complete" | "assess" } | null>(null);
@@ -385,7 +389,7 @@ function SubjectRecord({
                     <td className="tabular fs-2">{a.score ?? "—"}</td>
                     <td style={{ textAlign: "right" }}>
                       <div className="flex gap-2 justify-end">
-                        {a.state === "ASSIGNED" && (
+                        {a.state === "ASSIGNED" && canComplete && (
                           <Button size="sm" variant="secondary" onClick={() => setActing({ assignment: a, action: "complete" })}>
                             <Icon name="pen" /> Complete
                           </Button>

@@ -8,6 +8,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { OnboardingReturnLink } from "@/components/admin/OnboardingReturnLink";
 
 export default function CompanyAdminPage() {
   const { isAdmin } = useRequireAdmin();
@@ -46,7 +47,7 @@ export default function CompanyAdminPage() {
 
   return (
     <div>
-      <PageHead title="Company" subtitle="This deployment's single company record." />
+      <PageHead title="Company" subtitle="This deployment's single company record." action={<OnboardingReturnLink />} />
 
       <Card pad>
         <CardHeader title="Company details" />

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   api,
+  ApiError,
   formatDateTime,
   hasPermission,
   listAll,
@@ -65,6 +66,8 @@ interface MaterialReceipt {
   shipment_condition_status: string | null;
   coa_document_hash: string | null;
   state: string;
+  shipping_damage_observed: boolean | null;
+  container_damage_observed: boolean | null;
   discrepancy_type: string | null;
   discrepancy_reason: string | null;
   received_at: string | null;
@@ -228,8 +231,14 @@ export default function MaterialReceiptsPage() {
         <CreateReceiptModal
           siteId={siteId}
           onClose={() => setCreateOpen(false)}
-          onDone={() => {
+          onCreated={(stub) => {
+            // Client gap-analysis Phase 6 (2026-10-05): receipt creation and examination are now one
+            // continuous flow — the examine step opens immediately instead of sending the user back to
+            // the list to find the just-created row and click "Examine" separately. The two commands
+            // themselves stay distinct (CreateMaterialReceipt / ExamineReceipt), preserving the two-step
+            // audit trail; only the UI becomes continuous.
             setCreateOpen(false);
+            setExamining(stub);
             setReloadToken((n) => n + 1);
           }}
         />
@@ -369,13 +378,14 @@ function ReceiptDetailModal({
 function CreateReceiptModal({
   siteId,
   onClose,
-  onDone,
+  onCreated,
 }: {
   siteId: string | null;
   onClose: () => void;
-  onDone: () => void;
+  onCreated: (stub: MaterialReceipt) => void;
 }) {
-  const { busy, error, run } = useCommand(onDone);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const entities = useEntityOptions();
   const [receiptNumber, setReceiptNumber] = useState("");
   const [materialId, setMaterialId] = useState("");
@@ -394,14 +404,20 @@ function CreateReceiptModal({
   const [retestDate, setRetestDate] = useState("");
   const [shipmentCondition, setShipmentCondition] = useState("");
   const [coaHash, setCoaHash] = useState("");
+  // Client gap-analysis Phase 6 / doc section 2.9: "Not applicable" toggle instead of relying on a blank
+  // value to mean the same thing -- purely a UI affordance, both states still send null to the backend.
+  const [supplierLotNA, setSupplierLotNA] = useState(false);
+  const [manufacturerLotNA, setManufacturerLotNA] = useState(false);
 
   return (
     <Modal open onClose={onClose} title="Log a material receipt" large>
       <form
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
-          run(() =>
-            api.post<MutationReceipt>("/materials/v1/receipts", {
+          setBusy(true);
+          setError(null);
+          try {
+            const receipt = await api.post<MutationReceipt>("/materials/v1/receipts", {
               idempotency_key: newIdempotencyKey(),
               site_id: siteId,
               receipt_number: receiptNumber,
@@ -421,8 +437,32 @@ function CreateReceiptModal({
               retest_date: retestDate || null,
               shipment_condition_status: shipmentCondition || null,
               coa_document_hash: coaHash || null,
-            })
-          );
+            });
+            // A minimal stub is enough: ExamineReceiptModal only reads id/site_id/receipt_number/version
+            // from its `receipt` prop, and CreateMaterialReceipt always produces version 1.
+            onCreated({
+              id: receipt.aggregate_id,
+              site_id: siteId ?? "",
+              receipt_number: receiptNumber,
+              po_reference: null, material_id: materialId, material_code: "", material_name: "",
+              supplier_id: null, supplier_code: null, supplier_name: null,
+              manufacturer_id: null, manufacturer_code: null, manufacturer_name: null,
+              supplier_lot: null, manufacturer_lot: null, carrier_reference: null,
+              received_gross_quantity: grossQuantity, received_net_quantity: null, accepted_quantity: null,
+              uom, manufacture_date: null, expiry_date: null, retest_date: null,
+              shipment_condition_status: null, coa_document_hash: null,
+              state: "received",
+              shipping_damage_observed: null, container_damage_observed: null,
+              discrepancy_type: null, discrepancy_reason: null,
+              received_at: null, version: receipt.resulting_version,
+              disposition_decision: null, disposition_severity: null, disposition_reason: null,
+              disposition_deviation_id: null, disposition_decided_by_user_id: null, disposition_decided_at: null,
+            });
+          } catch (err) {
+            setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Action failed");
+          } finally {
+            setBusy(false);
+          }
         }}
       >
         <div className="grid grid-cols-2 gap-4">
@@ -452,10 +492,42 @@ function CreateReceiptModal({
             options={entities.suppliers} status={entities.suppliersStatus} kind="supplier"
           />
           <Field label="Supplier's lot number" hint="From the supplier's label or certificate of analysis.">
-            <Input value={supplierLot} onChange={(e) => setSupplierLot(e.target.value)} />
+            <Input
+              value={supplierLotNA ? "" : supplierLot}
+              onChange={(e) => setSupplierLot(e.target.value)}
+              disabled={supplierLotNA}
+              placeholder={supplierLotNA ? "Not applicable" : undefined}
+            />
+            <label className="flex items-center gap-2 fs-2 text-muted mt-1">
+              <input
+                type="checkbox"
+                checked={supplierLotNA}
+                onChange={(e) => {
+                  setSupplierLotNA(e.target.checked);
+                  if (e.target.checked) setSupplierLot("");
+                }}
+              />
+              Not applicable
+            </label>
           </Field>
           <Field label="Manufacturer's lot number">
-            <Input value={manufacturerLot} onChange={(e) => setManufacturerLot(e.target.value)} />
+            <Input
+              value={manufacturerLotNA ? "" : manufacturerLot}
+              onChange={(e) => setManufacturerLot(e.target.value)}
+              disabled={manufacturerLotNA}
+              placeholder={manufacturerLotNA ? "Not applicable" : undefined}
+            />
+            <label className="flex items-center gap-2 fs-2 text-muted mt-1">
+              <input
+                type="checkbox"
+                checked={manufacturerLotNA}
+                onChange={(e) => {
+                  setManufacturerLotNA(e.target.checked);
+                  if (e.target.checked) setManufacturerLot("");
+                }}
+              />
+              Not applicable
+            </label>
           </Field>
           <Field label="Received quantity (gross)" required hint="Kept as exact text.">
             <Input value={grossQuantity} onChange={(e) => setGrossQuantity(e.target.value)} required />
@@ -531,9 +603,10 @@ function ExamineReceiptModal({
   const { busy, error, run } = useCommand(onDone);
   const [identityConfirmed, setIdentityConfirmed] = useState("");
   const [labelingOk, setLabelingOk] = useState("");
-  const [damageObserved, setDamageObserved] = useState("");
-  const [sealBroken, setSealBroken] = useState("");
-  const [contaminationObserved, setContaminationObserved] = useState("");
+  const [shippingDamageObserved, setShippingDamageObserved] = useState("");
+  const [containerDamageObserved, setContainerDamageObserved] = useState("");
+  const [sealIntact, setSealIntact] = useState("");
+  const [sealNote, setSealNote] = useState("");
   const [internalLot, setInternalLot] = useState("");
   const [containerCount, setContainerCount] = useState("1");
   const [examinationNotes, setExaminationNotes] = useState("");
@@ -551,17 +624,21 @@ function ExamineReceiptModal({
   // All five checks are required (no default) on the backend command — a real visual examination has
   // no "unanswered" state, so none of these silently default; the submit button itself stays disabled
   // until every one has an explicit Yes/No, rather than letting an unanswered check quietly become
-  // "no problem observed".
-  const allAnswered = [identityConfirmed, labelingOk, damageObserved, sealBroken, contaminationObserved].every(
+  // "no problem observed". "Contamination observed" was dropped per Client gap-analysis Phase 6.
+  const allAnswered = [identityConfirmed, labelingOk, shippingDamageObserved, containerDamageObserved, sealIntact].every(
     (v) => v === "true" || v === "false"
   );
+  // Client gap-analysis Phase 6: "Seal broken" reframed as "Seal intact?" -- the unintended answer ("No")
+  // requires a free-text note explaining it. There's no dedicated backend field for this note, so it's
+  // folded into examination_notes at submit time, same place a reviewer would read it either way.
+  const sealNoteRequired = sealIntact === "false";
 
   return (
  <Modal open onClose={onClose} title={`Examine receipt ${receipt.receipt_number}`} large>
       <p className="fs-2 text-muted mb-3">
         Visual examination and identity/supplier check. A clean result creates the material lot (in
-        quarantine); damage, a broken seal, contamination, an identity mismatch, or an unapproved
-        supplier holds the receipt as a discrepancy instead.
+        quarantine); damage, a seal that isn&rsquo;t intact, a mismatch against the PO/material number, or
+        an unapproved supplier holds the receipt as a discrepancy instead.
       </p>
       <form
         onSubmit={(e) => {
@@ -573,12 +650,15 @@ function ExamineReceiptModal({
               expected_version: receipt.version,
               identity_confirmed: identityConfirmed === "true",
               labeling_ok: labelingOk === "true",
-              damage_observed: damageObserved === "true",
-              seal_broken: sealBroken === "true",
-              contamination_observed: contaminationObserved === "true",
+              shipping_damage_observed: shippingDamageObserved === "true",
+              container_damage_observed: containerDamageObserved === "true",
+              seal_broken: sealIntact === "false",
               internal_lot: internalLot,
               container_count: containerCount ? Number(containerCount) : 1,
-              examination_notes: examinationNotes || null,
+              examination_notes:
+                [examinationNotes || null, sealNoteRequired && sealNote ? `Seal not intact: ${sealNote}` : null]
+                  .filter(Boolean)
+                  .join("\n") || null,
               discrepancy_reason: discrepancyReason || null,
               storage_location_id: storageLocationId || null,
               storage_condition: storageCondition || null,
@@ -587,19 +667,36 @@ function ExamineReceiptModal({
         }}
       >
         <div className="grid grid-cols-2 gap-4">
-          <YesNoField label="Identity confirmed" value={identityConfirmed} onChange={setIdentityConfirmed} />
+          <YesNoField
+            label="Material matched with PO/Material number"
+            value={identityConfirmed}
+            onChange={setIdentityConfirmed}
+          />
           <YesNoField label="Labeling correct" value={labelingOk} onChange={setLabelingOk} />
-          <YesNoField label="Damage observed" value={damageObserved} onChange={setDamageObserved} />
-          <YesNoField label="Seal broken" value={sealBroken} onChange={setSealBroken} />
-          <YesNoField label="Contamination observed" value={contaminationObserved} onChange={setContaminationObserved} />
+          <YesNoField
+            label="Shipping/package damage"
+            value={shippingDamageObserved}
+            onChange={setShippingDamageObserved}
+          />
+          <YesNoField
+            label="Material container damage"
+            value={containerDamageObserved}
+            onChange={setContainerDamageObserved}
+          />
+          <YesNoField label="Seal intact?" value={sealIntact} onChange={setSealIntact} />
           <Field label="Container count" hint="Defaults to 1 if left blank.">
             <Input type="number" value={containerCount} onChange={(e) => setContainerCount(e.target.value)} />
           </Field>
         </div>
+        {sealNoteRequired && (
+          <Field label="Seal not intact — explain" required>
+            <textarea className="input" rows={2} value={sealNote} onChange={(e) => setSealNote(e.target.value)} required />
+          </Field>
+        )}
         <Field label="Internal lot number" required hint="Assigned to the material lot this examination creates (only used when the result is clean).">
           <Input value={internalLot} onChange={(e) => setInternalLot(e.target.value)} required autoFocus />
         </Field>
-        <Field label="Examination notes">
+        <Field label="Shipment examination notes">
           <textarea className="input" rows={2} value={examinationNotes} onChange={(e) => setExaminationNotes(e.target.value)} />
         </Field>
         <Field label="Discrepancy reason" hint="Required when identity is not confirmed; optional (auto-filled) for every other discrepancy type.">
@@ -632,7 +729,11 @@ function ExamineReceiptModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !allAnswered || !internalLot.trim()}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={busy || !allAnswered || !internalLot.trim() || (sealNoteRequired && !sealNote.trim())}
+          >
             {busy ? "Submitting…" : "Examine receipt"}
           </Button>
         </div>

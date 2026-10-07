@@ -5,8 +5,8 @@ import { Icon, type IconName } from "./Icon";
 // `.step-marker` look (grey border, muted), which is the correct rendering for "not reachable yet."
 export type StepMarkerState = "completed" | "current" | "blocked" | "available" | "pending";
 
-export function Stepper({ children }: { children: ReactNode }) {
-  return <div className="stepper">{children}</div>;
+export function Stepper({ children, horizontal }: { children: ReactNode; horizontal?: boolean }) {
+  return <div className={horizontal ? "stepper stepper-horizontal" : "stepper"}>{children}</div>;
 }
 
 export function StepItem({

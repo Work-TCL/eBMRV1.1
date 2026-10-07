@@ -28,6 +28,15 @@ export function newIdempotencyKey(): string {
  * holds a router. See its usage in `request()` below. */
 export const SESSION_EXPIRED_EVENT = "gxp:session-expired";
 
+/** Dispatched the moment the onboarding wizard is skipped (`POST /onboarding/dismiss` succeeds), before
+ * any navigation away from the wizard page -- every mounted `useOnboardingStatus()` instance (notably
+ * `AuthGuard`'s, which lives in the root layout and otherwise only re-fetches on its own schedule)
+ * listens for this and patches its local `dismissed_at` immediately. Without this, the redirect check
+ * that sends an admin back to /onboarding would still be holding the pre-dismiss snapshot for the one
+ * render right after `router.push("/home")`, and would bounce the admin straight back before its own
+ * next re-fetch had a chance to catch up. */
+export const ONBOARDING_DISMISSED_EVENT = "gxp:onboarding-dismissed";
+
 export class ApiError extends Error {
   code: string;
   details: Record<string, unknown>;
@@ -126,6 +135,33 @@ export async function downloadEvidence(evidenceId: string, purpose = "inspection
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/** Same endpoint as `downloadEvidence`, but hands back the bytes as a blob URL instead of triggering a
+ * save-to-disk — for rendering inline (an `<img>`/`<iframe>` preview) rather than downloading. Callers own
+ * the returned `url` and must `URL.revokeObjectURL` it when done (e.g. on preview-modal close/unmount). */
+export async function fetchEvidenceBlob(
+  evidenceId: string,
+  purpose = "inspection"
+): Promise<{ url: string; blob: Blob }> {
+  const token = getToken();
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(
+    `${apiBase()}/evidence/v1/${encodeURIComponent(evidenceId)}/download?purpose=${encodeURIComponent(purpose)}`,
+    { headers }
+  );
+  if (!res.ok) {
+    let body: { code?: string; message?: string; details?: Record<string, unknown> } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // non-JSON error body
+    }
+    throw new ApiError(res.status, body.code ?? "UNKNOWN_ERROR", body.message ?? res.statusText, body.details ?? {});
+  }
+  const blob = await res.blob();
+  return { url: URL.createObjectURL(blob), blob };
 }
 
 export const api = {
@@ -477,6 +513,82 @@ export interface User {
   roles: string[];
 }
 
+// --- Bulk user onboarding (client gap-analysis Phase 1, 2026-10-05) -------------
+
+export interface BulkImportUserRow {
+  full_name: string;
+  email: string;
+  role_name: string;
+  site_code: string;
+}
+
+export interface BulkImportRowOutcome {
+  row_index: number;
+  email: string;
+  ok: boolean;
+  error: string | null;
+}
+
+export interface BulkImportCommitResult {
+  command_id: string;
+  correlation_id: string;
+  created_count: number;
+  emails_sent: number;
+}
+
+// Client gap-analysis Phase 7 (2026-10-05): same bulk-import shape as users (Phase 1), applied to
+// Equipment. equipment_class_code (not a raw id) is the one thing a spreadsheet realistically carries by
+// hand.
+export interface BulkImportEquipmentRow {
+  equipment_code?: string;
+  equipment_class_code: string;
+  manufacturer?: string;
+  model?: string;
+  serial_no?: string;
+  firmware_version?: string;
+  dedicated?: boolean;
+  is_computer_operated?: boolean;
+}
+
+export interface BulkImportEquipmentRowOutcome {
+  row_index: number;
+  equipment_code: string | null;
+  ok: boolean;
+  error: string | null;
+}
+
+export interface BulkImportEquipmentResult {
+  command_id: string;
+  correlation_id: string;
+  created: { row_index: number; asset_id: string; equipment_code: string }[];
+}
+
+// Client gap-analysis Phase 8 (2026-10-05): same bulk-import shape as users/equipment, applied to Product
+// Master. Always creates version 1 of a brand-new product (first-time bulk onboarding, not a
+// bulk-version-adder) -- product_business_id is never part of the row, auto-generated server-side.
+export interface BulkImportProductRow {
+  product_code?: string;
+  name: string;
+  manufacturing_profile_code: string;
+  product_family_code?: string;
+  combination_product_type?: string;
+  strength_value?: string;
+  strength_uom?: string;
+}
+
+export interface BulkImportProductRowOutcome {
+  row_index: number;
+  product_code: string | null;
+  ok: boolean;
+  error: string | null;
+}
+
+export interface BulkImportProductResult {
+  command_id: string;
+  correlation_id: string;
+  created: { row_index: number; product_version_id: string; product_business_id: string; product_code: string }[];
+}
+
 export interface Role {
   id: string;
   name: string;
@@ -486,6 +598,20 @@ export interface Role {
 export interface Organization {
   id: string;
   name: string;
+}
+
+// --- Admin onboarding wizard (client gap-analysis follow-up, 2026-10-06) -------------
+//
+// Company/sites/users/roles step status is derived server-side from audit_events (GET /onboarding) --
+// nothing here is locally computed. `dismissed_at` is the one genuinely-written piece of state (via
+// POST /onboarding/dismiss), set when the admin skips the wizard.
+export interface OnboardingStatus {
+  company_done: boolean;
+  sites_done: boolean;
+  users_done: boolean;
+  roles_done: boolean;
+  dismissed_at: string | null;
+  all_done: boolean;
 }
 
 export interface Permission {
@@ -547,13 +673,36 @@ export const canOperateSecurity = (me: Me | null) => hasAnyPermission(me, SECURI
 // left defined/granted (never deleted) but is inert -- no evaluate_policy() call checks it any more.
 export const canReleaseMaterialLotV2 = (me: Me | null) => hasPermission(me, "material_lot.release");
 
+// material_receipt.create + material_lot.sampling_order (Document 19) -- always granted as one bundle
+// (Admin, Operator, Supervisor per scripts/seed.py ROLE_PERMISSIONS).
+export const canCreateMaterialReceipt = (me: Me | null) => hasPermission(me, "material_receipt.create");
+export const canCreateSamplingOrder = (me: Me | null) => hasPermission(me, "material_lot.sampling_order");
+// material_lot.collect_sample (Document 19) -- Admin + QC Reviewer only, a narrower population than
+// sampling_order above.
+export const canCollectSample = (me: Me | null) => hasPermission(me, "material_lot.collect_sample");
+// material_lot.retest (Document 19) -- Admin + QC Reviewer + QA Releaser.
+export const canRetestMaterialLot = (me: Me | null) => hasPermission(me, "material_lot.retest");
 export const canAuthorRules = (me: Me | null) => hasPermission(me, "rules.author");
 export const canReleaseRules = (me: Me | null) => hasPermission(me, "rules.release");
 
+// qc_method.author (Document 19) -- QC Reviewer, distinct from qc_test_order.start's Operator/
+// Supervisor/QC-analyst population.
+export const canAuthorQcMethod = (me: Me | null) => hasPermission(me, "qc_method.author");
+
 // supplier.create / supplier_qualification.create (Document 18) share one grant.
 export const canCreateSupplier = (me: Me | null) => hasPermission(me, "supplier.create");
+// Edit of a still-draft supplier reuses the same permission as create (same authoring class).
+export const canUpdateSupplier = canCreateSupplier;
+// Client follow-up (2026-10-06): deletion is gated stricter than create/update, same tiering
+// material.delete already uses (platform.administer, not material.create/update) -- a harder-to-reverse
+// action, even though the command itself only ever touches a draft record.
+export const canDeleteSupplier = (me: Me | null) => hasPermission(me, "platform.administer");
 // material.create / .update (Document 15) share one grant.
 export const canCreateMaterial = (me: Me | null) => hasPermission(me, "material.create");
+
+// material_spec.author / .release (Document 19) -- Process Engineer authors, QA Releaser releases.
+export const canAuthorMaterialSpec = (me: Me | null) => hasPermission(me, "material_spec.author");
+export const canReleaseMaterialSpec = (me: Me | null) => hasPermission(me, "material_spec.release");
 
 export const canAuthorProduct = (me: Me | null) => hasPermission(me, "product.author");
 export const canReleaseProduct = (me: Me | null) => hasPermission(me, "product.release");
@@ -590,6 +739,7 @@ export const canQualifyTraining = (me: Me | null) => hasPermission(me, "training
 // granting a qualification outright (POST /training/v1/qualifications) by yet another -- neither implied
 // by holding the waiver-grant permission.
 export const canAssessTraining = (me: Me | null) => hasPermission(me, "training.assignment.assess");
+export const canCompleteTraining = (me: Me | null) => hasPermission(me, "training.assignment.complete");
 export const canCreateQualification = (me: Me | null) => hasPermission(me, "training.qualification.create");
 
 // evidence.manifest / .legal_hold / .integrity_check (Document 72) share one grant, narrower than
@@ -605,6 +755,10 @@ export const canManageEvidenceIntegrity = (me: Me | null) => hasPermission(me, "
 export const canViewEquipment = (me: Me | null) => me !== null;
 export const canCreateEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.create");
 export const canCalibrateEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.calibrate");
+// Client gap-analysis Phase 4 (2026-10-05): deliberately a distinct permission from calibrate above --
+// the whole point is SoD between whoever performs a calibration and whoever approves it.
+export const canApproveEquipmentCalibration = (me: Me | null) =>
+  hasPermission(me, "equipment_asset.approve_calibration");
 export const canMaintainEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.maintain");
 export const canHoldEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.hold");
 export const canReturnEquipmentToService = (me: Me | null) => hasPermission(me, "equipment_asset.return_to_service");
@@ -904,6 +1058,8 @@ export interface EquipmentAsset {
   hold_source: string | null;
   dedicated: boolean | null;
   firmware_version: string | null;
+  is_computer_operated: boolean;
+  recalibration_required: boolean;
   version: number;
 }
 

@@ -16,9 +16,11 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.reference_resolution import build_code_index
 from app.core.security import verify_password
 from app.modules.codegen import service as codegen_service
 from app.modules.equipment.cleaning_models import EquipmentArea
@@ -36,8 +38,11 @@ from app.modules.policy.service import effective_role_names
 from app.modules.qms.change_commands import CreateChangeCommand, create_change
 from app.modules.recipe_master.service import list_equipment_classes
 from app.modules.qms.change_models import CHANGE_CLASSIFICATIONS
+from app.modules.supplier_quality.models import Supplier
 from app.modules.signature import service as signature_service
 from app.mutation.errors import (
+    CalibrationApprovalPendingError,
+    RecalibrationRequiredError,
     CalibrationExpiredError,
     CalibrationOotImpactRequiredError,
     CleaningRequiredError,
@@ -107,10 +112,27 @@ def _ineligibility_reasons(asset: EquipmentAsset, today: date) -> list[tuple[str
         reasons.append(("EQUIPMENT_NOT_QUALIFIED", "Qualification has expired"))
     if asset.calibration_status == "oot":
         reasons.append(("CALIBRATION_OOT_IMPACT_REQUIRED", "Most recent calibration was out of tolerance"))
+    elif asset.calibration_status in ("pending_approval", "rejected"):
+        # Client gap-analysis Phase 4: a recorded pass result is not enough on its own -- it must also be
+        # reviewed/approved by someone independent of the performer (SoD) before the equipment is
+        # eligible, same "Pass/Fail is objective, Approved/Not-Approved is a separate QA disposition"
+        # distinction the client drew for material/QC results.
+        reasons.append((
+            "CALIBRATION_APPROVAL_PENDING",
+            "Most recent calibration has not yet been approved"
+            if asset.calibration_status == "pending_approval"
+            else "Most recent calibration was not approved",
+        ))
     elif asset.calibration_status not in (None, "current"):
         reasons.append(("CALIBRATION_EXPIRED", "Calibration is due or overdue"))
     elif asset.next_calibration_due_date is not None and asset.next_calibration_due_date < today:
         reasons.append(("CALIBRATION_EXPIRED", "Calibration due date has passed"))
+    # Client gap-analysis Phase 7: a breakdown maintenance event (not flagged non-critical) requires a new
+    # calibration -- recorded AND approved, not just verified maintenance -- before this equipment is
+    # eligible again. Checked independently of the calibration_status chain above since a breakdown can
+    # happen to equipment whose prior calibration was otherwise still current.
+    if asset.recalibration_required:
+        reasons.append(("RECALIBRATION_REQUIRED", "A breakdown requires recalibration before this equipment is eligible for use"))
     if asset.maintenance_status == "pending_verification":
         reasons.append(("POST_MAINTENANCE_VERIFICATION_REQUIRED", "Maintenance was performed but not yet verified"))
     elif asset.maintenance_status == "in_progress":
@@ -189,6 +211,9 @@ class CreateEquipmentAssetCommand(CommandEnvelope):
     location_id: uuid.UUID | None = None
     dedicated: bool = False
     firmware_version: str | None = None
+    # Client gap-analysis Phase 7: mandatory-at-creation computer-operated-vs-manual question (required,
+    # no default -- same treatment Phase 6 gave the Material Receipt examine booleans).
+    is_computer_operated: bool
 
 
 async def create_equipment_asset(
@@ -221,7 +246,8 @@ async def create_equipment_asset(
     asset = EquipmentAsset(
         site_id=cmd.site_id, equipment_code=equipment_code, equipment_class_id=cmd.equipment_class_id,
         manufacturer=cmd.manufacturer, model=cmd.model, serial_no=cmd.serial_no, location_id=cmd.location_id,
-        state="INSTALLED", dedicated=cmd.dedicated, firmware_version=cmd.firmware_version, version=1,
+        state="INSTALLED", dedicated=cmd.dedicated, firmware_version=cmd.firmware_version,
+        is_computer_operated=cmd.is_computer_operated, version=1,
     )
     session.add(asset)
     await session.flush()
@@ -370,15 +396,23 @@ async def record_qualification(
 # result automatically holds the asset (EQP-FR-007); this module never auto-creates a deviation/CAPA for
 # it (spec says "may trigger", not "shall") — `impact_assessment_required` is captured for a human to act
 # on, same restraint precedent as SG-108.
+#
+# Client gap-analysis Phase 4 (2026-10-05): when `calibration_id` is supplied, this same command reviews/
+# approves an *existing* calibration instead of recording a new one — the "Approved/Not-Approved" step the
+# client described as distinct from the objective "Pass/Fail" result, SoD-enforced (approver independent
+# of performer) the same way `supplier_quality.approve_supplier_qualification` is. This mirrors
+# RecordMaintenance's own `work_order_id`-provided-means-continue pattern immediately below in this file,
+# rather than inventing a different shape for a second "continue an existing row" command in this module.
 # ---------------------------------------------------------------------------
 
 
 class RecordCalibrationCommand(CommandEnvelope):
     asset_id: uuid.UUID
     expected_version: int
-    due_date: date
-    performed_date: date
-    result: str
+    # Required to record a new calibration; not used when calibration_id is provided (approval branch).
+    due_date: date | None = None
+    performed_date: date | None = None
+    result: str | None = None
     calibration_plan_ref: str | None = None
     procedure_version: str | None = None
     frequency_days: int | None = None
@@ -394,7 +428,14 @@ class RecordCalibrationCommand(CommandEnvelope):
     # Client requirement #7.
     calibration_type: str = "internal"
     provider_name: str | None = None
+    # Client gap-analysis Phase 6: optional reference to a known Supplier (role_type "service_provider"
+    # or "both") instead of only free-text provider_name, which stays for a provider not yet onboarded.
+    provider_supplier_id: uuid.UUID | None = None
     certificate_reference: str | None = None
+    # Client gap-analysis Phase 4: when set, this call approves/rejects the named existing calibration
+    # instead of creating a new one. `approved` is required (and only meaningful) in that branch.
+    calibration_id: uuid.UUID | None = None
+    approved: bool | None = None
 
 
 async def record_calibration(
@@ -405,17 +446,84 @@ async def record_calibration(
     if existing is not None:
         return _receipt_from_existing(existing)
 
+    asset = await _load_asset_for_update(session, cmd.asset_id, cmd.expected_version)
+    old_state = asset.state
+
+    if cmd.calibration_id is not None:
+        # --- Approval branch -------------------------------------------------------------------
+        if cmd.approved is None:
+            raise ValidationFailedError("approved is required when approving an existing calibration")
+        result = await session.execute(
+            select(EquipmentCalibration).where(EquipmentCalibration.id == cmd.calibration_id).with_for_update()
+        )
+        calibration = result.scalar_one_or_none()
+        if calibration is None or calibration.equipment_asset_id != asset.id:
+            raise NotFoundError("Equipment calibration not found")
+        if calibration.approved is not None:
+            raise InvalidTransitionError(
+                "This calibration has already been reviewed", current_approved=calibration.approved
+            )
+        if actor_user_id == calibration.performer_user_id:
+            raise InvalidTransitionError(
+                "Approver must be independent of the performer for this calibration (SoD)"
+            )
+
+        calibration.approved = cmd.approved
+        calibration.approved_by_user_id = actor_user_id
+        calibration.approved_at = datetime.now(timezone.utc)
+        calibration.version += 1
+
+        # Only the asset's *latest* calibration gates its eligibility (asset.calibration_status is a
+        # denormalized summary, not a live join) — an approval/rejection on an older, superseded
+        # calibration still gets recorded (full history, never edited) but must not resurrect a stale
+        # status over whatever the most recent calibration already set.
+        latest = (
+            await session.execute(
+                select(EquipmentCalibration)
+                .where(EquipmentCalibration.equipment_asset_id == asset.id)
+                .order_by(EquipmentCalibration.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if latest is not None and latest.id == calibration.id and asset.calibration_status in (
+            "pending_approval", "rejected",
+        ):
+            asset.calibration_status = "current" if cmd.approved else "rejected"
+            # Client gap-analysis Phase 7: a breakdown's recalibration requirement is satisfied only by a
+            # new calibration that is both recorded and approved -- the same bar CALIBRATION_APPROVAL_
+            # PENDING already applies to "current" above, not just a verified maintenance work order.
+            if cmd.approved and asset.recalibration_required:
+                asset.recalibration_required = False
+        asset.version += 1
+
+        return await _write_receipt(
+            session, cmd=cmd, payload_hash=payload_hash, asset=asset, action="Approved", actor_user_id=actor_user_id,
+            reason=cmd.reason, old_state=old_state,
+            event_type="EquipmentCalibrationApproved" if cmd.approved else "EquipmentCalibrationRejected",
+            event_payload={"id": str(asset.id), "calibration_id": str(calibration.id), "approved": cmd.approved},
+            expected_version=cmd.expected_version, command_type="ApproveCalibration",
+        )
+
+    # --- Creation branch -------------------------------------------------------------------------
+    if cmd.due_date is None or cmd.performed_date is None or cmd.result is None:
+        raise ValidationFailedError("due_date, performed_date and result are required to record a calibration")
     if cmd.result not in CALIBRATION_RESULTS:
         raise ValidationFailedError("Unrecognized result", result=cmd.result, allowed=list(CALIBRATION_RESULTS))
     if cmd.calibration_type not in CALIBRATION_TYPES:
         raise ValidationFailedError(
             "Unrecognized calibration_type", calibration_type=cmd.calibration_type, allowed=list(CALIBRATION_TYPES)
         )
-    if cmd.calibration_type == "external" and not (cmd.provider_name and cmd.provider_name.strip()):
-        raise ValidationFailedError("provider_name is required for an external calibration")
-
-    asset = await _load_asset_for_update(session, cmd.asset_id, cmd.expected_version)
-    old_state = asset.state
+    provider_name = cmd.provider_name
+    if cmd.calibration_type == "external":
+        if cmd.provider_supplier_id is not None:
+            provider = await session.get(Supplier, cmd.provider_supplier_id)
+            if provider is None or provider.role_type not in ("service_provider", "both"):
+                raise ValidationFailedError(
+                    "provider_supplier_id must reference a Supplier with role_type 'service_provider' or 'both'"
+                )
+            provider_name = provider_name or provider.legal_name
+        if not (provider_name and provider_name.strip()):
+            raise ValidationFailedError("provider_name or provider_supplier_id is required for an external calibration")
 
     is_oot = cmd.result in ("fail", "oot")
     calibration = EquipmentCalibration(
@@ -426,7 +534,8 @@ async def record_calibration(
         standard_calibration_status=cmd.standard_calibration_status, standard_expiry_date=cmd.standard_expiry_date,
         performer_user_id=actor_user_id, reviewer_user_id=cmd.reviewer_user_id, result=cmd.result,
         impact_assessment_required=is_oot, state="completed", version=1,
-        calibration_type=cmd.calibration_type, provider_name=cmd.provider_name,
+        calibration_type=cmd.calibration_type, provider_name=provider_name,
+        provider_supplier_id=cmd.provider_supplier_id,
         certificate_reference=cmd.certificate_reference,
     )
     session.add(calibration)
@@ -447,7 +556,10 @@ async def record_calibration(
         asset.state = "OUT_OF_SERVICE"
         event_type = "CalibrationOutOfTolerance"
     else:
-        asset.calibration_status = "current"
+        # Client gap-analysis Phase 4: a passing result alone is no longer enough to clear eligibility --
+        # it now needs the separate approval step above before `_ineligibility_reasons()` will let this
+        # asset be used (CALIBRATION_APPROVAL_PENDING until then).
+        asset.calibration_status = "pending_approval"
         if asset.hold_source == "calibration":
             asset.hold_flag = False
             asset.hold_reason = None
@@ -505,6 +617,14 @@ class RecordMaintenanceCommand(CommandEnvelope):
     change_classification: str | None = None
     change_reason: str | None = None
     owner_subject_id: uuid.UUID | None = None
+    # Client gap-analysis Phase 7: breakdown-only override that skips the recalibration-required gate
+    # below. Meaningless (ignored) for planned/corrective -- only "breakdown" sets the gate in the first
+    # place.
+    non_critical: bool = False
+    # Client gap-analysis Phase 7: repeatable Activity/Result checklist, meaningful for "planned" --
+    # captured as-is (JSONB), not validated row-by-row (same unenforced-structure precedent as
+    # `parts_used`).
+    activities: list[dict] | None = None
 
 
 async def record_maintenance(
@@ -529,6 +649,7 @@ async def record_maintenance(
             actual_downtime_hours=cmd.actual_downtime_hours,
             technician_user_id=actor_user_id,
             post_maintenance_verification_required=cmd.post_maintenance_verification_required,
+            non_critical=cmd.non_critical, activities=cmd.activities,
             state="open", version=1,
         )
         session.add(work_order)
@@ -544,6 +665,10 @@ async def record_maintenance(
         elif asset.state in ("QUALIFIED_AVAILABLE", "CALIBRATION_DUE"):
             asset.state = "MAINTENANCE_DUE"
         asset.maintenance_status = "in_progress"
+        # Client gap-analysis Phase 7: a breakdown defaults to requiring recalibration before the
+        # equipment is eligible for use again, unless this work order is flagged non-critical.
+        if cmd.type == "breakdown" and not cmd.non_critical:
+            asset.recalibration_required = True
         event_type = "MaintenanceDue" if cmd.type == "planned" else "EquipmentOutOfService"
 
         if cmd.critical_modification:
@@ -584,6 +709,8 @@ async def record_maintenance(
             work_order.diagnosis = cmd.diagnosis
         if cmd.parts_used is not None:
             work_order.parts_used = cmd.parts_used
+        if cmd.activities is not None:
+            work_order.activities = cmd.activities
         if cmd.actual_downtime_hours is not None:
             work_order.actual_downtime_hours = cmd.actual_downtime_hours
 
@@ -709,6 +836,8 @@ _CODE_TO_ERROR = {
     "EQUIPMENT_OUT_OF_SERVICE": EquipmentOutOfServiceError,
     "EQUIPMENT_NOT_QUALIFIED": EquipmentNotQualifiedError,
     "CALIBRATION_OOT_IMPACT_REQUIRED": CalibrationOotImpactRequiredError,
+    "CALIBRATION_APPROVAL_PENDING": CalibrationApprovalPendingError,
+    "RECALIBRATION_REQUIRED": RecalibrationRequiredError,
     "CALIBRATION_EXPIRED": CalibrationExpiredError,
     "POST_MAINTENANCE_VERIFICATION_REQUIRED": PostMaintenanceVerificationRequiredError,
     "CLEANING_REQUIRED": CleaningRequiredError,
@@ -1026,12 +1155,16 @@ async def get_equipment_history(session: AsyncSession, asset_id: uuid.UUID) -> d
                 "standard_calibration_status": c.standard_calibration_status,
                 "standard_expiry_date": c.standard_expiry_date.isoformat() if c.standard_expiry_date else None,
                 "calibration_type": c.calibration_type, "provider_name": c.provider_name,
+                "provider_supplier_id": str(c.provider_supplier_id) if c.provider_supplier_id else None,
                 "certificate_reference": c.certificate_reference,
                 "as_found": c.as_found, "adjustments": c.adjustments, "as_left": c.as_left,
                 "impact_assessment_required": c.impact_assessment_required,
                 "deviation_reference_id": str(c.deviation_reference_id) if c.deviation_reference_id else None,
                 "performer_user_id": str(c.performer_user_id) if c.performer_user_id else None,
                 "reviewer_user_id": str(c.reviewer_user_id) if c.reviewer_user_id else None,
+                "approved": c.approved,
+                "approved_by_user_id": str(c.approved_by_user_id) if c.approved_by_user_id else None,
+                "approved_at": c.approved_at.isoformat() if c.approved_at else None,
                 "state": c.state, "version": c.version,
                 "created_at": c.created_at.isoformat() if c.created_at else None,
             }
@@ -1043,6 +1176,7 @@ async def get_equipment_history(session: AsyncSession, asset_id: uuid.UUID) -> d
                 "completed_at": w.completed_at.isoformat() if w.completed_at else None,
                 "fault_description": w.fault_description, "diagnosis": w.diagnosis,
                 "work_performed": w.work_performed, "parts_used": w.parts_used,
+                "non_critical": w.non_critical, "activities": w.activities,
                 "procedure_version": w.procedure_version, "frequency_days": w.frequency_days,
                 "next_due_date": w.next_due_date.isoformat() if w.next_due_date else None,
                 "expected_downtime_hours": str(w.expected_downtime_hours) if w.expected_downtime_hours is not None else None,
@@ -1083,3 +1217,160 @@ async def get_dashboard(session: AsyncSession, site_id: uuid.UUID) -> dict:
         "due_maintenance_count": len(due_maintenance),
         "out_of_service": [{"id": str(a.id), "equipment_code": a.equipment_code, "state": a.state} for a in out_of_service],
     }
+
+
+# ---------------------------------------------------------------------------
+# BulkImportEquipment — Client gap-analysis Phase 7 (2026-10-05): a new capability beyond Document 38 §6's
+# declared 9 operations, same "own considered contract, not a guessed one" precedent as
+# `warehouse_location.create`/`aseptic_profile_version.create`/`iam.bulk_import_users` (Phase 1) before it.
+# Reuses Phase 1's exact preview/commit shape: validate-only preview reports per-row errors; commit is
+# all-or-nothing and reuses `create_equipment_asset` per row rather than bypassing its validation.
+# `equipment_class_code` (not a raw id) is the one thing a spreadsheet realistically carries by hand, same
+# "business code, not a UUID" choice Phase 1 made for role_name/site_code.
+# ---------------------------------------------------------------------------
+
+
+class BulkImportEquipmentRow(BaseModel):
+    equipment_code: str | None = None
+    equipment_class_code: str
+    manufacturer: str | None = None
+    model: str | None = None
+    serial_no: str | None = None
+    firmware_version: str | None = None
+    dedicated: bool = False
+    is_computer_operated: bool = False
+
+
+class BulkImportEquipmentRowValidation(BaseModel):
+    row_index: int
+    equipment_code: str | None
+    ok: bool
+    error: str | None = None
+
+
+async def validate_bulk_import_equipment_rows(
+    session: AsyncSession, rows: list[BulkImportEquipmentRow]
+) -> list[BulkImportEquipmentRowValidation]:
+    """Read-only. Used by both the preview endpoint and (defense in depth) bulk_import_equipment itself
+    right before committing, since rows can go stale between a client's preview call and its commit call."""
+    results: list[BulkImportEquipmentRowValidation] = []
+    seen_codes: set[str] = set()
+    class_codes = set(build_code_index(await list_equipment_classes(session), "class_code"))
+    candidate_codes = {row.equipment_code for row in rows if row.equipment_code}
+    existing_codes = (
+        {
+            c
+            for c in (
+                await session.execute(select(EquipmentAsset.equipment_code).where(EquipmentAsset.equipment_code.in_(candidate_codes)))
+            ).scalars().all()
+        }
+        if candidate_codes
+        else set()
+    )
+
+    for idx, row in enumerate(rows):
+        if row.equipment_class_code not in class_codes:
+            results.append(
+                BulkImportEquipmentRowValidation(
+                    row_index=idx, equipment_code=row.equipment_code, ok=False,
+                    error=f"unknown equipment_class_code '{row.equipment_class_code}'",
+                )
+            )
+            continue
+        if row.equipment_code:
+            if row.equipment_code in seen_codes:
+                results.append(
+                    BulkImportEquipmentRowValidation(
+                        row_index=idx, equipment_code=row.equipment_code, ok=False,
+                        error="duplicate equipment_code within this import",
+                    )
+                )
+                continue
+            seen_codes.add(row.equipment_code)
+            if row.equipment_code in existing_codes:
+                results.append(
+                    BulkImportEquipmentRowValidation(
+                        row_index=idx, equipment_code=row.equipment_code, ok=False,
+                        error="equipment_code is already in use",
+                    )
+                )
+                continue
+        results.append(BulkImportEquipmentRowValidation(row_index=idx, equipment_code=row.equipment_code, ok=True))
+    return results
+
+
+class BulkImportEquipmentCommand(CommandEnvelope):
+    site_id: uuid.UUID
+    rows: list[BulkImportEquipmentRow]
+
+
+class BulkImportedEquipment(BaseModel):
+    row_index: int
+    asset_id: uuid.UUID
+    equipment_code: str
+
+
+class BulkImportEquipmentResult(BaseModel):
+    command_id: uuid.UUID
+    correlation_id: uuid.UUID
+    created: list[BulkImportedEquipment]
+
+
+async def bulk_import_equipment(
+    session: AsyncSession, cmd: BulkImportEquipmentCommand, actor_user_id: uuid.UUID
+) -> BulkImportEquipmentResult:
+    if not cmd.rows:
+        raise ValidationFailedError("No rows to import")
+
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing_receipt = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing_receipt is not None:
+        return BulkImportEquipmentResult(command_id=existing_receipt.id, correlation_id=existing_receipt.id, created=[])
+
+    validations = await validate_bulk_import_equipment_rows(session, cmd.rows)
+    errors = [v for v in validations if not v.ok]
+    if errors:
+        raise ValidationFailedError(
+            "One or more rows failed validation -- no equipment was created",
+            errors=[{"row_index": e.row_index, "equipment_code": e.equipment_code, "error": e.error} for e in errors],
+        )
+
+    class_by_code = build_code_index(await list_equipment_classes(session), "class_code")
+
+    correlation_id = uuid.uuid4()
+    created: list[BulkImportedEquipment] = []
+    for idx, row in enumerate(cmd.rows):
+        asset_class = class_by_code[row.equipment_class_code]
+        receipt = await create_equipment_asset(
+            session,
+            CreateEquipmentAssetCommand(
+                idempotency_key=f"{cmd.idempotency_key}:row-{idx}",
+                site_id=cmd.site_id,
+                equipment_code=row.equipment_code,
+                equipment_class_id=asset_class.id,
+                manufacturer=row.manufacturer,
+                model=row.model,
+                serial_no=row.serial_no,
+                firmware_version=row.firmware_version,
+                dedicated=row.dedicated,
+                is_computer_operated=row.is_computer_operated,
+            ),
+            actor_user_id,
+        )
+        asset = await session.get(EquipmentAsset, receipt.aggregate_id)
+        created.append(BulkImportedEquipment(row_index=idx, asset_id=receipt.aggregate_id, equipment_code=asset.equipment_code))
+
+    receipt = await record_command_receipt(
+        session,
+        site_id=cmd.site_id,
+        command_type="BulkImportEquipment",
+        aggregate_type="equipment_bulk_import",
+        aggregate_id=uuid.uuid4(),
+        expected_version=None,
+        resulting_version=1,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return BulkImportEquipmentResult(command_id=receipt.id, correlation_id=correlation_id, created=created)

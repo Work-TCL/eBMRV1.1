@@ -178,6 +178,12 @@ class QcTestOrder(Base):
     assigned_analyst_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="created")
     blocking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Client gap-analysis Phase 6 (2026-10-05, migration 0136): records who actually performed the test
+    # when it was sent to an external lab (MaterialSpecificationCriterion.fulfillment_path ==
+    # "external_lab") instead of run in-house -- a Supplier with role_type "service_provider"/"both" --
+    # plus a hash of the report relied upon. Both null for an in-house test.
+    external_provider_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.supplier.id"))
+    external_report_hash: Mapped[str | None] = mapped_column(String(128))
     started_at: Mapped[datetime | None] = mapped_column()
     completed_at: Mapped[datetime | None] = mapped_column()
     reviewed_at: Mapped[datetime | None] = mapped_column()

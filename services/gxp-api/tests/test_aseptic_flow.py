@@ -32,7 +32,7 @@ async def _create_and_qualify_equipment(client, site_id, code="EQP-ASP-1"):
     resp = await client.post(
         "/equipment/v1/assets",
         json={
-            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
             "equipment_code": code,
         },
         headers=auth_headers(admin_token),
@@ -217,7 +217,7 @@ async def test_start_with_unready_area_rejected(client, seeded):
     resp = await client.post(
         "/equipment/v1/assets",
         json={
-            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
             "equipment_code": "EQP-ASP-UNQUAL",
         },
         headers=auth_headers(admin_token),

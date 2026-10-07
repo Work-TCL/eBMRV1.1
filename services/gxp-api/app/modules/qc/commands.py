@@ -12,6 +12,7 @@ from app.modules.equipment.cleaning_models import CleaningExecution
 from app.modules.iam.models import Qualification, User
 from app.modules.material.models import MaterialLot
 from app.modules.material_specification.models import MaterialSpecificationVersion
+from app.modules.supplier_quality.models import Supplier
 from app.modules.policy.service import evaluate_policy
 from app.modules.product_master.models import ProductVersion
 from app.modules.qc.models import (
@@ -726,6 +727,12 @@ class CreateTestOrderCommand(CommandEnvelope):
     sample_id: uuid.UUID
     test_definition_id: uuid.UUID
     assigned_analyst_id: uuid.UUID | None = None
+    # Client gap-analysis Phase 6 (2026-10-05): set when this test was sent to an external lab
+    # (MaterialSpecificationCriterion.fulfillment_path == "external_lab") rather than run in-house --
+    # records which Supplier (role_type "service_provider"/"both") performed it and a hash of the report
+    # relied upon. Both None for an in-house test order.
+    external_provider_id: uuid.UUID | None = None
+    external_report_hash: str | None = None
 
 
 async def create_test_order(session: AsyncSession, cmd: CreateTestOrderCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
@@ -749,12 +756,21 @@ async def create_test_order(session: AsyncSession, cmd: CreateTestOrderCommand, 
     if spec is None or spec.status != "released":
         raise TestSpecNotEffectiveError("Test definition's specification is not released")
 
+    if cmd.external_provider_id is not None:
+        provider = await session.get(Supplier, cmd.external_provider_id)
+        if provider is None or provider.role_type not in ("service_provider", "both"):
+            raise ValidationFailedError(
+                "external_provider_id must reference a Supplier with role_type 'service_provider' or 'both'"
+            )
+
     order = QcTestOrder(
         sample_id=sample.id,
         test_definition_id=definition.id,
         assigned_analyst_id=cmd.assigned_analyst_id,
         state="assigned" if cmd.assigned_analyst_id else "created",
         blocking=definition.release_blocking,
+        external_provider_id=cmd.external_provider_id,
+        external_report_hash=cmd.external_report_hash,
         version=1,
     )
     session.add(order)

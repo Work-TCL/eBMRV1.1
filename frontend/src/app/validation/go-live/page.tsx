@@ -33,6 +33,7 @@ const PQ_OPS: FormOp[] = [
   {
     path: "pq/scenarios",
     label: "Create a PQ scenario",
+    requiredPermission: "validation.pq.manage",
     fields: [
       { name: "scenario_number", label: "Scenario number", required: true },
       { name: "process_area", label: "Process area", type: "select", required: true, options: PQ_PROCESS_AREAS },
@@ -57,6 +58,7 @@ const PQ_OPS: FormOp[] = [
   {
     path: "pq/scenarios/{scenario_id}/participants",
     label: "Add PQ participants / training",
+    requiredPermission: "validation.pq.manage",
     fields: [
       { name: "scenario_id", label: "Scenario ID", required: true },
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -73,6 +75,7 @@ const PQ_OPS: FormOp[] = [
   {
     path: "pq/executions",
     label: "Record a PQ execution",
+    requiredPermission: "validation.pq.execute",
     fields: [
       { name: "scenario_id", label: "Scenario ID", required: true },
       { name: "environment", label: "Environment", required: true },
@@ -119,6 +122,7 @@ const MIGRATION_OPS: FormOp[] = [
   {
     path: "migrations/plans",
     label: "Create a migration plan",
+    requiredPermission: "validation.migration.manage",
     fields: [
       { name: "plan_number", label: "Plan number", required: true },
       { name: "source_system", label: "Source system", required: true },
@@ -159,6 +163,7 @@ const MIGRATION_OPS: FormOp[] = [
   {
     path: "migrations/runs",
     label: "Record a migration run / dry run",
+    requiredPermission: "validation.migration.manage",
     fields: [
       { name: "plan_id", label: "Migration plan ID", required: true },
       { name: "run_type", label: "Run type", type: "select", required: true, options: [{ value: "DRY_RUN", label: "Dry run" }, { value: "CUTOVER", label: "Cutover" }] },
@@ -191,6 +196,7 @@ const MIGRATION_OPS: FormOp[] = [
   {
     path: "migrations/{run_id}/reconcile",
     label: "Reconcile a migration run",
+    requiredPermission: "validation.migration.manage",
     fields: [
       { name: "run_id", label: "Migration run ID", required: true },
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -215,6 +221,7 @@ const SUMMARY_OPS: FormOp[] = [
   {
     path: "summary-reports",
     label: "Create a validation summary report",
+    requiredPermission: "validation.vsr.manage",
     fields: [
       { name: "report_number", label: "Report number", required: true },
       { name: "release_ref", label: "Release reference", required: true },
@@ -260,6 +267,7 @@ const SUMMARY_OPS: FormOp[] = [
   {
     path: "releases/{authorization_id}/post-go-live-verification",
     label: "Record post-go-live verification",
+    requiredPermission: "validation.post_go_live.record",
     fields: [
       { name: "authorization_id", label: "Release authorization ID", required: true },
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -314,13 +322,13 @@ export default function GoLivePage() {
 
       {canWork && (
         <>
-          <FormConsole title="Performance qualification" root="/validation/v1" ops={PQ_OPS} />
+          <FormConsole title="Performance qualification" root="/validation/v1" me={me} ops={PQ_OPS} />
 
-          <FormConsole title="Data migration" root="/validation/v1" ops={MIGRATION_OPS} />
+          <FormConsole title="Data migration" root="/validation/v1" me={me} ops={MIGRATION_OPS} />
 
-          <FormConsole title="Validation summary & release authorization" root="/validation/v1" ops={SUMMARY_OPS} />
+          <FormConsole title="Validation summary & release authorization" root="/validation/v1" me={me} ops={SUMMARY_OPS} />
 
- <SignedJsonForm title="PQ · migration · release signed operations" root="/validation/v1" ops={GO_LIVE_SIGNED_OPS} />
+          <SignedJsonForm title="PQ · migration · release signed operations" root="/validation/v1" me={me} ops={GO_LIVE_SIGNED_OPS} />
         </>
       )}
     </div>
@@ -335,6 +343,7 @@ const GO_LIVE_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "pq/{scenario_id}/approve",
     challengePath: "pq/{scenario_id}/signature-challenges",
+    requiredPermission: "validation.pq.approve",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
       { name: "reason", label: "Reason", type: "textarea", required: true },
@@ -346,6 +355,7 @@ const GO_LIVE_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "migrations/{run_id}/approve",
     challengePath: "migrations/{run_id}/signature-challenges",
+    requiredPermission: "validation.migration.approve",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
       { name: "reason", label: "Reason", type: "textarea", required: true },
@@ -356,6 +366,7 @@ const GO_LIVE_SIGNED_OPS: SignedJsonOp[] = [
     action: "approve",
     postPath: "summary-reports/{report_id}/approve",
     challengePath: "summary-reports/{report_id}/signature-challenges",
+    requiredPermission: "validation.vsr.approve",
     about: "Decision is APPROVED | CONDITIONAL | REJECTED.",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -373,6 +384,7 @@ const GO_LIVE_SIGNED_OPS: SignedJsonOp[] = [
     action: "authorize",
     postPath: "releases/{vsr_id}/authorize",
     challengePath: "releases/{vsr_id}/authorize/signature-challenges",
+    requiredPermission: "validation.release_auth.authorize",
     mirrorBodyInChallenge: true,
     // release_identity is a nested object (image_digest / code_commit / sbom_ref / schema_version /
     // migration_head / config_version) — genuinely nested enough that a JSON body is the honest UI
@@ -387,6 +399,7 @@ const GO_LIVE_SIGNED_OPS: SignedJsonOp[] = [
     action: "deployment_check",
     postPath: "releases/{authorization_id}/deployment-check",
     challengePath: "releases/{authorization_id}/deployment-check/signature-challenges",
+    requiredPermission: "validation.release_auth.deployment_check",
     about: "The signer must not be one of the listed production performers.",
     fields: [
       { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },

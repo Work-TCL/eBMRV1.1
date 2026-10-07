@@ -38,6 +38,7 @@ from app.modules.eventbus import outbox as eventbus_outbox
 from app.modules.evidence.router import router as evidence_router
 from app.modules.genealogy.router import router as genealogy_router
 from app.modules.iam.router import (
+    onboarding_router,
     organization_router,
     permissions_router,
     policy_router,
@@ -325,6 +326,7 @@ async def healthz() -> dict:
 
 
 app.include_router(iam_router)
+app.include_router(onboarding_router)
 app.include_router(organization_router)
 app.include_router(sites_router)
 app.include_router(users_router)

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, hasPermission, newIdempotencyKey, pagedFetcher } from "@/lib/api";
+import { api, canAuthorQcMethod, hasPermission, newIdempotencyKey, pagedFetcher } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -137,7 +137,7 @@ export default function QcPage() {
                 <Icon name="plus" /> New test specification
               </Button>
             )}
-            {canAnalyse && (
+            {canAuthorQcMethod(me) && (
               <Button variant="secondary" onClick={() => setNewMethodOpen(true)}>
                 <Icon name="plus" /> New method draft
               </Button>

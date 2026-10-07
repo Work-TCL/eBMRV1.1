@@ -10,6 +10,10 @@ from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.product_master import service as product_master_service
 from app.modules.product_master.commands import (
+    BulkImportProductCommand,
+    BulkImportProductResult,
+    BulkImportProductRow,
+    BulkImportProductRowValidation,
     CreateProductDraftCommand,
     CreateProductFamilyCommand,
     ObsoleteProductVersionCommand,
@@ -20,6 +24,7 @@ from app.modules.product_master.commands import (
     SuspendProductVersionCommand,
     UpdateProductDraftCommand,
     ValidateCompletenessCommand,
+    bulk_import_products,
     create_draft,
     create_product_family,
     obsolete_product_version,
@@ -29,6 +34,7 @@ from app.modules.product_master.commands import (
     supersede_product_version,
     suspend_product_version,
     update_draft,
+    validate_bulk_import_product_rows,
     validate_completeness_command,
 )
 from app.modules.product_master.models import ConstituentCompatibilityVersion, ProductVersion
@@ -107,6 +113,36 @@ async def post_create_draft(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="product.author", site_id=cmd.site_id)
         return await create_draft(session, cmd, actor.user_id)
+
+
+class BulkImportProductPreviewRequest(BaseModel):
+    rows: list[BulkImportProductRow]
+
+
+@router.post("/drafts/bulk-import/preview")
+async def post_bulk_import_products_preview(
+    body: BulkImportProductPreviewRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[BulkImportProductRowValidation]:
+    """Read-only -- validates every row (unknown manufacturing_profile_code/product_family_code,
+    duplicate/existing product_code) and reports per-row errors without creating anything, same shape as
+    the user/equipment bulk-import preview."""
+    await evaluate_policy(session, actor.user_id, action="product.author", site_id=None)
+    return await validate_bulk_import_product_rows(session, body.rows)
+
+
+@router.post("/drafts/bulk-import/commit", response_model=BulkImportProductResult)
+async def post_bulk_import_products_commit(
+    cmd: BulkImportProductCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> BulkImportProductResult:
+    """All-or-nothing: if any row fails validation the whole batch is rejected with the per-row reasons
+    and nothing is created."""
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="product.author", site_id=cmd.site_id)
+        return await bulk_import_products(session, cmd, actor.user_id)
 
 
 @router.put("/drafts/{product_version_id}", response_model=MutationReceipt)

@@ -148,6 +148,9 @@ export default function EquipmentPage() {
         action={
           canCreateEquipment(me) ? (
             <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => router.push("/import/equipment")}>
+                <Icon name="clipboard" /> Bulk import
+              </Button>
               <Button variant="secondary" onClick={() => setCreateAreaOpen(true)}>
                 <Icon name="plus" /> New area
               </Button>
@@ -296,6 +299,7 @@ export default function EquipmentPage() {
           }}
         />
       )}
+
     </div>
   );
 }
@@ -345,12 +349,14 @@ function CreateAssetModal({
   const [locationId, setLocationId] = useState("");
   const [equipmentClassId, setEquipmentClassId] = useState("");
   const [dedicated, setDedicated] = useState(false);
+  const [isComputerOperated, setIsComputerOperated] = useState("");
+  const [firmwareNA, setFirmwareNA] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!siteId) return;
+    if (!siteId || isComputerOperated === "") return;
     setBusy(true);
     setError(null);
     try {
@@ -361,10 +367,11 @@ function CreateAssetModal({
         manufacturer: manufacturer || null,
         model: model || null,
         serial_no: serialNo || null,
-        firmware_version: firmwareVersion || null,
+        firmware_version: firmwareNA ? null : firmwareVersion || null,
         location_id: locationId || null,
         equipment_class_id: equipmentClassId,
         dedicated,
+        is_computer_operated: isComputerOperated === "true",
       });
       onDone();
     } catch (err) {
@@ -389,8 +396,31 @@ function CreateAssetModal({
             <Input value={serialNo} onChange={(e) => setSerialNo(e.target.value)} />
           </Field>
         </div>
-        <Field label="Firmware version" hint="Recorded so a firmware change can be tied to change control.">
-          <Input value={firmwareVersion} onChange={(e) => setFirmwareVersion(e.target.value)} />
+        <Field label="Firmware version (Optional)" hint="Recorded so a firmware change can be tied to change control.">
+          <Input
+            value={firmwareNA ? "" : firmwareVersion}
+            onChange={(e) => setFirmwareVersion(e.target.value)}
+            disabled={firmwareNA}
+            placeholder={firmwareNA ? "Not applicable" : undefined}
+          />
+          <label className="flex items-center gap-2 fs-2 text-muted mt-1">
+            <input
+              type="checkbox"
+              checked={firmwareNA}
+              onChange={(e) => {
+                setFirmwareNA(e.target.checked);
+                if (e.target.checked) setFirmwareVersion("");
+              }}
+            />
+            Not applicable
+          </label>
+        </Field>
+        <Field label="Computer-operated or manual?" required hint="Mandatory at creation. The detailed Computer System Validation questionnaire for computer-operated equipment is not yet built.">
+          <Select value={isComputerOperated} onChange={(e) => setIsComputerOperated(e.target.value)} required>
+            <option value="">— Select —</option>
+            <option value="true">Computer-operated</option>
+            <option value="false">Manual</option>
+          </Select>
         </Field>
         <Field
           label="Equipment class"
@@ -437,7 +467,7 @@ function CreateAssetModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !siteId || !equipmentClassId}>
+          <Button type="submit" variant="primary" disabled={busy || !siteId || !equipmentClassId || isComputerOperated === ""}>
             {busy ? "Creating…" : "Create asset"}
           </Button>
         </div>

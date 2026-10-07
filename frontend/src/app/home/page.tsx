@@ -1,12 +1,51 @@
 "use client";
 
 import { useEffect } from "react";
-import { api } from "@/lib/api";
-import { useApiResource, useMe } from "@/lib/hooks";
+import { api, isAdminAnywhere } from "@/lib/api";
+import { useApiResource, useMe, useOnboardingStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/Table";
 import { Icon } from "@/components/ui/Icon";
+import { LinkButton } from "@/components/ui/Button";
+import { Stepper, StepItem } from "@/components/ui/Stepper";
+
+// Resumable onboarding checklist (client gap-analysis follow-up, 2026-10-06): shown only once an admin
+// has explicitly skipped the wizard (AuthGuard's OnboardingGate redirects there otherwise) and only
+// until all four steps are genuinely done -- same `useOnboardingStatus()` the wizard page itself reads.
+const ONBOARDING_STEPS = [
+  { key: "company", title: "Company", href: "/admin/company", done: (s: { company_done: boolean }) => s.company_done },
+  { key: "sites", title: "Sites", href: "/admin/sites", done: (s: { sites_done: boolean }) => s.sites_done },
+  { key: "users", title: "Users", href: "/admin/users", done: (s: { users_done: boolean }) => s.users_done },
+  { key: "roles", title: "Roles", href: "/admin/roles", done: (s: { roles_done: boolean }) => s.roles_done },
+] as const;
+
+function OnboardingChecklistCard() {
+  const { me } = useMe();
+  const { status } = useOnboardingStatus();
+  if (!isAdminAnywhere(me) || !status || !status.dismissed_at || status.all_done) return null;
+  const remaining = ONBOARDING_STEPS.filter((s) => !s.done(status));
+  return (
+    <Card pad>
+      <CardHeader title="Finish setting up" meta={`${ONBOARDING_STEPS.length - remaining.length} of ${ONBOARDING_STEPS.length} done`} />
+      <Stepper>
+        {remaining.map((s, i) => (
+          <StepItem
+            key={s.key}
+            state="available"
+            number={i + 1}
+            title={s.title}
+            action={
+              <LinkButton href={`${s.href}?from=onboarding`} variant="secondary" size="sm">
+                Set up
+              </LinkButton>
+            }
+          />
+        ))}
+      </Stepper>
+    </Card>
+  );
+}
 
 // Landing page for every signed-in role, replacing the old "everyone lands on /batch-execution"
 // default. Both lists below read the exact same endpoints the Topbar bells (WorkflowActionsBell /
@@ -57,6 +96,7 @@ const WORKFLOW_CATEGORY_LABEL: Record<string, string> = {
   material_spec_release_pending: "Ready for release",
   product_release_pending: "Ready for release",
   recipe_release_pending: "Ready for release",
+  equipment_calibration_approval_pending: "Calibration review needed",
 };
 
 interface Reminder {
@@ -108,6 +148,8 @@ export default function HomePage() {
       />
 
       <div className="flex flex-col gap-4">
+        <OnboardingChecklistCard />
+
         <Card pad>
           <CardHeader
             title={

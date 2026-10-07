@@ -1618,6 +1618,12 @@ async def seeded(db: AsyncSession) -> dict:
             # evaluate_policy() call, and equipment reads had an actor dependency but no RBAC/site check).
             ("material.view", "view", "material"),
             ("supplier.create", "create", "supplier"),
+            # Catalogue-drift fix (client gap-analysis Phase 3, 2026-10-05): scripts/seed.py's
+            # PERMISSION_CATALOG already has this row (granted to QA Releaser/Supervisor/QA Reviewer/etc.
+            # via QMS_VIEW_CODES) -- conftest.py's independent duplicate catalogue never got it, so every
+            # GET /suppliers/v1*, /supplier-qualifications/* call 403'd for every seeded test user. Same
+            # "duplicated catalogues, update both" drift class as other fixes noted in project memory.
+            ("supplier.view", "view", "supplier"),
             ("supplier_qualification.create", "create", "supplier_qualification"),
             ("qc_sample.create", "create", "qc_sample"),
             ("qc_sample.receive", "receive", "qc_sample"),
@@ -1720,6 +1726,7 @@ async def seeded(db: AsyncSession) -> dict:
             ("equipment_area.create", "create", "equipment_area"),
             ("equipment_asset.qualify", "qualify", "equipment_asset"),
             ("equipment_asset.calibrate", "calibrate", "equipment_asset"),
+            ("equipment_asset.approve_calibration", "approve_calibration", "equipment_asset"),
             ("equipment_asset.maintain", "maintain", "equipment_asset"),
             ("equipment_asset.hold", "hold", "equipment_asset"),
             ("equipment_asset.return_to_service", "return_to_service", "equipment_asset"),
@@ -2054,6 +2061,7 @@ async def seeded(db: AsyncSession) -> dict:
                     "quality_metric.calculate", "quality_metric.dashboard.view", "quality_metric.management_review",
                     "effectiveness_check.create", "effectiveness_check.evaluate", "effectiveness_check.view",
                     "equipment_asset.create", "equipment_asset.qualify", "equipment_asset.calibrate",
+                    "equipment_asset.approve_calibration",
                     "equipment_asset.maintain", "equipment_asset.hold", "equipment_asset.return_to_service",
                     "equipment_asset.reserve", "equipment_asset.retire", "equipment_asset.relocate",
                     "equipment_area.create",
@@ -2162,7 +2170,7 @@ async def seeded(db: AsyncSession) -> dict:
                 "warehouse_location.create", "warehouse_location.update", "warehouse_location.retire", "warehouse_location.lock",
                 "material.view", "warehouse_location.view", "inventory_availability.view", "material_receipt.view", "equipment_asset.view", "equipment_area.view", "equipment_asset.reserve", "equipment_asset.retire", "equipment_asset.relocate",
                 "inventory_reservation.create", "inventory_transaction.transfer", "material_container.split", "material_container.merge", "inventory_cycle_count.execute", "dispensing_order.create", "dispensing_order.select_source", "dispensing_order.start", "dispensing_order.readings", "dispensing_order.manual_reading", "dispensing_order.complete", "dispensing_order.override_target", "material_consumption.create", "material_return.create", "material_loss.create", "inventory_adjustment_request.create", "destruction_record.create", "destruction_record.execute", "material_reconciliation.evaluate", "line_clearance.create", "line_clearance.complete", "batch_context.open", "batch_context.close", "yield_calculation.evaluate", "reconciliation.evaluate"]),
-            ("Process Engineer", ["product.author", "product.view", "material_spec.author", "material_spec.view", "recipe.author", "recipe.view", "rules.evaluate", "training.qualification_code.list", "material.create", "material.update", "material.view", "supplier.create", "supplier_qualification.create", "qms_deviation.view", "capa.view"]),
+            ("Process Engineer", ["product.author", "product.view", "material_spec.author", "material_spec.view", "recipe.author", "recipe.view", "rules.evaluate", "training.qualification_code.list", "material.create", "material.update", "material.view", "supplier.create", "supplier.view", "supplier_qualification.create", "qms_deviation.view", "capa.view"]),
             ("QA Reviewer", ["batch.review", "audit.review", "vault.review", "rules.evaluate", "product.view", "recipe.view", "batch_execution.view", "device.view", "genealogy.view", "qa_review.create", "qa_review.execute", "qa_review.view", "release.evaluate", "release.hold", "release.view", "qc_test_order.review", "oos_record.extended_investigation", "oos_record.link_change_control", "oos_record.lab_investigation", "oos_record.classify_lab_cause", "oos_record.retest_plan", "oos_record.resample_plan", "oos_record.impact", "material.view", "warehouse_location.view", "inventory_availability.view", "material_receipt.view", "equipment_asset.view", "equipment_area.view", "equipment_asset.hold", "equipment_asset.return_to_service", "cleaning_execution.create", "cleaning_execution.complete", "cleaning_execution.verify", "em_sample.review", "em_excursion.impact", "process_cycle.create", "process_cycle.start", "process_cycle.review", "process_cycle_profile_version.create", "reconciliation.verify", "machine_evidence.review_view", "evidence.upload", "evidence.download", "evidence.manifest", "evidence.legal_hold", "evidence.integrity_check", "ai_governance.use_case.register", "ai_governance.use_case.assess_risk", "ai_governance.context.build", "ai_governance.advisory.execute", "ai_governance.disposition.record", "ai_governance.evaluation.run", "ai_governance.release_gate.evaluate", "ai_governance.injection.detect", "validation.gate.view", "validation.package.view", "validation.function_risk.approve", "validation.function_risk.view", "validation.traceability.view", "validation.oq.view", "validation.security.view", "validation.performance.view", "validation.exception.view", "validation.periodic_review.decide", "validation.migration.manage", "validation.migration.trace_view", "validation.vsr.manage", "validation.release_auth.view",
                 # SG-138 policy-data half (2026-09-10) -- QMS review codes the "QA Reviewer" signer class
                 # (Document 106 section 9 rows 96/97/107) needs; aligned with scripts/seed.py's own
@@ -2173,8 +2181,8 @@ async def seeded(db: AsyncSession) -> dict:
                 # is the sole signer of batch.record_export (the action that creates the batch record PDF
                 # as evidence) but held no evidence.* permission to retrieve it afterward.
                 "evidence.download",
-                "material.view", "warehouse_location.view", "inventory_availability.view", "material_receipt.view", "equipment_asset.view", "equipment_area.view",
-                "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oos_record.reopen", "oos_record.link_change_control", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "inventory_reservation.approve_override", "inventory_reservation.reject_override", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "edge_gateway.certificate_rotation", "signal_mapping.release", "security_incident.close",
+                "material.view", "warehouse_location.view", "inventory_availability.view", "material_receipt.view", "equipment_asset.view", "equipment_area.view", "supplier.view",
+                "supplier_qualification.approve", "qc_test_specification.release", "qc_method.release", "qc_method.view", "lims_sample.cancel", "oos_record.disposition", "oos_record.close", "oos_record.reopen", "oos_record.link_change_control", "oot_record.close", "oot_record.reopen", "material_lot.release", "material_lot.reject", "material_lot.retest", "material_receipt.disposition", "inventory_reservation.release", "inventory_reservation.approve_override", "inventory_reservation.reject_override", "dispensing_order.cancel", "inventory_adjustment_request.create", "inventory_adjustment_request.approve", "inventory_adjustment_request.reject", "material_reconciliation.evaluate", "equipment_asset.hold", "equipment_asset.approve_calibration", "edge_gateway.certificate_rotation", "signal_mapping.release", "security_incident.close",
                 # SG-138 policy-data half (2026-09-10) -- QMS signing codes, aligned with scripts/seed.py's
                 # own QA Releaser grant so an independent QA Releaser can actually reach the signed QMS
                 # transitions Document 106 section 9 rows 80-107 now require.

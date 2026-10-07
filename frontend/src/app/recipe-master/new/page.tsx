@@ -4,7 +4,7 @@ import { useState } from "react";
 import type React from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, newIdempotencyKey } from "@/lib/api";
-import { useApiResource, useSites } from "@/lib/hooks";
+import { useApiResource, useRequirePermission, useSites } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Field";
@@ -31,6 +31,7 @@ import {
  * validation as the modal it replaces — only the container changed. On success, redirects to
  * `/recipe-master` where the new family/version shows up in the list. */
 export default function NewRecipeDraftPage() {
+  useRequirePermission("recipe.author", "/recipe-master");
   const router = useRouter();
   const { sites } = useSites();
   const [productBusinessId, setProductBusinessId] = useState("");

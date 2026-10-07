@@ -154,9 +154,11 @@ export default function MaterialsPage() {
         const canDelete = isAdminAnywhere(me);
         return (
           <div className="flex gap-2 justify-end">
-            <Button size="sm" variant="secondary" onClick={() => openEdit(m)}>
-              Edit
-            </Button>
+            {canCreateMaterial(me) && (
+              <Button size="sm" variant="secondary" onClick={() => openEdit(m)}>
+                Edit
+              </Button>
+            )}
             <Button
               size="sm"
               variant="danger"

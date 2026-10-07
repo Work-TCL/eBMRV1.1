@@ -692,9 +692,12 @@ class ExamineReceiptCommand(CommandEnvelope):
     receipt_id: uuid.UUID
     expected_version: int
     labeling_ok: bool
-    damage_observed: bool
+    # Client gap-analysis Phase 6 (2026-10-05): the generic "Damage Observed" question split into
+    # shipping/package damage vs. material container damage; "Contamination Observed" dropped from the
+    # workflow entirely (no field here anymore -- the column on the model is simply never written).
+    shipping_damage_observed: bool
+    container_damage_observed: bool
     seal_broken: bool
-    contamination_observed: bool
     examination_notes: str | None = None
     identity_confirmed: bool
     internal_lot: str
@@ -740,23 +743,23 @@ async def examine_receipt(
         if supplier is None or supplier.status != "approved":
             supplier_not_approved = True
 
+    damage_observed = cmd.shipping_damage_observed or cmd.container_damage_observed
     discrepancy_type = None
     if not cmd.identity_confirmed:
         discrepancy_type = "identity_mismatch"
-    elif cmd.damage_observed:
+    elif damage_observed:
         discrepancy_type = "damaged"
     elif cmd.seal_broken:
         discrepancy_type = "seal_broken"
-    elif cmd.contamination_observed:
-        discrepancy_type = "contamination"
     elif supplier_not_approved:
         discrepancy_type = "source_not_approved"
 
     old_state = receipt_row.state
     receipt_row.labeling_ok = cmd.labeling_ok
-    receipt_row.damage_observed = cmd.damage_observed
+    receipt_row.shipping_damage_observed = cmd.shipping_damage_observed
+    receipt_row.container_damage_observed = cmd.container_damage_observed
+    receipt_row.damage_observed = damage_observed
     receipt_row.seal_broken = cmd.seal_broken
-    receipt_row.contamination_observed = cmd.contamination_observed
     receipt_row.examination_notes = cmd.examination_notes
     receipt_row.examined_by_user_id = actor_user_id
     receipt_row.examined_at = datetime.now(timezone.utc)

@@ -58,6 +58,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   material_spec_release_pending: "Ready for release",
   product_release_pending: "Ready for release",
   recipe_release_pending: "Ready for release",
+  equipment_calibration_approval_pending: "Calibration review needed",
 };
 
 const POLL_INTERVAL_MS = 30_000;

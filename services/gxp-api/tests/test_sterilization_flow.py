@@ -35,7 +35,7 @@ async def _create_equipment(client, _token_unused, site_id, code="EQP-STR-1"):
     resp = await client.post(
         "/equipment/v1/assets",
         json={
-            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
             "equipment_code": code,
         },
         headers=auth_headers(admin_token),
@@ -301,7 +301,7 @@ async def test_create_cycle_rejects_ineligible_sterilizer(client, seeded):
     resp = await client.post(
         "/equipment/v1/assets",
         json={
-            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
             "equipment_code": "EQP-STR-UNQUAL",
         },
         headers=auth_headers(admin_token),

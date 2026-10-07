@@ -1,11 +1,13 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import {
   api,
   hasPermission,
+  listAll,
   newIdempotencyKey,
   type MutationReceipt,
+  type Supplier,
 } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
 import { RecordDetailShell, useCommand } from "@/components/shared/RecordDetailShell";
@@ -403,6 +405,22 @@ function CreateOrderModal({
   const entities = useEntityOptions();
   const [testDefinitionId, setTestDefinitionId] = useState("");
   const [analystId, setAnalystId] = useState(me?.user_id ?? "");
+  // Client gap-analysis Phase 6 (2026-10-05): when this test was sent to an external lab
+  // (MaterialSpecificationCriterion.fulfillment_path == "external_lab") rather than run in-house, record
+  // which Supplier (role_type "service_provider"/"both") performed it and the report relied upon.
+  const [externalProviderId, setExternalProviderId] = useState("");
+  const [externalReportHash, setExternalReportHash] = useState("");
+  const [serviceProviders, setServiceProviders] = useState<Supplier[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listAll<Supplier>("/suppliers/v1").then((rows) => {
+      if (!cancelled) setServiceProviders(rows.filter((s) => s.role_type === "service_provider" || s.role_type === "both"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const definitionOptions = specifications
     .filter((s) => s.status === "released")
@@ -419,6 +437,8 @@ function CreateOrderModal({
               sample_id: sample.id,
               test_definition_id: testDefinitionId,
               assigned_analyst_id: analystId || null,
+              external_provider_id: externalProviderId || null,
+              external_report_hash: externalReportHash || null,
             })
           );
         }}
@@ -451,6 +471,24 @@ function CreateOrderModal({
           status={entities.usersStatus}
           kind="user"
         />
+        <Field
+          label="External lab (if sent out)"
+          hint="Leave unset for an in-house test. Pick the Supplier (role_type service_provider/both) that performed it."
+        >
+          <Select value={externalProviderId} onChange={(e) => setExternalProviderId(e.target.value)}>
+            <option value="">— In-house —</option>
+            {serviceProviders.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.legal_name} ({s.supplier_code})
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {externalProviderId && (
+          <Field label="External report hash" hint="SHA-256 hash of the lab's report evidence, if available.">
+            <Input value={externalReportHash} onChange={(e) => setExternalReportHash(e.target.value)} />
+          </Field>
+        )}
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-3">
           <Button type="button" variant="secondary" onClick={onClose}>

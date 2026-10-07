@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, ApiError, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
+import { api, ApiError, hasPermission, newIdempotencyKey, type Me, type MutationReceipt } from "@/lib/api";
 import { useEntityOptions, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -101,6 +101,11 @@ export interface FormOp {
   template?: string;
   /** One-line description shown under the operation selector. */
   about?: string;
+  /** The RBAC permission code `evaluate_policy()` checks on this op's own endpoint. When set and the
+   * `me` passed to `FormConsole` lacks it, this op is left out of the operation selector entirely
+   * (never shown live-but-403ing) -- omit only for an op whose endpoint truly has no evaluate_policy()
+   * call (any authenticated user may perform it). */
+  requiredPermission?: string;
 }
 
 export function coerce(field: FormField, raw: string): unknown {
@@ -933,17 +938,23 @@ export function FormConsole({
   subtitle,
   root,
   ops,
+  me,
 }: {
   title: string;
   subtitle?: string;
   root: string;
   ops: FormOp[];
+  /** When provided, ops carrying a `requiredPermission` the caller doesn't hold are left out of the
+   * selector entirely, instead of being shown and 403ing on submit. Omit only for a console whose ops
+   * are either all permission-free or already gated by the caller some other way. */
+  me?: Me | null;
 }) {
+  const ops_ = me === undefined ? ops : ops.filter((o) => !o.requiredPermission || hasPermission(me, o.requiredPermission));
   const [idx, setIdx] = useState(0);
-  const op = ops[idx];
-  const [values, setValues] = useState<Record<string, string>>(() => seedFieldValues(ops[0]?.fields ?? []));
-  const [complexValues, setComplexValues] = useState<ComplexValues>(() => seedComplexValues(ops[0]?.fields ?? []));
-  const [jsonBody, setJsonBody] = useState(ops[0]?.template ?? "{\n  \n}");
+  const op = ops_[Math.min(idx, ops_.length - 1)];
+  const [values, setValues] = useState<Record<string, string>>(() => seedFieldValues(ops_[0]?.fields ?? []));
+  const [complexValues, setComplexValues] = useState<ComplexValues>(() => seedComplexValues(ops_[0]?.fields ?? []));
+  const [jsonBody, setJsonBody] = useState(ops_[0]?.template ?? "{\n  \n}");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(undefined);
@@ -951,15 +962,16 @@ export function FormConsole({
 
   function selectOp(next: number) {
     setIdx(next);
-    setValues(seedFieldValues(ops[next]?.fields ?? []));
-    setComplexValues(seedComplexValues(ops[next]?.fields ?? []));
-    setJsonBody(ops[next]?.template ?? "{\n  \n}");
+    setValues(seedFieldValues(ops_[next]?.fields ?? []));
+    setComplexValues(seedComplexValues(ops_[next]?.fields ?? []));
+    setJsonBody(ops_[next]?.template ?? "{\n  \n}");
     setError(null);
     setResult(undefined);
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!op) return;
     setBusy(true);
     setError(null);
     setResult(undefined);
@@ -980,7 +992,16 @@ export function FormConsole({
     }
   }
 
-  const missingRequired = op.fields ? missingRequiredFields(op.fields, values, complexValues) : false;
+  const missingRequired = op?.fields ? missingRequiredFields(op.fields, values, complexValues) : false;
+
+  if (ops_.length === 0) {
+    return (
+      <Card pad className="mb-4">
+        <CardHeader title={title} />
+        <p className="fs-2 text-muted">You don&apos;t have permission to perform any action here.</p>
+      </Card>
+    );
+  }
 
   return (
     <Card pad className="mb-4">
@@ -989,7 +1010,7 @@ export function FormConsole({
       <form onSubmit={submit}>
         <Field label="Operation">
           <Select value={idx} onChange={(e) => selectOp(Number(e.target.value))}>
-            {ops.map((o, i) => (
+            {ops_.map((o, i) => (
               <option key={o.path + o.label} value={i}>
                 {o.label}
               </option>

@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   api,
   ApiError,
@@ -11,6 +11,7 @@ import {
   type Role,
 } from "@/lib/api";
 import { useRequireAdmin } from "@/lib/hooks";
+import { computeActivities } from "@/lib/roleActivities";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button, LinkButton } from "@/components/ui/Button";
@@ -65,6 +66,7 @@ export default function RolePermissionsPage({ params }: { params: Promise<{ id: 
   const { id } = use(params);
   const { isAdmin } = useRequireAdmin();
   const router = useRouter();
+  const clonedFrom = useSearchParams().get("cloned_from");
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -73,8 +75,12 @@ export default function RolePermissionsPage({ params }: { params: Promise<{ id: 
   const [description, setDescription] = useState("");
   const [allPermissions, setAllPermissions] = useState<Permission[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
+  // Which module's permission list the right-hand pane shows -- null until the first module list
+  // renders, at which point `effectiveModuleKey` below falls back to the first one. Not kept in sync
+  // with search results via an effect; `effectiveModuleKey` just re-derives the fallback on every
+  // render instead, so there's no synchronous setState-in-effect to avoid.
+  const [selectedModuleKey, setSelectedModuleKey] = useState<string | null>(null);
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
@@ -92,11 +98,7 @@ export default function RolePermissionsPage({ params }: { params: Promise<{ id: 
         setName(r.name);
         setDescription(r.description ?? "");
         setAllPermissions(permissions);
-        const grantedIds = new Set(granted.map((p) => p.id));
-        setSelectedIds(grantedIds);
-        setExpanded(
-          new Set(permissions.filter((p) => grantedIds.has(p.id)).map((p) => permissionModuleKey(p.code)))
-        );
+        setSelectedIds(new Set(granted.map((p) => p.id)));
       })
       .catch((err) => {
         if (cancelled) return;
@@ -109,6 +111,18 @@ export default function RolePermissionsPage({ params }: { params: Promise<{ id: 
       cancelled = true;
     };
   }, [id]);
+
+  // Activity checklist (client gap-analysis Phase 2): a business-named bundle of the module groups
+  // below, so an admin can tick ~15 recognizable activities instead of ~128 technical module names.
+  // Computed from the live permission catalogue, not the static ACTIVITY_CATALOGUE module-key lists
+  // alone, so a module with zero permissions today never renders an empty checklist row, and any
+  // module key not yet filed under a named activity still appears (under "Other") rather than silently
+  // becoming untickable through this checklist.
+  const activities = useMemo(() => computeActivities(allPermissions, null), [allPermissions]);
+
+  function toggleActivity(activity: { moduleKeys: string[]; permissions: Permission[] }) {
+    toggleModule(activity.permissions);
+  }
 
   const groups = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -153,22 +167,12 @@ export default function RolePermissionsPage({ params }: { params: Promise<{ id: 
     });
   }
 
-  function toggleExpanded(key: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
-  function expandAll() {
-    setExpanded(new Set(groups.map((g) => g.key)));
-  }
-
-  function collapseAll() {
-    setExpanded(new Set());
-  }
+  // The module the right-hand pane actually shows: the clicked one if it's still in the (possibly
+  // search-filtered) list, otherwise the first visible module -- covers both the initial load (nothing
+  // clicked yet) and a search that filters the previous selection out of the list.
+  const effectiveModuleKey =
+    selectedModuleKey && groups.some((g) => g.key === selectedModuleKey) ? selectedModuleKey : groups[0]?.key ?? null;
+  const selectedGroup = groups.find((g) => g.key === effectiveModuleKey) ?? null;
 
   function moduleState(permissions: Permission[]): ModuleSelectState {
     const selectedCount = permissions.filter((p) => selectedIds.has(p.id)).length;
@@ -222,6 +226,14 @@ export default function RolePermissionsPage({ params }: { params: Promise<{ id: 
         </Banner>
       )}
 
+      {!loadError && (
+        <Banner tone="info" title="Advanced: full permission grid">
+          {clonedFrom
+            ? `Cloned from ${clonedFrom} — review and adjust before saving.`
+            : "Most admins should clone a template from the Roles list instead of hand-picking permissions here."}
+        </Banner>
+      )}
+
       {loading && !loadError && <p className="text-muted">Loading…</p>}
 
       {role && (
@@ -236,28 +248,42 @@ export default function RolePermissionsPage({ params }: { params: Promise<{ id: 
             </Field>
           </Card>
 
+          <Card pad className="mb-4">
+            <CardHeader
+              title="Activity checklist"
+              meta="Tick an activity to auto-select its permissions below"
+            />
+            <div className="flex flex-wrap gap-3">
+              {activities.map((activity) => {
+                const state = moduleState(activity.permissions);
+                const selectedCount = activity.permissions.filter((p) => selectedIds.has(p.id)).length;
+                return (
+                  <label
+                    key={activity.key}
+                    className="checkbox-row fs-3 card"
+                    style={{ padding: "8px 12px", cursor: "pointer" }}
+                  >
+                    <GroupCheckboxInput state={state} onChange={() => toggleActivity(activity)} />
+                    <span>{activity.label}</span>
+                    <span className="fs-2 text-muted">
+                      ({selectedCount}/{activity.permissions.length})
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </Card>
+
           <Card pad>
             <CardHeader title="Permissions" meta={`${selectedIds.size} of ${allPermissions.length} selected`} />
 
-            <div className="flex items-end gap-3">
-              <div style={{ flex: 1 }}>
-                <Field label="Search permissions">
-                  <Input
-                    value={filter}
-                    onChange={(e) => setFilter(e.target.value)}
-                    placeholder="Filter by name or description…"
-                  />
-                </Field>
-              </div>
-              <div className="flex gap-2 mb-4">
-                <Button type="button" variant="secondary" size="sm" onClick={expandAll}>
-                  Expand all
-                </Button>
-                <Button type="button" variant="secondary" size="sm" onClick={collapseAll}>
-                  Collapse all
-                </Button>
-              </div>
-            </div>
+            <Field label="Search modules or permissions" hint="Narrows both the module list and the selected module's permissions.">
+              <Input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Filter by module, code or description…"
+              />
+            </Field>
 
             {saveError && (
               <Banner tone="critical" title="Couldn't save">
@@ -265,31 +291,48 @@ export default function RolePermissionsPage({ params }: { params: Promise<{ id: 
               </Banner>
             )}
 
-            <div className="flex flex-col gap-2 mt-2">
-              {groups.map(({ key, label, permissions }) => {
-                const state = moduleState(permissions);
-                const selectedCount = permissions.filter((p) => selectedIds.has(p.id)).length;
-                // While searching, force-open every matching module so results are visible.
-                const isOpen = filter.trim().length > 0 || expanded.has(key);
-                return (
-                  <div key={key} className="card">
-                    <div
-                      className="flex items-center justify-between gap-3"
-                      style={{ padding: "10px 14px", cursor: "pointer" }}
-                      onClick={() => toggleExpanded(key)}
-                    >
-                      <label className="checkbox-row fs-3" onClick={(e) => e.stopPropagation()}>
-                        <GroupCheckboxInput state={state} onChange={() => toggleModule(permissions)} />
-                        <span className="font-semibold">{label}</span>
-                      </label>
-                      <span className="flex items-center gap-2 fs-2 text-muted">
-                        {selectedCount} / {permissions.length}
-                        <Icon name={isOpen ? "chevron-down" : "chevron-right"} />
-                      </span>
-                    </div>
-                    {isOpen && (
-                      <div className="flex flex-col gap-2" style={{ padding: "0 14px 14px" }}>
-                        {permissions.map((p) => (
+            {groups.length === 0 ? (
+              <p className="text-muted mt-3">No modules match “{filter}”.</p>
+            ) : (
+              <div className="role-permissions-panel mt-3">
+                <div className="role-module-list">
+                  {groups.map(({ key, label, permissions }) => {
+                    const state = moduleState(permissions);
+                    const selectedCount = permissions.filter((p) => selectedIds.has(p.id)).length;
+                    return (
+                      <button
+                        type="button"
+                        key={key}
+                        className="role-module-row"
+                        data-active={key === effectiveModuleKey}
+                        onClick={() => setSelectedModuleKey(key)}
+                      >
+                        <span className={`role-module-dot${state === "none" ? "" : ` role-module-dot-${state}`}`} />
+                        <span className="role-module-row-label">{label}</span>
+                        <span className="fs-1 text-muted">
+                          {selectedCount}/{permissions.length}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="role-module-detail">
+                  {selectedGroup && (
+                    <>
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <span className="font-semibold">{selectedGroup.label}</span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => toggleModule(selectedGroup.permissions)}
+                        >
+                          {moduleState(selectedGroup.permissions) === "all" ? "Deselect all" : "Select all"}
+                        </Button>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {selectedGroup.permissions.map((p) => (
                           <label key={p.id} className="checkbox-row fs-3">
                             <input
                               type="checkbox"
@@ -305,12 +348,11 @@ export default function RolePermissionsPage({ params }: { params: Promise<{ id: 
                           </label>
                         ))}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-              {groups.length === 0 && <p className="text-muted">No permissions match “{filter}”.</p>}
-            </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-between gap-3 mt-4">
               <LinkButton href="/admin/roles" variant="secondary">

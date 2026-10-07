@@ -9,8 +9,11 @@ from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.batch_execution.models import BatchStep
+from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import evaluate_policy, resolve_site_scope
+from app.modules.product_master.models import ProductVersion
 from app.modules.qms.read_support import filtered, iso, sid
+from app.modules.recipe_master.models import RecipeFamily, RecipeVersion
 from app.modules.qc.commands import (
     ApproveDispositionCommand,
     ApproveResultCorrectionCommand,
@@ -146,6 +149,42 @@ async def list_specifications(
         return {**envelope, "items": [_specification_dict(s, defs_by_spec.get(str(s.id), [])) for s in specs]}
 
 
+async def _resolve_scope_label(session: AsyncSession, scope_type: str, scope_version_id: uuid.UUID) -> dict | None:
+    """Client gap-analysis follow-up: a QC test specification's `scope_version_id` is a bare, opaque UUID
+    in the detail response -- a QA reviewer opening a spec created off a material/product/recipe release
+    (see material_specification.commands.release_material_spec_version's QC-FR-001 bridge) had no way to
+    get back to the record it was generated from short of copying that UUID into a DB query. Mirrors
+    SCOPE_TABLE_BY_TYPE in qc.commands (the same scope_type -> owning-table mapping used to validate the
+    id on create) but resolves a human business-id/version label instead of just existence.
+    """
+    if scope_type in ("product", "device"):
+        version = await session.get(ProductVersion, scope_version_id)
+        if version is None:
+            return None
+        return {
+            "label": f"{version.product_business_id} v{version.version_no}",
+            "href": f"/product-master?product_version_id={version.id}",
+        }
+    if scope_type == "material":
+        version = await session.get(MaterialSpecificationVersion, scope_version_id)
+        if version is None:
+            return None
+        return {
+            "label": f"{version.material_spec_business_id} v{version.version_no}",
+            "href": f"/material-specifications?material_spec_version_id={version.id}",
+        }
+    if scope_type == "in_process":
+        version = await session.get(RecipeVersion, scope_version_id)
+        if version is None:
+            return None
+        recipe_code = await session.scalar(select(RecipeFamily.recipe_code).where(RecipeFamily.id == version.recipe_family_id))
+        return {
+            "label": f"{recipe_code or 'recipe'} v{version.version_no}",
+            "href": f"/recipe-master/{version.id}",
+        }
+    return None
+
+
 @router.get("/specifications/{spec_id}")
 async def get_specification(
     spec_id: str,
@@ -161,7 +200,10 @@ async def get_specification(
     definitions = (
         await session.execute(select(QcTestDefinition).where(QcTestDefinition.specification_id == spec.id))
     ).scalars().all()
-    return _specification_dict(spec, list(definitions))
+    return {
+        **_specification_dict(spec, list(definitions)),
+        "scope_record": await _resolve_scope_label(session, spec.scope_type, spec.scope_version_id),
+    }
 
 
 SAMPLE_SORTABLE = {
@@ -437,6 +479,8 @@ async def get_sample_record(
             # that drives those commands reports the version they must echo back.
             "version": order.version,
             "assigned_analyst_id": str(order.assigned_analyst_id) if order.assigned_analyst_id else None,
+            "external_provider_id": str(order.external_provider_id) if order.external_provider_id else None,
+            "external_report_hash": order.external_report_hash,
             "runs": [str(r.id) for r in runs],
             "results": [{"id": str(r.id), "outcome": r.outcome, "result_version": r.result_version} for r in results],
         })

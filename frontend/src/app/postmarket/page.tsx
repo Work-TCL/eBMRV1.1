@@ -35,9 +35,12 @@ const REPORT_TYPE_OPTIONS = [
 // nobody had exercised it end-to-end since it was built).
 const canManageSafetyCases = (me: Me | null) => hasPermission(me, "safety_case.create");
 const canManageReportability = (me: Me | null) => hasPermission(me, "reportability_track.create");
-// The big "operations console" below bundles ~25 ops spanning both personas' whole surface in one
-// FormConsole (which has no per-op permission gating) -- shown if the user holds an entry permission
-// from either persona; the backend still enforces each individual op's own exact code.
+// The big "operations console" below bundles ~35 ops spanning both personas' whole surface across 6
+// FormConsole/SignedJsonForm blocks -- `canWork` is just the page-level "show these blocks at all"
+// gate (an entry permission from either persona); every individual op now carries its own
+// `requiredPermission` and each block is passed `me`, so FormConsole/SignedJsonForm themselves hide
+// whichever ops the current persona doesn't actually hold, instead of showing all ~35 and letting the
+// backend's own per-op check 403 on submit.
 const canWork = (me: Me | null) =>
   hasAnyPermission(me, [
     "safety_case.create", "postmarket_source.register", "safety_signal.open", "postmarket_dataset.freeze",
@@ -68,10 +71,12 @@ export default function PostmarketPage() {
           <FormConsole
           title="Safety case & signal operations"
             root="/postmarket/v1"
+            me={me}
             ops={[
               {
                 path: "safety-cases/{case_id}/classifications",
                 label: "Classify a safety case",
+                requiredPermission: "safety_case.classify",
                 about: "Records the clinical / device / seriousness classification and expectedness.",
                 fields: [
                   { name: "case_id", label: "Safety case ID", required: true },
@@ -86,10 +91,12 @@ export default function PostmarketPage() {
                 ],
               },
               { path: "safety-cases/{case_id}/duplicate-candidates", label: "List probable duplicates", method: "GET",
+                requiredPermission: "safety_case.view",
                 fields: [{ name: "case_id", label: "Safety case ID", required: true }] },
               {
                 path: "safety-cases/{case_id}/resolve-product",
                 label: "Resolve the marketed product",
+                requiredPermission: "safety_case.resolve_product",
                 fields: [
                   { name: "case_id", label: "Safety case ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -103,6 +110,7 @@ export default function PostmarketPage() {
               {
                 path: "safety-cases/{case_id}/followups",
                 label: "Add a follow-up",
+                requiredPermission: "safety_case.followup",
                 fields: [
                   { name: "case_id", label: "Safety case ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -116,6 +124,7 @@ export default function PostmarketPage() {
               {
                 path: "sources",
                 label: "Register a postmarket source",
+                requiredPermission: "postmarket_source.register",
                 fields: [
                   { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "source_type", label: "Source type", required: true },
@@ -129,6 +138,7 @@ export default function PostmarketPage() {
               {
                 path: "safety-cases/{canonical_case_id}/duplicate-links",
                 label: "Link duplicate cases",
+                requiredPermission: "safety_case.link_duplicates",
                 fields: [
                   { name: "canonical_case_id", label: "Canonical safety case ID", required: true },
                   { name: "duplicate_case_ids", label: "Duplicate case IDs", type: "stringList", required: true, itemLabel: "Case ID" },
@@ -138,6 +148,7 @@ export default function PostmarketPage() {
               {
                 path: "surveillance-metrics:calculate",
                 label: "Calculate a surveillance metric",
+                requiredPermission: "safety_signal.view",
                 fields: [
                   { name: "metric_definition_version", label: "Metric definition version", required: true },
                   { name: "scope", label: "Scope", type: "kv", required: true },
@@ -150,6 +161,7 @@ export default function PostmarketPage() {
               {
                 path: "signal-rules:evaluate",
                 label: "Evaluate signal rules",
+                requiredPermission: "safety_signal.view",
                 fields: [
                   { name: "signal_rule_versions", label: "Signal rule versions", type: "stringList", required: true, itemLabel: "Rule version" },
                   { name: "case_scope", label: "Case scope", type: "kv" },
@@ -158,6 +170,7 @@ export default function PostmarketPage() {
               {
                 path: "periodic-datasets:freeze",
                 label: "Freeze a periodic safety dataset",
+                requiredPermission: "postmarket_dataset.freeze",
                 fields: [
                   { name: "application_id", label: "Application ID", required: true },
                   { name: "interval_start", label: "Interval start", type: "datetime", required: true },
@@ -174,12 +187,14 @@ export default function PostmarketPage() {
           title="Safety signal operations - signed"
             subtitle="Opening, assessing and escalating a safety signal now require a Part 11 signature."
             root="/postmarket/v1"
+            me={me}
             ops={[
               {
                 postPath: "signals",
                 challengePath: "signals/signature-challenges",
                 action: "open",
                 label: "Open a safety signal",
+                requiredPermission: "safety_signal.open",
                 mirrorBodyInChallenge: true,
                 about: "The challenge signs the signal_code before the record exists - the rest of the fields still go to the mutation.",
                 fields: [
@@ -203,6 +218,7 @@ export default function PostmarketPage() {
                 challengePath: "signals/{signal_id}/assessment-signature-challenges",
                 action: "assess",
                 label: "Assess a signal",
+                requiredPermission: "safety_signal.assess",
                 fields: [
                   { name: "signal_id", label: "Signal ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -219,6 +235,7 @@ export default function PostmarketPage() {
                 challengePath: "signals/{signal_id}/escalation-signature-challenges",
                 action: "escalate",
                 label: "Escalate a signal",
+                requiredPermission: "safety_signal.escalate",
                 fields: [
                   { name: "signal_id", label: "Signal ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -237,10 +254,12 @@ export default function PostmarketPage() {
           <FormConsole
           title="Regulatory reporting operations"
             root="/regulatory/v1"
+            me={me}
             ops={[
               {
                 path: "tracks/{track_id}/deadline:calculate",
                 label: "Calculate a regulatory deadline",
+                requiredPermission: "reportability_track.calculate_deadline",
                 fields: [
                   { name: "track_id", label: "Track ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -258,6 +277,7 @@ export default function PostmarketPage() {
               {
                 path: "tracks/{track_id}/reports",
                 label: "Build a regulatory report",
+                requiredPermission: "regulatory_report.create",
                 fields: [
                   { name: "track_id", label: "Track ID", required: true },
                   { name: "expected_version", label: "Track's expected version", type: "number", required: true, default: "1" },
@@ -275,6 +295,7 @@ export default function PostmarketPage() {
               {
                 path: "reports/{report_id}/payloads:generate",
                 label: "Generate a submission payload",
+                requiredPermission: "regulatory_report.generate_payload",
                 fields: [
                   { name: "report_id", label: "Report ID", required: true },
                   { name: "implementation_or_profile_version", label: "Implementation / profile version", required: true },
@@ -283,6 +304,7 @@ export default function PostmarketPage() {
               {
                 path: "reports/{report_id}/submissions",
                 label: "Submit a report",
+                requiredPermission: "regulatory_report.submit",
                 fields: [
                   { name: "report_id", label: "Report ID", required: true },
                   { name: "channel", label: "Channel", required: true, placeholder: "e.g. ESG, MANUAL" },
@@ -296,6 +318,7 @@ export default function PostmarketPage() {
               {
                 path: "submissions/{attempt_id}/acknowledgements",
                 label: "Record an acknowledgement / rejection",
+                requiredPermission: "regulatory_submission.acknowledge",
                 fields: [
                   { name: "attempt_id", label: "Submission attempt ID", required: true },
                   { name: "ack_level", label: "Acknowledgement level", required: true },
@@ -308,6 +331,7 @@ export default function PostmarketPage() {
               {
                 path: "reports/{original_report_id}/followups",
                 label: "Create a follow-up report task",
+                requiredPermission: "regulatory_report.followup",
                 fields: [
                   { name: "original_report_id", label: "Original report ID", required: true },
                   { name: "new_information_receipt", label: "New information receipt", type: "kv", required: true },
@@ -317,6 +341,7 @@ export default function PostmarketPage() {
               {
                 path: "cases/{case_id}/part4-deduplication:evaluate",
                 label: "Evaluate Part 4 same-event dedup",
+                requiredPermission: "reportability_track.view",
                 fields: [
                   { name: "case_id", label: "Safety case ID", pathOnly: true, required: true },
                   { name: "candidate_track_ids", label: "Candidate track IDs", type: "stringList", required: true, itemLabel: "Track ID" },
@@ -326,6 +351,7 @@ export default function PostmarketPage() {
               {
                 path: "audit-packages:freeze",
                 label: "Freeze an inspection audit package",
+                requiredPermission: "reportability_track.view",
                 fields: [
                   { name: "safety_case_id", label: "Safety case ID", hint: "Set this, or specific report IDs below, or both." },
                   { name: "report_ids", label: "Report IDs", type: "stringList", itemLabel: "Report ID" },
@@ -339,12 +365,14 @@ export default function PostmarketPage() {
           title="Regulatory reporting operations - signed"
             subtitle="Deciding reportability and approving a report now require a Part 11 signature."
             root="/regulatory/v1"
+            me={me}
             ops={[
               {
                 postPath: "tracks/{track_id}/decisions",
                 challengePath: "tracks/{track_id}/decision-signature-challenges",
                 action: "decide",
                 label: "Decide reportability",
+                requiredPermission: "reportability_track.decide",
                 about: "Records the reportable / not-reportable decision for one report type and its rationale.",
                 fields: [
                   { name: "track_id", label: "Track ID", required: true },
@@ -359,6 +387,7 @@ export default function PostmarketPage() {
                 challengePath: "reports/{report_id}/approval-signature-challenges",
                 action: "approve",
                 label: "Approve a report",
+                requiredPermission: "regulatory_report.approve",
                 fields: [
                   { name: "report_id", label: "Report ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -370,10 +399,12 @@ export default function PostmarketPage() {
           <FormConsole
           title="Part 4 obligations"
             root="/postmarket/v1"
+            me={me}
             ops={[
               {
                 path: "field-alerts",
                 label: "Raise a field alert obligation",
+                requiredPermission: "regulatory_obligation.create",
                 fields: [
                   { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "source_type", label: "Source type", required: true },
@@ -390,6 +421,7 @@ export default function PostmarketPage() {
               {
                 path: "obligations/{obligation_id}/legal-hold",
                 label: "Apply / lift a legal hold",
+                requiredPermission: "regulatory_obligation.legal_hold",
                 fields: [
                   { name: "obligation_id", label: "Obligation ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -400,6 +432,7 @@ export default function PostmarketPage() {
               {
                 path: "applicant-relationships",
                 label: "Register an applicant/constituent relationship",
+                requiredPermission: "applicant_relationship.configure",
                 fields: [
                   { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "product_version_reference", label: "Product version reference", type: "kv", required: true },
@@ -415,6 +448,7 @@ export default function PostmarketPage() {
               {
                 path: "cases/{safety_case_id}/part4-sharing:evaluate",
                 label: "Evaluate Part 4 sharing",
+                requiredPermission: "constituent_information_share.evaluate",
                 fields: [
                   { name: "safety_case_id", label: "Safety case ID", required: true },
                   { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
@@ -425,6 +459,7 @@ export default function PostmarketPage() {
               {
                 path: "sharing/{share_id}/package",
                 label: "Build a sharing package",
+                requiredPermission: "constituent_information_share.package",
                 fields: [
                   { name: "share_id", label: "Share ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -434,6 +469,7 @@ export default function PostmarketPage() {
               {
                 path: "sharing/{share_id}/record-sent",
                 label: "Record a package sent",
+                requiredPermission: "constituent_information_share.record_sent",
                 fields: [
                   { name: "share_id", label: "Share ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -445,6 +481,7 @@ export default function PostmarketPage() {
               {
                 path: "field-actions/{field_action_id}/correction-removal-assessment",
                 label: "Correction/removal assessment",
+                requiredPermission: "correction_removal.create",
                 about: "The field action in the URL is the source of this assessment.",
                 fields: [
                   { name: "field_action_id", label: "Field action ID", pathOnly: true, required: true },
@@ -456,6 +493,7 @@ export default function PostmarketPage() {
               {
                 path: "correction-removal/{record_id}/decision",
                 label: "Correction/removal decision",
+                requiredPermission: "correction_removal.decide",
                 fields: [
                   { name: "record_id", label: "Correction/removal record ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -468,6 +506,7 @@ export default function PostmarketPage() {
               {
                 path: "correction-removal/{record_id}/scope-amendments",
                 label: "Amend correction/removal scope",
+                requiredPermission: "correction_removal.decide",
                 about: "Scope expansion to additional lots/batches - appended, never overwriting the original assessment.",
                 fields: [
                   { name: "record_id", label: "Correction/removal record ID", required: true },
@@ -479,6 +518,7 @@ export default function PostmarketPage() {
               {
                 path: "field-alerts/{obligation_id}/decision",
                 label: "Field alert decision",
+                requiredPermission: "regulatory_obligation.decide",
                 fields: [
                   { name: "obligation_id", label: "Obligation ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -489,6 +529,7 @@ export default function PostmarketPage() {
               {
                 path: "bpdr-tracks",
                 label: "Open a BPDR track",
+                requiredPermission: "regulatory_obligation.create",
                 fields: [
                   { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "source_type", label: "Source type", required: true },
@@ -503,6 +544,7 @@ export default function PostmarketPage() {
               {
                 path: "periodic-cycles:generate",
                 label: "Generate periodic safety cycles",
+                requiredPermission: "periodic_reporting_cycle.generate",
                 fields: [
                   { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "application_reference", label: "Application reference", required: true },
@@ -515,6 +557,7 @@ export default function PostmarketPage() {
               {
                 path: "periodic-cycles/{cycle_id}/dataset:freeze",
                 label: "Freeze a periodic cycle dataset",
+                requiredPermission: "periodic_reporting_cycle.freeze",
                 fields: [
                   { name: "cycle_id", label: "Cycle ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -524,6 +567,7 @@ export default function PostmarketPage() {
               {
                 path: "fda-requests",
                 label: "Log an FDA request / correspondence",
+                requiredPermission: "regulatory_obligation.create",
                 fields: [
                   { name: "site_id", label: "Site ID", required: true, hint: siteIdHint },
                   { name: "application_id", label: "Application ID", required: true },
@@ -537,6 +581,7 @@ export default function PostmarketPage() {
               {
                 path: "obligations/{obligation_id}/deadline-overrides",
                 label: "Override an obligation deadline",
+                requiredPermission: "regulatory_obligation.override_deadline",
                 fields: [
                   { name: "obligation_id", label: "Obligation ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -548,6 +593,7 @@ export default function PostmarketPage() {
               {
                 path: "retention:calculate",
                 label: "Calculate retention basis",
+                requiredPermission: "regulatory_obligation.calculate_retention",
                 fields: [
                   { name: "obligation_id", label: "Obligation ID", required: true },
                   { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -568,12 +614,14 @@ export default function PostmarketPage() {
           title="Correction/removal independent approval - signed"
             subtitle="Both the initial assessment and the reportability decision need a second, independent signature."
             root="/postmarket/v1"
+            me={me}
             ops={[
               {
                 postPath: "correction-removal/{record_id}/assessment-signatures",
                 challengePath: "correction-removal/{record_id}/assessment-signature-challenges",
                 action: "sign",
                 label: "Approve a correction/removal assessment",
+                requiredPermission: "correction_removal.create",
                 mirrorBodyInChallenge: true,
                 fields: [
                   { name: "record_id", label: "Correction/removal record ID", required: true },
@@ -585,6 +633,7 @@ export default function PostmarketPage() {
                 challengePath: "correction-removal/{record_id}/decision-signature-challenges",
                 action: "sign",
                 label: "Approve a correction/removal reportability decision",
+                requiredPermission: "correction_removal.decide",
                 mirrorBodyInChallenge: true,
                 fields: [
                   { name: "record_id", label: "Correction/removal record ID", required: true },

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   api,
   ApiError,
@@ -19,15 +20,19 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
+import { RoleTemplateGallery } from "@/components/admin/RoleTemplateGallery";
+import { OnboardingReturnLink } from "@/components/admin/OnboardingReturnLink";
 
 const fetchRoles = pagedFetcher<Role>("/roles");
 
 export default function RolesAdminPage() {
   const { isAdmin } = useRequireAdmin();
+  const router = useRouter();
 
   const [reloadToken, setReloadToken] = useState(0);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<"template" | "blank">("template");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -103,9 +108,18 @@ export default function RolesAdminPage() {
         title="Roles"
         subtitle="Roles assignable to users per site. Assign a role to a user from the Users page."
         action={
-          <Button variant="primary" onClick={() => setModalOpen(true)}>
-            <Icon name="plus" /> New role
-          </Button>
+          <div className="flex gap-2">
+            <OnboardingReturnLink />
+            <Button
+              variant="primary"
+              onClick={() => {
+                setCreateMode("template");
+                setModalOpen(true);
+              }}
+            >
+              <Icon name="plus" /> New role
+            </Button>
+          </div>
         }
       />
 
@@ -123,22 +137,40 @@ export default function RolesAdminPage() {
       </Card>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="New role">
-        <form onSubmit={onCreate}>
-          <Field label="Name" required error={error}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
-          </Field>
-          <Field label="Description">
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-          </Field>
-          <div className="flex justify-between gap-3 mt-4">
-            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? "Creating…" : "Create role"}
-            </Button>
-          </div>
-        </form>
+        {createMode === "template" ? (
+          <>
+            <RoleTemplateGallery
+              onCreated={(roleId, sourceName) => {
+                setModalOpen(false);
+                router.push(`/admin/roles/${roleId}?cloned_from=${encodeURIComponent(sourceName)}`);
+              }}
+              onCancel={() => setModalOpen(false)}
+            />
+            <p className="fs-2 text-muted mt-3">
+              Need a role with no permissions at all?{" "}
+              <button type="button" className="link-button" style={{ background: "none", border: "none", padding: 0, color: "var(--brand-600)", textDecoration: "underline", cursor: "pointer" }} onClick={() => setCreateMode("blank")}>
+                Start blank instead
+              </button>
+            </p>
+          </>
+        ) : (
+          <form onSubmit={onCreate}>
+            <Field label="Name" required error={error}>
+              <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+            </Field>
+            <Field label="Description">
+              <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+            </Field>
+            <div className="flex justify-between gap-3 mt-4">
+              <Button type="button" variant="secondary" onClick={() => setCreateMode("template")}>
+                ← Start from a template instead
+              </Button>
+              <Button type="submit" variant="primary" disabled={busy}>
+                {busy ? "Creating…" : "Create blank role"}
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       <ConfirmDialog

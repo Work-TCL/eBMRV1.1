@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, newIdempotencyKey } from "@/lib/api";
-import { useApiResource, useRequirePermission } from "@/lib/hooks";
+import { api, ApiError, canAuthorRules, canReleaseRules, newIdempotencyKey } from "@/lib/api";
+import { useApiResource, useMe, useRequirePermission } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -55,7 +55,7 @@ export default function RulesPage() {
   // release) -- gating on rules.author alone structurally blocked QA Releaser from ever reaching this
   // page to use the Release buttons it already has a backend grant for (found 2026-09-28, same
   // structural-RBAC-block class as canOperateMachineIntegration/canOperateEdgeGateways in lib/api.ts).
-  useRequirePermission(["rules.author", "rules.release"]);
+  const { me } = useRequirePermission(["rules.author", "rules.release"]);
   const [draftOpen, setDraftOpen] = useState(false);
   const [selected, setSelected] = useState<RuleDefinition | null>(null);
   const { data, loading, error, reload } = useApiResource<RuleDefinition[]>("/rules/v1/all");
@@ -67,9 +67,11 @@ export default function RulesPage() {
         title="Rules"
         subtitle="Calculation and eligibility rules - draft, validate, simulate against test inputs, and release."
         action={
-          <Button variant="primary" onClick={() => setDraftOpen(true)}>
-            <Icon name="plus" /> New draft
-          </Button>
+          canAuthorRules(me) && (
+            <Button variant="primary" onClick={() => setDraftOpen(true)}>
+              <Icon name="plus" /> New draft
+            </Button>
+          )
         }
       />
 
@@ -168,6 +170,7 @@ interface Uom {
 }
 
 function UomSection() {
+  const { me } = useMe();
   const { data, loading, error, reload } = useApiResource<Uom[]>("/rules/v1/uom/all");
   const [draftOpen, setDraftOpen] = useState(false);
   const [releasingUom, setReleasingUom] = useState<Uom | null>(null);
@@ -178,9 +181,11 @@ function UomSection() {
       <CardHeader
         title="Units of measure"
         meta={
-          <Button size="sm" variant="secondary" onClick={() => setDraftOpen(true)}>
-            <Icon name="plus" /> New UOM draft
-          </Button>
+          canAuthorRules(me) && (
+            <Button size="sm" variant="secondary" onClick={() => setDraftOpen(true)}>
+              <Icon name="plus" /> New UOM draft
+            </Button>
+          )
         }
       />
       <div style={{ padding: "var(--space-3) var(--space-4)" }}>
@@ -221,7 +226,7 @@ function UomSection() {
                       <td className="tabular">{u.offset}</td>
                       <td className="tabular">{u.precision_dp}</td>
                       <td style={{ textAlign: "right" }}>
-                        {u.status === "draft" && (
+                        {u.status === "draft" && canReleaseRules(me) && (
                           <Button size="sm" variant="success" onClick={() => setReleasingUom(u)}>
                             <Icon name="pen" /> Release
                           </Button>
@@ -357,6 +362,7 @@ function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
  * again. Release also has no signature-challenge endpoint at all (not just an unseeded policy row, an
  * actual missing route — see `UomSection`'s own note above), so it isn't offered here either. */
 function UomConversionSection() {
+  const { me } = useMe();
   const [draftOpen, setDraftOpen] = useState(false);
   const [lastCreated, setLastCreated] = useState<{ id: string; version: number } | null>(null);
   const [releasing, setReleasing] = useState(false);
@@ -366,9 +372,11 @@ function UomConversionSection() {
       <CardHeader
         title="UOM conversions"
         meta={
-          <Button size="sm" variant="secondary" onClick={() => setDraftOpen(true)}>
-            <Icon name="plus" /> New UOM conversion draft
-          </Button>
+          canAuthorRules(me) && (
+            <Button size="sm" variant="secondary" onClick={() => setDraftOpen(true)}>
+              <Icon name="plus" /> New UOM conversion draft
+            </Button>
+          )
         }
       />
       <div style={{ padding: "var(--space-3) var(--space-4)" }}>
@@ -382,9 +390,11 @@ function UomConversionSection() {
             <p className="fs-2">
               Last created: <span className="tabular">{lastCreated.id}</span> (v{lastCreated.version})
             </p>
-            <Button size="sm" variant="success" onClick={() => setReleasing(true)}>
-              <Icon name="pen" /> Release
-            </Button>
+            {canReleaseRules(me) && (
+              <Button size="sm" variant="success" onClick={() => setReleasing(true)}>
+                <Icon name="pen" /> Release
+              </Button>
+            )}
           </div>
         )}
         <p className="hint mt-2">
@@ -744,6 +754,7 @@ function RuleDetailModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const { me } = useMe();
   const [testInputs, setTestInputs] = useState<KvRow[]>([]);
   const [simResult, setSimResult] = useState<unknown>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -797,9 +808,11 @@ function RuleDetailModal({
             value={testInputs}
             onChange={setTestInputs}
           />
-          <Button size="sm" variant="secondary" onClick={onSimulate}>
-            Simulate
-          </Button>
+          {canAuthorRules(me) && (
+            <Button size="sm" variant="secondary" onClick={onSimulate}>
+              Simulate
+            </Button>
+          )}
           {simResult !== undefined && (
             <p className="fs-2 mt-2">
               Result: <strong>{summarizeJson(simResult)}</strong>
@@ -815,12 +828,12 @@ function RuleDetailModal({
           Close
         </Button>
         <div className="flex gap-2">
-          {rule.status === "draft" && (
+          {rule.status === "draft" && canAuthorRules(me) && (
             <Button variant="primary" onClick={onValidate} disabled={busy}>
               {busy ? "Validating…" : "Validate"}
             </Button>
           )}
-          {rule.status === "validated" && (
+          {rule.status === "validated" && canReleaseRules(me) && (
             <Button variant="success" onClick={() => setReleasing(true)} disabled={busy}>
               Release
             </Button>

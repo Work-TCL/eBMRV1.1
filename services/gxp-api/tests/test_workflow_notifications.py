@@ -75,10 +75,18 @@ from tests.test_qc import _author_and_release_rule, _make_admin as _qc_make_admi
 
 # Pass 3 (master-data release) helper imports.
 from tests.test_material_specification import _draft_body as _matspec_draft_body
+from tests.test_material_specification import _expected_business_id as _matspec_expected_business_id
 from tests.test_material_specification import _make_material as _matspec_make_material
 from tests.test_product_master import _draft_body as _product_draft_body
 from tests.test_recipe_master import _make_product_version as _recipe_make_product_version
 from tests.test_recipe_master import _two_step_body as _recipe_two_step_body
+
+# Pass 4 (equipment calibration approval) helper imports.
+from tests.test_equipment_flow import _approve_calibration
+from tests.test_equipment_flow import _calibrate as _equipment_calibrate
+from tests.test_equipment_flow import _create_asset as _equipment_create_asset
+from tests.test_equipment_flow import _latest_calibration_id
+from tests.test_equipment_flow import _qualify as _equipment_qualify
 
 
 async def _extra_role_user(db, seeded, username, role_name):
@@ -714,7 +722,7 @@ async def test_supplier_qualification_approval_pending_is_visible_to_any_site(cl
         for i in same_org_view["items"]
     )
     matching = next(i for i in same_org_view["items"] if i["aggregate_id"] == qualification_id)
-    assert matching["link_path"] == f"/suppliers?supplier_id={supplier_id}"
+    assert matching["link_path"] == f"/suppliers/{supplier_id}"
 
     other_site_view = await _workflow_actions(client, other_site_token)
     assert any(
@@ -1044,7 +1052,7 @@ async def test_material_spec_release_pending_notifies_on_create_and_resolves_on_
 
     resp = await client.post(
         "/material-specifications/v1/drafts",
-        json=_matspec_draft_body(seeded["site_id"], material.id, "MATSPEC-WN20"),
+        json=_matspec_draft_body(seeded["site_id"], material.id),
         headers=auth_headers(author_token),
     )
     assert resp.status_code == 200, resp.text
@@ -1054,7 +1062,7 @@ async def test_material_spec_release_pending_notifies_on_create_and_resolves_on_
     view = await _workflow_actions(client, releaser_token)
     assert any(i["aggregate_id"] == version_id and i["category"] == "material_spec_release_pending" for i in view["items"])
     matching = next(i for i in view["items"] if i["aggregate_id"] == version_id)
-    assert matching["entity_label"] == "Material Spec MATSPEC-WN20 v1"
+    assert matching["entity_label"] == f"Material Spec {_matspec_expected_business_id(material.code)} v1"
     assert matching["link_path"] == f"/material-specifications?material_spec_version_id={version_id}"
 
     resp = await client.post(
@@ -1154,14 +1162,53 @@ async def test_recipe_release_pending_notifies_on_submit_and_resolves_on_release
     assert not any(i["aggregate_id"] == version_id for i in view_after["items"])
 
 
+async def test_equipment_calibration_approval_pending_notifies_on_calibrate_and_resolves_on_approval(client, seeded, db):
+    """Pass 4 -- client gap-analysis Phase 4 (2026-10-05) added a QA/QC approval step on top of the
+    existing objective calibration result, but nobody holding equipment_asset.approve_calibration was
+    ever told a calibration was sitting in calibration_status == "pending_approval". Reuses
+    test_equipment_flow.py's own create/qualify/calibrate helpers verbatim."""
+    admin_token = await login(client, "equipment.admin")
+    cal_token = await login(client, "calibration.tech")
+    qa_token = await login(client, "qa.releaser")
+    site_id = seeded["site_id"]
+
+    asset_id = await _equipment_create_asset(client, admin_token, site_id, equipment_code="EQP-WN30")
+    await _equipment_qualify(client, admin_token, asset_id, expected_version=1, qualified=True)
+    await _equipment_calibrate(client, cal_token, asset_id, expected_version=2, result="pass")
+
+    await _sync(db, aggregate_type="equipment_asset", aggregate_id=asset_id)
+    view = await _workflow_actions(client, qa_token)
+    assert any(
+        i["aggregate_id"] == asset_id and i["category"] == "equipment_calibration_approval_pending"
+        for i in view["items"]
+    )
+    matching = next(i for i in view["items"] if i["aggregate_id"] == asset_id)
+    assert matching["entity_label"] == "Equipment EQP-WN30"
+    assert matching["link_path"] == f"/equipment/{asset_id}"
+
+    # Calibration Technician holds equipment_asset.calibrate but not approve_calibration -- not part of
+    # this notification's audience, the same RBAC-audience proof every other Pass's test makes.
+    cal_view = await _workflow_actions(client, cal_token)
+    assert not any(i["aggregate_id"] == asset_id for i in cal_view["items"])
+
+    calibration_id = await _latest_calibration_id(client, qa_token, asset_id)
+    await _approve_calibration(client, qa_token, asset_id, expected_version=3, calibration_id=calibration_id)
+    await _sync(db, aggregate_type="equipment_asset", aggregate_id=asset_id)
+
+    view_after = await _workflow_actions(client, qa_token)
+    assert not any(i["aggregate_id"] == asset_id for i in view_after["items"])
+
+
 async def test_rebuild_covers_every_registered_aggregate_type(db):
-    """Proves rebuild_all() runs cleanly end to end across all 18 registered aggregate types, including
+    """Proves rebuild_all() runs cleanly end to end across every registered aggregate type, including
     a run against a table with zero rows for a given type, without needing every module's own record
-    present."""
+    present. Asserted against len(WORKFLOW_SPECS) itself (not a hardcoded count) so this can't go stale
+    again the next time a type is registered -- a hardcoded "18" here already silently drifted to 19
+    real entries before this fix, found incidentally while verifying unrelated Product Master changes."""
     from app.modules.notifications import service as notifications_service
     from app.modules.notifications.registry import WORKFLOW_SPECS
 
     async with db.begin():
         result = await notifications_service.rebuild_all(db)
     assert set(result["rescanned"].keys()) == set(WORKFLOW_SPECS.keys())
-    assert len(result["rescanned"]) == 18
+    assert len(result["rescanned"]) == len(WORKFLOW_SPECS)

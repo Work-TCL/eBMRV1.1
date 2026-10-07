@@ -62,6 +62,23 @@ class Settings(BaseSettings):
     # When unset, main.py falls back to a dev-only "any host on port 4101" regex and logs a warning --
     # that fallback must never be relied on outside local/dev use (see main.py's CORSMiddleware setup).
     cors_allowed_origins: str | None = None
+    # Client gap-analysis Phase 1 (2026-10-05): bulk-imported users are activated via an emailed invite
+    # link. Uses stdlib smtplib (no new dependency -- Document 104 only applies to a *new* package) against
+    # whatever SMTP relay this deployment's operator configures; per ADR-0006 single-tenant-per-deployment,
+    # each client's own deployment carries its own relay credentials, same as its own database. `smtp_host`
+    # unset (the default) means invite emails are skipped with a logged warning rather than blocking user
+    # creation -- see app/core/email.py::send_invite_email.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = True
+    smtp_from_address: str = "no-reply@ebmr.local"
+    # IAMSEC-FR-021-adjacent engineering default (no approved baseline value exists for this specific
+    # token's lifetime, same "numeric value unresolved" shape as session_idle_timeout_minutes above) --
+    # not a SPEC_GAP-worthy regulated value since it governs account provisioning, not a GxP record.
+    invite_token_expire_hours: int = 168  # 7 days
+    frontend_base_url: str = "http://localhost:4101"
 
 
 settings = Settings()

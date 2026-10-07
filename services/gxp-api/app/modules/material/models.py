@@ -241,7 +241,16 @@ class MaterialReceipt(Base):
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="received")
     labeling_ok: Mapped[bool | None] = mapped_column(Boolean)
     damage_observed: Mapped[bool | None] = mapped_column(Boolean)
+    # Client gap-analysis Phase 6 (2026-10-05, migration 0136): the client wanted the single generic
+    # "Damage Observed" question split into shipping/package damage vs. material container damage.
+    # `damage_observed` itself stays (MIG-FR-004 expand step) and is now derived as their OR in
+    # `examine_receipt` rather than being collected directly from the UI.
+    shipping_damage_observed: Mapped[bool | None] = mapped_column(Boolean)
+    container_damage_observed: Mapped[bool | None] = mapped_column(Boolean)
     seal_broken: Mapped[bool | None] = mapped_column(Boolean)
+    # Client gap-analysis Phase 6: "Contamination Observed" was dropped from the examination workflow at
+    # the client's request. Column stays (no data loss for historical receipts) but is never written by
+    # `examine_receipt` going forward.
     contamination_observed: Mapped[bool | None] = mapped_column(Boolean)
     examination_notes: Mapped[str | None] = mapped_column(String(2000))
     examined_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))

@@ -54,7 +54,7 @@ interface Correction {
 const OBJECT_TYPES = ["batch", "material_lot", "rule"];
 
 export default function VaultPage() {
-  useRequirePermission("vault.review");
+  const { me } = useRequirePermission("vault.review");
   const [objectType, setObjectType] = useState(OBJECT_TYPES[0]);
   const [businessId, setBusinessId] = useState("");
   const [committed, setCommitted] = useState<{ objectType: string; businessId: string } | null>(null);
@@ -179,27 +179,29 @@ export default function VaultPage() {
         />
       )}
 
-      <Card pad className="mb-4">
-        <CardHeader title="Complete a correction" meta="2-signature: corrector, then an independent approver" />
-        <p className="hint mb-3">
-          Each signer opens the correction by its ID (given by whoever requested it, or shown here right
-          after you sign as the first signer) and confirms the corrected content before signing.
-        </p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (correctionLookup.trim()) setOpenCorrectionId(correctionLookup.trim());
-          }}
-          className="flex items-end gap-4 flex-wrap"
-        >
-          <Field label="Correction ID">
-            <Input value={correctionLookup} onChange={(e) => setCorrectionLookup(e.target.value)} style={{ minWidth: 320 }} />
-          </Field>
-          <Button type="submit" variant="secondary" disabled={!correctionLookup.trim()}>
-            Open
-          </Button>
-        </form>
-      </Card>
+      {canCorrectVault(me) && (
+        <Card pad className="mb-4">
+          <CardHeader title="Complete a correction" meta="2-signature: corrector, then an independent approver" />
+          <p className="hint mb-3">
+            Each signer opens the correction by its ID (given by whoever requested it, or shown here right
+            after you sign as the first signer) and confirms the corrected content before signing.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (correctionLookup.trim()) setOpenCorrectionId(correctionLookup.trim());
+            }}
+            className="flex items-end gap-4 flex-wrap"
+          >
+            <Field label="Correction ID">
+              <Input value={correctionLookup} onChange={(e) => setCorrectionLookup(e.target.value)} style={{ minWidth: 320 }} />
+            </Field>
+            <Button type="submit" variant="secondary" disabled={!correctionLookup.trim()}>
+              Open
+            </Button>
+          </form>
+        </Card>
+      )}
 
       {openCorrectionId && (
         <CompleteCorrectionModal
@@ -216,12 +218,14 @@ export default function VaultPage() {
         title="Release a master record to the vault - signed"
         subtitle="The generic release path - domain modules that already run their own release ceremony (batch release, material lot disposition) never reach this; use it only for a record type with no dedicated release flow of its own."
         root="/vault/v1"
+        me={me}
         ops={[
           {
             postPath: "masters/{object_type}/{business_id}/release",
             challengePath: "masters/{object_type}/{business_id}/signature-challenges",
             action: "release",
             label: "Release a master record",
+            requiredPermission: "vault.correct",
             mirrorBodyInChallenge: true,
             fields: [
               { name: "object_type", label: "Object type", required: true },

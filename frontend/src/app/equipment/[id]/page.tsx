@@ -1,9 +1,10 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import {
   api,
   ApiError,
+  canApproveEquipmentCalibration,
   canCalibrateEquipment,
   canHoldEquipment,
   canMaintainEquipment,
@@ -16,10 +17,12 @@ import {
   downloadEvidence,
   formatDate,
   formatDateTime,
+  listAll,
   newIdempotencyKey,
   type EquipmentAsset,
   type Me,
   type MutationReceipt,
+  type Supplier,
 } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
@@ -56,12 +59,18 @@ interface Calibration {
   standard_expiry_date: string | null;
   calibration_type: string;
   provider_name: string | null;
+  provider_supplier_id: string | null;
   certificate_reference: string | null;
   as_found: Record<string, unknown> | null;
   adjustments: Record<string, unknown> | null;
   as_left: Record<string, unknown> | null;
   impact_assessment_required: boolean;
   performer_user_id: string | null;
+  // Client gap-analysis Phase 4 (2026-10-05): Pass/Fail (result, above) is objective; Approved/
+  // Not-Approved is a separate QA disposition, null until reviewed.
+  approved: boolean | null;
+  approved_by_user_id: string | null;
+  approved_at: string | null;
 }
 
 interface WorkOrder {
@@ -73,6 +82,8 @@ interface WorkOrder {
   diagnosis: string | null;
   work_performed: string | null;
   parts_used: Record<string, unknown> | null;
+  non_critical: boolean;
+  activities: { activity: string; result: string }[] | null;
   procedure_version: string | null;
   frequency_days: number | null;
   next_due_date: string | null;
@@ -241,7 +252,9 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
           <Fact label="Cleanliness">{a.cleanliness_status ?? "—"}</Fact>
           <Fact label="Location">{a.location_id ?? "—"}</Fact>
           <Fact label="Dedicated">{a.dedicated ? "Yes" : "No"}</Fact>
-          <Fact label="Firmware">{a.firmware_version ?? "—"}</Fact>
+          <Fact label="Firmware">{a.firmware_version ?? "Not applicable"}</Fact>
+          <Fact label="Computer-operated">{a.is_computer_operated ? "Yes" : "No (manual)"}</Fact>
+          <Fact label="Recalibration required">{a.recalibration_required ? "Yes" : "No"}</Fact>
           <Fact label="Record version">{a.version}</Fact>
           <IdFact label="Asset ID" value={a.id} />
         </FactGrid>
@@ -253,7 +266,14 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
             id: "calibration",
             label: "Calibrations",
             badge: history.data?.calibrations.length,
-            content: <CalibrationTab calibrations={history.data?.calibrations ?? []} />,
+            content: (
+              <CalibrationTab
+                calibrations={history.data?.calibrations ?? []}
+                asset={a}
+                me={me}
+                onDone={reloadAll}
+              />
+            ),
           },
           {
             id: "maintenance",
@@ -302,7 +322,19 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
   );
 }
 
-function CalibrationTab({ calibrations }: { calibrations: Calibration[] }) {
+function CalibrationTab({
+  calibrations,
+  asset,
+  me,
+  onDone,
+}: {
+  calibrations: Calibration[];
+  asset: EquipmentAsset;
+  me: Me | null;
+  onDone: () => void;
+}) {
+  const [reviewing, setReviewing] = useState<Calibration | null>(null);
+
   if (calibrations.length === 0) {
     return <EmptyState icon="gauge">No calibration events recorded for this asset.</EmptyState>;
   }
@@ -317,6 +349,9 @@ function CalibrationTab({ calibrations }: { calibrations: Calibration[] }) {
             <th>Result</th>
             <th>Standard</th>
             <th>Impact assessment</th>
+            {/* Client gap-analysis Phase 4: Pass/Fail (Result, above) is the objective outcome; Approved
+                is a separate QA disposition on top of it, never the same column. */}
+            <th>Approved</th>
           </tr>
         </thead>
         <tbody>
@@ -329,7 +364,7 @@ function CalibrationTab({ calibrations }: { calibrations: Calibration[] }) {
                   state={c.result?.toLowerCase() === "pass" ? "accepted" : "failed"}
                   icon={c.result?.toLowerCase() === "pass" ? "check-circle" : "x"}
                 >
-                  {c.result}
+                  {c.result ? c.result.charAt(0).toUpperCase() + c.result.slice(1) : ""}
                 </StatePill>
               </td>
               <td className="fs-2">
@@ -347,11 +382,109 @@ function CalibrationTab({ calibrations }: { calibrations: Calibration[] }) {
                   <span className="text-muted">—</span>
                 )}
               </td>
+              <td>
+                {c.approved === null ? (
+                  canApproveEquipmentCalibration(me) ? (
+                    <Button size="sm" variant="secondary" onClick={() => setReviewing(c)}>
+                      Review
+                    </Button>
+                  ) : (
+                    <StatePill state="missing" icon="clock">
+                      Pending
+                    </StatePill>
+                  )
+                ) : c.approved ? (
+                  <StatePill state="accepted" icon="check-circle">
+                    Approved
+                  </StatePill>
+                ) : (
+                  <StatePill state="failed" icon="x">
+                    Not approved
+                  </StatePill>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
       </Table>
+      {reviewing && (
+        <ApproveCalibrationModal
+          asset={asset}
+          calibration={reviewing}
+          onClose={() => setReviewing(null)}
+          onDone={() => {
+            setReviewing(null);
+            onDone();
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+/** Client gap-analysis Phase 4 (2026-10-05) -- the "Approved/Not-Approved" step, deliberately separate
+ * from recording the calibration itself (different permission, SoD-enforced server-side against the
+ * performer). Mirrors CompleteMaintenanceModal's "continue an existing record" shape below. */
+function ApproveCalibrationModal({
+  asset,
+  calibration,
+  onClose,
+  onDone,
+}: {
+  asset: EquipmentAsset;
+  calibration: Calibration;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(approved: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post<MutationReceipt>(`/equipment/v1/${asset.id}/calibrations`, {
+        idempotency_key: newIdempotencyKey(),
+        asset_id: asset.id,
+        expected_version: asset.version,
+        calibration_id: calibration.id,
+        approved,
+        reason: reason || null,
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Review calibration - ${asset.equipment_code}`}>
+      <FactGrid>
+        <Fact label="Performed">{formatDate(calibration.performed_date)}</Fact>
+        <Fact label="Result"><span style={{ textTransform: "capitalize" }}>{calibration.result}</span></Fact>
+        <Fact label="Standard/Traceable Reference">{calibration.standard_reference ?? "—"}</Fact>
+      </FactGrid>
+      <Field label="Explanation" hint="Optional note recorded with this decision.">
+        <textarea className="input mt-2" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
+      </Field>
+      {error && <p className="error-text mb-3">{error}</p>}
+      <div className="flex justify-between gap-3 mt-4">
+        <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+        <div className="flex gap-2">
+          <Button type="button" variant="danger" onClick={() => submit(false)} disabled={busy}>
+            Not approved
+          </Button>
+          <Button type="button" variant="success" onClick={() => submit(true)} disabled={busy}>
+            {busy ? "Saving…" : "Approve"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -455,6 +588,12 @@ function CompleteMaintenanceModal({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Client gap-analysis Phase 7 (2026-10-05): car-service-style repeatable Activity/Result checklist,
+  // meaningful for a "planned" work order and recorded at completion time (not creation), matching when
+  // the actual work -- and its outcomes -- are known.
+  const [activities, setActivities] = useState<{ activity: string; result: string }[]>(
+    workOrder.activities && workOrder.activities.length > 0 ? workOrder.activities : [{ activity: "", result: "" }]
+  );
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -469,6 +608,10 @@ function CompleteMaintenanceModal({
         work_performed: workPerformed || null,
         actual_downtime_hours: actualDowntimeHours || null,
         verified: true,
+        activities:
+          workOrder.type === "planned"
+            ? activities.filter((a) => a.activity.trim() || a.result.trim())
+            : null,
         reason: reason || null,
       });
       onDone();
@@ -510,6 +653,44 @@ function CompleteMaintenanceModal({
             onChange={(e) => setActualDowntimeHours(e.target.value)}
           />
         </Field>
+        {workOrder.type === "planned" && (
+          <Field label="Activity checklist (Optional)" hint="Two-column activity/outcome list, e.g. a planned-maintenance checklist.">
+            {activities.map((row, i) => (
+              <div key={i} className="flex gap-2 mb-2">
+                <Input
+                  placeholder="Activity"
+                  value={row.activity}
+                  onChange={(e) => {
+                    const next = [...activities];
+                    next[i] = { ...next[i], activity: e.target.value };
+                    setActivities(next);
+                  }}
+                />
+                <Input
+                  placeholder="Result/Outcome"
+                  value={row.result}
+                  onChange={(e) => {
+                    const next = [...activities];
+                    next[i] = { ...next[i], result: e.target.value };
+                    setActivities(next);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setActivities(activities.filter((_, j) => j !== i))}
+                  disabled={activities.length === 1}
+                >
+                  <Icon name="x" />
+                </Button>
+              </div>
+            ))}
+            <Button type="button" variant="secondary" size="sm" onClick={() => setActivities([...activities, { activity: "", result: "" }])}>
+              <Icon name="plus" /> Add row
+            </Button>
+          </Field>
+        )}
         <Field label="Reason" hint="Optional. Recorded in the audit trail.">
           <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
@@ -845,11 +1026,28 @@ function ActionModal({
   const [frequencyDays, setFrequencyDays] = useState("365");
   const [reviewerId, setReviewerId] = useState("");
   const [calibrationType, setCalibrationType] = useState("internal");
+  const [providerSupplierId, setProviderSupplierId] = useState("");
   const [providerName, setProviderName] = useState("");
   const [certificateReference, setCertificateReference] = useState("");
+  const [serviceProviders, setServiceProviders] = useState<Supplier[]>([]);
+
+  // Client gap-analysis Phase 6: calibration/repair/test-lab vendors onboarded as a Supplier with
+  // role_type "service_provider"/"both" populate this picker; free-text `providerName` stays available
+  // for a provider not yet onboarded (fetched once per modal mount, same local-fetch pattern
+  // useEntityOptions's own comment describes for a dependent/filtered list).
+  useEffect(() => {
+    let cancelled = false;
+    listAll<Supplier>("/suppliers/v1").then((rows) => {
+      if (!cancelled) setServiceProviders(rows.filter((s) => s.role_type === "service_provider" || s.role_type === "both"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Maintenance
   const [maintenanceType, setMaintenanceType] = useState("planned");
+  const [nonCritical, setNonCritical] = useState(false);
   const [faultDescription, setFaultDescription] = useState("");
   const [workPerformed, setWorkPerformed] = useState("");
   const [nextDueDate, setNextDueDate] = useState("");
@@ -966,7 +1164,8 @@ function ActionModal({
           frequency_days: frequencyDays ? Number(frequencyDays) : null,
           reviewer_user_id: reviewerId || null,
           calibration_type: calibrationType,
-          provider_name: calibrationType === "external" ? providerName || null : null,
+          provider_name: calibrationType === "external" && !providerSupplierId ? providerName || null : null,
+          provider_supplier_id: calibrationType === "external" ? providerSupplierId || null : null,
           certificate_reference: calibrationType === "external" ? certificateReference || null : null,
           reason: reason || null,
         });
@@ -978,6 +1177,7 @@ function ActionModal({
           work_performed: workPerformed || null,
           next_due_date: nextDueDate || null,
           verified,
+          non_critical: maintenanceType === "breakdown" ? nonCritical : false,
           reason: reason || null,
         });
       } else if (action === "reserve") {
@@ -1012,7 +1212,9 @@ function ActionModal({
   const canSubmit =
     !busy &&
     (action !== "calibration" ||
-      (!!dueDate && !!performedDate && (calibrationType !== "external" || !!providerName.trim()))) &&
+      (!!dueDate &&
+        !!performedDate &&
+        (calibrationType !== "external" || !!providerSupplierId || !!providerName.trim()))) &&
     (action !== "reserve" || (!!reserveBatchId && !!reserveStartAt && !!reserveEndAt)) &&
     (action !== "relocate" || !!newLocationId);
 
@@ -1033,9 +1235,9 @@ function ActionModal({
             <div className="grid grid-cols-2 gap-4">
               <Field label="Qualification status" required>
                 <Select value={qualificationStatus} onChange={(e) => setQualificationStatus(e.target.value)}>
-                  <option value="qualified">qualified</option>
-                  <option value="requalification_due">requalification_due</option>
-                  <option value="not_qualified">not_qualified</option>
+                  <option value="qualified">Qualified</option>
+                  <option value="requalification_due">Requalification Due</option>
+                  <option value="not_qualified">Not Qualified</option>
                 </Select>
               </Field>
               <Field label="Qualified">
@@ -1058,27 +1260,66 @@ function ActionModal({
 
         {action === "calibration" && (
           <>
-            <div className="grid grid-cols-3 gap-4">
-              <Field label="Performed date" required>
-                <Input type="date" value={performedDate} onChange={(e) => setPerformedDate(e.target.value)} required />
+            {/* Client gap-analysis Phase 7 (2026-10-05): field order follows the client's requested
+                sequence -- Performed date -> Internal/External -> SOP/Standard Reference (internal) or
+                Provider+Certificate (external) -> Result -> Next due date. "Approved/Not-Approved" stays
+                a separate second-step call (the existing approval ceremony below), not folded into this
+                same form -- that is a different actor/time, not just a field position. */}
+            <Field label="Performed date" required>
+              <Input type="date" value={performedDate} onChange={(e) => setPerformedDate(e.target.value)} required />
+            </Field>
+            <Field label="Calibration type" required>
+              <Select value={calibrationType} onChange={(e) => setCalibrationType(e.target.value)}>
+                <option value="internal">Internal</option>
+                <option value="external">External</option>
+              </Select>
+            </Field>
+            {calibrationType === "internal" ? (
+              <Field label="Standard/Traceable Reference" hint="Traceable standard used for this calibration.">
+                <Input value={standardReference} onChange={(e) => setStandardReference(e.target.value)} />
               </Field>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Provider" required hint="Pick a known calibration/service provider, or type a name below if it's not onboarded yet.">
+                    <Select value={providerSupplierId} onChange={(e) => setProviderSupplierId(e.target.value)}>
+                      <option value="">— Not in the list / type a name —</option>
+                      {serviceProviders.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.legal_name} ({s.supplier_code})
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="Certificate reference">
+                    <Input value={certificateReference} onChange={(e) => setCertificateReference(e.target.value)} />
+                  </Field>
+                </div>
+                {!providerSupplierId && (
+                  <Field label="Provider name" required hint="Free-text name for a provider not yet onboarded as a Supplier.">
+                    <Input value={providerName} onChange={(e) => setProviderName(e.target.value)} required />
+                  </Field>
+                )}
+              </>
+            )}
+            <Field label="Result" required>
+              <Select value={result} onChange={(e) => setResult(e.target.value)}>
+                <option value="pass">Pass</option>
+                <option value="fail">Fail</option>
+                <option value="oot">OOT (out of tolerance)</option>
+              </Select>
+            </Field>
+            {(result === "fail" || result === "oot") && (
+              <Banner tone="warn" title="This result triggers impact assessment">
+                Work performed on this instrument since the last passing calibration may be affected.
+              </Banner>
+            )}
+            <div className="grid grid-cols-2 gap-4">
               <Field label="Next due date" required>
                 <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
               </Field>
-              <Field label="Result" required>
-                <Select value={result} onChange={(e) => setResult(e.target.value)}>
-                  <option value="pass">pass</option>
-                  <option value="fail">fail</option>
- <option value="oot">oot out of tolerance</option>
-                </Select>
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Standard reference" hint="Traceable standard used for this calibration.">
-                <Input value={standardReference} onChange={(e) => setStandardReference(e.target.value)} />
-              </Field>
               <Field
-                label="Frequency (days)"
+                label="Frequency (days) (Optional)"
                 hint={
                   frequencyDays && performedDate
                     ? `Next due (calculated): ${computeNextDue(performedDate, frequencyDays)}`
@@ -1093,26 +1334,8 @@ function ActionModal({
                 />
               </Field>
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              <Field label="Calibration type" required>
-                <Select value={calibrationType} onChange={(e) => setCalibrationType(e.target.value)}>
-                  <option value="internal">internal</option>
-                  <option value="external">external</option>
-                </Select>
-              </Field>
-              {calibrationType === "external" && (
-                <>
-                  <Field label="Provider name" required>
-                    <Input value={providerName} onChange={(e) => setProviderName(e.target.value)} required />
-                  </Field>
-                  <Field label="Certificate reference">
-                    <Input value={certificateReference} onChange={(e) => setCertificateReference(e.target.value)} />
-                  </Field>
-                </>
-              )}
-            </div>
             <EntityPickerField
-              label="Reviewer"
+              label="Reviewer (Optional)"
               hint="Optional second-person reviewer for this calibration."
               value={reviewerId}
               onChange={setReviewerId}
@@ -1120,11 +1343,6 @@ function ActionModal({
               status={entities.usersStatus}
               kind="user"
             />
-            {(result === "fail" || result === "oot") && (
-              <Banner tone="warn" title="This result triggers impact assessment">
-                Work performed on this instrument since the last passing calibration may be affected.
-              </Banner>
-            )}
           </>
         )}
 
@@ -1142,6 +1360,13 @@ function ActionModal({
                 <Input type="date" value={nextDueDate} onChange={(e) => setNextDueDate(e.target.value)} />
               </Field>
             </div>
+            {maintenanceType === "breakdown" && (
+              <label className="flex items-center gap-2 fs-2 mb-3">
+                <input type="checkbox" checked={nonCritical} onChange={(e) => setNonCritical(e.target.checked)} />
+                Non-critical (e.g. a mere power-supply failure) — skips the recalibration requirement a
+                breakdown otherwise defaults to
+              </label>
+            )}
             <Field label="Fault description">
               <textarea
                 className="input"

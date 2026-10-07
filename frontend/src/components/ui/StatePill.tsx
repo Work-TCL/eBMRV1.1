@@ -84,14 +84,20 @@ const TERMINAL_GOOD = new Set([
   "QUALIFIED_AVAILABLE",
   // Client Topic 4 — held-receipt disposition (material_receipt.state)
   "DISPOSITION_ACCEPTED",
+  // Evidence module (OBJ-FR-015) — a finalized object's content hash is locked and it's fully usable.
+  "FINALIZED",
 ]);
 const TERMINAL_INERT = new Set([
   "CANCELLED", "OBSOLETE", "SUPERSEDED", "FROZEN", "NO_INVESTIGATION_JUSTIFIED", "SUSPENDED",
+  // Evidence module: archived/purged objects are retained history, not actionable.
+  "ARCHIVED", "PURGED",
 ]);
 const FAILED = new Set([
   "EFFECTIVENESS_FAILED", "REJECTED", "OUT_OF_SERVICE",
   // Client Topic 4 — held-receipt disposition
   "DISPOSITION_REJECTED",
+  // Evidence module: hash mismatch on finalize, or a since-verified-missing backing object.
+  "QUARANTINE", "MISSING",
 ]);
 const NEEDS_ATTENTION = new Set([
   "OPEN", "REOPENED", "FINDINGS_OPEN", "SEGREGATED", "NEW_VERSION",
@@ -101,6 +107,8 @@ const NEEDS_ATTENTION = new Set([
 ]);
 const NOT_STARTED = new Set([
   "DRAFT", "SCHEDULED", "ASSIGNED", "RECEIVED", "INSTALLED", "QUALIFICATION_PENDING",
+  // Evidence module: upload staged but not yet finalized.
+  "STAGED",
 ]);
 
 /** Title-cases an uppercase state name for display: `IMPACT_ASSESSMENT` -> `Impact assessment`. */

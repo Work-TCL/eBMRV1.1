@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { api, ApiError, hasAnyPermission, isAdminAnywhere, listAll, listBatchesForSite, type EquipmentArea, type EquipmentAsset, type Material, type MaterialLot, type Me, type Site, type Supplier, type User } from "./api";
+import { usePathname, useRouter } from "next/navigation";
+import { api, ApiError, hasAnyPermission, isAdminAnywhere, listAll, listBatchesForSite, ONBOARDING_DISMISSED_EVENT, type EquipmentArea, type EquipmentAsset, type Material, type MaterialLot, type Me, type OnboardingStatus, type Site, type Supplier, type User } from "./api";
 
 export function useSites() {
   const [sites, setSites] = useState<Site[]>([]);
@@ -59,6 +59,62 @@ export function useRequireAdmin(redirectTo = "/batch-execution") {
   }, [me, loading, router, redirectTo]);
 
   return { me, loading, isAdmin: isAdminAnywhere(me) };
+}
+
+/** Onboarding wizard status (client gap-analysis follow-up, 2026-10-06) -- `GET /onboarding` is a
+ * dedicated, Admin-gated endpoint rather than being folded into `/auth/me` (which every signed-in user
+ * fetches on every page load), so this only ever fires once `useMe()` has resolved and shown the
+ * current user actually holds Admin. Non-admins get `status: null` and never issue the request.
+ *
+ * Re-fetches on every route change (`pathname` in the effect's deps), not just once per mount: the
+ * caller that matters most, `AuthGuard`'s onboarding redirect, lives in the root layout and never
+ * remounts for the lifetime of the session -- without this, dismissing the wizard (or finishing a step)
+ * on one page left every *other* mounted instance of this hook holding the pre-dismiss snapshot
+ * forever, so the very next client-side navigation re-ran the redirect check against stale data and
+ * bounced the admin straight back to /onboarding right after they'd just left it. Cheap enough to
+ * re-run per navigation (four `EXISTS` queries, admin-only). */
+export function useOnboardingStatus(): { status: OnboardingStatus | null; loading: boolean } {
+  const { me, loading: meLoading } = useMe();
+  const pathname = usePathname();
+  const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  const [fetchLoading, setFetchLoading] = useState(true);
+  const isAdmin = isAdminAnywhere(me);
+
+  useEffect(() => {
+    // No setState here for the "not admin" case -- the return value below already masks `status` to
+    // null and `loading` to false for a non-admin without needing to write any state for it.
+    if (meLoading || !isAdmin) return;
+    let cancelled = false;
+    api
+      .get<OnboardingStatus>("/onboarding")
+      .then((result) => {
+        if (!cancelled) setStatus(result);
+      })
+      .catch(() => {
+        if (!cancelled) setStatus(null);
+      })
+      .finally(() => {
+        if (!cancelled) setFetchLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, meLoading, pathname]);
+
+  // Closes the race the pathname re-fetch above can't: that re-fetch only *starts* once the route has
+  // already changed, so for one render after `router.push("/home")` this hook's `status` would still
+  // be the pre-dismiss snapshot. Patching it synchronously here, from the same event the dismiss action
+  // fires before it navigates, means every mounted instance (AuthGuard's included) is already correct
+  // by the time that render happens.
+  useEffect(() => {
+    function onDismissed() {
+      setStatus((prev) => (prev ? { ...prev, dismissed_at: new Date().toISOString() } : prev));
+    }
+    window.addEventListener(ONBOARDING_DISMISSED_EVENT, onDismissed);
+    return () => window.removeEventListener(ONBOARDING_DISMISSED_EVENT, onDismissed);
+  }, []);
+
+  return { status: isAdmin ? status : null, loading: meLoading || (isAdmin && fetchLoading) };
 }
 
 /** Generalized version of `useRequireAdmin` for every page backed by a real, non-Admin view permission

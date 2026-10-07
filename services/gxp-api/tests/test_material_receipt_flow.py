@@ -51,9 +51,9 @@ async def _examine_clean(client, token, receipt_id, internal_lot="LOT-D19", cont
             "receipt_id": receipt_id,
             "expected_version": 1,
             "labeling_ok": True,
-            "damage_observed": False,
+            "shipping_damage_observed": False,
+            "container_damage_observed": False,
             "seal_broken": False,
-            "contamination_observed": False,
             "identity_confirmed": True,
             "internal_lot": internal_lot,
             "container_count": container_count,
@@ -153,9 +153,9 @@ async def test_identity_mismatch_holds_receipt_no_lot_created(client, seeded):
             "receipt_id": receipt_id,
             "expected_version": 1,
             "labeling_ok": True,
-            "damage_observed": False,
+            "shipping_damage_observed": False,
+            "container_damage_observed": False,
             "seal_broken": False,
-            "contamination_observed": False,
             "identity_confirmed": False,
             "internal_lot": "LOT-MISMATCH",
             "discrepancy_reason": "Label does not match expected material code",
@@ -185,9 +185,9 @@ async def test_identity_mismatch_without_reason_rejected(client, seeded):
             "receipt_id": receipt_id,
             "expected_version": 1,
             "labeling_ok": True,
-            "damage_observed": False,
+            "shipping_damage_observed": False,
+            "container_damage_observed": False,
             "seal_broken": False,
-            "contamination_observed": False,
             "identity_confirmed": False,
             "internal_lot": "LOT-NOREASON",
         },
@@ -212,9 +212,9 @@ async def test_damage_observed_holds_without_requiring_free_text_reason(client, 
             "receipt_id": receipt_id,
             "expected_version": 1,
             "labeling_ok": True,
-            "damage_observed": True,
+            "shipping_damage_observed": True,
+            "container_damage_observed": False,
             "seal_broken": False,
-            "contamination_observed": False,
             "identity_confirmed": True,
             "internal_lot": "LOT-DAMAGE",
         },
@@ -226,6 +226,69 @@ async def test_damage_observed_holds_without_requiring_free_text_reason(client, 
     assert receipt_detail["state"] == "discrepancy_hold"
     assert receipt_detail["discrepancy_type"] == "damaged"
     assert receipt_detail["discrepancy_reason"]
+
+
+async def test_container_damage_alone_also_holds_as_damaged(client, seeded):
+    """Client gap-analysis Phase 6 (2026-10-05): "Damage observed" split into shipping/package damage vs.
+    material container damage. Either one alone must still raise the same "damaged" discrepancy, and the
+    legacy `damage_observed` column (kept for MIG-FR-004 compatibility) is the OR of the two."""
+    op_token = await login(client, "operator1")
+    site_id = seeded["site_id"]
+    material_id = await _create_material(client, site_id, code="RM-CONTAINER-DAMAGE")
+    receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-CONTAINER-DAMAGE")
+
+    resp = await client.post(
+        f"/materials/v1/receipts/{receipt_id}/examine",
+        json={
+            "idempotency_key": idem(),
+            "receipt_id": receipt_id,
+            "expected_version": 1,
+            "labeling_ok": True,
+            "shipping_damage_observed": False,
+            "container_damage_observed": True,
+            "seal_broken": False,
+            "identity_confirmed": True,
+            "internal_lot": "LOT-CONTAINER-DAMAGE",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}", headers=auth_headers(op_token))).json()
+    assert receipt_detail["state"] == "discrepancy_hold"
+    assert receipt_detail["discrepancy_type"] == "damaged"
+    assert receipt_detail["shipping_damage_observed"] is False
+    assert receipt_detail["container_damage_observed"] is True
+    assert receipt_detail["damage_observed"] is True
+
+
+async def test_examine_rejects_removed_contamination_observed_field(client, seeded):
+    """Client gap-analysis Phase 6: "Contamination observed" was dropped from the examination workflow
+    entirely -- CommandEnvelope's extra="forbid" now rejects the old field outright rather than silently
+    ignoring it."""
+    op_token = await login(client, "operator1")
+    site_id = seeded["site_id"]
+    material_id = await _create_material(client, site_id, code="RM-NO-CONTAMINATION")
+    receipt_id = await _create_receipt(client, op_token, site_id, material_id, receipt_number="RCPT-NO-CONTAMINATION")
+
+    resp = await client.post(
+        f"/materials/v1/receipts/{receipt_id}/examine",
+        json={
+            "idempotency_key": idem(),
+            "receipt_id": receipt_id,
+            "expected_version": 1,
+            "labeling_ok": True,
+            "shipping_damage_observed": False,
+            "container_damage_observed": False,
+            "seal_broken": False,
+            "contamination_observed": False,
+            "identity_confirmed": True,
+            "internal_lot": "LOT-NO-CONTAMINATION",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
 
 
 # --- RCV-FR-005: coarse supplier-approval gate --------------------------------------------------------
@@ -643,9 +706,9 @@ async def _hold_receipt(client, op_token, site_id, code, receipt_number, interna
             "receipt_id": receipt_id,
             "expected_version": 1,
             "labeling_ok": True,
-            "damage_observed": False,
+            "shipping_damage_observed": False,
+            "container_damage_observed": False,
             "seal_broken": False,
-            "contamination_observed": False,
             "identity_confirmed": False,
             "internal_lot": internal_lot,
             "discrepancy_reason": "Label does not match expected material code",

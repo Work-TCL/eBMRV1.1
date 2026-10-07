@@ -72,8 +72,7 @@ export default function CapaPage() {
   // Deep link from a source record's own "Create linked CAPA" action (e.g. deviations/[id]/page.tsx,
   // `?source_type=deviation&source_id=<id>`) — opens the Raise CAPA modal pre-filled with that source
   // instead of making the user re-select it. Reads window.location directly rather than next/navigation's
-  // useSearchParams(), same as suppliers/page.tsx's own `?supplier_id=` deep link, to avoid opting this
-  // page into a Suspense boundary it has no other reason to need.
+  // useSearchParams(), to avoid opting this page into a Suspense boundary it has no other reason to need.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sourceType = params.get("source_type");

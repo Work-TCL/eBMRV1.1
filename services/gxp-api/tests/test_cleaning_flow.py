@@ -83,7 +83,7 @@ async def test_full_clean_and_independent_verify_flow(client, seeded):
     resp = await client.post(
         "/equipment/v1/assets",
         json={
-            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
             "equipment_code": "EQP-CLN-1",
         },
         headers=auth_headers(admin_token),
@@ -293,7 +293,7 @@ async def test_duplicate_active_cleaning_execution_rejected(client, seeded):
     resp = await client.post(
         "/equipment/v1/assets",
         json={
-            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
             "equipment_code": "EQP-CLN-DUP",
         },
         headers=auth_headers(admin_token),
@@ -396,7 +396,7 @@ async def test_sterilization_cycle_link_recorded(client, seeded):
     resp = await client.post(
         "/equipment/v1/assets",
         json={
-            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
             "equipment_code": "EQP-CLN-CIP",
         },
         headers=auth_headers(admin_token),
@@ -456,7 +456,7 @@ async def test_line_clearance_wrong_equipment_installed_rejected(client, seeded)
     resp = await client.post(
         "/equipment/v1/assets",
         json={
-            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
             "equipment_code": "EQP-LC-BAD",
         },
         headers=auth_headers(admin_token),
@@ -504,7 +504,7 @@ async def test_line_clearance_eligible_equipment_installed_passes(client, seeded
     resp = await client.post(
         "/equipment/v1/assets",
         json={
-            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
             "equipment_code": "EQP-LC-GOOD",
         },
         headers=auth_headers(admin_token),
@@ -528,6 +528,21 @@ async def test_line_clearance_eligible_equipment_installed_passes(client, seeded
             "due_date": "2027-01-01", "performed_date": "2026-08-25", "result": "pass",
         },
         headers=auth_headers(cal_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    # Client gap-analysis Phase 4 (2026-10-05): a passing result alone isn't enough for eligibility --
+    # QA approval is a separate, required step.
+    qa_releaser_token = await login(client, "qa.releaser")
+    history = (await client.get(f"/equipment/v1/{equipment_id}/history", headers=auth_headers(cal_token))).json()
+    calibration_id = history["calibrations"][0]["id"]
+    resp = await client.post(
+        f"/equipment/v1/{equipment_id}/calibrations",
+        json={
+            "idempotency_key": idem(), "asset_id": equipment_id, "expected_version": 3,
+            "calibration_id": calibration_id, "approved": True,
+        },
+        headers=auth_headers(qa_releaser_token),
     )
     assert resp.status_code == 200, resp.text
 
